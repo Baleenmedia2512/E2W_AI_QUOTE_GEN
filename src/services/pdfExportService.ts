@@ -8,20 +8,27 @@ export const exportToPDF = async (
   _templateType: TemplateType
 ): Promise<void> => {
   try {
+    console.log('📸 Starting PDF export process...');
+    console.log('Element to capture:', element);
+    console.log('Quote number:', quoteNumber);
+    
     // Show loading state
     const originalCursor = document.body.style.cursor;
     document.body.style.cursor = 'wait';
 
+    console.log('📸 Capturing element as canvas...');
     // Capture the element as canvas with high quality
     const canvas = await html2canvas(element, {
       scale: 2, // Higher quality
       useCORS: true,
       allowTaint: true,
       backgroundColor: '#ffffff',
-      logging: false,
+      logging: true,
       windowWidth: element.scrollWidth,
       windowHeight: element.scrollHeight
     });
+    
+    console.log('✅ Canvas captured:', canvas.width, 'x', canvas.height);
 
     // Calculate dimensions for A4 in portrait mode
     const imgWidth = 210; // A4 width in mm
@@ -58,12 +65,14 @@ export const exportToPDF = async (
     const timestamp = new Date().toISOString().split('T')[0];
     const filename = `Quote_${quoteNumber}_${timestamp}.pdf`;
 
+    console.log('💾 Saving PDF as:', filename);
     // Save the PDF
     pdf.save(filename);
 
     // Restore cursor
     document.body.style.cursor = originalCursor;
-
+    
+    console.log('✅ PDF saved successfully');
     return Promise.resolve();
   } catch (error) {
     console.error('PDF Export Error:', error);

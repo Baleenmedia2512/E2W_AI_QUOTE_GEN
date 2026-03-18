@@ -16,7 +16,8 @@ export const QuotePreviewPage: React.FC = () => {
     companyInfo,
     clientInfo,
     selectedTemplate,
-    setSelectedTemplate
+    setSelectedTemplate,
+    setCurrentQuote
   } = useAppStore();
 
   const [showTemplateSelector, setShowTemplateSelector] = useState(false);
@@ -24,16 +25,52 @@ export const QuotePreviewPage: React.FC = () => {
   const [zoom, setZoom] = useState(100);
   const previewRef = useRef<HTMLDivElement>(null);
 
+  // Add sample item if quote has no items
+  React.useEffect(() => {
+    console.log('📄 QuotePreviewPage mounted');
+    console.log('Store state:', { 
+      hasQuote: !!currentQuote, 
+      hasCompany: !!companyInfo, 
+      hasClient: !!clientInfo,
+      template: selectedTemplate 
+    });
+    
+    if (currentQuote && currentQuote.items.length === 0) {
+      console.log('⚠️ Quote has no items, adding sample item');
+      const sampleItem = {
+        id: '1',
+        description: 'Sample Service/Product',
+        details: 'Add your items by going back to the quote editor',
+        quantity: 1,
+        rate: 1000,
+        total: 1000
+      };
+      const updatedQuote = {
+        ...currentQuote,
+        items: [sampleItem],
+        subtotal: 1000,
+        gstAmount: currentQuote.gstEnabled ? 1000 * (currentQuote.gstPercentage / 100) : 0,
+        total: 1000 + (currentQuote.gstEnabled ? 1000 * (currentQuote.gstPercentage / 100) : 0)
+      };
+      setCurrentQuote(updatedQuote);
+    }
+  }, [currentQuote?.items?.length]);
+
   // Debug logging
-  console.log('📄 QuotePreviewPage rendered');
   console.log('Current Quote:', currentQuote);
   console.log('Company Info:', companyInfo);
   console.log('Client Info:', clientInfo);
   console.log('Selected Template:', selectedTemplate);
+  console.log('Quote Items:', currentQuote?.items);
+  console.log('Quote Items Length:', currentQuote?.items?.length);
 
   // Check if all required data is available
   if (!currentQuote || !companyInfo || !clientInfo) {
-    console.log('❌ Missing required data for preview');
+    console.error('❌ Missing required data for preview');
+    console.error('Missing Quote:', !currentQuote);
+    console.error('Missing Company:', !companyInfo);
+    console.error('Missing Client:', !clientInfo);
+    
     return (
       <div className="preview-error">
         <div className="error-content">
@@ -74,21 +111,40 @@ export const QuotePreviewPage: React.FC = () => {
   };
 
   const handleExportPDF = async () => {
-    if (!previewRef.current) return;
+    console.log('📄 Export PDF clicked');
+    console.log('Preview ref current:', previewRef.current);
+    console.log('Current quote:', currentQuote);
+    console.log('Selected template:', selectedTemplate);
+    
+    if (!previewRef.current) {
+      console.error('❌ Preview ref is not available');
+      alert('Preview content not loaded. Please refresh and try again.');
+      return;
+    }
+
+    if (!currentQuote) {
+      console.error('❌ No quote available for export');
+      alert('No quote data available. Please go back and create a quote.');
+      return;
+    }
 
     setIsExporting(true);
+    console.log('🔄 Starting PDF export...');
+    
     try {
       await exportToPDF(
         previewRef.current,
         currentQuote.quoteNumber,
         selectedTemplate
       );
+      console.log('✅ PDF exported successfully');
       alert('PDF exported successfully!');
     } catch (error) {
-      console.error('PDF export error:', error);
-      alert('Failed to export PDF. Please try again.');
+      console.error('❌ PDF export error:', error);
+      alert(`Failed to export PDF: ${error instanceof Error ? error.message : 'Unknown error'}`);
     } finally {
       setIsExporting(false);
+      console.log('🏁 PDF export process finished');
     }
   };
 
@@ -192,8 +248,11 @@ export const QuotePreviewPage: React.FC = () => {
             <TemplateSelector
               selectedTemplate={selectedTemplate}
               onSelectTemplate={(template) => {
-                console.log('🎨 Template selected:', template);
+                console.log('🎨 Template selected in preview:', template);
                 setSelectedTemplate(template);
+                // Ensure localStorage is updated
+                localStorage.setItem('selectedTemplate', template);
+                console.log('✅ Template saved and modal closing');
                 setShowTemplateSelector(false);
               }}
             />
