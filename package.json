@@ -16,6 +16,7 @@
     "@capacitor/core": "^6.0.0",
     "@capacitor/filesystem": "^6.0.0",
     "@capacitor/ios": "^6.0.0",
+    "@google/generative-ai": "^0.24.1",
     "@ionic/react": "^7.8.0",
     "@ionic/react-router": "^7.8.0",
     "ionicons": "^7.2.2",

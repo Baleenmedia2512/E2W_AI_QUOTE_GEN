@@ -3,6 +3,7 @@ import { IonGrid, IonRow, IonCol } from '@ionic/react';
 import Layout from '../components/Layout/Layout';
 import ProposalUpload from '../components/ProposalUpload/ProposalUpload';
 import ProposalViewer from '../components/ProposalViewer/ProposalViewer';
+import ChatInterface from '../components/ChatInterface/ChatInterface';
 
 const HomePage: React.FC = () => {
   return (
@@ -11,6 +12,7 @@ const HomePage: React.FC = () => {
         <IonRow>
           <IonCol size="12" sizeMd="4">
             <ProposalUpload />
+            <ChatInterface />
           </IonCol>
           <IonCol size="12" sizeMd="8">
             <ProposalViewer />

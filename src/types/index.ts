@@ -1,3 +1,8 @@
+import { Message } from './chat';
+import { Quote, QuoteItem, LineItem } from './quote';
+import { CompanyInfo } from './company';
+import { ClientInfo } from './client';
+
 export interface ProposalData {
   file: File | null;
   fileName: string;
@@ -10,7 +15,28 @@ export interface ProposalData {
 }
 
 export interface AppState {
+  // Proposal state
   proposal: ProposalData;
   setProposal: (proposal: Partial<ProposalData>) => void;
   resetProposal: () => void;
+
+  // Chat state
+  messages: Message[];
+  addMessage: (message: Message) => void;
+  clearMessages: () => void;
+
+  // Quote state
+  currentQuote: Quote | null;
+  setCurrentQuote: (quote: Quote | null) => void;
+  updateQuote: (quote: Quote) => void;
+
+  // Company state
+  companyInfo: CompanyInfo | null;
+  setCompanyInfo: (info: CompanyInfo) => void;
+
+  // Client state
+  clientInfo: ClientInfo | null;
+  setClientInfo: (info: ClientInfo) => void;
 }
+
+export type { Message, Quote, QuoteItem, LineItem, CompanyInfo, ClientInfo };
