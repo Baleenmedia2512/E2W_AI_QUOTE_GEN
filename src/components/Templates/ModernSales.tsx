@@ -11,7 +11,7 @@ export const ModernSales: React.FC<TemplateProps> = ({ data, editable: _editable
 
   const calculateGST = () => {
     const subtotal = calculateSubtotal();
-    return subtotal * 0.1;
+    return quote.gstEnabled ? subtotal * (quote.gstPercentage / 100) : 0;
   };
 
   const calculateTotal = () => {
@@ -19,15 +19,15 @@ export const ModernSales: React.FC<TemplateProps> = ({ data, editable: _editable
   };
 
   const formatCurrency = (amount: number) => {
-    return new Intl.NumberFormat('en-AU', {
+    return new Intl.NumberFormat('en-IN', {
       style: 'currency',
-      currency: 'AUD'
+      currency: 'INR'
     }).format(amount);
   };
 
   const formatDate = (date: Date | string) => {
     const d = typeof date === 'string' ? new Date(date) : date;
-    return d.toLocaleDateString('en-AU', {
+    return d.toLocaleDateString('en-IN', {
       year: 'numeric',
       month: 'short',
       day: 'numeric'
@@ -136,10 +136,12 @@ export const ModernSales: React.FC<TemplateProps> = ({ data, editable: _editable
                 <span className="breakdown-label">Subtotal</span>
                 <span className="breakdown-value">{formatCurrency(calculateSubtotal())}</span>
               </div>
-              <div className="breakdown-row">
-                <span className="breakdown-label">GST (10%)</span>
-                <span className="breakdown-value">{formatCurrency(calculateGST())}</span>
-              </div>
+              {quote.gstEnabled && (
+                <div className="breakdown-row">
+                  <span className="breakdown-label">GST ({quote.gstPercentage}%)</span>
+                  <span className="breakdown-value">{formatCurrency(calculateGST())}</span>
+                </div>
+              )}
               <div className="breakdown-row breakdown-total">
                 <span className="breakdown-label">Total Amount</span>
                 <span className="breakdown-value">{formatCurrency(calculateTotal())}</span>

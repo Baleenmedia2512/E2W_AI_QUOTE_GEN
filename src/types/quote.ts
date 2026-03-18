@@ -27,6 +27,7 @@ export interface Quote {
   items: QuoteItem[];
   subtotal: number;
   gstEnabled: boolean;
+  gstPercentage: number; // GST percentage (5, 18, etc.)
   gstAmount: number;
   total: number;
   notes?: string;

@@ -11,7 +11,7 @@ export const ClassicBusiness: React.FC<TemplateProps> = ({ data, editable: _edit
 
   const calculateGST = () => {
     const subtotal = calculateSubtotal();
-    return subtotal * 0.1;
+    return quote.gstEnabled ? subtotal * (quote.gstPercentage / 100) : 0;
   };
 
   const calculateTotal = () => {
@@ -19,15 +19,15 @@ export const ClassicBusiness: React.FC<TemplateProps> = ({ data, editable: _edit
   };
 
   const formatCurrency = (amount: number) => {
-    return new Intl.NumberFormat('en-AU', {
+    return new Intl.NumberFormat('en-IN', {
       style: 'currency',
-      currency: 'AUD'
+      currency: 'INR'
     }).format(amount);
   };
 
   const formatDate = (date: Date | string) => {
     const d = typeof date === 'string' ? new Date(date) : date;
-    return d.toLocaleDateString('en-AU', {
+    return d.toLocaleDateString('en-IN', {
       year: 'numeric',
       month: 'long',
       day: 'numeric'
@@ -78,7 +78,7 @@ export const ClassicBusiness: React.FC<TemplateProps> = ({ data, editable: _edit
                 <td className="ref-label">Valid Until:</td>
                 <td className="ref-value">{formatDate(quote.validUntil)}</td>
                 <td className="ref-label">Currency:</td>
-                <td className="ref-value">AUD</td>
+                <td className="ref-value">INR</td>
               </tr>
             </tbody>
           </table>
@@ -146,12 +146,14 @@ export const ClassicBusiness: React.FC<TemplateProps> = ({ data, editable: _edit
                 <td className="calc-label">Subtotal:</td>
                 <td className="calc-value">{formatCurrency(calculateSubtotal())}</td>
               </tr>
-              <tr>
-                <td className="calc-label">GST (10%):</td>
-                <td className="calc-value">{formatCurrency(calculateGST())}</td>
-              </tr>
+              {quote.gstEnabled && (
+                <tr>
+                  <td className="calc-label">GST ({quote.gstPercentage}%):</td>
+                  <td className="calc-value">{formatCurrency(calculateGST())}</td>
+                </tr>
+              )}
               <tr className="calc-total-row">
-                <td className="calc-label-total">TOTAL (AUD):</td>
+                <td className="calc-label-total">TOTAL (INR):</td>
                 <td className="calc-value-total">{formatCurrency(calculateTotal())}</td>
               </tr>
             </tbody>
@@ -181,7 +183,7 @@ export const ClassicBusiness: React.FC<TemplateProps> = ({ data, editable: _edit
               A deposit of 50% may be required prior to commencement of work.
             </li>
             <li>
-              <strong>Pricing:</strong> All prices are quoted in Australian Dollars (AUD) and include
+              <strong>Pricing:</strong> All prices are quoted in Indian Rupees (INR) and include
               Goods and Services Tax (GST) where applicable.
             </li>
             <li>

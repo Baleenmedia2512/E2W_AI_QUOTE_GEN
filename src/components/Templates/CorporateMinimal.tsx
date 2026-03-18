@@ -11,7 +11,7 @@ export const CorporateMinimal: React.FC<TemplateProps> = ({ data, editable: _edi
 
   const calculateGST = () => {
     const subtotal = calculateSubtotal();
-    return subtotal * 0.1; // 10% GST
+    return quote.gstEnabled ? subtotal * (quote.gstPercentage / 100) : 0;
   };
 
   const calculateTotal = () => {
@@ -19,15 +19,15 @@ export const CorporateMinimal: React.FC<TemplateProps> = ({ data, editable: _edi
   };
 
   const formatCurrency = (amount: number) => {
-    return new Intl.NumberFormat('en-AU', {
+    return new Intl.NumberFormat('en-IN', {
       style: 'currency',
-      currency: 'AUD'
+      currency: 'INR'
     }).format(amount);
   };
 
   const formatDate = (date: Date | string) => {
     const d = typeof date === 'string' ? new Date(date) : date;
-    return d.toLocaleDateString('en-AU', {
+    return d.toLocaleDateString('en-IN', {
       year: 'numeric',
       month: 'long',
       day: 'numeric'
@@ -116,12 +116,14 @@ export const CorporateMinimal: React.FC<TemplateProps> = ({ data, editable: _edi
             <span className="total-label">Subtotal:</span>
             <span className="total-value">{formatCurrency(calculateSubtotal())}</span>
           </div>
-          <div className="total-row">
-            <span className="total-label">GST (10%):</span>
-            <span className="total-value">{formatCurrency(calculateGST())}</span>
-          </div>
+          {quote.gstEnabled && (
+            <div className="total-row">
+              <span className="total-label">GST ({quote.gstPercentage}%):</span>
+              <span className="total-value">{formatCurrency(calculateGST())}</span>
+            </div>
+          )}
           <div className="total-row total-final">
-            <span className="total-label">Total (AUD):</span>
+            <span className="total-label">Total (INR):</span>
             <span className="total-value">{formatCurrency(calculateTotal())}</span>
           </div>
         </div>
@@ -140,7 +142,7 @@ export const CorporateMinimal: React.FC<TemplateProps> = ({ data, editable: _edi
         <ul>
           <li>This quotation is valid for 30 days from the date of issue</li>
           <li>Payment terms: Net 30 days from invoice date</li>
-          <li>Prices are in Australian Dollars (AUD) and include GST where applicable</li>
+          <li>Prices are in Indian Rupees (INR) and include GST where applicable</li>
           <li>A deposit of 50% may be required before commencement of work</li>
           <li>Any variations to the scope of work will be quoted separately</li>
         </ul>

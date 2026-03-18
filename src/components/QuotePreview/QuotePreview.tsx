@@ -60,7 +60,7 @@ const QuotePreview: React.FC<QuotePreviewProps> = ({ quote, onUpdate, onSave }) 
   };
 
   const calculateGST = (subtotal: number): number => {
-    return localQuote.gstEnabled ? subtotal * 0.1 : 0;
+    return localQuote.gstEnabled ? subtotal * (localQuote.gstPercentage / 100) : 0;
   };
 
   const calculateTotal = (subtotal: number, gst: number): number => {
@@ -307,7 +307,7 @@ const QuotePreview: React.FC<QuotePreviewProps> = ({ quote, onUpdate, onSave }) 
                       />
                     </IonCol>
                     <IonCol size="2" className="total-col">
-                      ${calculateLineItemTotal(lineItem).toFixed(2)}
+                      ₹{calculateLineItemTotal(lineItem).toFixed(2)}
                     </IonCol>
                     <IonCol size="1">
                       <IonButton
@@ -335,7 +335,7 @@ const QuotePreview: React.FC<QuotePreviewProps> = ({ quote, onUpdate, onSave }) 
             </IonButton>
 
             <div className="item-subtotal">
-              <strong>Section Subtotal:</strong> ${calculateItemSubtotal(item).toFixed(2)}
+              <strong>Section Subtotal:</strong> ₹{calculateItemSubtotal(item).toFixed(2)}
             </div>
           </div>
         ))}
@@ -350,24 +350,51 @@ const QuotePreview: React.FC<QuotePreviewProps> = ({ quote, onUpdate, onSave }) 
         <div className="quote-totals">
           <div className="total-row">
             <span>Subtotal:</span>
-            <span>${subtotal.toFixed(2)}</span>
+            <span>₹{subtotal.toFixed(2)}</span>
           </div>
           
-          <IonItem lines="none" className="gst-toggle">
-            <IonLabel>Include GST (10%)</IonLabel>
-            <IonToggle checked={localQuote.gstEnabled} onIonChange={toggleGST} />
-          </IonItem>
+          <div className="gst-section">
+            <IonItem lines="none" className="gst-toggle">
+              <IonLabel>Include GST</IonLabel>
+              <IonToggle checked={localQuote.gstEnabled} onIonChange={toggleGST} />
+            </IonItem>
+
+            {localQuote.gstEnabled && (
+              <IonItem lines="none" className="gst-percentage-input">
+                <IonLabel position="stacked">GST Percentage (%)</IonLabel>
+                <IonInput
+                  type="number"
+                  value={String(localQuote.gstPercentage || 18)}
+                  onIonInput={(e) => {
+                    const value = parseFloat(e.detail.value || '0');
+                    if (!localQuote) return;
+                    const updatedQuote = { ...localQuote };
+                    updatedQuote.gstPercentage = value;
+                    updatedQuote.gstAmount = calculateGST(updatedQuote.subtotal);
+                    updatedQuote.total = calculateTotal(updatedQuote.subtotal, updatedQuote.gstAmount);
+                    updatedQuote.updatedAt = new Date();
+                    setLocalQuote(updatedQuote);
+                    onUpdate(updatedQuote);
+                  }}
+                  min="0"
+                  max="100"
+                  step="0.01"
+                  placeholder="e.g., 5, 18"
+                />
+              </IonItem>
+            )}
+          </div>
 
           {localQuote.gstEnabled && (
             <div className="total-row">
-              <span>GST (10%):</span>
-              <span>${gst.toFixed(2)}</span>
+              <span>GST ({localQuote.gstPercentage}%):</span>
+              <span>₹{gst.toFixed(2)}</span>
             </div>
           )}
 
           <div className="total-row grand-total">
             <span>Total:</span>
-            <span>${total.toFixed(2)}</span>
+            <span>₹{total.toFixed(2)}</span>
           </div>
         </div>
 

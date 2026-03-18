@@ -58,7 +58,10 @@ export const TemplateSelector: React.FC<TemplateSelectorProps> = ({
           <div
             key={template.id}
             className={`template-card ${selectedTemplate === template.id ? 'selected' : ''}`}
-            onClick={() => onSelectTemplate(template.id)}
+            onClick={() => {
+              console.log('🖱️ Template card clicked:', template.id);
+              onSelectTemplate(template.id);
+            }}
           >
             <div className="template-thumbnail">
               <img src={template.thumbnail} alt={template.name} />
@@ -85,6 +88,7 @@ export const TemplateSelector: React.FC<TemplateSelectorProps> = ({
               className={`select-button ${selectedTemplate === template.id ? 'selected' : ''}`}
               onClick={(e) => {
                 e.stopPropagation();
+                console.log('🖱️ Select button clicked:', template.id);
                 onSelectTemplate(template.id);
               }}
             >

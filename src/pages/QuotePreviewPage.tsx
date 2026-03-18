@@ -24,15 +24,28 @@ export const QuotePreviewPage: React.FC = () => {
   const [zoom, setZoom] = useState(100);
   const previewRef = useRef<HTMLDivElement>(null);
 
+  // Debug logging
+  console.log('📄 QuotePreviewPage rendered');
+  console.log('Current Quote:', currentQuote);
+  console.log('Company Info:', companyInfo);
+  console.log('Client Info:', clientInfo);
+  console.log('Selected Template:', selectedTemplate);
+
   // Check if all required data is available
   if (!currentQuote || !companyInfo || !clientInfo) {
+    console.log('❌ Missing required data for preview');
     return (
       <div className="preview-error">
         <div className="error-content">
           <h2>Missing Information</h2>
           <p>Please complete all required steps before previewing your quote.</p>
-          <button onClick={() => history.push('/')} className="back-button">
-            Go Back
+          <p style={{ fontSize: '14px', marginTop: '16px', color: '#666' }}>
+            {!currentQuote && '• Quote data is missing'}<br />
+            {!companyInfo && '• Company information is missing'}<br />
+            {!clientInfo && '• Client information is missing'}
+          </p>
+          <button onClick={() => history.push('/quote')} className="back-button">
+            Go Back to Quote Page
           </button>
         </div>
       </div>
@@ -179,6 +192,7 @@ export const QuotePreviewPage: React.FC = () => {
             <TemplateSelector
               selectedTemplate={selectedTemplate}
               onSelectTemplate={(template) => {
+                console.log('🎨 Template selected:', template);
                 setSelectedTemplate(template);
                 setShowTemplateSelector(false);
               }}

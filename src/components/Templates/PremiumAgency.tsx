@@ -11,7 +11,7 @@ export const PremiumAgency: React.FC<TemplateProps> = ({ data, editable: _editab
 
   const calculateGST = () => {
     const subtotal = calculateSubtotal();
-    return subtotal * 0.1;
+    return quote.gstEnabled ? subtotal * (quote.gstPercentage / 100) : 0;
   };
 
   const calculateTotal = () => {
@@ -19,15 +19,15 @@ export const PremiumAgency: React.FC<TemplateProps> = ({ data, editable: _editab
   };
 
   const formatCurrency = (amount: number) => {
-    return new Intl.NumberFormat('en-AU', {
+    return new Intl.NumberFormat('en-IN', {
       style: 'currency',
-      currency: 'AUD'
+      currency: 'INR'
     }).format(amount);
   };
 
   const formatDate = (date: Date | string) => {
     const d = typeof date === 'string' ? new Date(date) : date;
-    return d.toLocaleDateString('en-AU', {
+    return d.toLocaleDateString('en-IN', {
       year: 'numeric',
       month: 'long',
       day: 'numeric'
@@ -135,10 +135,12 @@ export const PremiumAgency: React.FC<TemplateProps> = ({ data, editable: _editab
                 <span className="summary-label">Subtotal</span>
                 <span className="summary-value">{formatCurrency(calculateSubtotal())}</span>
               </div>
-              <div className="summary-row">
-                <span className="summary-label">GST (10%)</span>
-                <span className="summary-value">{formatCurrency(calculateGST())}</span>
-              </div>
+              {quote.gstEnabled && (
+                <div className="summary-row">
+                  <span className="summary-label">GST ({quote.gstPercentage}%)</span>
+                  <span className="summary-value">{formatCurrency(calculateGST())}</span>
+                </div>
+              )}
               <div className="summary-row summary-total">
                 <span className="summary-label">Total Investment</span>
                 <span className="summary-value">{formatCurrency(calculateTotal())}</span>
@@ -179,7 +181,7 @@ export const PremiumAgency: React.FC<TemplateProps> = ({ data, editable: _editab
               <div className="term-icon">✓</div>
               <div className="term-content">
                 <h4>Currency</h4>
-                <p>All prices in AUD including GST where applicable</p>
+                <p>All prices in INR including GST where applicable</p>
               </div>
             </div>
             <div className="term-item">
