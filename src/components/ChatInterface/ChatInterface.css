@@ -135,6 +135,40 @@
   font-size: 13px;
 }
 
+.create-quote-banner {
+  background: linear-gradient(135deg, var(--ion-color-primary-tint), var(--ion-color-primary));
+  color: white;
+  padding: 16px;
+  margin: 0 16px 8px;
+  border-radius: 12px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  animation: slideIn 0.3s ease-out;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+}
+
+.quote-detected-message {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 14px;
+  font-weight: 500;
+  flex: 1;
+}
+
+.quote-detected-message ion-icon {
+  font-size: 20px;
+}
+
+.create-quote-banner ion-button {
+  --background: white;
+  --color: var(--ion-color-primary);
+  --box-shadow: 0 2px 8px rgba(0, 0, 0, 0.2);
+  font-weight: 600;
+}
+
 .input-container {
   display: flex;
   gap: 8px;

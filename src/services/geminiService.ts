@@ -8,10 +8,10 @@ let lastRequestTime = 0;
 
 const getApiKey = (): string => {
   const apiKey = import.meta.env.VITE_GEMINI_API_KEY;
-  if (!apiKey) {
-    throw new Error('Gemini API key not configured. Please add VITE_GEMINI_API_KEY to your .env file.');
+  if (!apiKey || apiKey.trim() === '') {
+    throw new Error('Gemini API key not configured. Please add VITE_GEMINI_API_KEY to your .env file. Get your key from https://aistudio.google.com/app/apikey');
   }
-  return apiKey;
+  return apiKey.trim();
 };
 
 const enforceRateLimit = async (): Promise<void> => {
@@ -45,7 +45,8 @@ export const sendMessageToGemini = async ({
 
     const apiKey = getApiKey();
     const genAI = new GoogleGenerativeAI(apiKey);
-    const model = genAI.getGenerativeModel({ model: 'gemini-pro' });
+    // Using gemini-2.5-flash-lite model
+    const model = genAI.getGenerativeModel({ model: 'gemini-2.5-flash-lite' });
 
     // Build context
     let contextPrompt = CHAT_SYSTEM_PROMPT + '\n\n';
@@ -69,10 +70,16 @@ export const sendMessageToGemini = async ({
     const response = await result.response;
     const text = response.text();
 
-    // Try to detect if this is a quote generation response
-    const isQuoteGeneration = userMessage.toLowerCase().includes('quote') || 
-                              userMessage.toLowerCase().includes('generate') ||
-                              text.includes('{') && text.includes('items');
+    // Detect if this is a quote generation response
+    // Check for quote-related keywords in user message and pricing symbols in response
+    const quoteKeywords = ['quote', 'price', 'cost', 'pricing', 'how much', 'generate', 'create quote'];
+    const hasQuoteKeyword = quoteKeywords.some(keyword => 
+      userMessage.toLowerCase().includes(keyword)
+    );
+    const hasPricing = text.includes('₹') || text.includes('price') || text.includes('total');
+    const hasQuantity = /\d+\s*(auto|banner|hoarding|flex|unit|piece)/i.test(userMessage);
+    
+    const isQuoteGeneration = hasQuoteKeyword && (hasPricing || hasQuantity);
 
     let quoteData = null;
     if (isQuoteGeneration) {
@@ -102,6 +109,14 @@ export const sendMessageToGemini = async ({
     
     if (error.message?.includes('quota')) {
       throw new Error('API quota exceeded. Please try again later.');
+    }
+    
+    // Handle model not found errors
+    if (error.message?.includes('not found') || error.message?.includes('models/gemini')) {
+      throw new Error(
+        'Gemini model not available. Please verify your API key has access to the gemini-2.5-flash-lite model. ' +
+        'Visit https://aistudio.google.com to check your API key permissions.'
+      );
     }
     
     throw new Error('Failed to communicate with AI service. Please try again.');

@@ -20,12 +20,10 @@ const ProposalUpload: React.FC = () => {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string>('');
   const [success, setSuccess] = useState(false);
+  const [isDragging, setIsDragging] = useState(false);
   const { proposal, setProposal } = useAppStore();
 
-  const handleFileSelect = async (event: React.ChangeEvent<HTMLInputElement>) => {
-    const file = event.target.files?.[0];
-    if (!file) return;
-
+  const processFile = async (file: File) => {
     // Validate file
     const validation = validatePDFFile(file);
     if (!validation.valid) {
@@ -37,14 +35,22 @@ const ProposalUpload: React.FC = () => {
     setError('');
 
     try {
+      console.log('Processing PDF file:', file.name);
       // Extract PDF content
       const { textContent, pageCount, images } = await extractPDFContent(file);
+
+      console.log('PDF extraction successful:', {
+        fileName: file.name,
+        pageCount,
+        textLength: textContent.length,
+        hasText: textContent.length > 0
+      });
 
       // Create object URL for PDF viewing
       const fileUrl = URL.createObjectURL(file);
 
       // Update store
-      setProposal({
+      const proposalData = {
         file,
         fileName: file.name,
         fileUrl,
@@ -53,14 +59,48 @@ const ProposalUpload: React.FC = () => {
         currentPage: 1,
         extractedImages: images,
         uploadedAt: new Date(),
-      });
+      };
+      
+      console.log('Updating proposal store with:', proposalData);
+      setProposal(proposalData);
 
       setSuccess(true);
-    } catch (err) {
-      setError('Failed to process PDF file. Please try again.');
-      console.error(err);
+    } catch (err: any) {
+      const errorMessage = err.message || 'Failed to process PDF file. Please try again.';
+      setError(errorMessage);
+      console.error('PDF processing error:', err);
     } finally {
       setLoading(false);
+    }
+  };
+
+  const handleFileSelect = async (event: React.ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    if (!file) return;
+    await processFile(file);
+  };
+
+  const handleDragOver = (event: React.DragEvent<HTMLDivElement>) => {
+    event.preventDefault();
+    event.stopPropagation();
+    setIsDragging(true);
+  };
+
+  const handleDragLeave = (event: React.DragEvent<HTMLDivElement>) => {
+    event.preventDefault();
+    event.stopPropagation();
+    setIsDragging(false);
+  };
+
+  const handleDrop = async (event: React.DragEvent<HTMLDivElement>) => {
+    event.preventDefault();
+    event.stopPropagation();
+    setIsDragging(false);
+
+    const files = event.dataTransfer.files;
+    if (files && files.length > 0) {
+      const file = files[0];
+      await processFile(file);
     }
   };
 
@@ -84,7 +124,13 @@ const ProposalUpload: React.FC = () => {
           />
 
           {!proposal.file ? (
-            <div className="upload-area" onClick={handleUploadClick}>
+            <div 
+              className={`upload-area ${isDragging ? 'dragging' : ''}`}
+              onClick={handleUploadClick}
+              onDragOver={handleDragOver}
+              onDragLeave={handleDragLeave}
+              onDrop={handleDrop}
+            >
               <IonIcon icon={cloudUploadOutline} className="upload-icon" />
               <IonText>
                 <h3>Click to upload PDF</h3>
@@ -121,6 +167,7 @@ const ProposalUpload: React.FC = () => {
         message={error}
         duration={3000}
         color="danger"
+        position="bottom"
         onDidDismiss={() => setError('')}
       />
 
@@ -129,6 +176,7 @@ const ProposalUpload: React.FC = () => {
         message="PDF uploaded successfully!"
         duration={2000}
         color="success"
+        position="bottom"
         onDidDismiss={() => setSuccess(false)}
       />
     </div>

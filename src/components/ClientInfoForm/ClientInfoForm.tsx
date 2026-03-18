@@ -119,7 +119,7 @@ const ClientInfoForm: React.FC<ClientInfoFormProps> = ({ onSubmit, onBack, initi
                     Client Name <span className="required">*</span>
                   </IonLabel>
                   <IonInput
-                    value={formData.name}
+                    value={formData.name || ''}
                     onIonInput={(e) => handleInputChange('name', e.detail.value || '')}
                     placeholder="Enter client name"
                   />
@@ -134,7 +134,7 @@ const ClientInfoForm: React.FC<ClientInfoFormProps> = ({ onSubmit, onBack, initi
                     Company Name <span className="required">*</span>
                   </IonLabel>
                   <IonInput
-                    value={formData.company}
+                    value={formData.company || ''}
                     onIonInput={(e) => handleInputChange('company', e.detail.value || '')}
                     placeholder="Enter company name"
                   />
@@ -151,7 +151,7 @@ const ClientInfoForm: React.FC<ClientInfoFormProps> = ({ onSubmit, onBack, initi
                     Address <span className="required">*</span>
                   </IonLabel>
                   <IonTextarea
-                    value={formData.address}
+                    value={formData.address || ''}
                     onIonInput={(e) => handleInputChange('address', e.detail.value || '')}
                     placeholder="Enter client address"
                     rows={3}
@@ -167,7 +167,7 @@ const ClientInfoForm: React.FC<ClientInfoFormProps> = ({ onSubmit, onBack, initi
                 <IonItem className={errors.gst ? 'ion-invalid' : ''}>
                   <IonLabel position="stacked">GST Number (Optional)</IonLabel>
                   <IonInput
-                    value={formData.gst}
+                    value={formData.gst || ''}
                     onIonInput={(e) => handleInputChange('gst', e.detail.value || '')}
                     placeholder="Enter GST number"
                   />
@@ -182,7 +182,7 @@ const ClientInfoForm: React.FC<ClientInfoFormProps> = ({ onSubmit, onBack, initi
                     Phone <span className="required">*</span>
                   </IonLabel>
                   <IonInput
-                    value={formData.phone}
+                    value={formData.phone || ''}
                     onIonInput={(e) => handleInputChange('phone', e.detail.value || '')}
                     placeholder="Enter phone number"
                     type="tel"
@@ -200,7 +200,7 @@ const ClientInfoForm: React.FC<ClientInfoFormProps> = ({ onSubmit, onBack, initi
                     Email <span className="required">*</span>
                   </IonLabel>
                   <IonInput
-                    value={formData.email}
+                    value={formData.email || ''}
                     onIonInput={(e) => handleInputChange('email', e.detail.value || '')}
                     placeholder="Enter email address"
                     type="email"

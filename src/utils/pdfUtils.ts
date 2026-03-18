@@ -1,7 +1,11 @@
 import * as pdfjsLib from 'pdfjs-dist';
 
-// Configure PDF.js worker
-pdfjsLib.GlobalWorkerOptions.workerSrc = `//cdnjs.cloudflare.com/ajax/libs/pdf.js/${pdfjsLib.version}/pdf.worker.min.js`;
+// Configure PDF.js worker - Use unpkg CDN as fallback with proper configuration
+// Try multiple CDN sources for better reliability
+const workerSrc = `https://unpkg.com/pdfjs-dist@${pdfjsLib.version}/build/pdf.worker.min.mjs`;
+pdfjsLib.GlobalWorkerOptions.workerSrc = workerSrc;
+
+console.log('PDF.js worker configured:', workerSrc);
 
 export interface PDFExtractionResult {
   textContent: string;
@@ -11,9 +15,13 @@ export interface PDFExtractionResult {
 
 export const extractPDFContent = async (file: File): Promise<PDFExtractionResult> => {
   try {
+    console.log('Starting PDF extraction for:', file.name);
     const arrayBuffer = await file.arrayBuffer();
+    console.log('ArrayBuffer loaded, size:', arrayBuffer.byteLength);
+    
     const pdf = await pdfjsLib.getDocument({ data: arrayBuffer }).promise;
     const pageCount = pdf.numPages;
+    console.log('PDF loaded successfully, pages:', pageCount);
     
     let textContent = '';
     const images: string[] = [];
@@ -26,16 +34,28 @@ export const extractPDFContent = async (file: File): Promise<PDFExtractionResult
         .map((item: any) => item.str)
         .join(' ');
       textContent += pageText + '\n\n';
+      console.log(`Page ${i}/${pageCount} extracted, text length:`, pageText.length);
+    }
+
+    const finalText = textContent.trim();
+    console.log('PDF extraction complete. Total text length:', finalText.length);
+    
+    if (finalText.length === 0) {
+      console.warn('WARNING: PDF text extraction resulted in empty content');
+      throw new Error('PDF appears to be empty or contains only images. Please use a PDF with selectable text.');
     }
 
     return {
-      textContent: textContent.trim(),
+      textContent: finalText,
       pageCount,
       images,
     };
-  } catch (error) {
+  } catch (error: any) {
     console.error('Error extracting PDF content:', error);
-    throw new Error('Failed to extract PDF content');
+    if (error.message?.includes('empty') || error.message?.includes('images')) {
+      throw error;
+    }
+    throw new Error(`Failed to extract PDF content: ${error.message || 'Unknown error'}`);
   }
 };
 

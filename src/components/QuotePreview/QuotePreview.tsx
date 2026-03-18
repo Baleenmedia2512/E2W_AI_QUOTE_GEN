@@ -239,7 +239,7 @@ const QuotePreview: React.FC<QuotePreviewProps> = ({ quote, onUpdate, onSave }) 
           <div key={item.id} className="quote-item">
             <div className="quote-item-header">
               <IonInput
-                value={item.title}
+                value={item.title || ''}
                 onIonInput={(e) => updateItem(itemIndex, 'title', e.detail.value)}
                 className="item-title-input"
                 placeholder="Section Title"
@@ -268,7 +268,7 @@ const QuotePreview: React.FC<QuotePreviewProps> = ({ quote, onUpdate, onSave }) 
                   <IonRow key={lineItem.id} className="table-row">
                     <IonCol size="5">
                       <IonInput
-                        value={lineItem.description}
+                        value={lineItem.description || ''}
                         onIonInput={(e) =>
                           updateLineItem(itemIndex, lineItemIndex, 'description', e.detail.value)
                         }
@@ -278,7 +278,7 @@ const QuotePreview: React.FC<QuotePreviewProps> = ({ quote, onUpdate, onSave }) 
                     <IonCol size="2">
                       <IonInput
                         type="number"
-                        value={lineItem.quantity}
+                        value={String(lineItem.quantity ?? 0)}
                         onIonInput={(e) =>
                           updateLineItem(
                             itemIndex,
@@ -293,7 +293,7 @@ const QuotePreview: React.FC<QuotePreviewProps> = ({ quote, onUpdate, onSave }) 
                     <IonCol size="2">
                       <IonInput
                         type="number"
-                        value={lineItem.unitPrice}
+                        value={String(lineItem.unitPrice ?? 0)}
                         onIonInput={(e) =>
                           updateLineItem(
                             itemIndex,
@@ -376,7 +376,7 @@ const QuotePreview: React.FC<QuotePreviewProps> = ({ quote, onUpdate, onSave }) 
           <IonItem>
             <IonLabel position="stacked">Delivery Timeline</IonLabel>
             <IonInput
-              value={localQuote.deliveryTimeline}
+              value={localQuote.deliveryTimeline || ''}
               onIonInput={(e) => updateDeliveryTimeline(e.detail.value || '')}
               placeholder="e.g., 4-6 weeks from approval"
             />
@@ -388,7 +388,7 @@ const QuotePreview: React.FC<QuotePreviewProps> = ({ quote, onUpdate, onSave }) 
           <IonItem>
             <IonLabel position="stacked">Terms and Conditions</IonLabel>
             <IonTextarea
-              value={localQuote.termsAndConditions}
+              value={localQuote.termsAndConditions || ''}
               onIonInput={(e) => updateTermsAndConditions(e.detail.value || '')}
               placeholder="Enter terms and conditions..."
               rows={5}

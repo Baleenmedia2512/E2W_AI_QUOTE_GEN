@@ -40,6 +40,15 @@ const QuotePage: React.FC = () => {
     alert('Quote saved! (Export functionality coming soon)');
   };
 
+  const handleGeneratePDF = () => {
+    if (!currentQuote || !companyInfo || !clientInfo) {
+      alert('Please complete all steps before generating PDF');
+      return;
+    }
+    // Navigate to preview page for template selection and PDF generation
+    history.push('/preview');
+  };
+
   const handleBack = () => {
     if (currentStep === 'preview') {
       setCurrentStep('client');
@@ -117,11 +126,32 @@ const QuotePage: React.FC = () => {
               )}
 
               {currentStep === 'preview' && (
-                <QuotePreview
-                  quote={currentQuote}
-                  onUpdate={handleQuoteUpdate}
-                  onSave={handleSaveQuote}
-                />
+                <>
+                  <QuotePreview
+                    quote={currentQuote}
+                    onUpdate={handleQuoteUpdate}
+                    onSave={handleSaveQuote}
+                  />
+                  <div style={{ 
+                    marginTop: '24px', 
+                    display: 'flex', 
+                    gap: '12px',
+                    justifyContent: 'flex-end'
+                  }}>
+                    <IonButton
+                      fill="outline"
+                      onClick={() => setCurrentStep('client')}
+                    >
+                      Back
+                    </IonButton>
+                    <IonButton
+                      color="primary"
+                      onClick={handleGeneratePDF}
+                    >
+                      Continue to Template Selection
+                    </IonButton>
+                  </div>
+                </>
               )}
             </IonCol>
           </IonRow>

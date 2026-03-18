@@ -184,7 +184,7 @@ const CompanyInfoForm: React.FC<CompanyInfoFormProps> = ({ onSubmit, initialData
                     Company Name <span className="required">*</span>
                   </IonLabel>
                   <IonInput
-                    value={formData.name}
+                    value={formData.name || ''}
                     onIonInput={(e) => handleInputChange('name', e.detail.value || '')}
                     placeholder="Enter company name"
                   />
@@ -201,7 +201,7 @@ const CompanyInfoForm: React.FC<CompanyInfoFormProps> = ({ onSubmit, initialData
                     Address <span className="required">*</span>
                   </IonLabel>
                   <IonTextarea
-                    value={formData.address}
+                    value={formData.address || ''}
                     onIonInput={(e) => handleInputChange('address', e.detail.value || '')}
                     placeholder="Enter company address"
                     rows={3}
@@ -217,7 +217,7 @@ const CompanyInfoForm: React.FC<CompanyInfoFormProps> = ({ onSubmit, initialData
                 <IonItem className={errors.gst ? 'ion-invalid' : ''}>
                   <IonLabel position="stacked">GST Number (Optional)</IonLabel>
                   <IonInput
-                    value={formData.gst}
+                    value={formData.gst || ''}
                     onIonInput={(e) => handleInputChange('gst', e.detail.value || '')}
                     placeholder="Enter GST number"
                   />
@@ -232,7 +232,7 @@ const CompanyInfoForm: React.FC<CompanyInfoFormProps> = ({ onSubmit, initialData
                     Phone <span className="required">*</span>
                   </IonLabel>
                   <IonInput
-                    value={formData.phone}
+                    value={formData.phone || ''}
                     onIonInput={(e) => handleInputChange('phone', e.detail.value || '')}
                     placeholder="Enter phone number"
                     type="tel"
@@ -250,7 +250,7 @@ const CompanyInfoForm: React.FC<CompanyInfoFormProps> = ({ onSubmit, initialData
                     Email <span className="required">*</span>
                   </IonLabel>
                   <IonInput
-                    value={formData.email}
+                    value={formData.email || ''}
                     onIonInput={(e) => handleInputChange('email', e.detail.value || '')}
                     placeholder="Enter email address"
                     type="email"
@@ -263,7 +263,7 @@ const CompanyInfoForm: React.FC<CompanyInfoFormProps> = ({ onSubmit, initialData
                 <IonItem>
                   <IonLabel position="stacked">Website (Optional)</IonLabel>
                   <IonInput
-                    value={formData.website}
+                    value={formData.website || ''}
                     onIonInput={(e) => handleInputChange('website', e.detail.value || '')}
                     placeholder="Enter website URL"
                     type="url"
@@ -278,7 +278,7 @@ const CompanyInfoForm: React.FC<CompanyInfoFormProps> = ({ onSubmit, initialData
                 <IonItem>
                   <IonLabel position="stacked">Designation (Optional)</IonLabel>
                   <IonInput
-                    value={formData.designation}
+                    value={formData.designation || ''}
                     onIonInput={(e) => handleInputChange('designation', e.detail.value || '')}
                     placeholder="e.g., Managing Director"
                   />
@@ -289,7 +289,7 @@ const CompanyInfoForm: React.FC<CompanyInfoFormProps> = ({ onSubmit, initialData
                 <IonItem>
                   <IonLabel position="stacked">Signature Name (Optional)</IonLabel>
                   <IonInput
-                    value={formData.signature}
+                    value={formData.signature || ''}
                     onIonInput={(e) => handleInputChange('signature', e.detail.value || '')}
                     placeholder="Enter signatory name"
                   />
