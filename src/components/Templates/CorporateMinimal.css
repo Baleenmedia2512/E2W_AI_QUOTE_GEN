@@ -1,0 +1,379 @@
+.template-corporate-minimal {
+  background: white;
+  padding: 60px;
+  max-width: 210mm; /* A4 width */
+  margin: 0 auto;
+  font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+  color: #333;
+  line-height: 1.6;
+}
+
+/* Header */
+.template-corporate-minimal .template-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  padding-bottom: 40px;
+  border-bottom: 3px solid #2c3e50;
+  margin-bottom: 40px;
+}
+
+.template-corporate-minimal .company-info {
+  flex: 1;
+}
+
+.template-corporate-minimal .company-logo {
+  max-width: 180px;
+  max-height: 80px;
+  margin-bottom: 15px;
+  object-fit: contain;
+}
+
+.template-corporate-minimal .company-name {
+  font-size: 28px;
+  font-weight: 700;
+  color: #2c3e50;
+  margin: 0 0 15px 0;
+}
+
+.template-corporate-minimal .company-details {
+  font-size: 13px;
+  color: #666;
+  line-height: 1.8;
+}
+
+.template-corporate-minimal .company-details p {
+  margin: 4px 0;
+}
+
+.template-corporate-minimal .quote-meta {
+  text-align: right;
+}
+
+.template-corporate-minimal .quote-meta h2 {
+  font-size: 32px;
+  font-weight: 700;
+  color: #2c3e50;
+  margin: 0 0 20px 0;
+  letter-spacing: 2px;
+}
+
+.template-corporate-minimal .meta-details {
+  font-size: 14px;
+}
+
+.template-corporate-minimal .meta-row {
+  display: flex;
+  justify-content: flex-end;
+  margin-bottom: 8px;
+}
+
+.template-corporate-minimal .meta-label {
+  font-weight: 600;
+  margin-right: 10px;
+  color: #555;
+}
+
+.template-corporate-minimal .meta-value {
+  color: #333;
+}
+
+/* Client Section */
+.template-corporate-minimal .client-section {
+  background: #f8f9fa;
+  padding: 25px;
+  margin-bottom: 40px;
+  border-left: 4px solid #2c3e50;
+}
+
+.template-corporate-minimal .client-section h3 {
+  font-size: 16px;
+  font-weight: 600;
+  color: #2c3e50;
+  margin: 0 0 15px 0;
+  text-transform: uppercase;
+  letter-spacing: 1px;
+}
+
+.template-corporate-minimal .client-details {
+  font-size: 14px;
+  line-height: 1.8;
+}
+
+.template-corporate-minimal .client-name {
+  font-weight: 700;
+  font-size: 16px;
+  color: #333;
+  margin: 0 0 8px 0;
+}
+
+.template-corporate-minimal .client-details p {
+  margin: 4px 0;
+}
+
+/* Quote Items Table */
+.template-corporate-minimal .quote-items-section {
+  margin-bottom: 40px;
+}
+
+.template-corporate-minimal .items-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 14px;
+}
+
+.template-corporate-minimal .items-table thead {
+  background: #2c3e50;
+  color: white;
+}
+
+.template-corporate-minimal .items-table th {
+  padding: 15px;
+  text-align: left;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  font-size: 12px;
+}
+
+.template-corporate-minimal .items-table .col-description {
+  width: 45%;
+}
+
+.template-corporate-minimal .items-table .col-quantity {
+  width: 15%;
+  text-align: center;
+}
+
+.template-corporate-minimal .items-table .col-rate {
+  width: 20%;
+  text-align: right;
+}
+
+.template-corporate-minimal .items-table .col-total {
+  width: 20%;
+  text-align: right;
+}
+
+.template-corporate-minimal .items-table tbody tr {
+  border-bottom: 1px solid #e0e0e0;
+}
+
+.template-corporate-minimal .items-table tbody tr:last-child {
+  border-bottom: 2px solid #2c3e50;
+}
+
+.template-corporate-minimal .items-table td {
+  padding: 15px;
+}
+
+.template-corporate-minimal .item-description {
+  vertical-align: top;
+}
+
+.template-corporate-minimal .item-title {
+  font-weight: 600;
+  color: #333;
+  margin-bottom: 5px;
+}
+
+.template-corporate-minimal .item-details {
+  font-size: 13px;
+  color: #666;
+  line-height: 1.6;
+}
+
+.template-corporate-minimal .item-quantity {
+  text-align: center;
+  color: #555;
+}
+
+.template-corporate-minimal .item-rate,
+.template-corporate-minimal .item-total {
+  text-align: right;
+  color: #333;
+  font-weight: 500;
+}
+
+/* Totals Section */
+.template-corporate-minimal .totals-section {
+  display: flex;
+  justify-content: flex-end;
+  margin-bottom: 40px;
+}
+
+.template-corporate-minimal .totals-table {
+  min-width: 350px;
+}
+
+.template-corporate-minimal .total-row {
+  display: flex;
+  justify-content: space-between;
+  padding: 12px 20px;
+  font-size: 15px;
+}
+
+.template-corporate-minimal .total-row:not(.total-final) {
+  border-bottom: 1px solid #e0e0e0;
+}
+
+.template-corporate-minimal .total-label {
+  font-weight: 600;
+  color: #555;
+}
+
+.template-corporate-minimal .total-value {
+  color: #333;
+  font-weight: 500;
+}
+
+.template-corporate-minimal .total-final {
+  background: #2c3e50;
+  color: white;
+  font-size: 18px;
+  font-weight: 700;
+  margin-top: 5px;
+}
+
+.template-corporate-minimal .total-final .total-label,
+.template-corporate-minimal .total-final .total-value {
+  color: white;
+}
+
+/* Notes Section */
+.template-corporate-minimal .notes-section {
+  background: #fff9e6;
+  padding: 20px;
+  margin-bottom: 30px;
+  border-left: 4px solid #ffc107;
+}
+
+.template-corporate-minimal .notes-section h3 {
+  font-size: 16px;
+  font-weight: 600;
+  color: #2c3e50;
+  margin: 0 0 10px 0;
+}
+
+.template-corporate-minimal .notes-section p {
+  font-size: 14px;
+  color: #555;
+  margin: 0;
+  line-height: 1.6;
+}
+
+/* Terms Section */
+.template-corporate-minimal .terms-section {
+  margin-bottom: 40px;
+}
+
+.template-corporate-minimal .terms-section h3 {
+  font-size: 16px;
+  font-weight: 600;
+  color: #2c3e50;
+  margin: 0 0 15px 0;
+  text-transform: uppercase;
+  letter-spacing: 1px;
+}
+
+.template-corporate-minimal .terms-section ul {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+}
+
+.template-corporate-minimal .terms-section li {
+  font-size: 13px;
+  color: #555;
+  padding: 8px 0;
+  padding-left: 20px;
+  position: relative;
+  line-height: 1.6;
+}
+
+.template-corporate-minimal .terms-section li:before {
+  content: '•';
+  position: absolute;
+  left: 0;
+  color: #2c3e50;
+  font-weight: bold;
+  font-size: 16px;
+}
+
+/* Signature Section */
+.template-corporate-minimal .signature-section {
+  display: flex;
+  justify-content: space-between;
+  margin-top: 60px;
+  padding-top: 40px;
+  border-top: 1px solid #e0e0e0;
+}
+
+.template-corporate-minimal .signature-box {
+  width: 45%;
+}
+
+.template-corporate-minimal .signature-line {
+  border-bottom: 2px solid #333;
+  margin-bottom: 10px;
+  height: 60px;
+}
+
+.template-corporate-minimal .signature-label {
+  font-size: 13px;
+  color: #666;
+  margin: 5px 0;
+  font-weight: 600;
+}
+
+.template-corporate-minimal .signature-name,
+.template-corporate-minimal .signature-date {
+  font-size: 14px;
+  color: #333;
+  margin: 5px 0;
+}
+
+/* Mobile Responsiveness */
+@media (max-width: 768px) {
+  .template-corporate-minimal {
+    padding: 30px 20px;
+  }
+
+  .template-corporate-minimal .template-header {
+    flex-direction: column;
+  }
+
+  .template-corporate-minimal .quote-meta {
+    text-align: left;
+    margin-top: 30px;
+  }
+
+  .template-corporate-minimal .meta-row {
+    justify-content: flex-start;
+  }
+
+  .template-corporate-minimal .items-table {
+    font-size: 12px;
+  }
+
+  .template-corporate-minimal .items-table th,
+  .template-corporate-minimal .items-table td {
+    padding: 10px 8px;
+  }
+
+  .template-corporate-minimal .signature-section {
+    flex-direction: column;
+  }
+
+  .template-corporate-minimal .signature-box {
+    width: 100%;
+    margin-bottom: 30px;
+  }
+}
+
+/* Print Styles */
+@media print {
+  .template-corporate-minimal {
+    padding: 40px;
+  }
+}

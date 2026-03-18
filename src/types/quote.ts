@@ -8,18 +8,28 @@ export interface LineItem {
 
 export interface QuoteItem {
   id: string;
-  title: string;
-  lineItems: LineItem[];
-  subtotal: number;
+  description: string;
+  details?: string;
+  quantity: number;
+  rate: number;
+  total: number;
+  // Legacy fields for backward compatibility
+  title?: string;
+  lineItems?: LineItem[];
+  subtotal?: number;
 }
 
 export interface Quote {
   id: string;
+  quoteNumber: string;
+  date: Date | string;
+  validUntil: Date | string;
   items: QuoteItem[];
   subtotal: number;
   gstEnabled: boolean;
   gstAmount: number;
   total: number;
+  notes?: string;
   deliveryTimeline: string;
   termsAndConditions: string;
   createdAt: Date;

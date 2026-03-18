@@ -29,7 +29,7 @@ pdfjs.GlobalWorkerOptions.workerSrc = `//cdnjs.cloudflare.com/ajax/libs/pdf.js/$
 const ProposalViewer: React.FC = () => {
   const { proposal, setProposal } = useAppStore();
   const [scale, setScale] = useState(1.0);
-  const [numPages, setNumPages] = useState<number>(0);
+  const [_numPages, setNumPages] = useState<number>(0);
 
   const onDocumentLoadSuccess = ({ numPages }: { numPages: number }) => {
     setNumPages(numPages);

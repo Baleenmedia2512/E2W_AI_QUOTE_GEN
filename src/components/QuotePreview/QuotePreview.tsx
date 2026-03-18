@@ -47,7 +47,12 @@ const QuotePreview: React.FC<QuotePreviewProps> = ({ quote, onUpdate, onSave }) 
   };
 
   const calculateItemSubtotal = (item: QuoteItem): number => {
-    return item.lineItems.reduce((sum, lineItem) => sum + calculateLineItemTotal(lineItem), 0);
+    // Handle new structure (direct properties)
+    if (item.total !== undefined) {
+      return item.total;
+    }
+    // Handle old structure (with lineItems)
+    return item.lineItems?.reduce((sum, lineItem) => sum + calculateLineItemTotal(lineItem), 0) || 0;
   };
 
   const calculateQuoteSubtotal = (): number => {
@@ -66,11 +71,16 @@ const QuotePreview: React.FC<QuotePreviewProps> = ({ quote, onUpdate, onSave }) 
     if (!localQuote) return;
 
     const updatedQuote = { ...localQuote };
-    const lineItem = updatedQuote.items[itemIndex].lineItems[lineItemIndex];
+    const item = updatedQuote.items[itemIndex];
+    if (!item.lineItems) return;
+    
+    const lineItem = item.lineItems[lineItemIndex];
     (lineItem as any)[field] = value;
     lineItem.total = calculateLineItemTotal(lineItem);
     
-    updatedQuote.items[itemIndex].subtotal = calculateItemSubtotal(updatedQuote.items[itemIndex]);
+    if (item.subtotal !== undefined) {
+      item.subtotal = calculateItemSubtotal(item);
+    }
     updatedQuote.subtotal = calculateQuoteSubtotal();
     updatedQuote.gstAmount = calculateGST(updatedQuote.subtotal);
     updatedQuote.total = calculateTotal(updatedQuote.subtotal, updatedQuote.gstAmount);
@@ -103,7 +113,11 @@ const QuotePreview: React.FC<QuotePreviewProps> = ({ quote, onUpdate, onSave }) 
     };
 
     const updatedQuote = { ...localQuote };
-    updatedQuote.items[itemIndex].lineItems.push(newLineItem);
+    const item = updatedQuote.items[itemIndex];
+    if (!item.lineItems) {
+      item.lineItems = [];
+    }
+    item.lineItems.push(newLineItem);
     updatedQuote.updatedAt = new Date();
 
     setLocalQuote(updatedQuote);
@@ -114,8 +128,13 @@ const QuotePreview: React.FC<QuotePreviewProps> = ({ quote, onUpdate, onSave }) 
     if (!localQuote) return;
 
     const updatedQuote = { ...localQuote };
-    updatedQuote.items[itemIndex].lineItems.splice(lineItemIndex, 1);
-    updatedQuote.items[itemIndex].subtotal = calculateItemSubtotal(updatedQuote.items[itemIndex]);
+    const item = updatedQuote.items[itemIndex];
+    if (!item.lineItems) return;
+    
+    item.lineItems.splice(lineItemIndex, 1);
+    if (item.subtotal !== undefined) {
+      item.subtotal = calculateItemSubtotal(item);
+    }
     updatedQuote.subtotal = calculateQuoteSubtotal();
     updatedQuote.gstAmount = calculateGST(updatedQuote.subtotal);
     updatedQuote.total = calculateTotal(updatedQuote.subtotal, updatedQuote.gstAmount);
@@ -130,6 +149,11 @@ const QuotePreview: React.FC<QuotePreviewProps> = ({ quote, onUpdate, onSave }) 
 
     const newItem: QuoteItem = {
       id: Date.now().toString(),
+      description: 'New Item',
+      quantity: 1,
+      rate: 0,
+      total: 0,
+      // Legacy fields for backward compatibility
       title: 'New Section',
       lineItems: [],
       subtotal: 0,
@@ -240,7 +264,7 @@ const QuotePreview: React.FC<QuotePreviewProps> = ({ quote, onUpdate, onSave }) 
                   <IonCol size="2">Total</IonCol>
                   <IonCol size="1"></IonCol>
                 </IonRow>
-                {item.lineItems.map((lineItem, lineItemIndex) => (
+                {item.lineItems?.map((lineItem, lineItemIndex) => (
                   <IonRow key={lineItem.id} className="table-row">
                     <IonCol size="5">
                       <IonInput

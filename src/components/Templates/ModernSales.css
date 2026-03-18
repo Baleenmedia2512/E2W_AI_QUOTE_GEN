@@ -1,0 +1,468 @@
+.template-modern-sales {
+  background: #f5f7fa;
+  max-width: 210mm;
+  margin: 0 auto;
+  font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+  color: #2d3748;
+}
+
+/* Top Bar */
+.template-modern-sales .top-bar {
+  background: linear-gradient(to right, #4f46e5, #7c3aed);
+  color: white;
+  padding: 20px 40px;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.template-modern-sales .bar-section {
+  display: flex;
+  align-items: center;
+  gap: 15px;
+}
+
+.template-modern-sales .top-logo {
+  max-width: 120px;
+  max-height: 50px;
+  object-fit: contain;
+  filter: brightness(0) invert(1);
+}
+
+.template-modern-sales .company-title {
+  font-size: 20px;
+  font-weight: 700;
+}
+
+.template-modern-sales .quote-label {
+  font-size: 18px;
+  font-weight: 600;
+  background: rgba(255, 255, 255, 0.2);
+  padding: 8px 20px;
+  border-radius: 20px;
+}
+
+/* Main Container */
+.template-modern-sales .main-container {
+  display: flex;
+  min-height: 800px;
+}
+
+/* Sidebar */
+.template-modern-sales .sidebar {
+  width: 280px;
+  background: #1e293b;
+  color: #e2e8f0;
+  padding: 40px 30px;
+  flex-shrink: 0;
+}
+
+.template-modern-sales .sidebar-section {
+  margin-bottom: 35px;
+  padding-bottom: 30px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+.template-modern-sales .sidebar-section:last-child {
+  border-bottom: none;
+}
+
+.template-modern-sales .sidebar-title {
+  font-size: 12px;
+  text-transform: uppercase;
+  letter-spacing: 2px;
+  color: #94a3b8;
+  margin: 0 0 15px 0;
+  font-weight: 700;
+}
+
+.template-modern-sales .detail-row {
+  display: flex;
+  flex-direction: column;
+  margin-bottom: 12px;
+}
+
+.template-modern-sales .detail-key {
+  font-size: 11px;
+  color: #94a3b8;
+  margin-bottom: 3px;
+}
+
+.template-modern-sales .detail-value {
+  font-size: 14px;
+  color: #e2e8f0;
+  font-weight: 600;
+}
+
+.template-modern-sales .sidebar-text {
+  font-size: 13px;
+  line-height: 1.6;
+  margin: 6px 0;
+  color: #cbd5e1;
+}
+
+.template-modern-sales .sidebar-highlight {
+  color: #fff;
+  font-weight: 600;
+  font-size: 15px;
+}
+
+.template-modern-sales .abn-badge {
+  background: rgba(99, 102, 241, 0.3);
+  padding: 8px 12px;
+  border-radius: 6px;
+  margin-top: 10px;
+  font-size: 12px;
+  font-weight: 600;
+  color: #a5b4fc;
+}
+
+.template-modern-sales .total-preview {
+  background: linear-gradient(135deg, #4f46e5, #7c3aed);
+  margin: 0 -30px;
+  padding: 25px 30px;
+  border-radius: 12px 12px 0 0;
+}
+
+.template-modern-sales .total-amount {
+  font-size: 36px;
+  font-weight: 800;
+  color: white;
+  margin: 10px 0;
+}
+
+.template-modern-sales .total-label {
+  font-size: 12px;
+  color: rgba(255, 255, 255, 0.8);
+  margin: 0;
+}
+
+/* Main Content */
+.template-modern-sales .main-content {
+  flex: 1;
+  padding: 50px;
+  background: white;
+}
+
+.template-modern-sales .content-header {
+  margin-bottom: 40px;
+}
+
+.template-modern-sales .content-title {
+  font-size: 36px;
+  font-weight: 800;
+  color: #1e293b;
+  margin: 0 0 10px 0;
+}
+
+.template-modern-sales .content-subtitle {
+  font-size: 16px;
+  color: #64748b;
+  margin: 0;
+  line-height: 1.6;
+}
+
+/* Items Container */
+.template-modern-sales .items-container {
+  margin-bottom: 40px;
+}
+
+.template-modern-sales .item-card {
+  background: #f8fafc;
+  border: 2px solid #e2e8f0;
+  border-radius: 12px;
+  padding: 25px;
+  margin-bottom: 20px;
+  transition: all 0.3s ease;
+}
+
+.template-modern-sales .item-card:hover {
+  border-color: #4f46e5;
+  box-shadow: 0 4px 12px rgba(79, 70, 229, 0.1);
+}
+
+.template-modern-sales .item-header {
+  display: flex;
+  align-items: center;
+  gap: 15px;
+  margin-bottom: 12px;
+}
+
+.template-modern-sales .item-badge {
+  width: 36px;
+  height: 36px;
+  background: linear-gradient(135deg, #4f46e5, #7c3aed);
+  color: white;
+  border-radius: 8px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-weight: 700;
+  font-size: 16px;
+  flex-shrink: 0;
+}
+
+.template-modern-sales .item-name {
+  font-size: 20px;
+  font-weight: 700;
+  color: #1e293b;
+  margin: 0;
+  flex: 1;
+}
+
+.template-modern-sales .item-description {
+  font-size: 14px;
+  color: #64748b;
+  line-height: 1.6;
+  margin: 0 0 15px 0;
+  padding-left: 51px;
+}
+
+.template-modern-sales .item-pricing {
+  padding-left: 51px;
+}
+
+.template-modern-sales .pricing-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  background: white;
+  padding: 12px 20px;
+  border-radius: 8px;
+}
+
+.template-modern-sales .pricing-text {
+  font-size: 14px;
+  color: #64748b;
+}
+
+.template-modern-sales .pricing-amount {
+  font-size: 22px;
+  font-weight: 700;
+  color: #4f46e5;
+}
+
+/* Breakdown Section */
+.template-modern-sales .breakdown-section {
+  margin-bottom: 40px;
+}
+
+.template-modern-sales .breakdown-card {
+  background: #f8fafc;
+  border: 2px solid #e2e8f0;
+  border-radius: 12px;
+  padding: 30px;
+  max-width: 450px;
+  margin-left: auto;
+}
+
+.template-modern-sales .breakdown-row {
+  display: flex;
+  justify-content: space-between;
+  padding: 12px 0;
+  border-bottom: 1px solid #e2e8f0;
+}
+
+.template-modern-sales .breakdown-row:last-child {
+  border-bottom: none;
+}
+
+.template-modern-sales .breakdown-label {
+  font-size: 15px;
+  color: #64748b;
+  font-weight: 500;
+}
+
+.template-modern-sales .breakdown-value {
+  font-size: 15px;
+  font-weight: 600;
+  color: #1e293b;
+}
+
+.template-modern-sales .breakdown-total {
+  background: linear-gradient(135deg, #4f46e5, #7c3aed);
+  margin: 15px -30px -30px;
+  padding: 20px 30px;
+  border-radius: 0 0 10px 10px;
+}
+
+.template-modern-sales .breakdown-total .breakdown-label,
+.template-modern-sales .breakdown-total .breakdown-value {
+  color: white;
+  font-size: 20px;
+  font-weight: 700;
+}
+
+/* Notes Box */
+.template-modern-sales .notes-box {
+  background: #fef3c7;
+  border-left: 4px solid #f59e0b;
+  padding: 20px 25px;
+  border-radius: 8px;
+  margin-bottom: 30px;
+}
+
+.template-modern-sales .notes-title {
+  font-size: 16px;
+  font-weight: 700;
+  color: #92400e;
+  margin: 0 0 10px 0;
+}
+
+.template-modern-sales .notes-text {
+  font-size: 14px;
+  color: #78350f;
+  margin: 0;
+  line-height: 1.6;
+}
+
+/* Terms Box */
+.template-modern-sales .terms-box {
+  background: #f8fafc;
+  padding: 25px;
+  border-radius: 8px;
+  margin-bottom: 40px;
+}
+
+.template-modern-sales .terms-title {
+  font-size: 16px;
+  font-weight: 700;
+  color: #1e293b;
+  margin: 0 0 15px 0;
+}
+
+.template-modern-sales .terms-list {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+}
+
+.template-modern-sales .terms-list li {
+  font-size: 13px;
+  color: #64748b;
+  padding: 8px 0 8px 25px;
+  position: relative;
+  line-height: 1.6;
+}
+
+.template-modern-sales .terms-list li:before {
+  content: '✓';
+  position: absolute;
+  left: 0;
+  color: #4f46e5;
+  font-weight: bold;
+  font-size: 14px;
+}
+
+/* CTA Section */
+.template-modern-sales .cta-section {
+  background: linear-gradient(135deg, #f8fafc 0%, #e0e7ff 100%);
+  padding: 40px;
+  border-radius: 12px;
+  text-align: center;
+}
+
+.template-modern-sales .cta-title {
+  font-size: 28px;
+  font-weight: 800;
+  color: #1e293b;
+  margin: 0 0 10px 0;
+}
+
+.template-modern-sales .cta-text {
+  font-size: 16px;
+  color: #64748b;
+  margin: 0 0 30px 0;
+}
+
+.template-modern-sales .signature-grid {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 30px;
+  margin-top: 30px;
+}
+
+.template-modern-sales .signature-field {
+  text-align: left;
+}
+
+.template-modern-sales .signature-label {
+  display: block;
+  font-size: 13px;
+  font-weight: 600;
+  color: #64748b;
+  margin-bottom: 10px;
+  text-transform: uppercase;
+  letter-spacing: 1px;
+}
+
+.template-modern-sales .signature-box {
+  background: white;
+  border: 2px dashed #cbd5e1;
+  border-radius: 8px;
+  height: 80px;
+  margin-bottom: 15px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: #cbd5e1;
+}
+
+.template-modern-sales .signature-filled {
+  background: #4f46e5;
+  border-color: #4f46e5;
+  color: white;
+  font-weight: 700;
+  font-size: 18px;
+}
+
+.template-modern-sales .signature-input {
+  width: 100%;
+  padding: 10px 15px;
+  border: 2px solid #e2e8f0;
+  border-radius: 6px;
+  font-size: 14px;
+  margin-bottom: 10px;
+}
+
+.template-modern-sales .authorized-date {
+  font-size: 14px;
+  color: #64748b;
+  padding: 10px 0;
+}
+
+/* Footer Bar */
+.template-modern-sales .footer-bar {
+  background: #1e293b;
+  color: #cbd5e1;
+  padding: 20px 40px;
+  text-align: center;
+  font-size: 13px;
+}
+
+.template-modern-sales .footer-bar p {
+  margin: 5px 0;
+}
+
+/* Mobile Responsiveness */
+@media (max-width: 768px) {
+  .template-modern-sales .main-container {
+    flex-direction: column;
+  }
+
+  .template-modern-sales .sidebar {
+    width: 100%;
+  }
+
+  .template-modern-sales .main-content {
+    padding: 30px 20px;
+  }
+
+  .template-modern-sales .signature-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .template-modern-sales .breakdown-card {
+    max-width: 100%;
+  }
+}

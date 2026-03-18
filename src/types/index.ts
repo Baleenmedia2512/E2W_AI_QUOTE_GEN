@@ -2,6 +2,7 @@ import { Message } from './chat';
 import { Quote, QuoteItem, LineItem } from './quote';
 import { CompanyInfo } from './company';
 import { ClientInfo } from './client';
+import { TemplateData, TemplateProps, TemplateType, Template, TemplateMetadata } from './template';
 
 export interface ProposalData {
   file: File | null;
@@ -37,6 +38,10 @@ export interface AppState {
   // Client state
   clientInfo: ClientInfo | null;
   setClientInfo: (info: ClientInfo) => void;
+
+  // Template state
+  selectedTemplate: TemplateType;
+  setSelectedTemplate: (template: TemplateType) => void;
 }
 
-export type { Message, Quote, QuoteItem, LineItem, CompanyInfo, ClientInfo };
+export type { Message, Quote, QuoteItem, LineItem, CompanyInfo, ClientInfo, TemplateData, TemplateProps, TemplateType, Template, TemplateMetadata };

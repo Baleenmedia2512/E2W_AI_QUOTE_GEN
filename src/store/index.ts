@@ -1,5 +1,5 @@
 import { create } from 'zustand';
-import { AppState, ProposalData, Message, Quote, CompanyInfo, ClientInfo } from '../types';
+import { AppState, ProposalData, Message, Quote, CompanyInfo, ClientInfo, TemplateType } from '../types';
 import { loadCompanyInfo } from '../utils/localStorage';
 
 const initialProposalState: ProposalData = {
@@ -59,5 +59,12 @@ export const useAppStore = create<AppState>((set) => ({
   setClientInfo: (info: ClientInfo) =>
     set({
       clientInfo: info,
+    }),
+
+  // Template state
+  selectedTemplate: 'corporate-minimal' as TemplateType,
+  setSelectedTemplate: (template: TemplateType) =>
+    set({
+      selectedTemplate: template,
     }),
 }));

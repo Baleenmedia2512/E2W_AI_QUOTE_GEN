@@ -1,9 +1,12 @@
-import React from 'react';
+import React, { useEffect } from 'react';
 import { IonApp, IonRouterOutlet, setupIonicReact } from '@ionic/react';
 import { IonReactRouter } from '@ionic/react-router';
 import { Route, Redirect } from 'react-router-dom';
 import HomePage from './pages/HomePage';
 import QuotePage from './pages/QuotePage';
+import { QuotePreviewPage } from './pages/QuotePreviewPage';
+import { ErrorBoundary } from './components/ErrorBoundary/ErrorBoundary';
+import { registerServiceWorker } from './utils/pwa';
 
 /* Core CSS required for Ionic components to work properly */
 import '@ionic/react/css/core.css';
@@ -23,16 +26,30 @@ import '@ionic/react/css/display.css';
 
 setupIonicReact();
 
-const App: React.FC = () => (
-  <IonApp>
-    <IonReactRouter>
-      <IonRouterOutlet>
-        <Route exact path="/" component={HomePage} />
-        <Route exact path="/quote" component={QuotePage} />
-        <Route render={() => <Redirect to="/" />} />
-      </IonRouterOutlet>
-    </IonReactRouter>
-  </IonApp>
-);
+const App: React.FC = () => {
+  useEffect(() => {
+    // Register service worker for PWA support
+    if (process.env.NODE_ENV === 'production') {
+      registerServiceWorker().catch(err => {
+        console.error('Failed to register service worker:', err);
+      });
+    }
+  }, []);
+
+  return (
+    <ErrorBoundary>
+      <IonApp>
+        <IonReactRouter>
+          <IonRouterOutlet>
+            <Route exact path="/" component={HomePage} />
+            <Route exact path="/quote" component={QuotePage} />
+            <Route exact path="/preview" component={QuotePreviewPage} />
+            <Route render={() => <Redirect to="/" />} />
+          </IonRouterOutlet>
+        </IonReactRouter>
+      </IonApp>
+    </ErrorBoundary>
+  );
+};
 
 export default App;
