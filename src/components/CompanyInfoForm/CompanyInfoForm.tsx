@@ -1,21 +1,24 @@
 import React, { useState, useEffect } from 'react';
 import {
-  IonCard,
-  IonCardHeader,
-  IonCardTitle,
-  IonCardContent,
-  IonButton,
-  IonInput,
-  IonItem,
-  IonLabel,
-  IonTextarea,
-  IonGrid,
-  IonRow,
-  IonCol,
-} from '@ionic/react';
+  Box,
+  Button,
+  Card,
+  CardHeader,
+  CardBody,
+  FormControl,
+  FormLabel,
+  Input,
+  Textarea,
+  VStack,
+  HStack,
+  Heading,
+  Image,
+  FormErrorMessage,
+  Grid,
+  GridItem,
+} from '@chakra-ui/react';
 import { CompanyInfo } from '../../types/company';
 import { saveCompanyInfo, loadCompanyInfo } from '../../utils/localStorage';
-import './CompanyInfoForm.css';
 
 interface CompanyInfoFormProps {
   onSubmit: (companyInfo: CompanyInfo) => void;
@@ -138,180 +141,160 @@ const CompanyInfoForm: React.FC<CompanyInfoFormProps> = ({ onSubmit, initialData
   };
 
   return (
-    <IonCard className="company-info-form">
-      <IonCardHeader>
-        <div className="form-header">
-          <IonCardTitle>Company Information</IonCardTitle>
+    <Card variant="outline" borderRadius="xl" boxShadow="sm">
+      <CardHeader>
+        <HStack justify="space-between" flexWrap="wrap" gap={2}>
+          <Heading size="md">Company Information</Heading>
           {loadCompanyInfo() && !useSaved && (
-            <IonButton fill="outline" size="small" onClick={handleUseSavedInfo}>
+            <Button size="sm" variant="outline" onClick={handleUseSavedInfo}>
               Use Saved Info
-            </IonButton>
+            </Button>
           )}
-        </div>
-      </IonCardHeader>
-      <IonCardContent>
+        </HStack>
+      </CardHeader>
+      <CardBody>
         <form onSubmit={handleSubmit}>
-          <IonGrid>
+          <VStack spacing={5} align="stretch">
             {/* Logo Upload */}
-            <IonRow>
-              <IonCol size="12">
-                <div className="logo-upload-section">
-                  <IonLabel>Company Logo (Optional)</IonLabel>
-                  {logoPreview && (
-                    <div className="logo-preview">
-                      <img src={logoPreview} alt="Company Logo" />
-                    </div>
-                  )}
-                  <input
-                    type="file"
-                    accept="image/*"
-                    onChange={handleLogoUpload}
-                    className="logo-input"
-                    id="logo-upload"
+            <FormControl>
+              <FormLabel>Company Logo (Optional)</FormLabel>
+              {logoPreview && (
+                <Box mb={3}>
+                  <Image
+                    src={logoPreview}
+                   alt="Company Logo"
+                    maxH="100px"
+                    objectFit="contain"
+                    borderRadius="md"
                   />
-                  <label htmlFor="logo-upload" className="logo-upload-label">
-                    {logoPreview ? 'Change Logo' : 'Upload Logo'}
-                  </label>
-                </div>
-              </IonCol>
-            </IonRow>
+                </Box>
+              )}
+              <Input
+                type="file"
+                accept="image/*"
+                onChange={handleLogoUpload}
+                display="none"
+                id="logo-upload"
+              />
+              <Button as="label" htmlFor="logo-upload" size="sm" cursor="pointer">
+                {logoPreview ? 'Change Logo' : 'Upload Logo'}
+              </Button>
+            </FormControl>
 
             {/* Company Name */}
-            <IonRow>
-              <IonCol size="12">
-                <IonItem className={errors.name ? 'ion-invalid' : ''}>
-                  <IonLabel position="stacked">
-                    Company Name <span className="required">*</span>
-                  </IonLabel>
-                  <IonInput
-                    value={formData.name || ''}
-                    onIonInput={(e) => handleInputChange('name', e.detail.value || '')}
-                    placeholder="Enter company name"
-                  />
-                </IonItem>
-                {errors.name && <div className="error-message">{errors.name}</div>}
-              </IonCol>
-            </IonRow>
+            <FormControl isRequired isInvalid={!!errors.name}>
+              <FormLabel>Company Name</FormLabel>
+              <Input
+                value={formData.name}
+                onChange={(e) => handleInputChange('name', e.target.value)}
+                placeholder="Enter company name"
+              />
+              <FormErrorMessage>{errors.name}</FormErrorMessage>
+            </FormControl>
 
             {/* Address */}
-            <IonRow>
-              <IonCol size="12">
-                <IonItem className={errors.address ? 'ion-invalid' : ''}>
-                  <IonLabel position="stacked">
-                    Address <span className="required">*</span>
-                  </IonLabel>
-                  <IonTextarea
-                    value={formData.address || ''}
-                    onIonInput={(e) => handleInputChange('address', e.detail.value || '')}
-                    placeholder="Enter company address"
-                    rows={3}
-                  />
-                </IonItem>
-                {errors.address && <div className="error-message">{errors.address}</div>}
-              </IonCol>
-            </IonRow>
+            <FormControl isRequired isInvalid={!!errors.address}>
+              <FormLabel>Address</FormLabel>
+              <Textarea
+                value={formData.address}
+                onChange={(e) => handleInputChange('address', e.target.value)}
+                placeholder="Enter company address"
+                rows={3}
+              />
+              <FormErrorMessage>{errors.address}</FormErrorMessage>
+            </FormControl>
 
-            {/* GST */}
-            <IonRow>
-              <IonCol size="12" sizeMd="6">
-                <IonItem className={errors.gst ? 'ion-invalid' : ''}>
-                  <IonLabel position="stacked">GST Number (Optional)</IonLabel>
-                  <IonInput
-                    value={formData.gst || ''}
-                    onIonInput={(e) => handleInputChange('gst', e.detail.value || '')}
+            {/* GST and Phone */}
+            <Grid templateColumns={{ base: '1fr', md: 'repeat(2, 1fr)' }} gap={5}>
+              <GridItem>
+                <FormControl isInvalid={!!errors.gst}>
+                  <FormLabel>GST Number (Optional)</FormLabel>
+                  <Input
+                    value={formData.gst}
+                    onChange={(e) => handleInputChange('gst', e.target.value)}
                     placeholder="Enter GST number"
                   />
-                </IonItem>
-                {errors.gst && <div className="error-message">{errors.gst}</div>}
-              </IonCol>
-
-              {/* Phone */}
-              <IonCol size="12" sizeMd="6">
-                <IonItem className={errors.phone ? 'ion-invalid' : ''}>
-                  <IonLabel position="stacked">
-                    Phone <span className="required">*</span>
-                  </IonLabel>
-                  <IonInput
-                    value={formData.phone || ''}
-                    onIonInput={(e) => handleInputChange('phone', e.detail.value || '')}
+                  <FormErrorMessage>{errors.gst}</FormErrorMessage>
+                </FormControl>
+              </GridItem>
+              <GridItem>
+                <FormControl isRequired isInvalid={!!errors.phone}>
+                  <FormLabel>Phone</FormLabel>
+                  <Input
+                    value={formData.phone}
+                    onChange={(e) => handleInputChange('phone', e.target.value)}
                     placeholder="Enter phone number"
                     type="tel"
                   />
-                </IonItem>
-                {errors.phone && <div className="error-message">{errors.phone}</div>}
-              </IonCol>
-            </IonRow>
+                  <FormErrorMessage>{errors.phone}</FormErrorMessage>
+                </FormControl>
+              </GridItem>
+            </Grid>
 
             {/* Email and Website */}
-            <IonRow>
-              <IonCol size="12" sizeMd="6">
-                <IonItem className={errors.email ? 'ion-invalid' : ''}>
-                  <IonLabel position="stacked">
-                    Email <span className="required">*</span>
-                  </IonLabel>
-                  <IonInput
-                    value={formData.email || ''}
-                    onIonInput={(e) => handleInputChange('email', e.detail.value || '')}
+            <Grid templateColumns={{ base: '1fr', md: 'repeat(2, 1fr)' }} gap={5}>
+              <GridItem>
+                <FormControl isRequired isInvalid={!!errors.email}>
+                  <FormLabel>Email</FormLabel>
+                  <Input
+                    value={formData.email}
+                    onChange={(e) => handleInputChange('email', e.target.value)}
                     placeholder="Enter email address"
                     type="email"
                   />
-                </IonItem>
-                {errors.email && <div className="error-message">{errors.email}</div>}
-              </IonCol>
-
-              <IonCol size="12" sizeMd="6">
-                <IonItem>
-                  <IonLabel position="stacked">Website (Optional)</IonLabel>
-                  <IonInput
-                    value={formData.website || ''}
-                    onIonInput={(e) => handleInputChange('website', e.detail.value || '')}
+                  <FormErrorMessage>{errors.email}</FormErrorMessage>
+                </FormControl>
+              </GridItem>
+              <GridItem>
+                <FormControl>
+                  <FormLabel>Website (Optional)</FormLabel>
+                  <Input
+                    value={formData.website}
+                    onChange={(e) => handleInputChange('website', e.target.value)}
                     placeholder="Enter website URL"
                     type="url"
                   />
-                </IonItem>
-              </IonCol>
-            </IonRow>
+                </FormControl>
+              </GridItem>
+            </Grid>
 
             {/* Designation and Signature */}
-            <IonRow>
-              <IonCol size="12" sizeMd="6">
-                <IonItem>
-                  <IonLabel position="stacked">Designation (Optional)</IonLabel>
-                  <IonInput
-                    value={formData.designation || ''}
-                    onIonInput={(e) => handleInputChange('designation', e.detail.value || '')}
+            <Grid templateColumns={{ base: '1fr', md: 'repeat(2, 1fr)' }} gap={5}>
+              <GridItem>
+                <FormControl>
+                  <FormLabel>Designation (Optional)</FormLabel>
+                  <Input
+                    value={formData.designation}
+                    onChange={(e) => handleInputChange('designation', e.target.value)}
                     placeholder="e.g., Managing Director"
                   />
-                </IonItem>
-              </IonCol>
-
-              <IonCol size="12" sizeMd="6">
-                <IonItem>
-                  <IonLabel position="stacked">Signature Name (Optional)</IonLabel>
-                  <IonInput
-                    value={formData.signature || ''}
-                    onIonInput={(e) => handleInputChange('signature', e.detail.value || '')}
+                </FormControl>
+              </GridItem>
+              <GridItem>
+                <FormControl>
+                  <FormLabel>Signature Name (Optional)</FormLabel>
+                  <Input
+                    value={formData.signature}
+                    onChange={(e) => handleInputChange('signature', e.target.value)}
                     placeholder="Enter signatory name"
                   />
-                </IonItem>
-              </IonCol>
-            </IonRow>
+                </FormControl>
+              </GridItem>
+            </Grid>
 
             {/* Buttons */}
-            <IonRow>
-              <IonCol size="12">
-                <div className="form-buttons">
-                  <IonButton type="button" fill="clear" onClick={handleClearForm}>
-                    Clear
-                  </IonButton>
-                  <IonButton type="submit">Continue</IonButton>
-                </div>
-              </IonCol>
-            </IonRow>
-          </IonGrid>
+            <HStack justify="flex-end" spacing={3} pt={4}>
+              <Button variant="ghost" onClick={handleClearForm}>
+                Clear
+              </Button>
+              <Button type="submit" colorScheme="brand" size="lg">
+                Continue
+              </Button>
+            </HStack>
+          </VStack>
         </form>
-      </IonCardContent>
-    </IonCard>
+      </CardBody>
+    </Card>
   );
 };
 

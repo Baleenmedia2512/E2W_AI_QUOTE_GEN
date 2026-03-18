@@ -1,25 +1,31 @@
 import React, { useState } from 'react';
 import {
-  IonButton,
-  IonButtons,
-  IonCard,
-  IonCardContent,
-  IonCardHeader,
-  IonCardTitle,
-  IonIcon,
-  IonRange,
-  IonText,
-  IonToolbar,
-} from '@ionic/react';
+  Box,
+  Card,
+  CardHeader,
+  CardBody,
+  IconButton,
+  HStack,
+  Text,
+  VStack,
+  Flex,
+  Slider,
+  SliderTrack,
+  SliderFilledTrack,
+  SliderThumb,
+  Center,
+  Heading,
+  useColorModeValue,
+  Wrap,
+} from '@chakra-ui/react';
 import {
-  chevronBackOutline,
-  chevronForwardOutline,
-  addOutline,
-  removeOutline,
-} from 'ionicons/icons';
+  FiChevronLeft,
+  FiChevronRight,
+  FiZoomIn,
+  FiZoomOut,
+} from 'react-icons/fi';
 import { Document, Page, pdfjs } from 'react-pdf';
 import { useAppStore } from '../../store';
-import './ProposalViewer.css';
 import 'react-pdf/dist/Page/AnnotationLayer.css';
 import 'react-pdf/dist/Page/TextLayer.css';
 
@@ -30,6 +36,9 @@ const ProposalViewer: React.FC = () => {
   const { proposal, setProposal } = useAppStore();
   const [scale, setScale] = useState(1.0);
   const [_numPages, setNumPages] = useState<number>(0);
+
+  const borderColor = useColorModeValue('gray.200', 'gray.600');
+  const bgColor = useColorModeValue('white', 'gray.700');
 
   const onDocumentLoadSuccess = ({ numPages }: { numPages: number }) => {
     setNumPages(numPages);
@@ -56,107 +65,172 @@ const ProposalViewer: React.FC = () => {
     setScale((prev) => Math.max(prev - 0.2, 0.5));
   };
 
-  const handlePageJump = (e: CustomEvent) => {
-    const page = Number(e.detail.value);
-    setProposal({ currentPage: page });
-  };
-
   if (!proposal.fileUrl) {
     return (
-      <div className="proposal-viewer-empty">
-        <IonText color="medium">
-          <h3>No proposal uploaded</h3>
-          <p>Please upload a PDF file to view it here</p>
-        </IonText>
-      </div>
+      <Center h="400px" p={8}>
+        <VStack spacing={3}>
+          <Heading size="md" color="gray.400">No proposal uploaded</Heading>
+          <Text color="gray.500">Please upload a PDF file to view it here</Text>
+        </VStack>
+      </Center>
     );
   }
 
   return (
-    <div className="proposal-viewer-container">
-      <IonCard>
-        <IonCardHeader>
-          <IonCardTitle>{proposal.fileName}</IonCardTitle>
-        </IonCardHeader>
-        <IonCardContent>
-          <IonToolbar className="viewer-toolbar">
-            <IonButtons slot="start">
-              <IonButton onClick={goToPrevPage} disabled={proposal.currentPage === 1}>
-                <IonIcon icon={chevronBackOutline} />
-              </IonButton>
-              <IonButton onClick={goToNextPage} disabled={proposal.currentPage === proposal.pageCount}>
-                <IonIcon icon={chevronForwardOutline} />
-              </IonButton>
-            </IonButtons>
-
-            <IonText slot="start" className="page-info">
-              Page {proposal.currentPage} / {proposal.pageCount}
-            </IonText>
-
-            <IonButtons slot="end">
-              <IonButton onClick={handleZoomOut}>
-                <IonIcon icon={removeOutline} />
-              </IonButton>
-              <IonText className="zoom-level">{Math.round(scale * 100)}%</IonText>
-              <IonButton onClick={handleZoomIn}>
-                <IonIcon icon={addOutline} />
-              </IonButton>
-            </IonButtons>
-          </IonToolbar>
-
-          <div className="pdf-container">
-            <Document
-              file={proposal.fileUrl}
-              onLoadSuccess={onDocumentLoadSuccess}
-              loading={
-                <div className="pdf-loading">
-                  <IonText>Loading PDF...</IonText>
-                </div>
-              }
-            >
-              <Page
-                pageNumber={proposal.currentPage}
-                scale={scale}
-                renderTextLayer={true}
-                renderAnnotationLayer={true}
+    <Card variant="outline" borderRadius="xl" boxShadow="sm">
+      <CardHeader>
+        <Flex justify="space-between" align="center" flexWrap="wrap" gap={2}>
+          <Heading size="md" fontWeight="semibold">{proposal.fileName}</Heading>
+          
+          {/* Controls */}
+          <HStack spacing={2} flexWrap="wrap">
+            {/* Navigation */}
+            <HStack spacing={1}>
+              <IconButton
+                aria-label="Previous page"
+                icon={<FiChevronLeft />}
+                onClick={goToPrevPage}
+                isDisabled={proposal.currentPage === 1}
+                size="sm"
               />
-            </Document>
-          </div>
+              <Text fontSize="sm" whiteSpace="nowrap" px={2}>
+                {proposal.currentPage} / {proposal.pageCount}
+              </Text>
+              <IconButton
+                aria-label="Next page"
+                icon={<FiChevronRight />}
+                onClick={goToNextPage}
+                isDisabled={proposal.currentPage === proposal.pageCount}
+                size="sm"
+              />
+            </HStack>
 
-          <div className="page-slider">
-            <IonRange
+            {/* Zoom */}
+            <HStack spacing={1}>
+              <IconButton
+                aria-label="Zoom out"
+                icon={<FiZoomOut />}
+                onClick={handleZoomOut}
+                size="sm"
+              />
+              <Text fontSize="sm" minW="50px" textAlign="center">
+                {Math.round(scale * 100)}%
+              </Text>
+              <IconButton
+                aria-label="Zoom in"
+                icon={<FiZoomIn />}
+                onClick={handleZoomIn}
+                size="sm"
+              />
+            </HStack>
+          </HStack>
+        </Flex>
+      </CardHeader>
+
+      <CardBody>
+        <VStack spacing={4} align="stretch">
+          {/* PDF Viewer */}
+          <Box
+            borderWidth={1}
+            borderColor={borderColor}
+            borderRadius="lg"
+            overflow="auto"
+            maxH="600px"
+            bg={bgColor}
+          >
+            <Center p={4}>
+              <Document
+                file={proposal.fileUrl}
+                onLoadSuccess={onDocumentLoadSuccess}
+                loading={
+                  <Center p={8}>
+                    <Text>Loading PDF...</Text>
+                  </Center>
+                }
+              >
+                <Page
+                  pageNumber={proposal.currentPage}
+                  scale={scale}
+                  renderTextLayer={true}
+                  renderAnnotationLayer={true}
+                />
+              </Document>
+            </Center>
+          </Box>
+
+          {/* Page Slider */}
+          <Box px={4}>
+            <Slider
               min={1}
               max={proposal.pageCount}
               value={proposal.currentPage}
-              onIonChange={handlePageJump}
-              pin={true}
-              snaps={true}
-              ticks={false}
-            />
-          </div>
+              onChange={(value) => setProposal({ currentPage: value })}
+              step={1}
+            >
+              <SliderTrack>
+                <SliderFilledTrack bg="brand.500" />
+              </SliderTrack>
+              <SliderThumb boxSize={4} />
+            </Slider>
+          </Box>
 
-          <div className="page-thumbnails">
-            {Array.from({ length: Math.min(proposal.pageCount, 10) }, (_, i) => i + 1).map((pageNum) => (
-              <div
-                key={pageNum}
-                className={`thumbnail ${pageNum === proposal.currentPage ? 'active' : ''}`}
-                onClick={() => setProposal({ currentPage: pageNum })}
-              >
-                <Document file={proposal.fileUrl}>
-                  <Page pageNumber={pageNum} width={100} renderTextLayer={false} renderAnnotationLayer={false} />
-                </Document>
-                <IonText className="thumbnail-label">{pageNum}</IonText>
-              </div>
-            ))}
-            {proposal.pageCount > 10 && (
-              <IonText color="medium" className="more-pages">
-                +{proposal.pageCount - 10} more pages
-              </IonText>
-            )}
-          </div>
-        </IonCardContent>
-      </IonCard>
-    </div>
+          {/* Thumbnails */}
+          {proposal.pageCount > 1 && (
+            <Box>
+              <Text fontSize="sm" fontWeight="medium" mb={2}>Quick Navigation</Text>
+              <Wrap spacing={3}>
+                {Array.from({ length: Math.min(proposal.pageCount, 10) }, (_, i) => i + 1).map((pageNum) => (
+                  <Box
+                    key={pageNum}
+                    cursor="pointer"
+                    onClick={() => setProposal({ currentPage: pageNum })}
+                    borderWidth={2}
+                    borderColor={pageNum === proposal.currentPage ? 'brand.500' : borderColor}
+                    borderRadius="md"
+                    overflow="hidden"
+                    transition="all 0.2s"
+                    _hover={{
+                      borderColor: 'brand.500',
+                      transform: 'translateY(-2px)',
+                      boxShadow: 'md',
+                    }}
+                  >
+                    <Box w="100px" h="130px" position="relative">
+                      <Document file={proposal.fileUrl}>
+                        <Page 
+                          pageNumber={pageNum} 
+                          width={100} 
+                          renderTextLayer={false} 
+                          renderAnnotationLayer={false} 
+                        />
+                      </Document>
+                      <Center
+                        position="absolute"
+                        bottom={0}
+                        left={0}
+                        right={0}
+                        bg="blackAlpha.700"
+                        color="white"
+                        py={1}
+                      >
+                        <Text fontSize="xs" fontWeight="bold">{pageNum}</Text>
+                      </Center>
+                    </Box>
+                  </Box>
+                ))}
+                {proposal.pageCount > 10 && (
+                  <Center minW="100px">
+                    <Text fontSize="sm" color="gray.500">
+                      +{proposal.pageCount - 10} more
+                    </Text>
+                  </Center>
+                )}
+              </Wrap>
+            </Box>
+          )}
+        </VStack>
+      </CardBody>
+    </Card>
   );
 };
 

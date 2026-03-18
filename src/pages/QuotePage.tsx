@@ -1,6 +1,20 @@
 import React, { useState, useEffect } from 'react';
-import { IonGrid, IonRow, IonCol, IonButton, IonIcon, IonCard, IonCardHeader, IonCardTitle, IonCardContent } from '@ionic/react';
-import { arrowBackSharp, checkmarkCircle } from 'ionicons/icons';
+import {
+  Box,
+  Button,
+  HStack,
+  VStack,
+  Heading,
+  Card,
+  CardHeader,
+  CardBody,
+  Badge,
+  Flex,
+  useBreakpointValue,
+  Alert,
+  AlertIcon
+} from '@chakra-ui/react';
+import { FiArrowLeft, FiCheck } from 'react-icons/fi';
 import { useHistory } from 'react-router-dom';
 import Layout from '../components/Layout/Layout';
 import CompanyInfoForm from '../components/CompanyInfoForm/CompanyInfoForm';
@@ -63,7 +77,7 @@ const QuotePage: React.FC = () => {
             id: '1',
             description: 'Sample Service/Product (Edit in preview)',
             quantity: 1,
-            unitPrice: 1000,
+            rate: 1000,
             total: 1000
           }
         ],
@@ -156,7 +170,7 @@ const QuotePage: React.FC = () => {
             id: '1',
             description: 'Sample Service/Product (Edit in preview)',
             quantity: 1,
-            unitPrice: 1000,
+            rate: 1000,
             total: 1000
           }],
           subtotal: 1000,
@@ -225,214 +239,161 @@ const QuotePage: React.FC = () => {
     }
   };
 
+  const isMobile = useBreakpointValue({ base: true, md: false });
+
+  const steps = [
+    { id: 'company', label: 'Company Info', number: 1 },
+    { id: 'client', label: 'Client Info', number: 2 },
+    { id: 'preview', label: 'Preview & Edit', number: 3 },
+    { id: 'template', label: 'Choose Template', number: 4 },
+  ];
+
   return (
     <Layout title="Create Quote">
-      <div style={{ padding: '16px' }}>
-        <IonButton fill="clear" onClick={handleBack}>
-          <IonIcon icon={arrowBackSharp} slot="start" />
+      <VStack spacing={6} align="stretch">
+        {/* Back Button */}
+        <Button
+          leftIcon={<FiArrowLeft />}
+          variant="ghost"
+          onClick={handleBack}
+          alignSelf="flex-start"
+        >
           Back
-        </IonButton>
+        </Button>
 
-        <IonGrid>
-          <IonRow>
-            <IonCol size="12">
-              {/* Progress indicator */}
-              <div style={{ 
-                display: 'flex', 
-                justifyContent: 'center', 
-                marginBottom: '24px',
-                gap: '12px'
-              }}>
-                <div style={{ 
-                  padding: '8px 16px', 
-                  borderRadius: '20px',
-                  background: currentStep === 'company' ? 'var(--ion-color-primary)' : 'var(--ion-color-light)',
-                  color: currentStep === 'company' ? 'white' : 'var(--ion-color-dark)',
-                  fontWeight: 600,
-                  fontSize: '14px'
-                }}>
-                  1. Company Info
-                </div>
-                <div style={{ 
-                  padding: '8px 16px', 
-                  borderRadius: '20px',
-                  background: currentStep === 'client' ? 'var(--ion-color-primary)' : 'var(--ion-color-light)',
-                  color: currentStep === 'client' ? 'white' : 'var(--ion-color-dark)',
-                  fontWeight: 600,
-                  fontSize: '14px'
-                }}>
-                  2. Client Info
-                </div>
-                <div style={{ 
-                  padding: '8px 16px', 
-                  borderRadius: '20px',
-                  background: currentStep === 'preview' ? 'var(--ion-color-primary)' : 'var(--ion-color-light)',
-                  color: currentStep === 'preview' ? 'white' : 'var(--ion-color-dark)',
-                  fontWeight: 600,
-                  fontSize: '14px'
-                }}>
-                  3. Preview & Edit
-                </div>
-                <div style={{ 
-                  padding: '8px 16px', 
-                  borderRadius: '20px',
-                  background: currentStep === 'template' ? 'var(--ion-color-primary)' : 'var(--ion-color-light)',
-                  color: currentStep === 'template' ? 'white' : 'var(--ion-color-dark)',
-                  fontWeight: 600,
-                  fontSize: '14px'
-                }}>
-                  4. Choose Template
-                </div>
-              </div>
+        {/* Progress Steps */}
+        <Flex
+          justify="center"
+          gap={{ base: 2, md: 3 }}
+          wrap={isMobile ? "wrap" : "nowrap"}
+        >
+          {steps.map((step) => (
+            <Badge
+              key={step.id}
+              px={{ base: 3, md: 4 }}
+              py={2}
+              borderRadius="full"
+              fontSize={{ base: "xs", md: "sm" }}
+              fontWeight="semibold"
+              colorScheme={currentStep === step.id ? 'brand' : 'gray'}
+              variant={currentStep === step.id ? 'solid' : 'outline'}
+            >
+              {step.number}. {isMobile ? step.label.split(' ')[0] : step.label}
+            </Badge>
+          ))}
+        </Flex>
 
-              {/* Form Steps */}
-              {currentStep === 'company' && (
-                <CompanyInfoForm
-                  onSubmit={handleCompanySubmit}
-                  initialData={companyInfo}
-                />
-              )}
+        {/* Form Steps */}
+        <Box>
+          {currentStep === 'company' && (
+            <CompanyInfoForm
+              onSubmit={handleCompanySubmit}
+              initialData={companyInfo}
+            />
+          )}
 
-              {currentStep === 'client' && (
-                <ClientInfoForm
-                  onSubmit={handleClientSubmit}
-                  onBack={() => setCurrentStep('company')}
-                  initialData={clientInfo}
-                />
-              )}
+          {currentStep === 'client' && (
+            <ClientInfoForm
+              onSubmit={handleClientSubmit}
+              onBack={() => setCurrentStep('company')}
+              initialData={clientInfo}
+            />
+          )}
 
-              {currentStep === 'preview' && currentQuote && (
-                <>
-                  <QuotePreview
-                    quote={currentQuote}
-                    onUpdate={handleQuoteUpdate}
-                    onSave={handleSaveQuote}
-                  />
-                  <div style={{ 
-                    marginTop: '24px', 
-                    display: 'flex', 
-                    gap: '12px',
-                    justifyContent: 'flex-end',
-                    padding: '16px',
-                    background: '#f8f9fa',
-                    borderRadius: '8px',
-                    border: '1px solid #dee2e6',
-                    position: 'relative',
-                    zIndex: 10
-                  }}>
-                    <IonButton
-                      fill="outline"
-                      onClick={() => {
-                        console.log('🔙 Back button clicked');
-                        setCurrentStep('client');
-                      }}
-                      style={{ minWidth: '120px' }}
+          {currentStep === 'preview' && currentQuote && (
+            <VStack spacing={6} align="stretch">
+              <QuotePreview
+                quote={currentQuote}
+                onUpdate={handleQuoteUpdate}
+                onSave={handleSaveQuote}
+              />
+              <Card variant="outline">
+                <CardBody>
+                  <HStack spacing={3} justify="flex-end" flexWrap="wrap">
+                    <Button
+                      variant="outline"
+                      onClick={() => setCurrentStep('client')}
+                      size="lg"
                     >
                       Back
-                    </IonButton>
-                    <IonButton
-                      color="primary"
-                      expand="block"
-                      onClick={(e) => {
-                        e.preventDefault();
-                        e.stopPropagation();
-                        console.log('🔘 Continue button CLICKED!');
-                        console.log('Has companyInfo:', !!companyInfo);
-                        console.log('Has clientInfo:', !!clientInfo);
-                        console.log('Has currentQuote:', !!currentQuote);
-                        handleGeneratePDF();
-                      }}
-                      disabled={!companyInfo || !clientInfo || !currentQuote}
-                      style={{ 
-                        minWidth: '220px',
-                        fontWeight: '600',
-                        fontSize: '15px',
-                        cursor: 'pointer',
-                        pointerEvents: 'auto'
-                      }}
+                    </Button>
+                    <Button
+                      colorScheme="brand"
+                      onClick={handleGeneratePDF}
+                      isDisabled={!companyInfo || !clientInfo || !currentQuote}
+                      size="lg"
+                      flex={{ base: 1, md: 'auto' }}
                     >
                       {!companyInfo ? 'Add Company Info to Continue' : 
                        !clientInfo ? 'Add Client Info to Continue' : 
                        'Continue to Template Selection'}
-                    </IonButton>
-                  </div>
-                </>
-              )}
+                    </Button>
+                  </HStack>
+                </CardBody>
+              </Card>
+            </VStack>
+          )}
 
-              {currentStep === 'template' && (
-                <>
-                  <IonCard style={{ marginTop: '20px' }}>
-                    <IonCardHeader>
-                      <IonCardTitle style={{ fontSize: '24px', textAlign: 'center' }}>
-                        Choose Your Template
-                      </IonCardTitle>
-                      <p style={{ textAlign: 'center', color: '#666', marginTop: '10px' }}>
-                        Select a professional template that best represents your brand
-                      </p>
-                    </IonCardHeader>
-                    <IonCardContent>
-                      <div style={{ minHeight: '400px' }}>
-                        <TemplateSelector
-                          selectedTemplate={selectedTemplate}
-                          onSelectTemplate={(template) => {
-                            console.log('✅ Template selected:', template);
-                            setSelectedTemplate(template);
-                          }}
-                        />
-                      </div>
-                      <div style={{ 
-                        marginTop: '24px', 
-                        display: 'flex', 
-                        gap: '12px',
-                        justifyContent: 'space-between',
-                        padding: '20px',
-                        background: '#f8f9fa',
-                        borderRadius: '8px'
-                      }}>
-                        <IonButton
-                          fill="outline"
-                          onClick={() => {
-                            console.log('Going back to preview');
-                            setCurrentStep('preview');
-                          }}
-                          style={{ flex: 1 }}
+          {currentStep === 'template' && (
+            <Card variant="outline">
+              <CardHeader textAlign="center">
+                <Heading size="lg" mb={2}>Choose Your Template</Heading>
+                <Box color="gray.600">
+                  Select a professional template that best represents your brand
+                </Box>
+              </CardHeader>
+              <CardBody>
+                <VStack spacing={6} minH="400px">
+                  <TemplateSelector
+                    selectedTemplate={selectedTemplate}
+                    onSelectTemplate={(template) => {
+                      console.log('✅ Template selected:', template);
+                      setSelectedTemplate(template);
+                    }}
+                  />
+                  <Card variant="filled" w="full">
+                    <CardBody>
+                      <HStack spacing={3} justify="space-between" flexWrap="wrap">
+                        <Button
+                          variant="outline"
+                          leftIcon={<FiArrowLeft />}
+                          onClick={() => setCurrentStep('preview')}
+                          flex={{ base: 1, md: 'auto' }}
                         >
-                          <IonIcon icon={arrowBackSharp} slot="start" />
                           Back to Quote
-                        </IonButton>
-                        <IonButton
-                          color="success"
-                          onClick={(e) => {
-                            e.preventDefault();
-                            e.stopPropagation();
-                            console.log('🔘 Button physically clicked!');
-                            handleTemplateSelected();
-                          }}
-                          style={{ flex: 2, cursor: 'pointer' }}
-                          disabled={!selectedTemplate || isNavigating}
+                        </Button>
+                        <Button
+                          colorScheme="green"
+                          leftIcon={<FiCheck />}
+                          onClick={handleTemplateSelected}
+                          isDisabled={!selectedTemplate || isNavigating}
+                          isLoading={isNavigating}
+                          loadingText="Loading Preview..."
+                          flex={{ base: 1, md: 'auto' }}
+                          minW={{ base: 'auto', md: '200px' }}
                         >
-                          <IonIcon icon={checkmarkCircle} slot="start" />
-                          {isNavigating ? 'Loading Preview...' : 'Preview & Export PDF'}
-                        </IonButton>
-                      </div>
-                    </IonCardContent>
-                  </IonCard>
-                </>
-              )}
+                          Preview & Export PDF
+                        </Button>
+                      </HStack>
+                    </CardBody>
+                  </Card>
+                </VStack>
+              </CardBody>
+            </Card>
+          )}
 
-              {/* Debug fallback */}
-              {currentStep && !['company', 'client', 'preview', 'template'].includes(currentStep) && (
-                <div style={{ padding: '20px', textAlign: 'center' }}>
-                  <p>Unknown step: {currentStep}</p>
-                  <IonButton onClick={() => setCurrentStep('company')}>
-                    Start Over
-                  </IonButton>
-                </div>
-              )}
-            </IonCol>
-          </IonRow>
-        </IonGrid>
-      </div>
+          {/* Debug fallback */}
+          {currentStep && !['company', 'client', 'preview', 'template'].includes(currentStep) && (
+            <Alert status="error">
+              <AlertIcon />
+              Unknown step: {currentStep}
+              <Button ml={4} onClick={() => setCurrentStep('company')}>
+                Start Over
+              </Button>
+            </Alert>
+          )}
+        </Box>
+      </VStack>
     </Layout>
   );
 };

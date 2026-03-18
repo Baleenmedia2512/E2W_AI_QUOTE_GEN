@@ -1,38 +1,51 @@
 import React, { useRef, useState } from 'react';
 import {
-  IonButton,
-  IonCard,
-  IonCardContent,
-  IonCardHeader,
-  IonCardTitle,
-  IonIcon,
-  IonText,
-  IonSpinner,
-  IonToast,
-} from '@ionic/react';
-import { cloudUploadOutline, documentTextOutline } from 'ionicons/icons';
+  Box,
+  Button,
+  Card,
+  CardBody,
+  CardHeader,
+  Center,
+  Heading,
+  Text,
+  VStack,
+  HStack,
+  Icon,
+  useToast,
+  Spinner,
+  useColorModeValue,
+} from '@chakra-ui/react';
+import { FiUploadCloud, FiFile } from 'react-icons/fi';
 import { useAppStore } from '../../store';
 import { extractPDFContent, validatePDFFile } from '../../utils/pdfUtils';
-import './ProposalUpload.css';
+
 
 const ProposalUpload: React.FC = () => {
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [loading, setLoading] = useState(false);
-  const [error, setError] = useState<string>('');
-  const [success, setSuccess] = useState(false);
   const [isDragging, setIsDragging] = useState(false);
   const { proposal, setProposal } = useAppStore();
+  const toast = useToast();
+
+  const borderColor = useColorModeValue('gray.200', 'gray.600');
+  const dragBorderColor = useColorModeValue('brand.500', 'brand.300');
+  const bgColor = useColorModeValue('gray.50', 'gray.700');
 
   const processFile = async (file: File) => {
     // Validate file
     const validation = validatePDFFile(file);
     if (!validation.valid) {
-      setError(validation.error || 'Invalid file');
+      toast({
+        title: 'Error',
+        description: validation.error || 'Invalid file',
+        status: 'error',
+        duration: 3000,
+        isClosable: true,
+      });
       return;
     }
 
     setLoading(true);
-    setError('');
 
     try {
       console.log('Processing PDF file:', file.name);
@@ -64,10 +77,22 @@ const ProposalUpload: React.FC = () => {
       console.log('Updating proposal store with:', proposalData);
       setProposal(proposalData);
 
-      setSuccess(true);
+      toast({
+        title: 'Success',
+        description: 'PDF uploaded successfully!',
+        status: 'success',
+        duration: 2000,
+        isClosable: true,
+      });
     } catch (err: any) {
       const errorMessage = err.message || 'Failed to process PDF file. Please try again.';
-      setError(errorMessage);
+      toast({
+        title: 'Error',
+        description: errorMessage,
+        status: 'error',
+        duration: 3000,
+        isClosable: true,
+      });
       console.error('PDF processing error:', err);
     } finally {
       setLoading(false);
@@ -109,77 +134,89 @@ const ProposalUpload: React.FC = () => {
   };
 
   return (
-    <div className="proposal-upload-container">
-      <IonCard>
-        <IonCardHeader>
-          <IonCardTitle>Upload Proposal</IonCardTitle>
-        </IonCardHeader>
-        <IonCardContent>
-          <input
-            ref={fileInputRef}
-            type="file"
-            accept=".pdf"
-            onChange={handleFileSelect}
-            style={{ display: 'none' }}
-          />
+    <Card variant="outline" borderRadius="xl" boxShadow="sm">
+      <CardHeader>
+        <Heading size="md" fontWeight="semibold">Upload Proposal</Heading>
+      </CardHeader>
+      <CardBody>
+        <input
+          ref={fileInputRef}
+          type="file"
+          accept=".pdf"
+          onChange={handleFileSelect}
+          style={{ display: 'none' }}
+        />
 
-          {!proposal.file ? (
-            <div 
-              className={`upload-area ${isDragging ? 'dragging' : ''}`}
-              onClick={handleUploadClick}
-              onDragOver={handleDragOver}
-              onDragLeave={handleDragLeave}
-              onDrop={handleDrop}
-            >
-              <IonIcon icon={cloudUploadOutline} className="upload-icon" />
-              <IonText>
-                <h3>Click to upload PDF</h3>
-                <p>or drag and drop</p>
-                <p className="file-info">PDF files only (max 10MB)</p>
-              </IonText>
-            </div>
-          ) : (
-            <div className="uploaded-file-info">
-              <IonIcon icon={documentTextOutline} className="file-icon" />
-              <div className="file-details">
-                <IonText>
-                  <h4>{proposal.fileName}</h4>
-                  <p>{proposal.pageCount} pages</p>
-                </IonText>
-              </div>
-              <IonButton fill="outline" size="small" onClick={handleUploadClick}>
-                Change File
-              </IonButton>
-            </div>
-          )}
+        {!proposal.file ? (
+          <Center
+            p={8}
+            borderWidth={2}
+            borderStyle="dashed"
+            borderColor={isDragging ? dragBorderColor : borderColor}
+            borderRadius="lg"
+            bg={isDragging ? useColorModeValue('brand.50', 'brand.900') : bgColor}
+            cursor="pointer"
+            transition="all 0.2s"
+            onClick={handleUploadClick}
+            onDragOver={handleDragOver}
+            onDragLeave={handleDragLeave}
+            onDrop={handleDrop}
+            _hover={{
+              borderColor: dragBorderColor,
+              bg: useColorModeValue('brand.50', 'brand.900'),
+            }}
+          >
+            <VStack spacing={3}>
+              <Icon as={FiUploadCloud} boxSize={12} color="brand.500" />
+              <VStack spacing={1}>
+                <Heading size="sm" fontWeight="medium">Click to upload PDF</Heading>
+                <Text fontSize="sm" color="gray.500">or drag and drop</Text>
+                <Text fontSize="xs" color="gray.400">PDF files only (max 10MB)</Text>
+              </VStack>
+            </VStack>
+          </Center>
+        ) : (
+          <Box
+            p={4}
+            borderWidth={1}
+            borderColor={borderColor}
+            borderRadius="lg"
+            bg={bgColor}
+          >
+            <HStack spacing={4} justify="space-between">
+              <HStack spacing={3} flex={1}>
+                <Icon as={FiFile} boxSize={6} color="brand.500" />
+                <VStack align="start" spacing={0} flex={1}>
+                  <Text fontWeight="medium" fontSize="sm" noOfLines={1}>
+                    {proposal.fileName}
+                  </Text>
+                  <Text fontSize="xs" color="gray.500">
+                    {proposal.pageCount} pages
+                  </Text>
+                </VStack>
+              </HStack>
+              <Button
+                size="sm"
+                variant="outline"
+                onClick={handleUploadClick}
+                flexShrink={0}
+              >
+                Change
+              </Button>
+            </HStack>
+          </Box>
+        )}
 
-          {loading && (
-            <div className="loading-container">
-              <IonSpinner name="crescent" />
-              <IonText>Processing PDF...</IonText>
-            </div>
-          )}
-        </IonCardContent>
-      </IonCard>
-
-      <IonToast
-        isOpen={!!error}
-        message={error}
-        duration={3000}
-        color="danger"
-        position="bottom"
-        onDidDismiss={() => setError('')}
-      />
-
-      <IonToast
-        isOpen={success}
-        message="PDF uploaded successfully!"
-        duration={2000}
-        color="success"
-        position="bottom"
-        onDidDismiss={() => setSuccess(false)}
-      />
-    </div>
+        {loading && (
+          <Center mt={4}>
+            <HStack spacing={3}>
+              <Spinner size="sm" color="brand.500" />
+              <Text fontSize="sm" color="gray.600">Processing PDF...</Text>
+            </HStack>
+          </Center>
+        )}
+      </CardBody>
+    </Card>
   );
 };
 

@@ -1,16 +1,16 @@
 import React, { useState, useRef, useEffect } from 'react';
 import {
-  IonCard,
-  IonCardHeader,
-  IonCardTitle,
-  IonCardContent,
-  IonButton,
-  IonInput,
-  IonSpinner,
-  IonChip,
-  IonIcon,
-} from '@ionic/react';
-import { sendSharp, refreshSharp } from 'ionicons/icons';
+  Box,
+  Input,
+  VStack,
+  HStack,
+  Text,
+  IconButton,
+  Flex,
+  Heading,
+  Spinner,
+} from '@chakra-ui/react';
+import { FiSend, FiRefreshCw } from 'react-icons/fi';
 import { useHistory } from 'react-router-dom';
 import { useAppStore } from '../../store';
 import { sendMessageToGemini } from '../../services/geminiService';
@@ -18,7 +18,6 @@ import { Message } from '../../types/chat';
 import { Quote, QuoteItem } from '../../types/quote';
 import { saveChatHistory, loadChatHistory } from '../../utils/localStorage';
 import { SAMPLE_PROMPTS } from '../../utils/promptTemplates';
-import './ChatInterface.css';
 
 const ChatInterface: React.FC = () => {
   const history = useHistory();
@@ -27,9 +26,7 @@ const ChatInterface: React.FC = () => {
   const [inputValue, setInputValue] = useState('');
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  // const [detectedQuoteData, setDetectedQuoteData] = useState<any>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
-  const inputRef = useRef<HTMLIonInputElement>(null);
 
   // Debug: Log proposal state when it changes
   useEffect(() => {
@@ -190,119 +187,180 @@ const ChatInterface: React.FC = () => {
     }
   };
 
-  const handleKeyPress = (e: any) => {
-    if (e.key === 'Enter' && !e.shiftKey) {
-      e.preventDefault();
-      handleSendMessage();
-    }
-  };
-
   const handleSamplePrompt = (prompt: string) => {
     setInputValue(prompt);
-    inputRef.current?.setFocus();
+    setTimeout(() => handleSendMessage(), 100);
   };
 
   const handleClearChat = () => {
     setMessages([]);
     setError(null);
-    // setDetectedQuoteData(null);
     saveChatHistory([]);
   };
 
   return (
-    <IonCard className="chat-interface">
-      <IonCardHeader>
-        <div className="chat-header">
-          <IonCardTitle>AI Assistant</IonCardTitle>
-          {messages.length > 0 && (
-            <IonButton fill="clear" size="small" onClick={handleClearChat}>
-              <IonIcon icon={refreshSharp} slot="icon-only" />
-            </IonButton>
-          )}
-        </div>
-      </IonCardHeader>
-      <IonCardContent className="chat-content">
-        {/* Sample Prompts */}
-        {messages.length === 0 && (
-          <div className="sample-prompts">
-            <p className="sample-prompts-title">Try asking:</p>
-            <div className="sample-prompts-chips">
-              {SAMPLE_PROMPTS.map((prompt, index) => (
-                <IonChip
-                  key={index}
-                  onClick={() => handleSamplePrompt(prompt)}
-                  className="sample-prompt-chip"
-                >
-                  {prompt}
-                </IonChip>
-              ))}
-            </div>
-          </div>
-        )}
-
-        {/* Messages */}
-        <div className="messages-container">
-          {messages.map(message => (
-            <div
-              key={message.id}
-              className={`message ${message.role} ${message.isError ? 'error' : ''}`}
-            >
-              <div className="message-bubble">
-                <div className="message-content">{message.content}</div>
-                <div className="message-timestamp">
-                  {message.timestamp.toLocaleTimeString([], {
-                    hour: '2-digit',
-                    minute: '2-digit',
-                  })}
-                </div>
-              </div>
-            </div>
-          ))}
-
-          {/* Typing Indicator */}
-          {isLoading && (
-            <div className="message assistant">
-              <div className="message-bubble typing-indicator">
-                <IonSpinner name="dots" />
-              </div>
-            </div>
-          )}
-
-          <div ref={messagesEndRef} />
-        </div>
-
-        {/* Error Message */}
-        {error && !isLoading && (
-          <div className="error-banner">
-            <p>{error}</p>
-          </div>
-        )}
-
-        {/* Input Area */}
-        <div className="input-container">
-          <IonInput
-            ref={inputRef}
-            value={inputValue}
-            onIonInput={(e) => setInputValue(e.detail.value || '')}
-            onKeyPress={handleKeyPress}
-            placeholder={
-              proposal.textContent
-                ? 'Ask about the proposal or request a quote...'
-                : 'Upload a proposal to start chatting...'
-            }
-            disabled={isLoading || !proposal.textContent}
-            className="chat-input"
-          />
-          <IonButton
-            onClick={handleSendMessage}
-            disabled={!inputValue.trim() || isLoading || !proposal.textContent}
-            className="send-button"
+    <Box 
+      borderWidth="1px" 
+      borderRadius="xl" 
+      boxShadow="sm" 
+      h="full" 
+      bg="white"
+      overflow="hidden"
+    >
+      {/* Header */}
+      <Flex p={4} borderBottomWidth="1px" justify="space-between" align="center">
+        <Heading size="md" fontWeight="semibold">AI Assistant</Heading>
+        {messages.length > 0 && (
+          <IconButton
+            aria-label="Clear chat"
+            size="sm"
+            variant="ghost"
+            onClick={handleClearChat}
           >
-            <IonIcon icon={sendSharp} slot="icon-only" />
-          </IonButton>
-        </div>
-      </IonCardContent>
-    </IonCard>
+            <FiRefreshCw />
+          </IconButton>
+        )}
+      </Flex>
+
+      {/* Body */}
+      <Box p={4}>
+        <VStack gap={4} align="stretch" h="full">
+          {/* Sample Prompts */}
+          {messages.length === 0 && (
+            <Box>
+              <Text fontSize="sm" fontWeight="medium" mb={2} color="gray.600">
+                Try asking:
+              </Text>
+              <Flex gap={2} flexWrap="wrap">
+                {SAMPLE_PROMPTS.map((prompt, index) => (
+                  <Box
+                    key={index}
+                    as="button"
+                    px={3}
+                    py={2}
+                    fontSize="sm"
+                    bg="brand.50"
+                    color="brand.700"
+                    borderRadius="md"
+                    cursor="pointer"
+                    onClick={() => handleSamplePrompt(prompt)}
+                    _hover={{
+                      transform: 'translateY(-2px)',
+                      boxShadow: 'sm',
+                    }}
+                    transition="all 0.2s"
+                  >
+                    {prompt}
+                  </Box>
+                ))}
+              </Flex>
+            </Box>
+          )}
+
+          {/* Messages Container */}
+          <Box
+            flex={1}
+            overflowY="auto"
+            borderWidth={1}
+            borderRadius="lg"
+            p={4}
+            minH="400px"
+            maxH="500px"
+          >
+            <VStack gap={3} align="stretch">
+              {messages.map(message => (
+                <Flex
+                  key={message.id}
+                  justify={message.role === 'user' ? 'flex-end' : 'flex-start'}
+                >
+                  <Box maxW="80%">
+                    <Box
+                      bg={message.role === 'user' ? 'brand.500' : 'gray.100'}
+                      color={message.role === 'user' ? 'white' : 'inherit'}
+                      px={4}
+                      py={3}
+                      borderRadius="lg"
+                      boxShadow="sm"
+                    >
+                      <Text fontSize="sm" whiteSpace="pre-wrap">
+                        {message.content}
+                      </Text>
+                      <Text
+                        fontSize="xs"
+                        mt={1}
+                        opacity={0.7}
+                        fontWeight="normal"
+                      >
+                        {message.timestamp.toLocaleTimeString([], {
+                          hour: '2-digit',
+                          minute: '2-digit',
+                        })}
+                      </Text>
+                    </Box>
+                  </Box>
+                </Flex>
+              ))}
+
+              {/* Typing Indicator */}
+              {isLoading && (
+                <Flex justify="flex-start">
+                  <Box bg="gray.100" px={4} py={3} borderRadius="lg">
+                    <Spinner size="sm" />
+                  </Box>
+                </Flex>
+              )}
+
+              <div ref={messagesEndRef} />
+            </VStack>
+          </Box>
+
+          {/* Error Message */}
+          {error && !isLoading && (
+            <Box
+              p={3}
+              bg="red.50"
+              borderWidth="1px"
+              borderColor="red.200"
+              borderRadius="lg"
+            >
+              <Text fontSize="sm" color="red.800">{error}</Text>
+            </Box>
+          )}
+
+          {/* Input Area */}
+          <HStack gap={2}>
+            <Input
+              value={inputValue}
+              onChange={(e) => setInputValue(e.target.value)}
+              onKeyPress={(e) => {
+                if (e.key === 'Enter' && !e.shiftKey) {
+                  e.preventDefault();
+                  handleSendMessage();
+                }
+              }}
+              placeholder={
+                proposal.textContent
+                  ? 'Ask about the proposal or request a quote...'
+                  : 'Upload a proposal to start chatting...'
+              }
+              disabled={isLoading || !proposal.textContent}
+              size="lg"
+              borderRadius="lg"
+            />
+            <IconButton
+              aria-label="Send message"
+              onClick={handleSendMessage}
+              isDisabled={!inputValue.trim() || isLoading || !proposal.textContent}
+              colorScheme="brand"
+              size="lg"
+              borderRadius="lg"
+            >
+              <FiSend />
+            </IconButton>
+          </HStack>
+        </VStack>
+      </Box>
+    </Box>
   );
 };
 
