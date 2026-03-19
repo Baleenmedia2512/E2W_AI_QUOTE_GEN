@@ -41,6 +41,7 @@ function filterPagesByCategory(pages: ExtractedPage[], category: string): Extrac
 /**
  * Automatically filter pages by ALL quote item descriptions.
  * Returns pages that match any of the quote items.
+ * SKIPS THE FIRST PAGE of each matched section (typically pricing/terms).
  */
 function filterPagesByQuoteItems(pages: ExtractedPage[], items: QuoteItem[]): ExtractedPage[] {
   if (!items || items.length === 0) return pages;
@@ -49,7 +50,12 @@ function filterPagesByQuoteItems(pages: ExtractedPage[], items: QuoteItem[]): Ex
   
   items.forEach((item) => {
     const matchingPages = filterPagesByCategory(pages, item.description);
-    matchingPages.forEach((page) => matchedPages.add(page.pageNumber));
+    
+    // Sort by page number and skip the first page (index 0)
+    const sortedPages = matchingPages.sort((a, b) => a.pageNumber - b.pageNumber);
+    
+    // Skip first page, take pages from index 1 onwards (pages 2 and 3)
+    sortedPages.slice(1).forEach((page) => matchedPages.add(page.pageNumber));
   });
   
   return pages.filter((page) => matchedPages.has(page.pageNumber));
