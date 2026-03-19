@@ -159,13 +159,16 @@ export const ModernSales: React.FC<TemplateProps> = ({ data, editable: _editable
 
           {/* Terms */}
           <div className="terms-box">
-            <h3 className="terms-title">Payment Terms & Conditions</h3>
+            <h3 className="terms-title">Terms & Conditions</h3>
             <ul className="terms-list">
-              <li>Quote valid for 30 days from issue date</li>
-              <li>Payment due within 30 days of invoice</li>
-              <li>50% deposit required to commence work</li>
-              <li>Prices include GST where applicable</li>
-              <li>Variations will be quoted separately</li>
+              {quote.termsAndConditions
+                ? quote.termsAndConditions
+                    .split(/\n|•|\d+\.\s/)
+                    .map(t => t.trim())
+                    .filter(Boolean)
+                    .map((term, i) => <li key={i}>{term}</li>)
+                : <li>Standard terms and conditions apply</li>
+              }
             </ul>
           </div>
 

@@ -58,8 +58,41 @@ input[type='number'] {
 
 .empty-message {
   color: #718096;
-  font-size: 15px;
-  font-weight: 500;
+}
+
+/* Mobile Responsive Enhancements */
+@media (max-width: 768px) {
+  .quote-preview {
+    padding: 0;
+  }
+
+  .totals-block {
+    padding: 12px;
+  }
+
+  .quote-preview-empty {
+    padding: 30px 15px;
+  }
+
+  /* Delete button - top right corner */
+  .line-items-table td.line-item-delete {
+    order: 0;
+    position: absolute;
+    top: 8px;
+    right: 8px;
+    width: auto;
+    padding: 0 !important;
+  }
+
+  .line-items-table td.line-item-delete::before {
+    display: none;
+  }
+}
+
+@media (max-width: 480px) {
+  .quote-preview {
+    padding: 0;
+  }
 }
 
 /* Mobile optimizations */

@@ -39,7 +39,7 @@ const HomePage: React.FC = () => {
           {/* App Title */}
           <Heading
             size={{ base: 'md', md: 'lg' }}
-            color="#1D6FE8"
+            color="#750926"
             fontWeight="700"
             letterSpacing="-0.5px"
           >
@@ -52,7 +52,7 @@ const HomePage: React.FC = () => {
               spacing={2}
               cursor="pointer"
               onClick={() => history.push('/')}
-              _hover={{ color: '#1D6FE8' }}
+              _hover={{ color: '#750926' }}
               color="gray.700"
             >
               <Icon as={FiHome} boxSize={5} />
@@ -62,7 +62,7 @@ const HomePage: React.FC = () => {
               spacing={2}
               cursor="pointer"
               onClick={() => history.push('/quote')}
-              _hover={{ color: '#1D6FE8' }}
+              _hover={{ color: '#750926' }}
               color="gray.700"
             >
               <Icon as={FiFileText} boxSize={5} />
@@ -72,7 +72,7 @@ const HomePage: React.FC = () => {
               spacing={2}
               cursor="pointer"
               onClick={() => history.push('/preview')}
-              _hover={{ color: '#1D6FE8' }}
+              _hover={{ color: '#750926' }}
               color="gray.700"
             >
               <Icon as={FiEye} boxSize={5} />
@@ -118,7 +118,7 @@ const HomePage: React.FC = () => {
               spacing={2}
               cursor="pointer"
               onClick={() => { history.push('/'); setMobileMenuOpen(false); }}
-              _hover={{ color: '#1D6FE8', bg: 'gray.50' }}
+              _hover={{ color: '#750926', bg: 'gray.50' }}
               color="gray.700"
               py={2}
               px={2}
@@ -131,7 +131,7 @@ const HomePage: React.FC = () => {
               spacing={2}
               cursor="pointer"
               onClick={() => { history.push('/quote'); setMobileMenuOpen(false); }}
-              _hover={{ color: '#1D6FE8', bg: 'gray.50' }}
+              _hover={{ color: '#750926', bg: 'gray.50' }}
               color="gray.700"
               py={2}
               px={2}
@@ -144,7 +144,7 @@ const HomePage: React.FC = () => {
               spacing={2}
               cursor="pointer"
               onClick={() => { history.push('/preview'); setMobileMenuOpen(false); }}
-              _hover={{ color: '#1D6FE8', bg: 'gray.50' }}
+              _hover={{ color: '#750926', bg: 'gray.50' }}
               color="gray.700"
               py={2}
               px={2}
@@ -161,8 +161,8 @@ const HomePage: React.FC = () => {
       <Flex
         maxW="1920px"
         mx="auto"
-        p={{ base: 3, sm: 4, md: 6, lg: 8 }}
-        gap={{ base: 4, md: 6 }}
+        p={{ base: 2, sm: 3, md: 6, lg: 8 }}
+        gap={{ base: 3, md: 6 }}
         minH={{ md: 'calc(100vh - 88px)' }}
         direction={{ base: 'column', lg: 'row' }}
       >
@@ -172,7 +172,7 @@ const HomePage: React.FC = () => {
           minW={{ lg: '360px' }}
           display="flex"
           flexDirection="column"
-          gap={{ base: 4, md: 6 }}
+          gap={{ base: 3, md: 6 }}
           w={{ base: '100%', lg: 'auto' }}
         >
           <ProposalUpload />

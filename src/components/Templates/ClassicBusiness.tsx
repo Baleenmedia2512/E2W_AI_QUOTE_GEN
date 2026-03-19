@@ -174,26 +174,14 @@ export const ClassicBusiness: React.FC<TemplateProps> = ({ data, editable: _edit
         <div className="terms-section">
           <h3 className="section-heading">Terms & Conditions</h3>
           <ol className="terms-list">
-            <li>
-              <strong>Quotation Validity:</strong> This quotation remains valid for thirty (30) days
-              from the date of issue.
-            </li>
-            <li>
-              <strong>Payment Terms:</strong> Payment is due within thirty (30) days of invoice date.
-              A deposit of 50% may be required prior to commencement of work.
-            </li>
-            <li>
-              <strong>Pricing:</strong> All prices are quoted in Indian Rupees (INR) and include
-              Goods and Services Tax (GST) where applicable.
-            </li>
-            <li>
-              <strong>Scope Variations:</strong> Any changes or additions to the scope of work outlined
-              in this quotation will be subject to additional charges and will be quoted separately.
-            </li>
-            <li>
-              <strong>Acceptance:</strong> This quotation may be accepted by signing and returning a
-              copy, or by issuing a purchase order referencing this quotation number.
-            </li>
+            {quote.termsAndConditions
+              ? quote.termsAndConditions
+                  .split(/\n|•|\d+\.\s/)
+                  .map(t => t.trim())
+                  .filter(Boolean)
+                  .map((term, i) => <li key={i}>{term}</li>)
+              : <li>Standard terms and conditions apply</li>
+            }
           </ol>
         </div>
 

@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+﻿import React, { useState, useEffect } from 'react';
 import {
   Box,
   Button,
@@ -233,7 +233,7 @@ const CompanyInfoForm: React.FC<CompanyInfoFormProps> = ({ onSubmit, initialData
                 size="lg"
                 borderColor="gray.300"
                 _hover={{ borderColor: 'gray.400' }}
-                _focus={{ borderColor: '#1D6FE8', boxShadow: '0 0 0 1px #1D6FE8' }}
+                _focus={{ borderColor: '#750926', boxShadow: '0 0 0 1px #750926' }}
                 borderRadius="8px"
               />
               <FormErrorMessage>{errors.name}</FormErrorMessage>
@@ -252,7 +252,7 @@ const CompanyInfoForm: React.FC<CompanyInfoFormProps> = ({ onSubmit, initialData
                 size="lg"
                 borderColor="gray.300"
                 _hover={{ borderColor: 'gray.400' }}
-                _focus={{ borderColor: '#1D6FE8', boxShadow: '0 0 0 1px #1D6FE8' }}
+                _focus={{ borderColor: '#750926', boxShadow: '0 0 0 1px #750926' }}
                 borderRadius="8px"
               />
               <FormErrorMessage>{errors.address}</FormErrorMessage>
@@ -272,7 +272,7 @@ const CompanyInfoForm: React.FC<CompanyInfoFormProps> = ({ onSubmit, initialData
                     size="lg"
                     borderColor="gray.300"
                     _hover={{ borderColor: 'gray.400' }}
-                    _focus={{ borderColor: '#1D6FE8', boxShadow: '0 0 0 1px #1D6FE8' }}
+                    _focus={{ borderColor: '#750926', boxShadow: '0 0 0 1px #750926' }}
                     borderRadius="8px"
                   />
                   <FormErrorMessage>{errors.gst}</FormErrorMessage>
@@ -291,7 +291,7 @@ const CompanyInfoForm: React.FC<CompanyInfoFormProps> = ({ onSubmit, initialData
                     size="lg"
                     borderColor="gray.300"
                     _hover={{ borderColor: 'gray.400' }}
-                    _focus={{ borderColor: '#1D6FE8', boxShadow: '0 0 0 1px #1D6FE8' }}
+                    _focus={{ borderColor: '#750926', boxShadow: '0 0 0 1px #750926' }}
                     borderRadius="8px"
                   />
                   <FormErrorMessage>{errors.phone}</FormErrorMessage>
@@ -314,7 +314,7 @@ const CompanyInfoForm: React.FC<CompanyInfoFormProps> = ({ onSubmit, initialData
                     size="lg"
                     borderColor="gray.300"
                     _hover={{ borderColor: 'gray.400' }}
-                    _focus={{ borderColor: '#1D6FE8', boxShadow: '0 0 0 1px #1D6FE8' }}
+                    _focus={{ borderColor: '#750926', boxShadow: '0 0 0 1px #750926' }}
                     borderRadius="8px"
                   />
                   <FormErrorMessage>{errors.email}</FormErrorMessage>
@@ -333,7 +333,7 @@ const CompanyInfoForm: React.FC<CompanyInfoFormProps> = ({ onSubmit, initialData
                     size="lg"
                     borderColor="gray.300"
                     _hover={{ borderColor: 'gray.400' }}
-                    _focus={{ borderColor: '#1D6FE8', boxShadow: '0 0 0 1px #1D6FE8' }}
+                    _focus={{ borderColor: '#750926', boxShadow: '0 0 0 1px #750926' }}
                     borderRadius="8px"
                   />
                 </FormControl>
@@ -354,7 +354,7 @@ const CompanyInfoForm: React.FC<CompanyInfoFormProps> = ({ onSubmit, initialData
                     size="lg"
                     borderColor="gray.300"
                     _hover={{ borderColor: 'gray.400' }}
-                    _focus={{ borderColor: '#1D6FE8', boxShadow: '0 0 0 1px #1D6FE8' }}
+                    _focus={{ borderColor: '#750926', boxShadow: '0 0 0 1px #750926' }}
                     borderRadius="8px"
                   />
                 </FormControl>
@@ -371,7 +371,7 @@ const CompanyInfoForm: React.FC<CompanyInfoFormProps> = ({ onSubmit, initialData
                     size="lg"
                     borderColor="gray.300"
                     _hover={{ borderColor: 'gray.400' }}
-                    _focus={{ borderColor: '#1D6FE8', boxShadow: '0 0 0 1px #1D6FE8' }}
+                    _focus={{ borderColor: '#750926', boxShadow: '0 0 0 1px #750926' }}
                     borderRadius="8px"
                   />
                 </FormControl>

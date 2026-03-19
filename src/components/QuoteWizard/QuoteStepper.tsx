@@ -35,9 +35,9 @@ const QuoteStepper: React.FC<QuoteStepperProps> = ({ currentStep }) => {
                   size={{ base: '32px', md: '40px' }}
                   bg={
                     step.number < currentStep
-                      ? '#1D6FE8'
+                      ? '#750926'
                       : step.number === currentStep
-                      ? '#1D6FE8'
+                      ? '#750926'
                       : 'gray.200'
                   }
                   color={
@@ -47,7 +47,7 @@ const QuoteStepper: React.FC<QuoteStepperProps> = ({ currentStep }) => {
                   fontSize={{ base: 'sm', md: 'md' }}
                   border="3px solid"
                   borderColor={
-                    step.number <= currentStep ? '#1D6FE8' : 'gray.300'
+                    step.number <= currentStep ? '#750926' : 'gray.300'
                   }
                   transition="all 0.3s"
                 >
@@ -62,8 +62,8 @@ const QuoteStepper: React.FC<QuoteStepperProps> = ({ currentStep }) => {
                     fontSize={{ base: 'xs', md: 'sm' }}
                     fontWeight={step.number === currentStep ? '600' : '500'}
                     color={
-                      step.number === currentStep ? '#1D6FE8' : 
-                      step.number < currentStep ? '#1D6FE8' :
+                      step.number === currentStep ? '#750926' : 
+                      step.number < currentStep ? '#750926' :
                       'gray.600'
                     }
                   >
@@ -77,7 +77,7 @@ const QuoteStepper: React.FC<QuoteStepperProps> = ({ currentStep }) => {
                 <Box
                   width={{ base: '20px', md: '60px' }}
                   height="3px"
-                  bg={step.number < currentStep ? '#1D6FE8' : 'transparent'}
+                  bg={step.number < currentStep ? '#750926' : 'transparent'}
                   borderTop={step.number < currentStep ? 'none' : '3px dashed'}
                   borderColor={step.number < currentStep ? 'transparent' : 'gray.300'}
                   transition="all 0.3s"
@@ -93,7 +93,7 @@ const QuoteStepper: React.FC<QuoteStepperProps> = ({ currentStep }) => {
           <Progress
             value={(currentStep / steps.length) * 100}
             size="sm"
-            colorScheme="blue"
+            colorScheme="brand"
             borderRadius="full"
           />
         </Box>

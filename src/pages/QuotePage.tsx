@@ -265,8 +265,8 @@ const QuotePage: React.FC = () => {
       <QuoteStepper currentStep={getStepNumber()} />
 
       {/* Back/Next Navigation Arrows */}
-      <Box bg="white" borderBottom="1px solid" borderColor="gray.200" py={3}>
-        <Container maxW="1280px">
+      <Box bg="white" borderBottom="1px solid" borderColor="gray.200" py={{ base: 2, md: 3 }}>
+        <Container maxW="1280px" px={{ base: 3, md: 4 }}>
           <HStack justify="space-between">
             <IconButton
               aria-label="Back"
@@ -296,7 +296,7 @@ const QuotePage: React.FC = () => {
       </Box>
 
       {/* Main Content - Centered Card */}
-      <Container maxW="900px" py={8}>
+      <Container maxW="900px" py={{ base: 4, md: 8 }} px={{ base: 3, md: 4 }}>
         <Box>
           {currentStep === 'company' && (
             <CompanyInfoForm
@@ -320,24 +320,26 @@ const QuotePage: React.FC = () => {
                 onUpdate={handleQuoteUpdate}
                 onSave={handleSaveQuote}
               />
-              <HStack spacing={3} justify="flex-end" bg="white" p={6} borderRadius="16px" boxShadow="sm">
+              <HStack spacing={3} justify="flex-end" bg="white" p={{ base: 4, md: 6 }} borderRadius="16px" boxShadow="sm" flexDir={{ base: 'column', sm: 'row' }} w="100%">
                 <Button
                   variant="outline"
                   onClick={() => setCurrentStep('client')}
-                  size="lg"
+                  size={{ base: 'md', md: 'lg' }}
                   borderColor="gray.300"
                   _hover={{ bg: 'gray.50' }}
+                  w={{ base: '100%', sm: 'auto' }}
                 >
                   Back
                 </Button>
                 <Button
-                  bg="#1D6FE8"
+                  bg="#750926"
                   color="white"
                   onClick={handleGeneratePDF}
-                  size="lg"
-                  px={8}
-                  _hover={{ bg: '#1557C0' }}
+                  size={{ base: 'md', md: 'lg' }}
+                  px={{ base: 4, md: 8 }}
+                  _hover={{ bg: '#5a0619' }}
                   isDisabled={!companyInfo || !clientInfo || !currentQuote}
+                  w={{ base: '100%', sm: 'auto' }}
                 >
                   {!companyInfo ? 'Add Company Info' : 
                    !clientInfo ? 'Add Client Info' : 
@@ -349,29 +351,31 @@ const QuotePage: React.FC = () => {
 
           {currentStep === 'template' && (
             <VStack spacing={6} align="stretch">
-              <Box bg="white" borderRadius="16px" boxShadow="sm" p={6}>
+              <Box bg="white" borderRadius={{ base: '12px', md: '16px' }} boxShadow="sm" p={{ base: 3, md: 6 }}>
                 <TemplateSelector selectedTemplate={selectedTemplate} onSelectTemplate={setSelectedTemplate} />
               </Box>
-              <HStack spacing={3} justify="space-between" bg="white" p={6} borderRadius="16px" boxShadow="sm">
+              <HStack spacing={3} justify="space-between" bg="white" p={{ base: 4, md: 6 }} borderRadius="16px" boxShadow="sm" flexDir={{ base: 'column', sm: 'row' }} w="100%">
                 <Button
                   onClick={() => setCurrentStep('preview')}
                   variant="outline"
-                  size="lg"
+                  size={{ base: 'md', md: 'lg' }}
                   borderColor="gray.300"
                   _hover={{ bg: 'gray.50' }}
+                  w={{ base: '100%', sm: 'auto' }}
                 >
                   Back
                 </Button>
                 <Button
-                  bg="#1D6FE8"
+                  bg="#750926"
                   color="white"
                   onClick={handleTemplateSelected}
-                  size="lg"
-                  px={8}
-                  _hover={{ bg: '#1557C0' }}
+                  size={{ base: 'md', md: 'lg' }}
+                  px={{ base: 4, md: 8 }}
+                  _hover={{ bg: '#5a0619' }}
                   isDisabled={!selectedTemplate}
                   isLoading={isNavigating}
                   loadingText="Loading..."
+                  w={{ base: '100%', sm: 'auto' }}
                 >
                   Preview & Export PDF
                 </Button>

@@ -140,11 +140,14 @@ export const CorporateMinimal: React.FC<TemplateProps> = ({ data, editable: _edi
       <div className="terms-section">
         <h3>Terms & Conditions:</h3>
         <ul>
-          <li>This quotation is valid for 30 days from the date of issue</li>
-          <li>Payment terms: Net 30 days from invoice date</li>
-          <li>Prices are in Indian Rupees (INR) and include GST where applicable</li>
-          <li>A deposit of 50% may be required before commencement of work</li>
-          <li>Any variations to the scope of work will be quoted separately</li>
+          {quote.termsAndConditions
+            ? quote.termsAndConditions
+                .split(/\n|•|\d+\.\s/)
+                .map(t => t.trim())
+                .filter(Boolean)
+                .map((term, i) => <li key={i}>{term}</li>)
+            : <li>Standard terms and conditions apply</li>
+          }
         </ul>
       </div>
 

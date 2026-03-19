@@ -1,4 +1,4 @@
-.template-modern-sales {
+﻿.template-modern-sales {
   background: #f5f7fa;
   max-width: 210mm;
   margin: 0 auto;
@@ -8,7 +8,7 @@
 
 /* Top Bar */
 .template-modern-sales .top-bar {
-  background: linear-gradient(to right, #4f46e5, #7c3aed);
+  background: linear-gradient(to right, #750926, #9e3f44);
   color: white;
   padding: 20px 40px;
   display: flex;
@@ -118,7 +118,7 @@
 }
 
 .template-modern-sales .total-preview {
-  background: linear-gradient(135deg, #4f46e5, #7c3aed);
+  background: linear-gradient(135deg, #750926, #9e3f44);
   margin: 0 -30px;
   padding: 25px 30px;
   border-radius: 12px 12px 0 0;
@@ -177,8 +177,8 @@
 }
 
 .template-modern-sales .item-card:hover {
-  border-color: #4f46e5;
-  box-shadow: 0 4px 12px rgba(79, 70, 229, 0.1);
+  border-color: #750926;
+  box-shadow: 0 4px 12px rgba(117, 9, 38, 0.1);
 }
 
 .template-modern-sales .item-header {
@@ -191,7 +191,7 @@
 .template-modern-sales .item-badge {
   width: 36px;
   height: 36px;
-  background: linear-gradient(135deg, #4f46e5, #7c3aed);
+  background: linear-gradient(135deg, #750926, #9e3f44);
   color: white;
   border-radius: 8px;
   display: flex;
@@ -239,7 +239,7 @@
 .template-modern-sales .pricing-amount {
   font-size: 22px;
   font-weight: 700;
-  color: #4f46e5;
+  color: #750926;
 }
 
 /* Breakdown Section */
@@ -280,7 +280,7 @@
 }
 
 .template-modern-sales .breakdown-total {
-  background: linear-gradient(135deg, #4f46e5, #7c3aed);
+  background: linear-gradient(135deg, #750926, #9e3f44);
   margin: 15px -30px -30px;
   padding: 20px 30px;
   border-radius: 0 0 10px 10px;
@@ -346,10 +346,10 @@
 }
 
 .template-modern-sales .terms-list li:before {
-  content: '✓';
+  content: 'âœ“';
   position: absolute;
   left: 0;
-  color: #4f46e5;
+  color: #750926;
   font-weight: bold;
   font-size: 14px;
 }
@@ -409,8 +409,8 @@
 }
 
 .template-modern-sales .signature-filled {
-  background: #4f46e5;
-  border-color: #4f46e5;
+  background: #750926;
+  border-color: #750926;
   color: white;
   font-weight: 700;
   font-size: 18px;

@@ -1,4 +1,4 @@
-import React from 'react';
+﻿import React from 'react';
 import { Template, TemplateType } from '../../types';
 import { CorporateMinimal } from '../Templates/CorporateMinimal';
 import { PremiumAgency } from '../Templates/PremiumAgency';
@@ -15,7 +15,7 @@ export const TemplateSelector: React.FC<TemplateSelectorProps> = ({
   selectedTemplate,
   onSelectTemplate
 }) => {
-  console.log('🎨 TemplateSelector rendered');
+  console.log('ðŸŽ¨ TemplateSelector rendered');
   console.log('Selected template:', selectedTemplate);
   
   // Template preview SVGs
@@ -39,8 +39,8 @@ export const TemplateSelector: React.FC<TemplateSelectorProps> = ({
         <svg width="300" height="400" viewBox="0 0 300 400" xmlns="http://www.w3.org/2000/svg">
           <defs>
             <linearGradient id="grad1" x1="0%" y1="0%" x2="100%" y2="100%">
-              <stop offset="0%" style="stop-color:#667eea;stop-opacity:1" />
-              <stop offset="100%" style="stop-color:#764ba2;stop-opacity:1" />
+              <stop offset="0%" style="stop-color:#9e3f44;stop-opacity:1" />
+              <stop offset="100%" style="stop-color:#750926;stop-opacity:1" />
             </linearGradient>
           </defs>
           <rect width="300" height="400" fill="url(#grad1)"/>
@@ -48,7 +48,7 @@ export const TemplateSelector: React.FC<TemplateSelectorProps> = ({
           <rect x="30" y="35" width="120" height="12" fill="#ffffff" rx="3"/>
           <rect x="30" y="55" width="180" height="8" fill="rgba(255,255,255,0.8)" rx="2"/>
           <rect x="20" y="110" width="260" height="160" fill="#ffffff" rx="8"/>
-          <rect x="30" y="125" width="240" height="12" fill="#667eea" rx="3"/>
+          <rect x="30" y="125" width="240" height="12" fill="#9e3f44" rx="3"/>
           <rect x="30" y="150" width="240" height="8" fill="#e0e0e0" rx="2"/>
           <rect x="30" y="165" width="200" height="8" fill="#e0e0e0" rx="2"/>
           <text x="150" y="340" font-family="Arial" font-size="28" fill="#ffffff" text-anchor="middle" font-weight="bold">Premium</text>
@@ -57,10 +57,10 @@ export const TemplateSelector: React.FC<TemplateSelectorProps> = ({
       'modern-sales': `
         <svg width="300" height="400" viewBox="0 0 300 400" xmlns="http://www.w3.org/2000/svg">
           <rect width="300" height="400" fill="#f8f9fa"/>
-          <rect width="80" height="400" fill="#4f46e5"/>
+          <rect width="80" height="400" fill="#750926"/>
           <rect x="10" y="20" width="60" height="60" fill="rgba(255,255,255,0.2)" rx="8"/>
           <rect x="90" y="20" width="190" height="50" fill="#ffffff" rx="6" stroke="#e0e0e0" stroke-width="1"/>
-          <rect x="100" y="30" width="120" height="10" fill="#4f46e5" rx="2"/>
+          <rect x="100" y="30" width="120" height="10" fill="#750926" rx="2"/>
           <rect x="100" y="45" width="150" height="6" fill="#bdc3c7" rx="2"/>
           <rect x="90" y="90" width="190" height="120" fill="#ffffff" rx="6" stroke="#e0e0e0" stroke-width="1"/>
           <rect x="100" y="105" width="170" height="8" fill="#333" rx="2"/>
@@ -119,7 +119,7 @@ export const TemplateSelector: React.FC<TemplateSelectorProps> = ({
     }
   ];
 
-  console.log('📋 Total templates:', templates.length);
+  console.log('ðŸ“‹ Total templates:', templates.length);
 
   return (
     <div className="template-selector">
@@ -132,13 +132,13 @@ export const TemplateSelector: React.FC<TemplateSelectorProps> = ({
         }}
       >
         {templates.map((template) => {
-          console.log('🖼️ Rendering template card:', template.name);
+          console.log('ðŸ–¼ï¸ Rendering template card:', template.name);
           return (
             <div
               key={template.id}
               className={`template-card ${selectedTemplate === template.id ? 'selected' : ''}`}
               onClick={() => {
-                console.log('🖱️ Template card clicked:', template.id);
+                console.log('ðŸ–±ï¸ Template card clicked:', template.id);
                 onSelectTemplate(template.id);
               }}
             >
@@ -170,7 +170,7 @@ export const TemplateSelector: React.FC<TemplateSelectorProps> = ({
                 className={`select-button ${selectedTemplate === template.id ? 'selected' : ''}`}
                 onClick={(e) => {
                   e.stopPropagation();
-                  console.log('🖱️ Select button clicked:', template.id);
+                  console.log('ðŸ–±ï¸ Select button clicked:', template.id);
                   onSelectTemplate(template.id);
                 }}
               >

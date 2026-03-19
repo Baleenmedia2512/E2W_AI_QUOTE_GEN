@@ -1,4 +1,4 @@
-.template-premium-agency {
+﻿.template-premium-agency {
   background: #ffffff;
   max-width: 210mm;
   margin: 0 auto;
@@ -8,7 +8,7 @@
 
 /* Hero Header */
 .template-premium-agency .hero-header {
-  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  background: linear-gradient(135deg, #9e3f44 0%, #750926 100%);
   padding: 80px 60px;
   text-align: center;
   position: relative;
@@ -90,7 +90,7 @@
   display: block;
   font-size: 18px;
   font-weight: 700;
-  color: #667eea;
+  color: #9e3f44;
 }
 
 /* Two Column Section */
@@ -113,7 +113,7 @@
 }
 
 .template-premium-agency .card-accent {
-  border-color: #667eea;
+  border-color: #9e3f44;
   background: linear-gradient(to bottom, #ffffff 0%, #f8f9ff 100%);
 }
 
@@ -121,10 +121,10 @@
   font-size: 14px;
   text-transform: uppercase;
   letter-spacing: 2px;
-  color: #667eea;
+  color: #9e3f44;
   margin: 0 0 20px 0;
   font-weight: 700;
-  border-bottom: 2px solid #667eea;
+  border-bottom: 2px solid #9e3f44;
   padding-bottom: 10px;
 }
 
@@ -156,7 +156,7 @@
   color: #1a1a1a;
   margin: 0 0 30px 0;
   padding-bottom: 15px;
-  border-bottom: 3px solid #667eea;
+  border-bottom: 3px solid #9e3f44;
 }
 
 .template-premium-agency .services-list {
@@ -169,7 +169,7 @@
   background: #fafafa;
   border-radius: 12px;
   padding: 30px;
-  border-left: 5px solid #667eea;
+  border-left: 5px solid #9e3f44;
   transition: transform 0.2s, box-shadow 0.2s;
 }
 
@@ -185,7 +185,7 @@
 }
 
 .template-premium-agency .service-number {
-  background: #667eea;
+  background: #9e3f44;
   color: white;
   width: 40px;
   height: 40px;
@@ -247,7 +247,7 @@
 }
 
 .template-premium-agency .total-detail .pricing-value {
-  color: #667eea;
+  color: #9e3f44;
   font-size: 20px;
 }
 
@@ -259,7 +259,7 @@
 }
 
 .template-premium-agency .summary-card {
-  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  background: linear-gradient(135deg, #9e3f44 0%, #750926 100%);
   color: white;
   padding: 40px;
   border-radius: 12px;
@@ -350,7 +350,7 @@
 .template-premium-agency .term-icon {
   width: 32px;
   height: 32px;
-  background: #667eea;
+  background: #9e3f44;
   color: white;
   border-radius: 50%;
   display: flex;

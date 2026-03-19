@@ -182,17 +182,19 @@ const ChatInterface: React.FC = () => {
       variant="outline"
       borderRadius="xl"
       boxShadow="sm"
-      h={{ base: 'auto', lg: 'calc(100vh - 400px)' }}
-      minH={{ base: '400px', lg: '600px' }}
+      h={{ base: 'calc(100vh - 300px)', lg: 'calc(100vh - 400px)' }}
+      minH="400px"
+      maxH={{ base: 'calc(100vh - 200px)', lg: 'calc(100vh - 300px)' }}
       display="flex"
       flexDirection="column"
+      overflow="hidden"
     >
       <CardHeader pb={3}>
         <Heading size="md" fontWeight="600">AI Assistant</Heading>
       </CardHeader>
 
-      <CardBody display="flex" flexDirection="column" flex={1} pt={0}>
-        <VStack align="stretch" spacing={4} flex={1} h="full">
+      <CardBody display="flex" flexDirection="column" flex={1} pt={0} overflow="hidden">
+        <VStack align="stretch" spacing={4} flex={1} overflow="hidden">
           {/* Suggestion Chips */}
           {messages.length === 0 && (
             <Box>
@@ -204,8 +206,8 @@ const ChatInterface: React.FC = () => {
                   <Button
                     key={index}
                     variant="outline"
-                    borderColor="#1D6FE8"
-                    color="#1D6FE8"
+                    borderColor="#750926"
+                    color="#750926"
                     size="sm"
                     justifyContent="flex-start"
                     textAlign="left"
@@ -217,8 +219,8 @@ const ChatInterface: React.FC = () => {
                     fontWeight="400"
                     onClick={() => handleSuggestionClick(prompt)}
                     _hover={{
-                      bg: '#E8F1FE',
-                      borderColor: '#1557C0',
+                      bg: '#FFF0F3',
+                      borderColor: '#5a0619',
                     }}
                   >
                     {prompt}
@@ -235,7 +237,7 @@ const ChatInterface: React.FC = () => {
             borderRadius="lg"
             p={{ base: 3, md: 4 }}
             overflowY="auto"
-            minH={{ base: '200px', md: '300px' }}
+            minH="0"
           >
             {messages.length === 0 ? (
               <Flex justify="center" align="center" h="full">
@@ -254,7 +256,7 @@ const ChatInterface: React.FC = () => {
                     maxW="85%"
                   >
                     <Box
-                      bg={message.role === 'user' ? '#1D6FE8' : 'white'}
+                      bg={message.role === 'user' ? '#750926' : 'white'}
                       color={message.role === 'user' ? 'white' : 'gray.800'}
                       px={4}
                       py={3}
@@ -284,7 +286,7 @@ const ChatInterface: React.FC = () => {
                 {isLoading && (
                   <Box alignSelf="flex-start">
                     <Box bg="white" px={4} py={3} borderRadius="lg" border="1px solid" borderColor="gray.200">
-                      <Spinner size="sm" color="#1D6FE8" />
+                      <Spinner size="sm" color="#750926" />
                     </Box>
                   </Box>
                 )}
@@ -318,8 +320,8 @@ const ChatInterface: React.FC = () => {
               borderColor="gray.300"
               _hover={{ borderColor: 'gray.400' }}
               _focus={{
-                borderColor: '#1D6FE8',
-                boxShadow: '0 0 0 1px #1D6FE8',
+                borderColor: '#750926',
+                boxShadow: '0 0 0 1px #750926',
               }}
             />
             <IconButton
@@ -327,12 +329,12 @@ const ChatInterface: React.FC = () => {
               icon={<FiSend />}
               onClick={handleSendMessage}
               isDisabled={!inputValue.trim() || isLoading || !proposal.textContent}
-              bg="#1D6FE8"
+              bg="#750926"
               color="white"
               size="md"
               borderRadius="lg"
               _hover={{
-                bg: '#1557C0',
+                bg: '#5a0619',
               }}
               _active={{
                 bg: '#0F3E8C',

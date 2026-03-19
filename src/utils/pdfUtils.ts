@@ -30,9 +30,37 @@ export const extractPDFContent = async (file: File): Promise<PDFExtractionResult
     for (let i = 1; i <= pageCount; i++) {
       const page = await pdf.getPage(i);
       const content = await page.getTextContent();
-      const pageText = content.items
-        .map((item: any) => item.str)
-        .join(' ');
+      
+      // Preserve layout structure: group text items by their Y position (line)
+      // This prevents prices from different columns being jumbled together
+      const items = content.items as any[];
+      if (items.length === 0) {
+        textContent += '\n\n';
+        continue;
+      }
+
+      // Sort by Y position (descending = top-to-bottom) then X position (left-to-right)
+      const sortedItems = [...items].filter(item => item.str && item.str.trim()).sort((a, b) => {
+        const yDiff = b.transform[5] - a.transform[5];
+        if (Math.abs(yDiff) > 5) return yDiff; // Different lines (5pt threshold)
+        return a.transform[4] - b.transform[4]; // Same line, sort left-to-right
+      });
+
+      let pageText = '';
+      let lastY = -1;
+      for (const item of sortedItems) {
+        const currentY = Math.round(item.transform[5]);
+        if (lastY !== -1 && Math.abs(currentY - lastY) > 5) {
+          pageText += '\n'; // New line
+        } else if (lastY !== -1) {
+          // Same line - use tab to separate columns
+          const gap = item.transform[4] - (sortedItems[sortedItems.indexOf(item) - 1]?.transform[4] || 0);
+          pageText += gap > 50 ? '\t|\t' : ' ';
+        }
+        pageText += item.str;
+        lastY = currentY;
+      }
+
       textContent += pageText + '\n\n';
       console.log(`Page ${i}/${pageCount} extracted, text length:`, pageText.length);
     }

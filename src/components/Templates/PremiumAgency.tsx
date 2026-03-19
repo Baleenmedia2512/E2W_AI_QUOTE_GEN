@@ -161,36 +161,23 @@ export const PremiumAgency: React.FC<TemplateProps> = ({ data, editable: _editab
 
         {/* Terms */}
         <div className="terms-section">
-          <h3 className="section-title">Terms of Engagement</h3>
+          <h3 className="section-title">Terms & Conditions</h3>
           <div className="terms-grid">
-            <div className="term-item">
-              <div className="term-icon">✓</div>
-              <div className="term-content">
-                <h4>Validity</h4>
-                <p>This quotation is valid for 30 days from issue date</p>
-              </div>
-            </div>
-            <div className="term-item">
-              <div className="term-icon">✓</div>
-              <div className="term-content">
-                <h4>Payment</h4>
-                <p>Net 30 days from invoice date. 50% deposit required</p>
-              </div>
-            </div>
-            <div className="term-item">
-              <div className="term-icon">✓</div>
-              <div className="term-content">
-                <h4>Currency</h4>
-                <p>All prices in INR including GST where applicable</p>
-              </div>
-            </div>
-            <div className="term-item">
-              <div className="term-icon">✓</div>
-              <div className="term-content">
-                <h4>Variations</h4>
-                <p>Scope changes will be quoted separately</p>
-              </div>
-            </div>
+            {quote.termsAndConditions
+              ? quote.termsAndConditions
+                  .split(/\n|•|\d+\.\s/)
+                  .map(t => t.trim())
+                  .filter(Boolean)
+                  .map((term, i) => (
+                    <div className="term-item" key={i}>
+                      <div className="term-icon">✓</div>
+                      <div className="term-content">
+                        <p>{term}</p>
+                      </div>
+                    </div>
+                  ))
+              : <div className="term-item"><div className="term-icon">✓</div><div className="term-content"><p>Standard terms and conditions apply</p></div></div>
+            }
           </div>
         </div>
 

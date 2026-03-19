@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+﻿import React, { useState } from 'react';
 import {
   Box,
   Card,
@@ -265,14 +265,14 @@ const ProposalViewer: React.FC = () => {
                   cursor="pointer"
                   onClick={() => setProposal({ currentPage: pageNum })}
                   borderWidth={2}
-                  borderColor={pageNum === proposal.currentPage ? '#1D6FE8' : borderColor}
+                  borderColor={pageNum === proposal.currentPage ? '#750926' : borderColor}
                   borderRadius="md"
                   overflow="hidden"
                   transition="all 0.2s"
                   flexShrink={0}
                   boxShadow={pageNum === proposal.currentPage ? 'md' : 'sm'}
                   _hover={{
-                    borderColor: '#1D6FE8',
+                    borderColor: '#750926',
                     transform: 'translateY(-2px)',
                     boxShadow: 'md',
                   }}

@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+﻿import React, { useState, useEffect } from 'react';
 import {
   Box,
   Button,
@@ -25,6 +25,7 @@ import {
   Icon,
   Card,
   CardBody,
+  useBreakpointValue,
 } from '@chakra-ui/react';
 import { FiSave, FiPlus, FiTrash2, FiEdit3 } from 'react-icons/fi';
 import { Quote, QuoteItem, LineItem } from '../../types/quote';
@@ -38,6 +39,7 @@ interface QuotePreviewProps {
 
 const QuotePreview: React.FC<QuotePreviewProps> = ({ quote, onUpdate, onSave }) => {
   const [localQuote, setLocalQuote] = useState<Quote | null>(quote);
+  const isMobile = useBreakpointValue({ base: true, md: false });
 
   useEffect(() => {
     setLocalQuote(quote);
@@ -231,7 +233,7 @@ const QuotePreview: React.FC<QuotePreviewProps> = ({ quote, onUpdate, onSave }) 
   const gst = calculateGST(subtotal);
   const total = calculateTotal(subtotal, gst);
 
-  const formatCurrency = (amount: number) => `₹${amount.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+  const formatCurrency = (amount: number) => amount.toLocaleString('en-IN', { style: 'currency', currency: 'INR', minimumFractionDigits: 2, maximumFractionDigits: 2 });
 
   return (
     <Box className="quote-preview" py={{ base: 4, md: 8 }}>
@@ -301,79 +303,25 @@ const QuotePreview: React.FC<QuotePreviewProps> = ({ quote, onUpdate, onSave }) 
                 />
               </Flex>
 
-              {/* Line Items Table */}
-              <Box overflowX="auto" mb={4}>
-                <Table variant="simple" size="sm">
-                  <Thead>
-                    <Tr bg="gray.50">
-                      <Th color="gray.600" fontWeight="600" fontSize="xs" textTransform="uppercase">
-                        Item Description
-                      </Th>
-                      <Th color="gray.600" fontWeight="600" fontSize="xs" textTransform="uppercase" isNumeric>
-                        Quantity
-                      </Th>
-                      <Th color="gray.600" fontWeight="600" fontSize="xs" textTransform="uppercase" isNumeric>
-                        Rate
-                      </Th>
-                      <Th color="gray.600" fontWeight="600" fontSize="xs" textTransform="uppercase" isNumeric>
-                        Amount
-                      </Th>
-                      <Th></Th>
-                    </Tr>
-                  </Thead>
-                  <Tbody>
+              {/* Line Items */}
+              <Box mb={4}>
+                {isMobile ? (
+                  /* Mobile: Card-based layout */
+                  <VStack spacing={3} align="stretch">
                     {item.lineItems?.map((lineItem, lineItemIndex) => (
-                      <Tr key={lineItem.id} _hover={{ bg:  'gray.50' }}>
-                        <Td>
-                          <Input
-                            value={lineItem.description || ''}
-                            onChange={(e) =>
-                              updateLineItem(itemIndex, lineItemIndex, 'description', e.target.value)
-                            }
-                            placeholder="Enter description"
-                            size="sm"
-                            variant="unstyled"
-                            _focus={{ bg: 'white', border: '1px solid', borderColor: '#1D6FE8' }}
-                            px={2}
-                          />
-                        </Td>
-                        <Td isNumeric>
-                          <NumberInput
-                            value={lineItem.quantity}
-                            onChange={(_, value) =>
-                              updateLineItem(itemIndex, lineItemIndex, 'quantity', value)
-                            }
-                            min={0}
-                            size="sm"
-                          >
-                            <NumberInputField
-                              textAlign="right"
-                              _focus={{ bg: 'white', border: '1px solid', borderColor: '#1D6FE8' }}
-                              px={2}
-                            />
-                          </NumberInput>
-                        </Td>
-                        <Td isNumeric>
-                          <NumberInput
-                            value={lineItem.unitPrice}
-                            onChange={(_, value) =>
-                              updateLineItem(itemIndex, lineItemIndex, 'unitPrice', value)
-                            }
-                            min={0}
-                            precision={2}
-                            size="sm"
-                          >
-                            <NumberInputField
-                              textAlign="right"
-                              _focus={{ bg: 'white', border: '1px solid', borderColor: '#1D6FE8' }}
-                              px={2}
-                            />
-                          </NumberInput>
-                        </Td>
-                        <Td isNumeric fontWeight="500">
-                          {formatCurrency(calculateLineItemTotal(lineItem))}
-                        </Td>
-                        <Td>
+                      <Box
+                        key={lineItem.id}
+                        bg="gray.50"
+                        border="1px solid"
+                        borderColor="gray.200"
+                        borderRadius="10px"
+                        p={3}
+                      >
+                        {/* Description label + Delete button in one row */}
+                        <Flex justify="space-between" align="center" mb={1}>
+                          <Text fontSize="11px" fontWeight="600" color="gray.500" textTransform="uppercase" letterSpacing="0.5px">
+                            Description
+                          </Text>
                           <IconButton
                             aria-label="Delete line item"
                             icon={<Icon as={FiTrash2} />}
@@ -382,11 +330,177 @@ const QuotePreview: React.FC<QuotePreviewProps> = ({ quote, onUpdate, onSave }) 
                             size="xs"
                             onClick={() => removeLineItem(itemIndex, lineItemIndex)}
                           />
-                        </Td>
-                      </Tr>
+                        </Flex>
+                        {/* Description input full width - Textarea so long text is visible */}
+                        <Box mb={3}>
+                          <Textarea
+                            value={lineItem.description || ''}
+                            onChange={(e) =>
+                              updateLineItem(itemIndex, lineItemIndex, 'description', e.target.value)
+                            }
+                            placeholder="Enter description"
+                            size="sm"
+                            bg="white"
+                            borderColor="gray.200"
+                            borderRadius="6px"
+                            rows={2}
+                            resize="none"
+                            _focus={{ borderColor: '#750926', boxShadow: '0 0 0 1px #750926' }}
+                          />
+                        </Box>
+
+                        {/* Quantity & Rate side by side */}
+                        <Flex gap={3} mb={3}>
+                          <Box flex={1}>
+                            <Text fontSize="11px" fontWeight="600" color="gray.500" textTransform="uppercase" letterSpacing="0.5px" mb={1}>
+                              Quantity
+                            </Text>
+                            <NumberInput
+                              value={lineItem.quantity}
+                              onChange={(_, value) =>
+                                updateLineItem(itemIndex, lineItemIndex, 'quantity', value)
+                              }
+                              min={0}
+                              size="sm"
+                            >
+                              <NumberInputField
+                                textAlign="right"
+                                bg="white"
+                                borderColor="gray.200"
+                                borderRadius="6px"
+                                _focus={{ borderColor: '#750926', boxShadow: '0 0 0 1px #750926' }}
+                              />
+                            </NumberInput>
+                          </Box>
+                          <Box flex={1}>
+                            <Text fontSize="11px" fontWeight="600" color="gray.500" textTransform="uppercase" letterSpacing="0.5px" mb={1}>
+                              Rate
+                            </Text>
+                            <NumberInput
+                              value={lineItem.unitPrice}
+                              onChange={(_, value) =>
+                                updateLineItem(itemIndex, lineItemIndex, 'unitPrice', value)
+                              }
+                              min={0}
+                              precision={2}
+                              size="sm"
+                            >
+                              <NumberInputField
+                                textAlign="right"
+                                bg="white"
+                                borderColor="gray.200"
+                                borderRadius="6px"
+                                _focus={{ borderColor: '#750926', boxShadow: '0 0 0 1px #750926' }}
+                              />
+                            </NumberInput>
+                          </Box>
+                        </Flex>
+
+                        {/* Amount */}
+                        <Flex
+                          justify="flex-end"
+                          align="center"
+                          pt={2}
+                          borderTop="1px dashed"
+                          borderColor="gray.200"
+                        >
+                          <Text fontSize="12px" fontWeight="600" color="gray.500" mr={2}>Amount:</Text>
+                          <Text fontSize="15px" fontWeight="700" color="gray.800">
+                            {formatCurrency(calculateLineItemTotal(lineItem))}
+                          </Text>
+                        </Flex>
+                      </Box>
                     ))}
-                  </Tbody>
-                </Table>
+                  </VStack>
+                ) : (
+                  /* Desktop: Table layout */
+                  <Box overflowX="auto">
+                    <Table variant="simple" size="sm">
+                      <Thead>
+                        <Tr bg="gray.50">
+                          <Th color="gray.600" fontWeight="600" fontSize="xs" textTransform="uppercase">
+                            Item Description
+                          </Th>
+                          <Th color="gray.600" fontWeight="600" fontSize="xs" textTransform="uppercase" isNumeric>
+                            Quantity
+                          </Th>
+                          <Th color="gray.600" fontWeight="600" fontSize="xs" textTransform="uppercase" isNumeric>
+                            Rate
+                          </Th>
+                          <Th color="gray.600" fontWeight="600" fontSize="xs" textTransform="uppercase" isNumeric>
+                            Amount
+                          </Th>
+                          <Th></Th>
+                        </Tr>
+                      </Thead>
+                      <Tbody>
+                        {item.lineItems?.map((lineItem, lineItemIndex) => (
+                          <Tr key={lineItem.id} _hover={{ bg: 'gray.50' }}>
+                            <Td>
+                              <Input
+                                value={lineItem.description || ''}
+                                onChange={(e) =>
+                                  updateLineItem(itemIndex, lineItemIndex, 'description', e.target.value)
+                                }
+                                placeholder="Enter description"
+                                size="sm"
+                                variant="unstyled"
+                                _focus={{ bg: 'white', border: '1px solid', borderColor: '#750926' }}
+                                px={2}
+                              />
+                            </Td>
+                            <Td isNumeric>
+                              <NumberInput
+                                value={lineItem.quantity}
+                                onChange={(_, value) =>
+                                  updateLineItem(itemIndex, lineItemIndex, 'quantity', value)
+                                }
+                                min={0}
+                                size="sm"
+                              >
+                                <NumberInputField
+                                  textAlign="right"
+                                  _focus={{ bg: 'white', border: '1px solid', borderColor: '#750926' }}
+                                  px={2}
+                                />
+                              </NumberInput>
+                            </Td>
+                            <Td isNumeric>
+                              <NumberInput
+                                value={lineItem.unitPrice}
+                                onChange={(_, value) =>
+                                  updateLineItem(itemIndex, lineItemIndex, 'unitPrice', value)
+                                }
+                                min={0}
+                                precision={2}
+                                size="sm"
+                              >
+                                <NumberInputField
+                                  textAlign="right"
+                                  _focus={{ bg: 'white', border: '1px solid', borderColor: '#750926' }}
+                                  px={2}
+                                />
+                              </NumberInput>
+                            </Td>
+                            <Td isNumeric fontWeight="500">
+                              {formatCurrency(calculateLineItemTotal(lineItem))}
+                            </Td>
+                            <Td>
+                              <IconButton
+                                aria-label="Delete line item"
+                                icon={<Icon as={FiTrash2} />}
+                                variant="ghost"
+                                colorScheme="red"
+                                size="xs"
+                                onClick={() => removeLineItem(itemIndex, lineItemIndex)}
+                              />
+                            </Td>
+                          </Tr>
+                        ))}
+                      </Tbody>
+                    </Table>
+                  </Box>
+                )}
               </Box>
 
               {/* Add Line Item Button */}
@@ -512,7 +626,7 @@ const QuotePreview: React.FC<QuotePreviewProps> = ({ quote, onUpdate, onSave }) 
           bg="white"
           borderColor="gray.300"
           _hover={{ borderColor: 'gray.400' }}
-          _focus={{ borderColor: '#1D6FE8', boxShadow: '0 0 0 1px #1D6FE8' }}
+          _focus={{ borderColor: '#750926', boxShadow: '0 0 0 1px #750926' }}
         />
       </Box>
 
@@ -533,7 +647,7 @@ const QuotePreview: React.FC<QuotePreviewProps> = ({ quote, onUpdate, onSave }) 
           bg="white"
           borderColor="gray.300"
           _hover={{ borderColor: 'gray.400' }}
-          _focus={{ borderColor: '#1D6FE8', boxShadow: '0 0 0 1px #1D6FE8' }}
+          _focus={{ borderColor: '#750926', boxShadow: '0 0 0 1px #750926' }}
         />
       </Box>
     </Box>

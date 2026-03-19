@@ -118,6 +118,48 @@
   text-align: right;
 }
 
+/* Mobile Responsive */
+@media (max-width: 768px) {
+  .chat-content {
+    height: calc(100vh - 280px);
+  }
+
+  .message-bubble {
+    max-width: 85%;
+    padding: 10px 14px;
+  }
+
+  .messages-container {
+    padding: 12px;
+    gap: 10px;
+  }
+
+  .sample-prompts {
+    margin: 10px;
+    padding: 12px;
+  }
+
+  .sample-prompts-chips {
+    flex-direction: column;
+  }
+
+  .message-content {
+    font-size: 14px;
+  }
+}
+
+@media (max-width: 480px) {
+  .chat-content {
+    height: calc(100vh - 240px);
+  }
+
+  .message-bubble {
+    max-width: 90%;
+    padding: 8px 12px;
+    font-size: 13px;
+  }
+}
+
 .typing-indicator {
   padding: 8px 16px;
   display: flex;

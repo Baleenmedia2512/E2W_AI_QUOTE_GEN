@@ -83,16 +83,41 @@
 }
 
 @media (max-width: 768px) {
+  .proposal-upload-container {
+    padding: 10px;
+  }
+
   .upload-area {
-    padding: 30px 15px;
+    padding: 25px 12px;
+    border-radius: 10px;
+  }
+
+  .upload-area h3 {
+    font-size: 15px;
+  }
+
+  .upload-area p {
+    font-size: 13px;
   }
 
   .upload-icon {
-    font-size: 48px;
+    font-size: 44px;
   }
 
   .uploaded-file-info {
     flex-direction: column;
     text-align: center;
+    padding: 12px;
+  }
+}
+
+@media (max-width: 480px) {
+  .upload-area {
+    padding: 20px 10px;
+  }
+
+  .upload-icon {
+    font-size: 36px;
+    margin-bottom: 10px;
   }
 }

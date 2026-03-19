@@ -105,13 +105,20 @@
 }
 
 @media (max-width: 768px) {
-  .pdf-container {
+  .proposal-viewer-container {
     padding: 10px;
-    max-height: 600px;
+  }
+
+  .pdf-container {
+    padding: 8px;
+    max-height: 500px;
+    min-height: 300px;
+    border-radius: 8px;
   }
 
   .viewer-toolbar {
     flex-wrap: wrap;
+    padding: 6px;
   }
 
   .page-info {
@@ -119,9 +126,31 @@
     width: 100%;
     text-align: center;
     margin: 0 0 8px 0;
+    font-size: 13px;
   }
 
   .thumbnail {
-    min-width: 80px;
+    min-width: 60px;
+  }
+
+  .page-thumbnails {
+    gap: 8px;
+    padding: 10px 0;
+  }
+
+  .proposal-viewer-empty {
+    min-height: 250px;
+  }
+}
+
+@media (max-width: 480px) {
+  .pdf-container {
+    padding: 4px;
+    max-height: 400px;
+    min-height: 200px;
+  }
+
+  .page-thumbnails {
+    display: none;
   }
 }
