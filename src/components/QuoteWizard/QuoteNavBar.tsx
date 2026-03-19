@@ -3,19 +3,39 @@ import {
   Box,
   Container,
   HStack,
+  VStack,
   Text,
   Button,
   Icon,
   useColorMode,
   IconButton,
   Flex,
+  Drawer,
+  DrawerBody,
+  DrawerOverlay,
+  DrawerContent,
+  DrawerCloseButton,
+  useDisclosure,
 } from '@chakra-ui/react';
+import { HamburgerIcon } from '@chakra-ui/icons';
 import { FiHome, FiFileText, FiEye, FiMoon, FiSun } from 'react-icons/fi';
 import { useHistory } from 'react-router-dom';
 
 const QuoteNavBar: React.FC = () => {
   const history = useHistory();
   const { colorMode, toggleColorMode } = useColorMode();
+  const { isOpen, onOpen, onClose } = useDisclosure();
+
+  const navItems = [
+    { label: 'Home', icon: FiHome, path: '/' },
+    { label: 'Quote', icon: FiFileText, path: '/quote' },
+    { label: 'Preview', icon: FiEye, path: '/preview' },
+  ];
+
+  const handleNavigate = (path: string) => {
+    history.push(path);
+    onClose();
+  };
 
   return (
     <Box 
@@ -30,6 +50,17 @@ const QuoteNavBar: React.FC = () => {
     >
       <Container maxW="1280px">
         <Flex justify="space-between" align="center">
+          {/* Mobile Hamburger */}
+          <IconButton
+            display={{ base: 'flex', md: 'none' }}
+            aria-label="Open menu"
+            icon={<HamburgerIcon />}
+            variant="ghost"
+            onClick={onOpen}
+            color="gray.700"
+            _hover={{ bg: 'gray.100' }}
+          />
+
           {/* App Title */}
           <Text 
             fontSize="xl" 
@@ -40,38 +71,21 @@ const QuoteNavBar: React.FC = () => {
             Create Quote
           </Text>
 
-          {/* Navigation Links */}
+          {/* Desktop Navigation Links */}
           <HStack spacing={1} display={{ base: 'none', md: 'flex' }}>
-            <Button
-              variant="ghost"
-              leftIcon={<Icon as={FiHome} />}
-              onClick={() => history.push('/')}
-              fontWeight="500"
-              color="gray.700"
-              _hover={{ bg: 'gray.100' }}
-            >
-              Home
-            </Button>
-            <Button
-              variant="ghost"
-              leftIcon={<Icon as={FiFileText} />}
-              onClick={() => history.push('/quote')}
-              fontWeight="500"
-              color="gray.700"
-              _hover={{ bg: 'gray.100' }}
-            >
-              Quote
-            </Button>
-            <Button
-              variant="ghost"
-              leftIcon={<Icon as={FiEye} />}
-              onClick={() => history.push('/quote-preview')}
-              fontWeight="500"
-              color="gray.700"
-              _hover={{ bg: 'gray.100' }}
-            >
-              Preview
-            </Button>
+            {navItems.map((item) => (
+              <Button
+                key={item.label}
+                variant="ghost"
+                leftIcon={<Icon as={item.icon} />}
+                onClick={() => handleNavigate(item.path)}
+                fontWeight="500"
+                color="gray.700"
+                _hover={{ bg: 'gray.100' }}
+              >
+                {item.label}
+              </Button>
+            ))}
           </HStack>
 
           {/* Dark Mode Toggle */}
@@ -85,6 +99,34 @@ const QuoteNavBar: React.FC = () => {
           />
         </Flex>
       </Container>
+
+      {/* Mobile Drawer */}
+      <Drawer isOpen={isOpen} placement="left" onClose={onClose}>
+        <DrawerOverlay />
+        <DrawerContent>
+          <DrawerCloseButton />
+          <Box pt={12} px={4}>
+            <VStack spacing={2} align="stretch">
+              {navItems.map((item) => (
+                <Button
+                  key={item.label}
+                  variant="ghost"
+                  leftIcon={<Icon as={item.icon} />}
+                  onClick={() => handleNavigate(item.path)}
+                  justifyContent="flex-start"
+                  fontWeight="500"
+                  color="gray.700"
+                  _hover={{ bg: 'gray.100' }}
+                  size="lg"
+                  w="100%"
+                >
+                  {item.label}
+                </Button>
+              ))}
+            </VStack>
+          </Box>
+        </DrawerContent>
+      </Drawer>
     </Box>
   );
 };

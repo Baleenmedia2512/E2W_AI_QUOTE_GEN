@@ -183,11 +183,11 @@ const ProposalUpload: React.FC = () => {
             borderRadius="lg"
             bg={bgColor}
           >
-            <HStack spacing={4} justify="space-between">
-              <HStack spacing={3} flex={1}>
-                <Icon as={FiFile} boxSize={6} color="brand.500" />
-                <VStack align="start" spacing={0} flex={1}>
-                  <Text fontWeight="medium" fontSize="sm" noOfLines={1}>
+            <HStack spacing={3} justify="space-between" flexWrap="wrap">
+              <HStack spacing={3} flex={1} minW={0}>
+                <Icon as={FiFile} boxSize={6} color="brand.500" flexShrink={0} />
+                <VStack align="start" spacing={0} flex={1} minW={0}>
+                  <Text fontWeight="medium" fontSize="sm" noOfLines={1} wordBreak="break-all">
                     {proposal.fileName}
                   </Text>
                   <Text fontSize="xs" color="gray.500">

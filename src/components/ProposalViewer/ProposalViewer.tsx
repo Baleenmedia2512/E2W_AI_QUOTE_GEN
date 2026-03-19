@@ -1,4 +1,4 @@
-﻿import React, { useState } from 'react';
+﻿import React, { useState, useRef, useEffect, useCallback } from 'react';
 import {
   Box,
   Card,
@@ -35,10 +35,25 @@ const ProposalViewer: React.FC = () => {
   const { proposal, setProposal } = useAppStore();
   const [scale, setScale] = useState(1.0);
   const [_numPages, setNumPages] = useState<number>(0);
+  const [containerWidth, setContainerWidth] = useState<number>(0);
+  const pdfContainerRef = useRef<HTMLDivElement>(null);
 
   const borderColor = useColorModeValue('gray.200', 'gray.600');
   const bgColor = useColorModeValue('white', 'gray.700');
   const isMobile = useBreakpointValue({ base: true, md: false });
+
+  const measureContainer = useCallback(() => {
+    if (pdfContainerRef.current) {
+      const width = pdfContainerRef.current.clientWidth;
+      setContainerWidth(width);
+    }
+  }, []);
+
+  useEffect(() => {
+    measureContainer();
+    window.addEventListener('resize', measureContainer);
+    return () => window.removeEventListener('resize', measureContainer);
+  }, [measureContainer]);
 
   const onDocumentLoadSuccess = ({ numPages }: { numPages: number }) => {
     setNumPages(numPages);
@@ -188,14 +203,16 @@ const ProposalViewer: React.FC = () => {
           </Button>
 
           {/* PDF Document */}
-          <Center p={{ base: 2, md: 6 }}>
+          <Center p={{ base: 1, md: 6 }}>
             <Box
+              ref={pdfContainerRef}
               borderWidth={1}
               borderColor={borderColor}
               borderRadius="lg"
               overflow="hidden"
               boxShadow="lg"
               maxW="100%"
+              w="100%"
             >
               <Document
                 file={proposal.fileUrl}
@@ -218,7 +235,8 @@ const ProposalViewer: React.FC = () => {
               >
                 <Page
                   pageNumber={proposal.currentPage}
-                  scale={scale}
+                  scale={isMobile ? undefined : scale}
+                  width={isMobile && containerWidth > 0 ? containerWidth - 2 : undefined}
                   renderTextLayer={true}
                   renderAnnotationLayer={true}
                 />

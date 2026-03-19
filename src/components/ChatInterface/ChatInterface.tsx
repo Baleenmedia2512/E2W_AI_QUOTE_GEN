@@ -182,9 +182,9 @@ const ChatInterface: React.FC = () => {
       variant="outline"
       borderRadius="xl"
       boxShadow="sm"
-      h={{ base: 'calc(100vh - 300px)', lg: 'calc(100vh - 400px)' }}
-      minH="400px"
-      maxH={{ base: 'calc(100vh - 200px)', lg: 'calc(100vh - 300px)' }}
+      h={{ base: 'auto', lg: 'calc(100vh - 400px)' }}
+      minH={{ base: '350px', lg: '400px' }}
+      maxH={{ base: 'calc(100vh - 250px)', lg: 'calc(100vh - 300px)' }}
       display="flex"
       flexDirection="column"
       overflow="hidden"
@@ -193,7 +193,7 @@ const ChatInterface: React.FC = () => {
         <Heading size="md" fontWeight="600">AI Assistant</Heading>
       </CardHeader>
 
-      <CardBody display="flex" flexDirection="column" flex={1} pt={0} overflow="hidden">
+      <CardBody display="flex" flexDirection="column" flex={1} pt={0} overflow="hidden" pb={{ base: 2, md: 4 }}>
         <VStack align="stretch" spacing={4} flex={1} overflow="hidden">
           {/* Suggestion Chips */}
           {messages.length === 0 && (
@@ -297,7 +297,18 @@ const ChatInterface: React.FC = () => {
           </Box>
 
           {/* Bottom Chat Input Bar */}
-          <HStack spacing={2}>
+          <HStack 
+            spacing={2} 
+            flexShrink={0} 
+            py={2}
+            px={1}
+            borderTop="1px solid"
+            borderColor="gray.100"
+            bg="white"
+            position="relative"
+            zIndex={1}
+            w="100%"
+          >
             <Input
               value={inputValue}
               onChange={(e) => setInputValue(e.target.value)}
@@ -309,15 +320,17 @@ const ChatInterface: React.FC = () => {
               }}
               placeholder={
                 proposal.textContent
-                  ? 'Ask about the proposal or reque…'
-                  : 'Upload a proposal to start…'
+                  ? 'Ask about the proposal...'
+                  : 'Upload a proposal to start...'
               }
               disabled={isLoading || !proposal.textContent}
               size="md"
               borderRadius="lg"
-              flex={1}
               bg="white"
               borderColor="gray.300"
+              fontSize="16px"
+              h="44px"
+              w="100%"
               _hover={{ borderColor: 'gray.400' }}
               _focus={{
                 borderColor: '#750926',
@@ -332,7 +345,11 @@ const ChatInterface: React.FC = () => {
               bg="#750926"
               color="white"
               size="md"
+              h="44px"
+              w="44px"
+              minW="44px"
               borderRadius="lg"
+              flexShrink={0}
               _hover={{
                 bg: '#5a0619',
               }}
