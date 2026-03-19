@@ -2,9 +2,6 @@ import React, { useState, useEffect } from 'react';
 import {
   Box,
   Button,
-  Card,
-  CardHeader,
-  CardBody,
   FormControl,
   FormLabel,
   Input,
@@ -12,13 +9,18 @@ import {
   VStack,
   HStack,
   Heading,
-  Image,
   FormErrorMessage,
   Grid,
   GridItem,
+  Avatar,
+  Center,
+  Text,
+  Icon,
 } from '@chakra-ui/react';
+import { FiUploadCloud } from 'react-icons/fi';
 import { CompanyInfo } from '../../types/company';
 import { saveCompanyInfo, loadCompanyInfo } from '../../utils/localStorage';
+import './CompanyInfoForm.css';
 
 interface CompanyInfoFormProps {
   onSubmit: (companyInfo: CompanyInfo) => void;
@@ -141,160 +143,269 @@ const CompanyInfoForm: React.FC<CompanyInfoFormProps> = ({ onSubmit, initialData
   };
 
   return (
-    <Card variant="outline" borderRadius="xl" boxShadow="sm">
-      <CardHeader>
-        <HStack justify="space-between" flexWrap="wrap" gap={2}>
-          <Heading size="md">Company Information</Heading>
-          {loadCompanyInfo() && !useSaved && (
-            <Button size="sm" variant="outline" onClick={handleUseSavedInfo}>
-              Use Saved Info
-            </Button>
-          )}
-        </HStack>
-      </CardHeader>
-      <CardBody>
-        <form onSubmit={handleSubmit}>
-          <VStack spacing={5} align="stretch">
-            {/* Logo Upload */}
+    <Box className="company-form-card" py={8}>
+      {/* Section Title with Use Saved Info Button */}
+      <HStack justify="space-between" flexWrap="wrap" gap={2} mb={8}>
+        <Heading 
+          size="lg" 
+          fontWeight="500" 
+          color="gray.900" 
+          fontFamily="'DM Sans', sans-serif"
+        >
+          Company Information
+        </Heading>
+        {loadCompanyInfo() && !useSaved && (
+          <Button 
+            size="md" 
+            variant="outline" 
+            borderColor="gray.300"
+            color="gray.700"
+            fontWeight="500"
+            _hover={{ bg: 'gray.50', borderColor: 'gray.400' }}
+            onClick={handleUseSavedInfo}
+          >
+            Use Saved Info
+          </Button>
+        )}
+      </HStack>
+
+      <form onSubmit={handleSubmit}>
+        <VStack spacing={6} align="stretch">
+            {/* Logo Upload - Circular Avatar Style */}
             <FormControl>
-              <FormLabel>Company Logo (Optional)</FormLabel>
-              {logoPreview && (
-                <Box mb={3}>
-                  <Image
-                    src={logoPreview}
-                   alt="Company Logo"
-                    maxH="100px"
-                    objectFit="contain"
-                    borderRadius="md"
+              <FormLabel fontSize="sm" fontWeight="600" color="gray.700" mb={3}>
+                Company Logo <Text as="span" color="gray.500" fontWeight="400">(Optional)</Text>
+              </FormLabel>
+              <Center>
+                <VStack spacing={3}>
+                  <Box position="relative">
+                    {logoPreview ? (
+                      <Avatar
+                        src={logoPreview}
+                        size="2xl"
+                        bg="gray.100"
+                        border="3px solid"
+                        borderColor="blue.500"
+                      />
+                    ) : (
+                      <Avatar
+                        size="2xl"
+                        bg="blue.50"
+                        icon={<Icon as={FiUploadCloud} boxSize={10} color="blue.500" />}
+                        border="3px dashed"
+                        borderColor="gray.300"
+                      />
+                    )}
+                  </Box>
+                  <Input
+                    type="file"
+                    accept="image/*"
+                    onChange={handleLogoUpload}
+                    display="none"
+                    id="logo-upload"
                   />
-                </Box>
-              )}
-              <Input
-                type="file"
-                accept="image/*"
-                onChange={handleLogoUpload}
-                display="none"
-                id="logo-upload"
-              />
-              <Button as="label" htmlFor="logo-upload" size="sm" cursor="pointer">
-                {logoPreview ? 'Change Logo' : 'Upload Logo'}
-              </Button>
+                  <Button 
+                    as="label" 
+                    htmlFor="logo-upload" 
+                    size="sm"
+                    variant="outline"
+                    borderColor="gray.300"
+                    color="gray.700"
+                    fontWeight="500"
+                    cursor="pointer"
+                    _hover={{ bg: 'gray.50', borderColor: 'gray.400' }}
+                  >
+                    {logoPreview ? 'Change Logo' : 'Upload Logo'}
+                  </Button>
+                </VStack>
+              </Center>
             </FormControl>
 
-            {/* Company Name */}
+            {/* Company Name - Full Width */}
             <FormControl isRequired isInvalid={!!errors.name}>
-              <FormLabel>Company Name</FormLabel>
+              <FormLabel fontSize="sm" fontWeight="600" color="gray.700">
+                Company Name <Text as="span" color="red.500">*</Text>
+              </FormLabel>
               <Input
                 value={formData.name}
                 onChange={(e) => handleInputChange('name', e.target.value)}
                 placeholder="Enter company name"
+                size="lg"
+                borderColor="gray.300"
+                _hover={{ borderColor: 'gray.400' }}
+                _focus={{ borderColor: '#1D6FE8', boxShadow: '0 0 0 1px #1D6FE8' }}
+                borderRadius="8px"
               />
               <FormErrorMessage>{errors.name}</FormErrorMessage>
             </FormControl>
 
-            {/* Address */}
+            {/* Address - Full Width */}
             <FormControl isRequired isInvalid={!!errors.address}>
-              <FormLabel>Address</FormLabel>
+              <FormLabel fontSize="sm" fontWeight="600" color="gray.700">
+                Address <Text as="span" color="red.500">*</Text>
+              </FormLabel>
               <Textarea
                 value={formData.address}
                 onChange={(e) => handleInputChange('address', e.target.value)}
                 placeholder="Enter company address"
                 rows={3}
+                size="lg"
+                borderColor="gray.300"
+                _hover={{ borderColor: 'gray.400' }}
+                _focus={{ borderColor: '#1D6FE8', boxShadow: '0 0 0 1px #1D6FE8' }}
+                borderRadius="8px"
               />
               <FormErrorMessage>{errors.address}</FormErrorMessage>
             </FormControl>
 
-            {/* GST and Phone */}
+            {/* GST and Phone - Two Column Grid */}
             <Grid templateColumns={{ base: '1fr', md: 'repeat(2, 1fr)' }} gap={5}>
               <GridItem>
                 <FormControl isInvalid={!!errors.gst}>
-                  <FormLabel>GST Number (Optional)</FormLabel>
+                  <FormLabel fontSize="sm" fontWeight="600" color="gray.700">
+                    GST Number <Text as="span" color="gray.500" fontWeight="400">(Optional)</Text>
+                  </FormLabel>
                   <Input
                     value={formData.gst}
                     onChange={(e) => handleInputChange('gst', e.target.value)}
                     placeholder="Enter GST number"
+                    size="lg"
+                    borderColor="gray.300"
+                    _hover={{ borderColor: 'gray.400' }}
+                    _focus={{ borderColor: '#1D6FE8', boxShadow: '0 0 0 1px #1D6FE8' }}
+                    borderRadius="8px"
                   />
                   <FormErrorMessage>{errors.gst}</FormErrorMessage>
                 </FormControl>
               </GridItem>
               <GridItem>
                 <FormControl isRequired isInvalid={!!errors.phone}>
-                  <FormLabel>Phone</FormLabel>
+                  <FormLabel fontSize="sm" fontWeight="600" color="gray.700">
+                    Phone <Text as="span" color="red.500">*</Text>
+                  </FormLabel>
                   <Input
                     value={formData.phone}
                     onChange={(e) => handleInputChange('phone', e.target.value)}
                     placeholder="Enter phone number"
                     type="tel"
+                    size="lg"
+                    borderColor="gray.300"
+                    _hover={{ borderColor: 'gray.400' }}
+                    _focus={{ borderColor: '#1D6FE8', boxShadow: '0 0 0 1px #1D6FE8' }}
+                    borderRadius="8px"
                   />
                   <FormErrorMessage>{errors.phone}</FormErrorMessage>
                 </FormControl>
               </GridItem>
             </Grid>
 
-            {/* Email and Website */}
+            {/* Email and Website - Two Column Grid */}
             <Grid templateColumns={{ base: '1fr', md: 'repeat(2, 1fr)' }} gap={5}>
               <GridItem>
                 <FormControl isRequired isInvalid={!!errors.email}>
-                  <FormLabel>Email</FormLabel>
+                  <FormLabel fontSize="sm" fontWeight="600" color="gray.700">
+                    Email <Text as="span" color="red.500">*</Text>
+                  </FormLabel>
                   <Input
                     value={formData.email}
                     onChange={(e) => handleInputChange('email', e.target.value)}
                     placeholder="Enter email address"
                     type="email"
+                    size="lg"
+                    borderColor="gray.300"
+                    _hover={{ borderColor: 'gray.400' }}
+                    _focus={{ borderColor: '#1D6FE8', boxShadow: '0 0 0 1px #1D6FE8' }}
+                    borderRadius="8px"
                   />
                   <FormErrorMessage>{errors.email}</FormErrorMessage>
                 </FormControl>
               </GridItem>
               <GridItem>
                 <FormControl>
-                  <FormLabel>Website (Optional)</FormLabel>
+                  <FormLabel fontSize="sm" fontWeight="600" color="gray.700">
+                    Website <Text as="span" color="gray.500" fontWeight="400">(Optional)</Text>
+                  </FormLabel>
                   <Input
                     value={formData.website}
                     onChange={(e) => handleInputChange('website', e.target.value)}
                     placeholder="Enter website URL"
                     type="url"
+                    size="lg"
+                    borderColor="gray.300"
+                    _hover={{ borderColor: 'gray.400' }}
+                    _focus={{ borderColor: '#1D6FE8', boxShadow: '0 0 0 1px #1D6FE8' }}
+                    borderRadius="8px"
                   />
                 </FormControl>
               </GridItem>
             </Grid>
 
-            {/* Designation and Signature */}
+            {/* Designation and Signature - Two Column Grid */}
             <Grid templateColumns={{ base: '1fr', md: 'repeat(2, 1fr)' }} gap={5}>
               <GridItem>
                 <FormControl>
-                  <FormLabel>Designation (Optional)</FormLabel>
+                  <FormLabel fontSize="sm" fontWeight="600" color="gray.700">
+                    Designation <Text as="span" color="gray.500" fontWeight="400">(Optional)</Text>
+                  </FormLabel>
                   <Input
                     value={formData.designation}
                     onChange={(e) => handleInputChange('designation', e.target.value)}
                     placeholder="e.g., Managing Director"
+                    size="lg"
+                    borderColor="gray.300"
+                    _hover={{ borderColor: 'gray.400' }}
+                    _focus={{ borderColor: '#1D6FE8', boxShadow: '0 0 0 1px #1D6FE8' }}
+                    borderRadius="8px"
                   />
                 </FormControl>
               </GridItem>
               <GridItem>
                 <FormControl>
-                  <FormLabel>Signature Name (Optional)</FormLabel>
+                  <FormLabel fontSize="sm" fontWeight="600" color="gray.700">
+                    Signature Name <Text as="span" color="gray.500" fontWeight="400">(Optional)</Text>
+                  </FormLabel>
                   <Input
                     value={formData.signature}
                     onChange={(e) => handleInputChange('signature', e.target.value)}
                     placeholder="Enter signatory name"
+                    size="lg"
+                    borderColor="gray.300"
+                    _hover={{ borderColor: 'gray.400' }}
+                    _focus={{ borderColor: '#1D6FE8', boxShadow: '0 0 0 1px #1D6FE8' }}
+                    borderRadius="8px"
                   />
                 </FormControl>
               </GridItem>
             </Grid>
 
-            {/* Buttons */}
-            <HStack justify="flex-end" spacing={3} pt={4}>
-              <Button variant="ghost" onClick={handleClearForm}>
+            {/* Footer Buttons - Changed to match Client form (outline buttons) */}
+            <HStack justify="flex-end" spacing={3} pt={6}>
+              <Button 
+                variant="outline" 
+                onClick={handleClearForm}
+                size="lg"
+                borderColor="gray.300"
+                color="gray.700"
+                fontWeight="500"
+                _hover={{ bg: 'gray.50', borderColor: 'gray.400' }}
+              >
                 Clear
               </Button>
-              <Button type="submit" colorScheme="brand" size="lg">
+              <Button 
+                type="submit" 
+                size="lg"
+                variant="outline"
+                borderColor="gray.300"
+                color="gray.700"
+                fontWeight="500"
+                _hover={{ bg: 'gray.50', borderColor: 'gray.400' }}
+              >
                 Continue
               </Button>
             </HStack>
           </VStack>
         </form>
-      </CardBody>
-    </Card>
+    </Box>
   );
 };
 

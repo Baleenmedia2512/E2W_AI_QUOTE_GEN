@@ -4,19 +4,14 @@ import {
   Button,
   HStack,
   VStack,
-  Heading,
-  Card,
-  CardHeader,
-  CardBody,
-  Badge,
-  Flex,
-  useBreakpointValue,
-  Alert,
-  AlertIcon
+  Container,
+  Icon,
+  IconButton,
 } from '@chakra-ui/react';
-import { FiArrowLeft, FiArrowRight, FiCheck } from 'react-icons/fi';
+import { FiArrowLeft, FiArrowRight } from 'react-icons/fi';
 import { useHistory } from 'react-router-dom';
-import Layout from '../components/Layout/Layout';
+import QuoteNavBar from '../components/QuoteWizard/QuoteNavBar';
+import QuoteStepper from '../components/QuoteWizard/QuoteStepper';
 import CompanyInfoForm from '../components/CompanyInfoForm/CompanyInfoForm';
 import ClientInfoForm from '../components/ClientInfoForm/ClientInfoForm';
 import QuotePreview from '../components/QuotePreview/QuotePreview';
@@ -251,67 +246,57 @@ const QuotePage: React.FC = () => {
     }
   };
 
-  const isMobile = useBreakpointValue({ base: true, md: false });
-
-  const steps = [
-    { id: 'company', label: 'Company Info', number: 1 },
-    { id: 'client', label: 'Client Info', number: 2 },
-    { id: 'preview', label: 'Preview & Edit', number: 3 },
-    { id: 'template', label: 'Choose Template', number: 4 },
-  ];
+  const getStepNumber = (): number => {
+    switch (currentStep) {
+      case 'company': return 1;
+      case 'client': return 2;
+      case 'preview': return 3;
+      case 'template': return 4;
+      default: return 1;
+    }
+  };
 
   return (
-    <Layout title="Create Quote">
-      <VStack spacing={6} align="stretch">
-        {/* Navigation Buttons */}
-        <Flex justify="space-between" align="center" w="full">
-          <Button
-            leftIcon={<FiArrowLeft />}
-            variant="ghost"
-            onClick={handleBack}
-          >
-            Back
-          </Button>
-          
-          <Button
-            rightIcon={<FiArrowRight />}
-            variant="ghost"
-            colorScheme="blue"
-            onClick={handleNext}
-            isDisabled={
-              (currentStep === 'company' && !companyInfo) ||
-              (currentStep === 'client' && !clientInfo) ||
-              (currentStep === 'preview' && !currentQuote) ||
-              (currentStep === 'template' && !selectedTemplate)
-            }
-          >
-            Next
-          </Button>
-        </Flex>
+    <Box minH="100vh" bg="#EDF1F7">
+      {/* Top Navigation */}
+      <QuoteNavBar />
 
-        {/* Progress Steps */}
-        <Flex
-          justify="center"
-          gap={{ base: 2, md: 3 }}
-          wrap={isMobile ? "wrap" : "nowrap"}
-        >
-          {steps.map((step) => (
-            <Badge
-              key={step.id}
-              px={{ base: 3, md: 4 }}
-              py={2}
-              borderRadius="full"
-              fontSize={{ base: "xs", md: "sm" }}
-              fontWeight="semibold"
-              colorScheme={currentStep === step.id ? 'brand' : 'gray'}
-              variant={currentStep === step.id ? 'solid' : 'outline'}
-            >
-              {step.number}. {isMobile ? step.label.split(' ')[0] : step.label}
-            </Badge>
-          ))}
-        </Flex>
+      {/* Stepper */}
+      <QuoteStepper currentStep={getStepNumber()} />
 
-        {/* Form Steps */}
+      {/* Back/Next Navigation Arrows */}
+      <Box bg="white" borderBottom="1px solid" borderColor="gray.200" py={3}>
+        <Container maxW="1280px">
+          <HStack justify="space-between">
+            <IconButton
+              aria-label="Back"
+              icon={<Icon as={FiArrowLeft} />}
+              variant="ghost"
+              onClick={handleBack}
+              isDisabled={currentStep === 'company'}
+              colorScheme="blue"
+              size="md"
+            />
+            <IconButton
+              aria-label="Next"
+              icon={<Icon as={FiArrowRight} />}
+              variant="ghost"
+              onClick={handleNext}
+              isDisabled={
+                (currentStep === 'company' && !companyInfo) ||
+                (currentStep === 'client' && !clientInfo) ||
+                (currentStep === 'preview' && !currentQuote) ||
+                (currentStep === 'template' && !selectedTemplate)
+              }
+              colorScheme="blue"
+              size="md"
+            />
+          </HStack>
+        </Container>
+      </Box>
+
+      {/* Main Content - Centered Card */}
+      <Container maxW="900px" py={8}>
         <Box>
           {currentStep === 'company' && (
             <CompanyInfoForm
@@ -335,94 +320,67 @@ const QuotePage: React.FC = () => {
                 onUpdate={handleQuoteUpdate}
                 onSave={handleSaveQuote}
               />
-              <Card variant="outline">
-                <CardBody>
-                  <HStack spacing={3} justify="flex-end" flexWrap="wrap">
-                    <Button
-                      variant="outline"
-                      onClick={() => setCurrentStep('client')}
-                      size="lg"
-                    >
-                      Back
-                    </Button>
-                    <Button
-                      colorScheme="brand"
-                      onClick={handleGeneratePDF}
-                      isDisabled={!companyInfo || !clientInfo || !currentQuote}
-                      size="lg"
-                      flex={{ base: 1, md: 'auto' }}
-                    >
-                      {!companyInfo ? 'Add Company Info to Continue' : 
-                       !clientInfo ? 'Add Client Info to Continue' : 
-                       'Continue to Template Selection'}
-                    </Button>
-                  </HStack>
-                </CardBody>
-              </Card>
+              <HStack spacing={3} justify="flex-end" bg="white" p={6} borderRadius="16px" boxShadow="sm">
+                <Button
+                  variant="outline"
+                  onClick={() => setCurrentStep('client')}
+                  size="lg"
+                  borderColor="gray.300"
+                  _hover={{ bg: 'gray.50' }}
+                >
+                  Back
+                </Button>
+                <Button
+                  bg="#1D6FE8"
+                  color="white"
+                  onClick={handleGeneratePDF}
+                  size="lg"
+                  px={8}
+                  _hover={{ bg: '#1557C0' }}
+                  isDisabled={!companyInfo || !clientInfo || !currentQuote}
+                >
+                  {!companyInfo ? 'Add Company Info' : 
+                   !clientInfo ? 'Add Client Info' : 
+                   'Continue to Template'}
+                </Button>
+              </HStack>
             </VStack>
           )}
 
           {currentStep === 'template' && (
-            <Card variant="outline">
-              <CardHeader textAlign="center">
-                <Heading size="lg" mb={2}>Choose Your Template</Heading>
-                <Box color="gray.600">
-                  Select a professional template that best represents your brand
-                </Box>
-              </CardHeader>
-              <CardBody>
-                <VStack spacing={6} minH="400px">
-                  <TemplateSelector
-                    selectedTemplate={selectedTemplate}
-                    onSelectTemplate={(template) => {
-                      console.log('✅ Template selected:', template);
-                      setSelectedTemplate(template);
-                    }}
-                  />
-                  <Card variant="filled" w="full">
-                    <CardBody>
-                      <HStack spacing={3} justify="space-between" flexWrap="wrap">
-                        <Button
-                          variant="outline"
-                          leftIcon={<FiArrowLeft />}
-                          onClick={() => setCurrentStep('preview')}
-                          flex={{ base: 1, md: 'auto' }}
-                        >
-                          Back to Quote
-                        </Button>
-                        <Button
-                          colorScheme="green"
-                          leftIcon={<FiCheck />}
-                          onClick={handleTemplateSelected}
-                          isDisabled={!selectedTemplate || isNavigating}
-                          isLoading={isNavigating}
-                          loadingText="Loading Preview..."
-                          flex={{ base: 1, md: 'auto' }}
-                          minW={{ base: 'auto', md: '200px' }}
-                        >
-                          Preview & Export PDF
-                        </Button>
-                      </HStack>
-                    </CardBody>
-                  </Card>
-                </VStack>
-              </CardBody>
-            </Card>
-          )}
-
-          {/* Debug fallback */}
-          {currentStep && !['company', 'client', 'preview', 'template'].includes(currentStep) && (
-            <Alert status="error">
-              <AlertIcon />
-              Unknown step: {currentStep}
-              <Button ml={4} onClick={() => setCurrentStep('company')}>
-                Start Over
-              </Button>
-            </Alert>
+            <VStack spacing={6} align="stretch">
+              <Box bg="white" borderRadius="16px" boxShadow="sm" p={6}>
+                <TemplateSelector selectedTemplate={selectedTemplate} onSelectTemplate={setSelectedTemplate} />
+              </Box>
+              <HStack spacing={3} justify="space-between" bg="white" p={6} borderRadius="16px" boxShadow="sm">
+                <Button
+                  onClick={() => setCurrentStep('preview')}
+                  variant="outline"
+                  size="lg"
+                  borderColor="gray.300"
+                  _hover={{ bg: 'gray.50' }}
+                >
+                  Back
+                </Button>
+                <Button
+                  bg="#1D6FE8"
+                  color="white"
+                  onClick={handleTemplateSelected}
+                  size="lg"
+                  px={8}
+                  _hover={{ bg: '#1557C0' }}
+                  isDisabled={!selectedTemplate}
+                  isLoading={isNavigating}
+                  loadingText="Loading..."
+                >
+                  Preview & Export PDF
+                </Button>
+              </HStack>
+            </VStack>
           )}
         </Box>
-      </VStack>
-    </Layout>
+      </Container>
+    </Box>
   );
 };
 

@@ -1,21 +1,32 @@
 import React, { useState, useEffect } from 'react';
 import {
-  IonCard,
-  IonCardHeader,
-  IonCardTitle,
-  IonCardContent,
-  IonButton,
-  IonInput,
-  IonItem,
-  IonLabel,
-  IonToggle,
-  IonTextarea,
-  IonIcon,
-  IonGrid,
-  IonRow,
-  IonCol,
-} from '@ionic/react';
-import { addSharp, trashSharp, saveSharp } from 'ionicons/icons';
+  Box,
+  Button,
+  HStack,
+  VStack,
+  Heading,
+  Input,
+  Textarea,
+  Table,
+  Thead,
+  Tbody,
+  Tr,
+  Th,
+  Td,
+  IconButton,
+  Text,
+  Checkbox,
+  Flex,
+  NumberInput,
+  NumberInputField,
+  Editable,
+  EditableInput,
+  EditablePreview,
+  Icon,
+  Card,
+  CardBody,
+} from '@chakra-ui/react';
+import { FiSave, FiPlus, FiTrash2, FiEdit3 } from 'react-icons/fi';
 import { Quote, QuoteItem, LineItem } from '../../types/quote';
 import './QuotePreview.css';
 
@@ -34,11 +45,11 @@ const QuotePreview: React.FC<QuotePreviewProps> = ({ quote, onUpdate, onSave }) 
 
   if (!localQuote) {
     return (
-      <IonCard className="quote-preview-empty">
-        <IonCardContent>
+      <Card className="quote-preview-empty">
+        <CardBody>
           <p className="empty-message">No quote generated yet. Start a chat to create one.</p>
-        </IonCardContent>
-      </IonCard>
+        </CardBody>
+      </Card>
     );
   }
 
@@ -220,211 +231,312 @@ const QuotePreview: React.FC<QuotePreviewProps> = ({ quote, onUpdate, onSave }) 
   const gst = calculateGST(subtotal);
   const total = calculateTotal(subtotal, gst);
 
+  const formatCurrency = (amount: number) => `₹${amount.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+
   return (
-    <IonCard className="quote-preview">
-      <IonCardHeader>
-        <div className="quote-header">
-          <IonCardTitle>Quote Preview</IonCardTitle>
-          {onSave && (
-            <IonButton onClick={onSave} size="small">
-              <IonIcon icon={saveSharp} slot="start" />
-              Save Quote
-            </IonButton>
-          )}
-        </div>
-      </IonCardHeader>
-      <IonCardContent className="quote-content">
-        {/* Quote Items */}
+    <Box className="quote-preview" py={{ base: 4, md: 8 }}>
+      {/* Header with Title and Save Button */}
+      <Flex justify="space-between" align="center" mb={{ base: 4, md: 8 }} flexWrap="wrap" gap={3}>
+        <Heading 
+          size={{ base: 'md', md: 'lg' }}
+          fontWeight="500" 
+          color="gray.900" 
+          fontFamily="'DM Sans', sans-serif"
+        >
+          Quote Preview
+        </Heading>
+        {onSave && (
+          <Button
+            leftIcon={<Icon as={FiSave} />}
+            variant="outline"
+            borderColor="gray.300"
+            color="gray.700"
+            fontWeight="500"
+            onClick={onSave}
+            size={{ base: 'sm', md: 'md' }}
+            _hover={{ bg: 'gray.50', borderColor: 'gray.400' }}
+          >
+            Save Quote
+          </Button>
+        )}
+      </Flex>
+
+      {/* Quote Items - Each Section in a Card */}
+      <VStack spacing={6} align="stretch">
         {localQuote.items.map((item, itemIndex) => (
-          <div key={item.id} className="quote-item">
-            <div className="quote-item-header">
-              <IonInput
-                value={item.title || ''}
-                onIonInput={(e) => updateItem(itemIndex, 'title', e.detail.value)}
-                className="item-title-input"
-                placeholder="Section Title"
-              />
-              <IonButton
-                fill="clear"
-                color="danger"
-                size="small"
-                onClick={() => removeQuoteItem(itemIndex)}
+          <Card 
+            key={item.id}
+            bg="white"
+            borderRadius="12px"
+            border="1px solid"
+            borderColor="gray.200"
+            boxShadow="sm"
+          >
+            <CardBody p={{ base: 3, md: 6 }}>
+              {/* Section Header with Editable Title and Delete Button */}
+              <Flex justify="space-between" align="center" mb={4}>
+                <Editable
+                  defaultValue={item.title || item.description || 'Auto Full Branding'}
+                  fontSize="lg"
+                  fontWeight="600"
+                  color="gray.900"
+                  width="full"
+                  onChange={(value) => updateItem(itemIndex, 'title', value)}
+                >
+                  <EditablePreview
+                    px={2}
+                    py={1}
+                    _hover={{ bg: 'gray.50' }}
+                    cursor="text"
+                  />
+                  <EditableInput px={2} py={1} />
+                </Editable>
+                <IconButton
+                  aria-label="Delete section"
+                  icon={<Icon as={FiTrash2} />}
+                  variant="ghost"
+                  colorScheme="red"
+                  size="sm"
+                  onClick={() => removeQuoteItem(itemIndex)}
+                />
+              </Flex>
+
+              {/* Line Items Table */}
+              <Box overflowX="auto" mb={4}>
+                <Table variant="simple" size="sm">
+                  <Thead>
+                    <Tr bg="gray.50">
+                      <Th color="gray.600" fontWeight="600" fontSize="xs" textTransform="uppercase">
+                        Item Description
+                      </Th>
+                      <Th color="gray.600" fontWeight="600" fontSize="xs" textTransform="uppercase" isNumeric>
+                        Quantity
+                      </Th>
+                      <Th color="gray.600" fontWeight="600" fontSize="xs" textTransform="uppercase" isNumeric>
+                        Rate
+                      </Th>
+                      <Th color="gray.600" fontWeight="600" fontSize="xs" textTransform="uppercase" isNumeric>
+                        Amount
+                      </Th>
+                      <Th></Th>
+                    </Tr>
+                  </Thead>
+                  <Tbody>
+                    {item.lineItems?.map((lineItem, lineItemIndex) => (
+                      <Tr key={lineItem.id} _hover={{ bg:  'gray.50' }}>
+                        <Td>
+                          <Input
+                            value={lineItem.description || ''}
+                            onChange={(e) =>
+                              updateLineItem(itemIndex, lineItemIndex, 'description', e.target.value)
+                            }
+                            placeholder="Enter description"
+                            size="sm"
+                            variant="unstyled"
+                            _focus={{ bg: 'white', border: '1px solid', borderColor: '#1D6FE8' }}
+                            px={2}
+                          />
+                        </Td>
+                        <Td isNumeric>
+                          <NumberInput
+                            value={lineItem.quantity}
+                            onChange={(_, value) =>
+                              updateLineItem(itemIndex, lineItemIndex, 'quantity', value)
+                            }
+                            min={0}
+                            size="sm"
+                          >
+                            <NumberInputField
+                              textAlign="right"
+                              _focus={{ bg: 'white', border: '1px solid', borderColor: '#1D6FE8' }}
+                              px={2}
+                            />
+                          </NumberInput>
+                        </Td>
+                        <Td isNumeric>
+                          <NumberInput
+                            value={lineItem.unitPrice}
+                            onChange={(_, value) =>
+                              updateLineItem(itemIndex, lineItemIndex, 'unitPrice', value)
+                            }
+                            min={0}
+                            precision={2}
+                            size="sm"
+                          >
+                            <NumberInputField
+                              textAlign="right"
+                              _focus={{ bg: 'white', border: '1px solid', borderColor: '#1D6FE8' }}
+                              px={2}
+                            />
+                          </NumberInput>
+                        </Td>
+                        <Td isNumeric fontWeight="500">
+                          {formatCurrency(calculateLineItemTotal(lineItem))}
+                        </Td>
+                        <Td>
+                          <IconButton
+                            aria-label="Delete line item"
+                            icon={<Icon as={FiTrash2} />}
+                            variant="ghost"
+                            colorScheme="red"
+                            size="xs"
+                            onClick={() => removeLineItem(itemIndex, lineItemIndex)}
+                          />
+                        </Td>
+                      </Tr>
+                    ))}
+                  </Tbody>
+                </Table>
+              </Box>
+
+              {/* Add Line Item Button */}
+              <Button
+                leftIcon={<Icon as={FiPlus} />}
+                variant="outline"
+                size="sm"
+                borderColor="gray.300"
+                color="gray.700"
+                onClick={() => addLineItem(itemIndex)}
+                _hover={{ bg: 'gray.50' }}
+                mb={4}
               >
-                <IonIcon icon={trashSharp} slot="icon-only" />
-              </IonButton>
-            </div>
+                Add Line Item
+              </Button>
 
-            {/* Line Items Table */}
-            <div className="line-items-table">
-              <IonGrid>
-                <IonRow className="table-header">
-                  <IonCol size="5">Description</IonCol>
-                  <IonCol size="2">Qty</IonCol>
-                  <IonCol size="2">Price</IonCol>
-                  <IonCol size="2">Total</IonCol>
-                  <IonCol size="1"></IonCol>
-                </IonRow>
-                {item.lineItems?.map((lineItem, lineItemIndex) => (
-                  <IonRow key={lineItem.id} className="table-row">
-                    <IonCol size="5">
-                      <IonInput
-                        value={lineItem.description || ''}
-                        onIonInput={(e) =>
-                          updateLineItem(itemIndex, lineItemIndex, 'description', e.detail.value)
-                        }
-                        placeholder="Item description"
-                      />
-                    </IonCol>
-                    <IonCol size="2">
-                      <IonInput
-                        type="number"
-                        value={String(lineItem.quantity ?? 0)}
-                        onIonInput={(e) =>
-                          updateLineItem(
-                            itemIndex,
-                            lineItemIndex,
-                            'quantity',
-                            parseFloat(e.detail.value || '0')
-                          )
-                        }
-                        min="0"
-                      />
-                    </IonCol>
-                    <IonCol size="2">
-                      <IonInput
-                        type="number"
-                        value={String(lineItem.unitPrice ?? 0)}
-                        onIonInput={(e) =>
-                          updateLineItem(
-                            itemIndex,
-                            lineItemIndex,
-                            'unitPrice',
-                            parseFloat(e.detail.value || '0')
-                          )
-                        }
-                        min="0"
-                        step="0.01"
-                      />
-                    </IonCol>
-                    <IonCol size="2" className="total-col">
-                      ₹{calculateLineItemTotal(lineItem).toFixed(2)}
-                    </IonCol>
-                    <IonCol size="1">
-                      <IonButton
-                        fill="clear"
-                        color="danger"
-                        size="small"
-                        onClick={() => removeLineItem(itemIndex, lineItemIndex)}
-                      >
-                        <IonIcon icon={trashSharp} slot="icon-only" />
-                      </IonButton>
-                    </IonCol>
-                  </IonRow>
-                ))}
-              </IonGrid>
-            </div>
-
-            <IonButton
-              fill="outline"
-              size="small"
-              onClick={() => addLineItem(itemIndex)}
-              className="add-line-item-btn"
-            >
-              <IonIcon icon={addSharp} slot="start" />
-              Add Line Item
-            </IonButton>
-
-            <div className="item-subtotal">
-              <strong>Section Subtotal:</strong> ₹{calculateItemSubtotal(item).toFixed(2)}
-            </div>
-          </div>
+              {/* Section Subtotal */}
+              <Flex justify="flex-end" pt={2} borderTop="1px solid" borderColor="gray.200">
+                <Text fontSize="sm" fontWeight="600" color="gray.700">
+                  Section Subtotal: <Text as="span" ml={4}>{formatCurrency(calculateItemSubtotal(item))}</Text>
+                </Text>
+              </Flex>
+            </CardBody>
+          </Card>
         ))}
 
-        {/* Add Quote Item Button */}
-        <IonButton fill="outline" onClick={addQuoteItem} className="add-section-btn">
-          <IonIcon icon={addSharp} slot="start" />
+        {/* Add Section Button */}
+        <Button
+          leftIcon={<Icon as={FiPlus} />}
+          variant="outline"
+          borderColor="gray.300"
+          color="gray.700"
+          onClick={addQuoteItem}
+          _hover={{ bg: 'gray.50' }}
+        >
           Add Section
-        </IonButton>
+        </Button>
+      </VStack>
 
-        {/* Totals */}
-        <div className="quote-totals">
-          <div className="total-row">
-            <span>Subtotal:</span>
-            <span>₹{subtotal.toFixed(2)}</span>
-          </div>
-          
-          <div className="gst-section">
-            <IonItem lines="none" className="gst-toggle">
-              <IonLabel>Include GST</IonLabel>
-              <IonToggle checked={localQuote.gstEnabled} onIonChange={toggleGST} />
-            </IonItem>
+      {/* Totals Summary Block */}
+      <Box mt={{ base: 4, md: 8 }} p={{ base: 4, md: 6 }} bg="gray.100" borderRadius="12px">
+        <VStack spacing={4} align="stretch">
+          {/* Subtotal */}
+          <Flex justify="space-between" fontSize="md">
+            <Text fontWeight="500" color="gray.700">Subtotal:</Text>
+            <Text fontWeight="600" color="gray.900">{formatCurrency(subtotal)}</Text>
+          </Flex>
 
-            {localQuote.gstEnabled && (
-              <IonItem lines="none" className="gst-percentage-input">
-                <IonLabel position="stacked">GST Percentage (%)</IonLabel>
-                <IonInput
-                  type="number"
-                  value={String(localQuote.gstPercentage || 18)}
-                  onIonInput={(e) => {
-                    const value = parseFloat(e.detail.value || '0');
-                    if (!localQuote) return;
-                    const updatedQuote = { ...localQuote };
-                    updatedQuote.gstPercentage = value;
-                    updatedQuote.gstAmount = calculateGST(updatedQuote.subtotal);
-                    updatedQuote.total = calculateTotal(updatedQuote.subtotal, updatedQuote.gstAmount);
-                    updatedQuote.updatedAt = new Date();
-                    setLocalQuote(updatedQuote);
-                    onUpdate(updatedQuote);
-                  }}
-                  min="0"
-                  max="100"
-                  step="0.01"
-                  placeholder="e.g., 5, 18"
-                />
-              </IonItem>
-            )}
-          </div>
+          {/* GST Section */}
+          <Box bg="white" p={4} borderRadius="8px">
+            <VStack spacing={3} align="stretch">
+              <HStack>
+                <Checkbox
+                  isChecked={localQuote.gstEnabled}
+                  onChange={toggleGST}
+                  colorScheme="blue"
+                >
+                  <Text fontSize="sm" fontWeight="500">Include GST</Text>
+                </Checkbox>
+              </HStack>
 
+              {localQuote.gstEnabled && (
+                <HStack flexWrap="wrap" gap={2}>
+                  <Text fontSize="sm" fontWeight="500">GST Percentage (%):</Text>
+                  <NumberInput
+                    value={localQuote.gstPercentage}
+                    onChange={(_, value) => {
+                      if (!localQuote) return;
+                      const updatedQuote = { ...localQuote };
+                      updatedQuote.gstPercentage = value;
+                      updatedQuote.gstAmount = calculateGST(updatedQuote.subtotal);
+                      updatedQuote.total = calculateTotal(updatedQuote.subtotal, updatedQuote.gstAmount);
+                      updatedQuote.updatedAt = new Date();
+                      setLocalQuote(updatedQuote);
+                      onUpdate(updatedQuote);
+                    }}
+                    min={0}
+                    max={100}
+                    precision={2}
+                    size="sm"
+                    maxW="120px"
+                    defaultValue={18}
+                  >
+                    <NumberInputField />
+                  </NumberInput>
+                </HStack>
+              )}
+            </VStack>
+          </Box>
+
+          {/* GST Amount */}
           {localQuote.gstEnabled && (
-            <div className="total-row">
-              <span>GST ({localQuote.gstPercentage}%):</span>
-              <span>₹{gst.toFixed(2)}</span>
-            </div>
+            <Flex justify="space-between" fontSize="md">
+              <Text fontWeight="500" color="gray.700">GST ({localQuote.gstPercentage}%):</Text>
+              <Text fontWeight="600" color="gray.900">{formatCurrency(gst)}</Text>
+            </Flex>
           )}
 
-          <div className="total-row grand-total">
-            <span>Total:</span>
-            <span>₹{total.toFixed(2)}</span>
-          </div>
-        </div>
+          {/* Total */}
+          <Flex 
+            justify="space-between" 
+            pt={3} 
+            borderTop="2px solid" 
+            borderColor="gray.300"
+            fontSize="xl"
+          >
+            <Text fontWeight="700" color="gray.900">Total:</Text>
+            <Text fontWeight="700" color="gray.900">{formatCurrency(total)}</Text>
+          </Flex>
+        </VStack>
+      </Box>
 
-        {/* Delivery Timeline */}
-        <div className="quote-section">
-          <IonItem>
-            <IonLabel position="stacked">Delivery Timeline</IonLabel>
-            <IonInput
-              value={localQuote.deliveryTimeline || ''}
-              onIonInput={(e) => updateDeliveryTimeline(e.detail.value || '')}
-              placeholder="e.g., 4-6 weeks from approval"
-            />
-          </IonItem>
-        </div>
+      {/* Delivery Timeline */}
+      <Box mt={{ base: 4, md: 8 }}>
+        <Text fontSize="sm" fontWeight="600" color="gray.700" mb={2}>
+          Delivery Timeline
+        </Text>
+        <Input
+          value={localQuote.deliveryTimeline || ''}
+          onChange={(e) => updateDeliveryTimeline(e.target.value)}
+          placeholder="e.g., 7 working days from receipt"
+          size="lg"
+          bg="white"
+          borderColor="gray.300"
+          _hover={{ borderColor: 'gray.400' }}
+          _focus={{ borderColor: '#1D6FE8', boxShadow: '0 0 0 1px #1D6FE8' }}
+        />
+      </Box>
 
-        {/* Terms and Conditions */}
-        <div className="quote-section">
-          <IonItem>
-            <IonLabel position="stacked">Terms and Conditions</IonLabel>
-            <IonTextarea
-              value={localQuote.termsAndConditions || ''}
-              onIonInput={(e) => updateTermsAndConditions(e.detail.value || '')}
-              placeholder="Enter terms and conditions..."
-              rows={5}
-              autoGrow
-            />
-          </IonItem>
-        </div>
-      </IonCardContent>
-    </IonCard>
+      {/* Terms and Conditions */}
+      <Box mt={6}>
+        <HStack justify="space-between" mb={2}>
+          <Text fontSize="sm" fontWeight="600" color="gray.700">
+            Terms and Conditions
+          </Text>
+          <Icon as={FiEdit3} color="gray.500" boxSize={4} />
+        </HStack>
+        <Textarea
+          value={localQuote.termsAndConditions || ''}
+          onChange={(e) => updateTermsAndConditions(e.target.value)}
+          placeholder="Enter terms and conditions..."
+          rows={6}
+          size="lg"
+          bg="white"
+          borderColor="gray.300"
+          _hover={{ borderColor: 'gray.400' }}
+          _focus={{ borderColor: '#1D6FE8', boxShadow: '0 0 0 1px #1D6FE8' }}
+        />
+      </Box>
+    </Box>
   );
 };
 

@@ -14,9 +14,9 @@ const theme = extendTheme({
       200: '#7CC4FA',
       300: '#47A3F3',
       400: '#2186EB',
-      500: '#0967D2',
-      600: '#0552B5',
-      700: '#03449E',
+      500: '#1D6FE8',
+      600: '#1557C0',
+      700: '#124BA6',
       800: '#01337D',
       900: '#002159',
     },
@@ -34,13 +34,13 @@ const theme = extendTheme({
     },
   },
   fonts: {
-    heading: `'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif`,
-    body: `'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif`,
+    heading: `'DM Sans', 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif`,
+    body: `'DM Sans', 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif`,
   },
   styles: {
     global: {
       body: {
-        bg: 'gray.50',
+        bg: '#EDF1F7',
         color: 'gray.800',
       },
     },

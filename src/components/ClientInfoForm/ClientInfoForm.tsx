@@ -1,18 +1,19 @@
 import React, { useState, useEffect } from 'react';
 import {
-  IonCard,
-  IonCardHeader,
-  IonCardTitle,
-  IonCardContent,
-  IonButton,
-  IonInput,
-  IonItem,
-  IonLabel,
-  IonTextarea,
-  IonGrid,
-  IonRow,
-  IonCol,
-} from '@ionic/react';
+  Box,
+  Button,
+  FormControl,
+  FormLabel,
+  Input,
+  Textarea,
+  VStack,
+  HStack,
+  Heading,
+  FormErrorMessage,
+  Grid,
+  GridItem,
+  Text,
+} from '@chakra-ui/react';
 import { ClientInfo } from '../../types/client';
 import './ClientInfoForm.css';
 
@@ -104,132 +105,192 @@ const ClientInfoForm: React.FC<ClientInfoFormProps> = ({ onSubmit, onBack, initi
   };
 
   return (
-    <IonCard className="client-info-form">
-      <IonCardHeader>
-        <IonCardTitle>Client Information</IonCardTitle>
-      </IonCardHeader>
-      <IonCardContent>
-        <form onSubmit={handleSubmit}>
-          <IonGrid>
-            {/* Client Name */}
-            <IonRow>
-              <IonCol size="12" sizeMd="6">
-                <IonItem className={errors.name ? 'ion-invalid' : ''}>
-                  <IonLabel position="stacked">
-                    Client Name <span className="required">*</span>
-                  </IonLabel>
-                  <IonInput
-                    value={formData.name || ''}
-                    onIonInput={(e) => handleInputChange('name', e.detail.value || '')}
-                    placeholder="Enter client name"
-                  />
-                </IonItem>
-                {errors.name && <div className="error-message">{errors.name}</div>}
-              </IonCol>
+    <Box className="client-info-form" py={8}>
+      {/* Section Title */}
+      <Heading 
+        size="lg" 
+        fontWeight="500" 
+        color="gray.900" 
+        mb={8}
+        fontFamily="'DM Sans', sans-serif"
+      >
+        Client Information
+      </Heading>
 
-              {/* Company Name */}
-              <IonCol size="12" sizeMd="6">
-                <IonItem className={errors.company ? 'ion-invalid' : ''}>
-                  <IonLabel position="stacked">
-                    Company Name <span className="required">*</span>
-                  </IonLabel>
-                  <IonInput
-                    value={formData.company || ''}
-                    onIonInput={(e) => handleInputChange('company', e.detail.value || '')}
-                    placeholder="Enter company name"
-                  />
-                </IonItem>
-                {errors.company && <div className="error-message">{errors.company}</div>}
-              </IonCol>
-            </IonRow>
+      <form onSubmit={handleSubmit}>
+        <VStack spacing={6} align="stretch">
+          {/* Client Name and Company Name - Two Column */}
+          <Grid templateColumns={{ base: '1fr', md: 'repeat(2, 1fr)' }} gap={6}>
+            <GridItem>
+              <FormControl isRequired isInvalid={!!errors.name}>
+                <FormLabel fontSize="sm" fontWeight="600" color="gray.700">
+                  Client Name <Text as="span" color="red.500">*</Text>
+                </FormLabel>
+                <Input
+                  value={formData.name}
+                  onChange={(e) => handleInputChange('name', e.target.value)}
+                  placeholder="ramesh"
+                  size="lg"
+                  bg="white"
+                  borderColor="gray.300"
+                  _hover={{ borderColor: 'gray.400' }}
+                  _focus={{ borderColor: '#1D6FE8', boxShadow: '0 0 0 1px #1D6FE8' }}
+                  borderRadius="8px"
+                />
+                <FormErrorMessage>{errors.name}</FormErrorMessage>
+              </FormControl>
+            </GridItem>
 
-            {/* Address */}
-            <IonRow>
-              <IonCol size="12">
-                <IonItem className={errors.address ? 'ion-invalid' : ''}>
-                  <IonLabel position="stacked">
-                    Address <span className="required">*</span>
-                  </IonLabel>
-                  <IonTextarea
-                    value={formData.address || ''}
-                    onIonInput={(e) => handleInputChange('address', e.detail.value || '')}
-                    placeholder="Enter client address"
-                    rows={3}
-                  />
-                </IonItem>
-                {errors.address && <div className="error-message">{errors.address}</div>}
-              </IonCol>
-            </IonRow>
+            <GridItem>
+              <FormControl isRequired isInvalid={!!errors.company}>
+                <FormLabel fontSize="sm" fontWeight="600" color="gray.700">
+                  Company Name <Text as="span" color="red.500">*</Text>
+                </FormLabel>
+                <Input
+                  value={formData.company}
+                  onChange={(e) => handleInputChange('company', e.target.value)}
+                  placeholder="Ram Enterprises"
+                  size="lg"
+                  bg="white"
+                  borderColor="gray.300"
+                  _hover={{ borderColor: 'gray.400' }}
+                  _focus={{ borderColor: '#1D6FE8', boxShadow: '0 0 0 1px #1D6FE8' }}
+                  borderRadius="8px"
+                />
+                <FormErrorMessage>{errors.company}</FormErrorMessage>
+              </FormControl>
+            </GridItem>
+          </Grid>
 
-            {/* GST */}
-            <IonRow>
-              <IonCol size="12" sizeMd="6">
-                <IonItem className={errors.gst ? 'ion-invalid' : ''}>
-                  <IonLabel position="stacked">GST Number (Optional)</IonLabel>
-                  <IonInput
-                    value={formData.gst || ''}
-                    onIonInput={(e) => handleInputChange('gst', e.detail.value || '')}
-                    placeholder="Enter GST number"
-                  />
-                </IonItem>
-                {errors.gst && <div className="error-message">{errors.gst}</div>}
-              </IonCol>
+          {/* Address - Full Width (but max 50% width) */}
+          <Box maxW={{ base: '100%', md: '50%' }}>
+            <FormControl isRequired isInvalid={!!errors.address}>
+              <FormLabel fontSize="sm" fontWeight="600" color="gray.700">
+                Address <Text as="span" color="red.500">*</Text>
+              </FormLabel>
+              <Textarea
+                value={formData.address}
+                onChange={(e) => handleInputChange('address', e.target.value)}
+                placeholder="Madurai"
+                rows={3}
+                size="lg"
+                bg="white"
+                borderColor="gray.300"
+                _hover={{ borderColor: 'gray.400' }}
+                _focus={{ borderColor: '#1D6FE8', boxShadow: '0 0 0 1px #1D6FE8' }}
+                borderRadius="8px"
+              />
+              <FormErrorMessage>{errors.address}</FormErrorMessage>
+            </FormControl>
+          </Box>
 
-              {/* Phone */}
-              <IonCol size="12" sizeMd="6">
-                <IonItem className={errors.phone ? 'ion-invalid' : ''}>
-                  <IonLabel position="stacked">
-                    Phone <span className="required">*</span>
-                  </IonLabel>
-                  <IonInput
-                    value={formData.phone || ''}
-                    onIonInput={(e) => handleInputChange('phone', e.detail.value || '')}
-                    placeholder="Enter phone number"
-                    type="tel"
-                  />
-                </IonItem>
-                {errors.phone && <div className="error-message">{errors.phone}</div>}
-              </IonCol>
-            </IonRow>
+          {/* GST Number and Phone - Two Column */}
+          <Grid templateColumns={{ base: '1fr', md: 'repeat(2, 1fr)' }} gap={6}>
+            <GridItem>
+              <FormControl isInvalid={!!errors.gst}>
+                <FormLabel fontSize="sm" fontWeight="600" color="gray.700">
+                  GST Number <Text as="span" color="gray.500" fontWeight="400">(Optional)</Text>
+                </FormLabel>
+                <Input
+                  value={formData.gst}
+                  onChange={(e) => handleInputChange('gst', e.target.value)}
+                  placeholder="Enter GST number"
+                  size="lg"
+                  bg="white"
+                  borderColor="gray.300"
+                  _hover={{ borderColor: 'gray.400' }}
+                  _focus={{ borderColor: '#1D6FE8', boxShadow: '0 0 0 1px #1D6FE8' }}
+                  borderRadius="8px"
+                />
+                <FormErrorMessage>{errors.gst}</FormErrorMessage>
+              </FormControl>
+            </GridItem>
 
-            {/* Email */}
-            <IonRow>
-              <IonCol size="12">
-                <IonItem className={errors.email ? 'ion-invalid' : ''}>
-                  <IonLabel position="stacked">
-                    Email <span className="required">*</span>
-                  </IonLabel>
-                  <IonInput
-                    value={formData.email || ''}
-                    onIonInput={(e) => handleInputChange('email', e.detail.value || '')}
-                    placeholder="Enter email address"
-                    type="email"
-                  />
-                </IonItem>
-                {errors.email && <div className="error-message">{errors.email}</div>}
-              </IonCol>
-            </IonRow>
+            <GridItem>
+              <FormControl isRequired isInvalid={!!errors.phone}>
+                <FormLabel fontSize="sm" fontWeight="600" color="gray.700">
+                  Phone <Text as="span" color="red.500">*</Text>
+                </FormLabel>
+                <Input
+                  value={formData.phone}
+                  onChange={(e) => handleInputChange('phone', e.target.value)}
+                  placeholder="9360381404"
+                  type="tel"
+                  size="lg"
+                  bg="white"
+                  borderColor="gray.300"
+                  _hover={{ borderColor: 'gray.400' }}
+                  _focus={{ borderColor: '#1D6FE8', boxShadow: '0 0 0 1px #1D6FE8' }}
+                  borderRadius="8px"
+                />
+                <FormErrorMessage>{errors.phone}</FormErrorMessage>
+              </FormControl>
+            </GridItem>
+          </Grid>
 
-            {/* Buttons */}
-            <IonRow>
-              <IonCol size="12">
-                <div className="form-buttons">
-                  {onBack && (
-                    <IonButton type="button" fill="outline" onClick={onBack}>
-                      Back
-                    </IonButton>
-                  )}
-                  <IonButton type="button" fill="clear" onClick={handleClearForm}>
-                    Clear
-                  </IonButton>
-                  <IonButton type="submit">Continue</IonButton>
-                </div>
-              </IonCol>
-            </IonRow>
-          </IonGrid>
-        </form>
-      </IonCardContent>
-    </IonCard>
+          {/* Email - Half Width */}
+          <Box maxW={{ base: '100%', md: '50%' }}>
+            <FormControl isRequired isInvalid={!!errors.email}>
+              <FormLabel fontSize="sm" fontWeight="600" color="gray.700">
+                Email <Text as="span" color="red.500">*</Text>
+              </FormLabel>
+              <Input
+                value={formData.email}
+                onChange={(e) => handleInputChange('email', e.target.value)}
+                placeholder="rameshbalapr3@gmail.com"
+                type="email"
+                size="lg"
+                bg="white"
+                borderColor="gray.300"
+                _hover={{ borderColor: 'gray.400' }}
+                _focus={{ borderColor: '#1D6FE8', boxShadow: '0 0 0 1px #1D6FE8' }}
+                borderRadius="8px"
+              />
+              <FormErrorMessage>{errors.email}</FormErrorMessage>
+            </FormControl>
+          </Box>
+
+          {/* Footer Buttons - All Outlined Style */}
+          <HStack justify="flex-end" spacing={3} pt={6}>
+            {onBack && (
+              <Button
+                onClick={onBack}
+                variant="outline"
+                size="lg"
+                borderColor="gray.300"
+                color="gray.700"
+                fontWeight="500"
+                _hover={{ bg: 'gray.50', borderColor: 'gray.400' }}
+              >
+                Back
+              </Button>
+            )}
+            <Button
+              onClick={handleClearForm}
+              variant="outline"
+              size="lg"
+              borderColor="gray.300"
+              color="gray.700"
+              fontWeight="500"
+              _hover={{ bg: 'gray.50', borderColor: 'gray.400' }}
+            >
+              Clear
+            </Button>
+            <Button
+              type="submit"
+              variant="outline"
+              size="lg"
+              borderColor="gray.300"
+              color="gray.700"
+              fontWeight="500"
+              _hover={{ bg: 'gray.50', borderColor: 'gray.400' }}
+            >
+              Continue
+            </Button>
+          </HStack>
+        </VStack>
+      </form>
+    </Box>
   );
 };
 
