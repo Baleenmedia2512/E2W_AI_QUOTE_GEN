@@ -1,10 +1,18 @@
+/* Page break spacer - height set dynamically by PDF export service */
+.reference-page-break {
+  display: none; /* Hidden in normal view */
+}
+
 .reference-images-section {
-  margin-top: 30px;
-  padding: 20px;
+  margin-top: 60px;
+  padding: 30px 20px;
   border: 1px solid #e0e0e0;
   border-radius: 6px;
   background: #fafafa;
-  page-break-before: always;
+  clear: both;
+  display: block;
+  width: 100%;
+  box-sizing: border-box;
 }
 
 .reference-images-title {
@@ -14,84 +22,213 @@
   margin: 0 0 16px 0;
   padding-bottom: 8px;
   border-bottom: 2px solid #2980b9;
-}
-
-.reference-category-filter {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  margin-bottom: 16px;
-}
-
-.reference-filter-label {
-  font-size: 13px;
-  font-weight: 500;
-  color: #555;
-  white-space: nowrap;
-}
-
-.reference-toggle-button {
-  padding: 6px 12px;
-  font-size: 12px;
-  border: 1px solid #2980b9;
-  border-radius: 4px;
-  background: #fff;
-  color: #2980b9;
-  cursor: pointer;
-  transition: all 0.2s ease;
-  font-weight: 500;
-}
-
-.reference-toggle-button:hover {
-  background: #2980b9;
-  color: #fff;
-}
-
-.reference-toggle-button:focus {
-  outline: none;
-  box-shadow: 0 0 0 2px rgba(41, 128, 185, 0.2);
-}
-
-.reference-no-match {
-  font-size: 13px;
-  color: #999;
-  font-style: italic;
   text-align: center;
-  padding: 20px 0;
 }
 
 .reference-images-grid {
   display: flex;
   flex-direction: column;
-  gap: 20px;
+  gap: 0;
+  align-items: center;
+  width: 100%;
+}
+
+/* Group of 2 images per page */
+.reference-image-row {
+  display: flex;
+  flex-direction: column;
+  gap: 30px;
+  width: 100%;
+  margin-bottom: 40px;
 }
 
 .reference-image-item {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 6px;
+  display: block;
+  width: 100%;
+  max-width: 700px;
+  margin: 0 auto;
+  padding: 0;
+  clear: both;
+  position: relative;
 }
 
 .reference-image {
   width: 100%;
-  max-width: 100%;
+  max-width: 100%; /* Ensure image fits container */
   height: auto;
   border: 1px solid #ddd;
   border-radius: 4px;
   box-shadow: 0 1px 4px rgba(0, 0, 0, 0.08);
+  display: block;
+  object-fit: contain;
+  margin: 0 auto; /* Center image */
 }
 
 .reference-image-caption {
-  font-size: 11px;
-  color: #888;
+  font-size: 12px;
+  color: #666;
   font-style: italic;
+  font-weight: 500;
+  text-align: center;
+  display: block;
+  margin-top: 10px;
+  clear: both;
+}
+
+/* PDF Export Mode - spacer height set dynamically */
+.pdf-export-mode .reference-page-break {
+  display: block !important;
+  height: 200px; /* Default, overridden by JS */
+  clear: both;
+  background: transparent;
+  width: 100%;
+  visibility: hidden;
+}
+
+.pdf-export-mode .reference-images-section {
+  margin-top: 0;
+  padding: 40px 30px;
+  border: none;
+  background: #fff;
+  display: block;
+  width: 100%;
+  box-sizing: border-box;
+}
+
+.pdf-export-mode .reference-images-title {
+  margin-bottom: 30px;
+  font-size: 18px;
+  page-break-after: avoid;
+}
+
+.pdf-export-mode .reference-images-grid {
+  display: block;
+  width: 100%;
+}
+
+/* Each row contains max 2 images and forces page break after */
+.pdf-export-mode .reference-image-row {
+  display: flex;
+  flex-direction: column;
+  gap: 30px;
+  width: 100%;
+  page-break-inside: avoid;
+  page-break-after: always;
+  margin-bottom: 0;
+  padding: 20px 0;
+}
+
+/* Last row should not force page break */
+.pdf-export-mode .reference-image-row:last-child {
+  page-break-after: auto;
+}
+
+.pdf-export-mode .reference-image-item {
+  display: block;
+  width: 100%;
+  max-width: 700px;
+  margin: 0 auto;
+  padding: 0;
+  clear: both;
+  position: relative;
+  page-break-inside: avoid;
+}
+
+.pdf-export-mode .reference-image {
+  max-width: 100%;
+  max-height: 850px;
+  width: auto;
+  height: auto;
+  margin: 0 auto;
+  display: block;
+  object-fit: contain;
+  box-shadow: none;
+  border: 1px solid #ccc;
+  clear: both;
+}
+
+.pdf-export-mode .reference-image-caption {
+  font-size: 13px;
+  margin-top: 10px;
+  text-align: center;
+  display: block;
+  width: 100%;
+  color: #666;
+  clear: both;
 }
 
 @media print {
+  .reference-page-break {
+    display: block !important;
+    height: 200px; /* Overridden by JS */
+    clear: both;
+    background: transparent;
+    width: 100%;
+    visibility: hidden;
+  }
+
   .reference-images-section {
-    page-break-before: always;
-    border: 1px solid #ccc;
+    border: none;
     box-shadow: none;
+    background: #fff;
+    padding: 40px 30px;
+    margin-top: 0;
+    width: 100%;
+  }
+
+  .reference-images-title {
+    margin-bottom: 25px;
+  }
+
+  .reference-images-grid {
+    display: block;
+    width: 100%;
+  }
+
+  /* Each row contains max 2 images */
+  .reference-image-row {
+    display: flex;
+    flex-direction: column;
+    gap: 25px;
+    width: 100%;
+    page-break-inside: avoid;
+    page-break-after: always;
+    margin-bottom: 0;
+    padding: 15px 0;
+  }
+
+  .reference-image-row:last-child {
+    page-break-after: auto;
+  }
+
+  .reference-image-item {
+    display: block;
+    width: 100%;
+    max-width: 700px;
+    margin: 0 auto;
+    padding: 0;
+    clear: both;
+    position: relative;
+    page-break-inside: avoid;
+  }
+
+  .reference-image {
+    max-height: 850px;
+    max-width: 100%;
+    width: auto;
+    height: auto;
+    box-shadow: none;
+    margin: 0 auto;
+    display: block;
+    object-fit: contain;
+    clear: both;
+  }
+
+  .reference-image-caption {
+    margin-top: 10px;
+    font-size: 13px;
+    display: block;
+    text-align: center;
+    clear: both;
   }
 }

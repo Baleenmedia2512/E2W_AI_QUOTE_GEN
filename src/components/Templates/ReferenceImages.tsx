@@ -70,24 +70,40 @@ export const ReferenceImages: React.FC<ReferenceImagesProps> = ({ proposalPages,
     return filterPagesByQuoteItems(proposalPages, items || []);
   }, [proposalPages, items]);
 
+  // Group images into pairs (max 2 per page)
+  const groupedPages = useMemo(() => {
+    const groups: ExtractedPage[][] = [];
+    for (let i = 0; i < filteredPages.length; i += 2) {
+      groups.push(filteredPages.slice(i, i + 2));
+    }
+    return groups;
+  }, [filteredPages]);
+
   if (!proposalPages || proposalPages.length === 0) return null;
   if (filteredPages.length === 0) return null;
 
   return (
-    <div className="reference-images-section">
-      <h3 className="reference-images-title">Reference Images from Proposal</h3>
-      <div className="reference-images-grid">
-        {filteredPages.map((page) => (
-          <div key={page.pageNumber} className="reference-image-item">
-            <img
-              src={page.imageDataUrl}
-              alt={`Proposal page ${page.pageNumber}`}
-              className="reference-image"
-            />
-            <span className="reference-image-caption">Page {page.pageNumber}</span>
-          </div>
-        ))}
+    <>
+      <div className="reference-page-break" style={{ pageBreakBefore: 'always', height: '1px', clear: 'both' }}></div>
+      <div className="reference-images-section">
+        <h3 className="reference-images-title">Reference Images from Proposal</h3>
+        <div className="reference-images-grid">
+          {groupedPages.map((group, groupIndex) => (
+            <div key={`group-${groupIndex}`} className="reference-image-row">
+              {group.map((page) => (
+                <div key={page.pageNumber} className="reference-image-item">
+                  <img
+                    src={page.imageDataUrl}
+                    alt={`Proposal page ${page.pageNumber}`}
+                    className="reference-image"
+                  />
+                  <span className="reference-image-caption">Page {page.pageNumber}</span>
+                </div>
+              ))}
+            </div>
+          ))}
+        </div>
       </div>
-    </div>
+    </>
   );
 };

@@ -31,8 +31,41 @@ export const exportToPDF = async (
     // Force desktop styles by adding a class
     element.classList.add('pdf-export-mode');
 
+    // Calculate dynamic page break for reference images section
+    const pageBreakElement = element.querySelector('.reference-page-break') as HTMLElement;
+    const referenceSection = element.querySelector('.reference-images-section') as HTMLElement;
+    
+    if (pageBreakElement && referenceSection) {
+      // Get position of page break element
+      const pageBreakRect = pageBreakElement.getBoundingClientRect();
+      const containerRect = element.getBoundingClientRect();
+      
+      // Calculate absolute position from top
+      const contentBeforeBreak = pageBreakRect.top - containerRect.top;
+      
+      // A4 page height at scale 2: approximately 1123px per page
+      const pageHeightPx = 1123;
+      
+      // Calculate how much content fills the current page
+      const contentOnFirstPage = contentBeforeBreak % pageHeightPx;
+      
+      // Calculate spacer needed to reach exactly the next page boundary
+      // Add safety margin of 100px to ensure section title starts on new page
+      const spacerHeight = contentOnFirstPage > 0 
+        ? (pageHeightPx - contentOnFirstPage) + 100
+        : 200; // Minimum spacer if already at page boundary
+      
+      pageBreakElement.style.height = `${spacerHeight}px`;
+      console.log('📐 Page break spacer:', {
+        contentBefore: Math.round(contentBeforeBreak),
+        contentOnPage: Math.round(contentOnFirstPage),
+        spacerHeight: Math.round(spacerHeight),
+        totalAfterSpacer: Math.round(contentBeforeBreak + spacerHeight)
+      });
+    }
+
     // Let the browser reflow with desktop dimensions
-    await new Promise(r => setTimeout(r, 100));
+    await new Promise(r => setTimeout(r, 200));
 
     // Capture the element as canvas with high quality
     const canvas = await html2canvas(element, {
