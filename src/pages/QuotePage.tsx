@@ -14,7 +14,7 @@ import {
   Alert,
   AlertIcon
 } from '@chakra-ui/react';
-import { FiArrowLeft, FiCheck } from 'react-icons/fi';
+import { FiArrowLeft, FiArrowRight, FiCheck } from 'react-icons/fi';
 import { useHistory } from 'react-router-dom';
 import Layout from '../components/Layout/Layout';
 import CompanyInfoForm from '../components/CompanyInfoForm/CompanyInfoForm';
@@ -239,6 +239,18 @@ const QuotePage: React.FC = () => {
     }
   };
 
+  const handleNext = () => {
+    if (currentStep === 'company' && companyInfo) {
+      setCurrentStep('client');
+    } else if (currentStep === 'client' && clientInfo) {
+      setCurrentStep('preview');
+    } else if (currentStep === 'preview' && currentQuote) {
+      setCurrentStep('template');
+    } else if (currentStep === 'template' && selectedTemplate) {
+      handleTemplateSelected();
+    }
+  };
+
   const isMobile = useBreakpointValue({ base: true, md: false });
 
   const steps = [
@@ -251,15 +263,31 @@ const QuotePage: React.FC = () => {
   return (
     <Layout title="Create Quote">
       <VStack spacing={6} align="stretch">
-        {/* Back Button */}
-        <Button
-          leftIcon={<FiArrowLeft />}
-          variant="ghost"
-          onClick={handleBack}
-          alignSelf="flex-start"
-        >
-          Back
-        </Button>
+        {/* Navigation Buttons */}
+        <Flex justify="space-between" align="center" w="full">
+          <Button
+            leftIcon={<FiArrowLeft />}
+            variant="ghost"
+            onClick={handleBack}
+          >
+            Back
+          </Button>
+          
+          <Button
+            rightIcon={<FiArrowRight />}
+            variant="ghost"
+            colorScheme="blue"
+            onClick={handleNext}
+            isDisabled={
+              (currentStep === 'company' && !companyInfo) ||
+              (currentStep === 'client' && !clientInfo) ||
+              (currentStep === 'preview' && !currentQuote) ||
+              (currentStep === 'template' && !selectedTemplate)
+            }
+          >
+            Next
+          </Button>
+        </Flex>
 
         {/* Progress Steps */}
         <Flex
