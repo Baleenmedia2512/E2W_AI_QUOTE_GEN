@@ -1,147 +1,185 @@
 .template-corporate-minimal {
-  background: white;
-  padding: 60px;
+  background: #ffffff;
+  padding: 36px 44px;
   max-width: 210mm; /* A4 width */
   margin: 0 auto;
   font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
-  color: #333;
-  line-height: 1.6;
+  color: #2d3436;
+  line-height: 1.4;
+  position: relative;
 }
 
-/* Header */
+/* Subtle top accent bar */
+.template-corporate-minimal::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 5px;
+  background: linear-gradient(90deg, #1a3a5c 0%, #2980b9 50%, #1a3a5c 100%);
+}
+
+/* ─── Header ─── */
 .template-corporate-minimal .template-header {
   display: flex;
   justify-content: space-between;
   align-items: flex-start;
-  padding-bottom: 40px;
-  border-bottom: 3px solid #2c3e50;
-  margin-bottom: 40px;
+  padding-bottom: 16px;
+  border-bottom: 2px solid #1a3a5c;
+  margin-bottom: 18px;
+  gap: 24px;
 }
 
 .template-corporate-minimal .company-info {
   flex: 1;
+  min-width: 0;
 }
 
 .template-corporate-minimal .company-logo {
-  max-width: 180px;
-  max-height: 80px;
-  margin-bottom: 15px;
+  max-width: 120px;
+  max-height: 50px;
+  margin-bottom: 6px;
   object-fit: contain;
+  display: block;
 }
 
 .template-corporate-minimal .company-name {
-  font-size: 28px;
+  font-size: 20px;
   font-weight: 700;
-  color: #2c3e50;
-  margin: 0 0 15px 0;
+  color: #1a3a5c;
+  margin: 0 0 4px 0;
+  letter-spacing: 0.3px;
 }
 
 .template-corporate-minimal .company-details {
-  font-size: 13px;
-  color: #666;
-  line-height: 1.8;
+  font-size: 11px;
+  color: #636e72;
+  line-height: 1.5;
 }
 
 .template-corporate-minimal .company-details p {
-  margin: 4px 0;
+  margin: 2px 0;
 }
 
 .template-corporate-minimal .quote-meta {
   text-align: right;
+  flex-shrink: 0;
 }
 
 .template-corporate-minimal .quote-meta h2 {
-  font-size: 32px;
-  font-weight: 700;
-  color: #2c3e50;
-  margin: 0 0 20px 0;
-  letter-spacing: 2px;
+  font-size: 22px;
+  font-weight: 800;
+  color: #1a3a5c;
+  margin: 0 0 10px 0;
+  letter-spacing: 3px;
+  text-transform: uppercase;
 }
 
 .template-corporate-minimal .meta-details {
-  font-size: 14px;
+  font-size: 11.5px;
+  background: #f0f4f8;
+  border-radius: 6px;
+  padding: 8px 12px;
 }
 
 .template-corporate-minimal .meta-row {
   display: flex;
   justify-content: flex-end;
-  margin-bottom: 8px;
+  align-items: baseline;
+  margin-bottom: 4px;
+  gap: 10px;
+}
+
+.template-corporate-minimal .meta-row:last-child {
+  margin-bottom: 0;
 }
 
 .template-corporate-minimal .meta-label {
   font-weight: 600;
-  margin-right: 10px;
-  color: #555;
+  color: #636e72;
+  white-space: nowrap;
+  font-size: 11.5px;
+  text-transform: uppercase;
+  letter-spacing: 0.3px;
 }
 
 .template-corporate-minimal .meta-value {
-  color: #333;
+  color: #1a3a5c;
+  font-weight: 600;
+  font-size: 13px;
 }
 
-/* Client Section */
+/* ─── Client Section ─── */
 .template-corporate-minimal .client-section {
-  background: #f8f9fa;
-  padding: 25px;
-  margin-bottom: 40px;
-  border-left: 4px solid #2c3e50;
+  background: #f7f9fc;
+  padding: 14px 20px;
+  margin-bottom: 18px;
+  border-left: 4px solid #2980b9;
+  border-radius: 0 6px 6px 0;
 }
 
 .template-corporate-minimal .client-section h3 {
-  font-size: 16px;
-  font-weight: 600;
-  color: #2c3e50;
-  margin: 0 0 15px 0;
+  font-size: 10px;
+  font-weight: 700;
+  color: #2980b9;
+  margin: 0 0 6px 0;
   text-transform: uppercase;
-  letter-spacing: 1px;
+  letter-spacing: 1.5px;
 }
 
 .template-corporate-minimal .client-details {
-  font-size: 14px;
-  line-height: 1.8;
+  font-size: 12.5px;
+  line-height: 1.5;
+  color: #2d3436;
 }
 
 .template-corporate-minimal .client-name {
   font-weight: 700;
-  font-size: 16px;
-  color: #333;
-  margin: 0 0 8px 0;
+  font-size: 15px;
+  color: #1a3a5c;
+  margin: 0 0 2px 0;
 }
 
 .template-corporate-minimal .client-details p {
-  margin: 4px 0;
+  margin: 2px 0;
 }
 
-/* Quote Items Table */
+/* ─── Quote Items Table ─── */
 .template-corporate-minimal .quote-items-section {
-  margin-bottom: 40px;
+  margin-bottom: 0;
 }
 
 .template-corporate-minimal .items-table {
   width: 100%;
-  border-collapse: collapse;
-  font-size: 14px;
+  border-collapse: separate;
+  border-spacing: 0;
+  font-size: 13px;
+  border-radius: 6px;
+  overflow: hidden;
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.06);
 }
 
 .template-corporate-minimal .items-table thead {
-  background: #2c3e50;
-  color: white;
+  background: linear-gradient(135deg, #1a3a5c 0%, #1e4d78 100%);
+  color: #ffffff;
 }
 
 .template-corporate-minimal .items-table th {
-  padding: 15px;
+  padding: 10px 14px;
   text-align: left;
   font-weight: 600;
   text-transform: uppercase;
-  letter-spacing: 0.5px;
-  font-size: 12px;
+  letter-spacing: 0.8px;
+  font-size: 10px;
 }
 
 .template-corporate-minimal .items-table .col-description {
-  width: 45%;
+  width: 46%;
 }
 
 .template-corporate-minimal .items-table .col-quantity {
-  width: 15%;
+  width: 14%;
   text-align: center;
 }
 
@@ -156,15 +194,21 @@
 }
 
 .template-corporate-minimal .items-table tbody tr {
-  border-bottom: 1px solid #e0e0e0;
+  border-bottom: 1px solid #e8ecf1;
+  transition: background 0.15s ease;
+}
+
+.template-corporate-minimal .items-table tbody tr:nth-child(even) {
+  background: #fafbfc;
 }
 
 .template-corporate-minimal .items-table tbody tr:last-child {
-  border-bottom: 2px solid #2c3e50;
+  border-bottom: none;
 }
 
 .template-corporate-minimal .items-table td {
-  padding: 15px;
+  padding: 10px 14px;
+  vertical-align: middle;
 }
 
 .template-corporate-minimal .item-description {
@@ -173,107 +217,138 @@
 
 .template-corporate-minimal .item-title {
   font-weight: 600;
-  color: #333;
-  margin-bottom: 5px;
+  color: #1a3a5c;
+  margin-bottom: 3px;
+  font-size: 13.5px;
 }
 
 .template-corporate-minimal .item-details {
-  font-size: 13px;
-  color: #666;
-  line-height: 1.6;
+  font-size: 11.5px;
+  color: #636e72;
+  line-height: 1.5;
+  margin-top: 2px;
 }
 
 .template-corporate-minimal .item-quantity {
   text-align: center;
-  color: #555;
+  color: #2d3436;
+  font-weight: 500;
 }
 
 .template-corporate-minimal .item-rate,
 .template-corporate-minimal .item-total {
   text-align: right;
-  color: #333;
+  color: #2d3436;
   font-weight: 500;
+  font-variant-numeric: tabular-nums;
 }
 
-/* Totals Section */
+.template-corporate-minimal .item-total {
+  font-weight: 600;
+  color: #1a3a5c;
+}
+
+/* ─── Totals Section ─── */
 .template-corporate-minimal .totals-section {
   display: flex;
   justify-content: flex-end;
-  margin-bottom: 40px;
+  margin-bottom: 18px;
+  margin-top: -1px;
 }
 
 .template-corporate-minimal .totals-table {
-  min-width: 350px;
+  min-width: 320px;
+  background: #f7f9fc;
+  border-radius: 0 0 6px 6px;
+  overflow: hidden;
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.06);
 }
 
 .template-corporate-minimal .total-row {
   display: flex;
   justify-content: space-between;
-  padding: 12px 20px;
-  font-size: 15px;
+  align-items: center;
+  padding: 8px 16px;
+  font-size: 13px;
 }
 
 .template-corporate-minimal .total-row:not(.total-final) {
-  border-bottom: 1px solid #e0e0e0;
+  border-bottom: 1px solid #e4e9f0;
 }
 
 .template-corporate-minimal .total-label {
   font-weight: 600;
-  color: #555;
+  color: #636e72;
+  font-size: 12.5px;
 }
 
 .template-corporate-minimal .total-value {
-  color: #333;
-  font-weight: 500;
+  color: #2d3436;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
 }
 
 .template-corporate-minimal .total-final {
-  background: #2c3e50;
-  color: white;
-  font-size: 18px;
+  background: linear-gradient(135deg, #1a3a5c 0%, #1e4d78 100%);
+  color: #ffffff;
+  font-size: 15px;
   font-weight: 700;
-  margin-top: 5px;
+  padding: 10px 16px;
+  margin-top: 2px;
 }
 
-.template-corporate-minimal .total-final .total-label,
+.template-corporate-minimal .total-final .total-label {
+  color: rgba(255, 255, 255, 0.85);
+  font-size: 13px;
+}
+
 .template-corporate-minimal .total-final .total-value {
-  color: white;
+  color: #ffffff;
+  font-size: 17px;
+  font-weight: 800;
+  letter-spacing: 0.3px;
 }
 
-/* Notes Section */
+/* ─── Notes Section ─── */
 .template-corporate-minimal .notes-section {
-  background: #fff9e6;
-  padding: 20px;
-  margin-bottom: 30px;
-  border-left: 4px solid #ffc107;
+  background: #fefdf5;
+  padding: 12px 16px;
+  margin-bottom: 14px;
+  border-left: 4px solid #f0c040;
+  border-radius: 0 6px 6px 0;
 }
 
 .template-corporate-minimal .notes-section h3 {
-  font-size: 16px;
-  font-weight: 600;
-  color: #2c3e50;
-  margin: 0 0 10px 0;
+  font-size: 10px;
+  font-weight: 700;
+  color: #1a3a5c;
+  margin: 0 0 4px 0;
+  text-transform: uppercase;
+  letter-spacing: 1px;
 }
 
 .template-corporate-minimal .notes-section p {
-  font-size: 14px;
+  font-size: 11.5px;
   color: #555;
   margin: 0;
-  line-height: 1.6;
+  line-height: 1.5;
 }
 
-/* Terms Section */
+/* ─── Terms Section ─── */
 .template-corporate-minimal .terms-section {
-  margin-bottom: 40px;
+  margin-bottom: 14px;
+  padding: 12px 16px;
+  background: #f7f9fc;
+  border-radius: 6px;
 }
 
 .template-corporate-minimal .terms-section h3 {
-  font-size: 16px;
-  font-weight: 600;
-  color: #2c3e50;
-  margin: 0 0 15px 0;
+  font-size: 10px;
+  font-weight: 700;
+  color: #1a3a5c;
+  margin: 0 0 6px 0;
   text-transform: uppercase;
-  letter-spacing: 1px;
+  letter-spacing: 1.5px;
 }
 
 .template-corporate-minimal .terms-section ul {
@@ -283,97 +358,485 @@
 }
 
 .template-corporate-minimal .terms-section li {
-  font-size: 13px;
+  font-size: 11.5px;
   color: #555;
-  padding: 8px 0;
-  padding-left: 20px;
+  padding: 3px 0 3px 16px;
   position: relative;
-  line-height: 1.6;
+  line-height: 1.45;
 }
 
 .template-corporate-minimal .terms-section li:before {
-  content: '•';
+  content: '';
   position: absolute;
   left: 0;
-  color: #2c3e50;
-  font-weight: bold;
-  font-size: 16px;
+  top: 9px;
+  width: 5px;
+  height: 5px;
+  border-radius: 50%;
+  background: #2980b9;
 }
 
-/* Signature Section */
-.template-corporate-minimal .signature-section {
-  display: flex;
-  justify-content: space-between;
-  margin-top: 60px;
-  padding-top: 40px;
-  border-top: 1px solid #e0e0e0;
+/* ─── System Generated Notice ─── */
+.template-corporate-minimal .system-generated-notice {
+  margin-top: 24px;
+  padding-top: 14px;
+  border-top: 2px solid #e4e9f0;
+  text-align: center;
 }
 
-.template-corporate-minimal .signature-box {
-  width: 45%;
+.template-corporate-minimal .system-generated-notice p {
+  font-size: 11.5px;
+  color: #636e72;
+  margin: 0;
+  font-style: italic;
+  letter-spacing: 0.2px;
 }
 
-.template-corporate-minimal .signature-line {
-  border-bottom: 2px solid #333;
-  margin-bottom: 10px;
-  height: 60px;
+.template-corporate-minimal .system-generated-notice .generated-by {
+  margin-top: 4px;
+  font-weight: 700;
+  font-style: normal;
+  color: #1a3a5c;
+  font-size: 12px;
 }
 
-.template-corporate-minimal .signature-label {
-  font-size: 13px;
-  color: #666;
-  margin: 5px 0;
-  font-weight: 600;
-}
-
-.template-corporate-minimal .signature-name,
-.template-corporate-minimal .signature-date {
-  font-size: 14px;
-  color: #333;
-  margin: 5px 0;
-}
-
-/* Mobile Responsiveness */
+/* ─── Tablet ─── */
 @media (max-width: 768px) {
   .template-corporate-minimal {
-    padding: 30px 20px;
+    padding: 32px 24px;
+    max-width: 100%;
   }
 
   .template-corporate-minimal .template-header {
     flex-direction: column;
+    gap: 20px;
+    padding-bottom: 20px;
+    margin-bottom: 24px;
+  }
+
+  .template-corporate-minimal .company-logo {
+    max-width: 120px;
+    max-height: 50px;
+  }
+
+  .template-corporate-minimal .company-name {
+    font-size: 20px;
   }
 
   .template-corporate-minimal .quote-meta {
     text-align: left;
-    margin-top: 30px;
+    width: 100%;
+  }
+
+  .template-corporate-minimal .quote-meta h2 {
+    font-size: 22px;
+    letter-spacing: 2px;
+    margin-bottom: 12px;
+  }
+
+  .template-corporate-minimal .meta-details {
+    display: inline-block;
   }
 
   .template-corporate-minimal .meta-row {
     justify-content: flex-start;
   }
 
+  .template-corporate-minimal .client-section {
+    padding: 16px 18px;
+    margin-bottom: 24px;
+  }
+
+  .template-corporate-minimal .client-name {
+    font-size: 15px;
+  }
+
   .template-corporate-minimal .items-table {
     font-size: 12px;
   }
 
-  .template-corporate-minimal .items-table th,
+  .template-corporate-minimal .items-table th {
+    padding: 12px 10px;
+    font-size: 9.5px;
+    letter-spacing: 0.5px;
+  }
+
   .template-corporate-minimal .items-table td {
-    padding: 10px 8px;
+    padding: 12px 10px;
   }
 
-  .template-corporate-minimal .signature-section {
-    flex-direction: column;
+  .template-corporate-minimal .item-title {
+    font-size: 12.5px;
   }
 
-  .template-corporate-minimal .signature-box {
-    width: 100%;
-    margin-bottom: 30px;
+  .template-corporate-minimal .totals-table {
+    min-width: 280px;
+  }
+
+  .template-corporate-minimal .total-final {
+    padding: 12px 16px;
+    font-size: 14px;
+  }
+
+  .template-corporate-minimal .total-final .total-value {
+    font-size: 15px;
+  }
+
+  .template-corporate-minimal .system-generated-notice {
+    margin-top: 28px;
+    padding-top: 16px;
   }
 }
 
-/* Print Styles */
+/* ─── Mobile ─── */
+@media (max-width: 480px) {
+  .template-corporate-minimal {
+    padding: 20px 16px;
+    line-height: 1.45;
+  }
+
+  .template-corporate-minimal::before {
+    height: 4px;
+  }
+
+  .template-corporate-minimal .template-header {
+    gap: 16px;
+    padding-bottom: 16px;
+    margin-bottom: 20px;
+    border-bottom-width: 1.5px;
+  }
+
+  .template-corporate-minimal .company-logo {
+    max-width: 100px;
+    max-height: 44px;
+    margin-bottom: 8px;
+  }
+
+  .template-corporate-minimal .company-name {
+    font-size: 17px;
+    margin-bottom: 6px;
+  }
+
+  .template-corporate-minimal .company-details {
+    font-size: 10.5px;
+    line-height: 1.6;
+  }
+
+  .template-corporate-minimal .quote-meta h2 {
+    font-size: 18px;
+    letter-spacing: 1.5px;
+    margin-bottom: 10px;
+  }
+
+  .template-corporate-minimal .meta-details {
+    padding: 10px 12px;
+    font-size: 11px;
+  }
+
+  .template-corporate-minimal .meta-label {
+    font-size: 10px;
+  }
+
+  .template-corporate-minimal .meta-value {
+    font-size: 11.5px;
+  }
+
+  .template-corporate-minimal .client-section {
+    padding: 14px 14px;
+    margin-bottom: 20px;
+    border-left-width: 3px;
+  }
+
+  .template-corporate-minimal .client-section h3 {
+    font-size: 10px;
+    margin-bottom: 8px;
+    letter-spacing: 1px;
+  }
+
+  .template-corporate-minimal .client-details {
+    font-size: 12px;
+    line-height: 1.6;
+  }
+
+  .template-corporate-minimal .client-name {
+    font-size: 14px;
+  }
+
+  /* Card-style items on small screens */
+  .template-corporate-minimal .items-table {
+    font-size: 11px;
+    border-radius: 4px;
+  }
+
+  .template-corporate-minimal .items-table thead {
+    display: none;
+  }
+
+  .template-corporate-minimal .items-table tbody tr {
+    display: flex;
+    flex-wrap: wrap;
+    padding: 12px;
+    border-bottom: 1px solid #e4e9f0;
+    gap: 4px 0;
+  }
+
+  .template-corporate-minimal .items-table tbody tr:nth-child(even) {
+    background: #fafbfc;
+  }
+
+  .template-corporate-minimal .items-table td {
+    padding: 2px 4px;
+    border: none;
+  }
+
+  .template-corporate-minimal .item-description {
+    width: 100%;
+    margin-bottom: 6px;
+  }
+
+  .template-corporate-minimal .item-title {
+    font-size: 13px;
+  }
+
+  .template-corporate-minimal .item-details {
+    font-size: 10.5px;
+  }
+
+  .template-corporate-minimal .item-quantity {
+    width: 30%;
+    text-align: left;
+    font-size: 11px;
+  }
+
+  .template-corporate-minimal .item-quantity::before {
+    content: 'Qty: ';
+    color: #636e72;
+    font-weight: 600;
+    font-size: 10px;
+    text-transform: uppercase;
+  }
+
+  .template-corporate-minimal .item-rate {
+    width: 35%;
+    text-align: left;
+    font-size: 11px;
+  }
+
+  .template-corporate-minimal .item-rate::before {
+    content: 'Rate: ';
+    color: #636e72;
+    font-weight: 600;
+    font-size: 10px;
+    text-transform: uppercase;
+  }
+
+  .template-corporate-minimal .item-total {
+    width: 35%;
+    text-align: right;
+    font-size: 12px;
+    font-weight: 700;
+  }
+
+  .template-corporate-minimal .totals-section {
+    margin-bottom: 20px;
+  }
+
+  .template-corporate-minimal .totals-table {
+    min-width: unset;
+    width: 100%;
+  }
+
+  .template-corporate-minimal .total-row {
+    padding: 8px 14px;
+    font-size: 12px;
+  }
+
+  .template-corporate-minimal .total-label {
+    font-size: 11px;
+  }
+
+  .template-corporate-minimal .total-final {
+    padding: 12px 14px;
+    font-size: 13px;
+  }
+
+  .template-corporate-minimal .total-final .total-label {
+    font-size: 11.5px;
+  }
+
+  .template-corporate-minimal .total-final .total-value {
+    font-size: 15px;
+  }
+
+  .template-corporate-minimal .notes-section {
+    padding: 12px 14px;
+    margin-bottom: 16px;
+    border-left-width: 3px;
+  }
+
+  .template-corporate-minimal .notes-section h3 {
+    font-size: 10px;
+    margin-bottom: 6px;
+  }
+
+  .template-corporate-minimal .notes-section p {
+    font-size: 11.5px;
+    line-height: 1.55;
+  }
+
+  .template-corporate-minimal .terms-section {
+    margin-bottom: 20px;
+    padding: 12px 14px;
+  }
+
+  .template-corporate-minimal .terms-section h3 {
+    font-size: 10px;
+    margin-bottom: 8px;
+  }
+
+  .template-corporate-minimal .terms-section li {
+    font-size: 11px;
+    padding: 4px 0 4px 14px;
+    line-height: 1.5;
+  }
+
+  .template-corporate-minimal .terms-section li:before {
+    top: 10px;
+    width: 5px;
+    height: 5px;
+  }
+
+  .template-corporate-minimal .system-generated-notice {
+    margin-top: 20px;
+    padding-top: 14px;
+  }
+
+  .template-corporate-minimal .system-generated-notice p {
+    font-size: 10.5px;
+  }
+
+  .template-corporate-minimal .system-generated-notice .generated-by {
+    font-size: 11px;
+  }
+}
+
+/* ─── Small phones ─── */
+@media (max-width: 360px) {
+  .template-corporate-minimal {
+    padding: 16px 12px;
+  }
+
+  .template-corporate-minimal .company-name {
+    font-size: 15px;
+  }
+
+  .template-corporate-minimal .quote-meta h2 {
+    font-size: 16px;
+    letter-spacing: 1px;
+  }
+
+  .template-corporate-minimal .items-table tbody tr {
+    padding: 10px;
+  }
+
+  .template-corporate-minimal .item-title {
+    font-size: 12px;
+  }
+
+  .template-corporate-minimal .item-quantity,
+  .template-corporate-minimal .item-rate {
+    font-size: 10.5px;
+  }
+
+  .template-corporate-minimal .item-total {
+    font-size: 11.5px;
+  }
+
+  .template-corporate-minimal .total-final .total-value {
+    font-size: 14px;
+  }
+}
+
+/* ─── Print Styles ─── */
 @media print {
   .template-corporate-minimal {
-    padding: 40px;
+    padding: 36px;
+    box-shadow: none;
   }
+
+  .template-corporate-minimal::before {
+    display: none;
+  }
+}
+
+/* ─── PDF Export Mode ─── */
+/* Forces desktop A4 layout during html2canvas capture */
+.pdf-export-mode.template-corporate-minimal {
+  padding: 36px 44px;
+  max-width: 210mm;
+  width: 210mm;
+  line-height: 1.4;
+}
+
+.pdf-export-mode .template-header {
+  flex-direction: row !important;
+  gap: 32px !important;
+}
+
+.pdf-export-mode .quote-meta {
+  text-align: right !important;
+}
+
+.pdf-export-mode .meta-row {
+  justify-content: flex-end !important;
+}
+
+.pdf-export-mode .items-table thead {
+  display: table-header-group !important;
+}
+
+.pdf-export-mode .items-table tbody tr {
+  display: table-row !important;
+  padding: 0 !important;
+}
+
+.pdf-export-mode .items-table td {
+  padding: 10px 14px !important;
+  display: table-cell !important;
+  width: auto !important;
+}
+
+.pdf-export-mode .item-description {
+  width: auto !important;
+}
+
+.pdf-export-mode .item-quantity,
+.pdf-export-mode .item-rate,
+.pdf-export-mode .item-total {
+  width: auto !important;
+  font-size: 13px !important;
+}
+
+.pdf-export-mode .item-quantity::before,
+.pdf-export-mode .item-rate::before {
+  content: none !important;
+}
+
+.pdf-export-mode .item-quantity {
+  text-align: center !important;
+}
+
+.pdf-export-mode .item-rate,
+.pdf-export-mode .item-total {
+  text-align: right !important;
+}
+
+.pdf-export-mode .totals-table {
+  min-width: 320px !important;
+  width: auto !important;
+}
+
+.pdf-export-mode .system-generated-notice {
+  margin-top: 24px !important;
+  padding-top: 14px !important;
 }

@@ -376,13 +376,19 @@
   }
 
   .preview-container {
-    padding: 15px 8px 80px;
+    padding: 0 0 80px;
   }
 
   .preview-wrapper {
-    transform: scale(0.45) !important;
-    transform-origin: top center;
-    margin-bottom: -500px;
+    transform: none !important;
+    width: 100%;
+  }
+
+  .preview-content {
+    width: 100%;
+    max-width: 100%;
+    box-shadow: none;
+    border-radius: 0;
   }
 
   .modal-content {
@@ -439,7 +445,7 @@
   }
 
   .preview-wrapper {
-    transform: scale(0.35) !important;
+    transform: none !important;
   }
 
   .toolbar-button.back-btn {

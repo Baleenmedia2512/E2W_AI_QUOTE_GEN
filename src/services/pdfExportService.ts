@@ -17,6 +17,23 @@ export const exportToPDF = async (
     document.body.style.cursor = 'wait';
 
     console.log('📸 Capturing element as canvas...');
+
+    // Force desktop A4 layout for PDF capture regardless of screen size
+    const a4WidthPx = 794; // 210mm at 96dpi
+    const originalStyle = element.getAttribute('style') || '';
+    const originalClass = element.className;
+    element.style.width = `${a4WidthPx}px`;
+    element.style.maxWidth = `${a4WidthPx}px`;
+    element.style.minWidth = `${a4WidthPx}px`;
+    element.style.position = 'absolute';
+    element.style.left = '-9999px';
+    element.style.top = '0';
+    // Force desktop styles by adding a class
+    element.classList.add('pdf-export-mode');
+
+    // Let the browser reflow with desktop dimensions
+    await new Promise(r => setTimeout(r, 100));
+
     // Capture the element as canvas with high quality
     const canvas = await html2canvas(element, {
       scale: 2, // Higher quality
@@ -24,9 +41,13 @@ export const exportToPDF = async (
       allowTaint: true,
       backgroundColor: '#ffffff',
       logging: true,
-      windowWidth: element.scrollWidth,
-      windowHeight: element.scrollHeight
+      width: a4WidthPx,
+      windowWidth: a4WidthPx
     });
+
+    // Restore original styles immediately after capture
+    element.setAttribute('style', originalStyle);
+    element.className = originalClass;
     
     console.log('✅ Canvas captured:', canvas.width, 'x', canvas.height);
 
@@ -102,13 +123,33 @@ export const exportToPDFWithOptions = async (
   try {
     document.body.style.cursor = 'wait';
 
+    // Force desktop A4 layout for PDF capture regardless of screen size
+    const a4WidthPx = orientation === 'portrait' ? 794 : 1123; // 210mm or 297mm at 96dpi
+    const originalStyle = element.getAttribute('style') || '';
+    const originalClass = element.className;
+    element.style.width = `${a4WidthPx}px`;
+    element.style.maxWidth = `${a4WidthPx}px`;
+    element.style.minWidth = `${a4WidthPx}px`;
+    element.style.position = 'absolute';
+    element.style.left = '-9999px';
+    element.style.top = '0';
+    element.classList.add('pdf-export-mode');
+
+    await new Promise(r => setTimeout(r, 100));
+
     const canvas = await html2canvas(element, {
       scale,
       useCORS: true,
       allowTaint: true,
       backgroundColor: '#ffffff',
-      logging: false
+      logging: false,
+      width: a4WidthPx,
+      windowWidth: a4WidthPx
     });
+
+    // Restore original styles immediately after capture
+    element.setAttribute('style', originalStyle);
+    element.className = originalClass;
 
     const imgWidth = orientation === 'portrait' ? 210 : 297;
     const pageHeight = orientation === 'portrait' ? 297 : 210;
