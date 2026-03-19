@@ -1,5 +1,6 @@
 import React from 'react';
 import { TemplateProps } from '../../types';
+import { ReferenceImages } from './ReferenceImages';
 import './PremiumAgency.css';
 
 export const PremiumAgency: React.FC<TemplateProps> = ({ data, editable: _editable = false, onDataChange: _onDataChange }) => {
@@ -202,6 +203,8 @@ export const PremiumAgency: React.FC<TemplateProps> = ({ data, editable: _editab
             </div>
           </div>
         </div>
+        {/* Reference Images from Proposal */}
+        <ReferenceImages proposalPages={data.proposalPages} items={quote.items} />
       </div>
 
       {/* Footer */}

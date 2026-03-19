@@ -1,5 +1,6 @@
 import React from 'react';
 import { TemplateProps } from '../../types';
+import { ReferenceImages } from './ReferenceImages';
 import './ModernSales.css';
 
 export const ModernSales: React.FC<TemplateProps> = ({ data, editable: _editable = false, onDataChange: _onDataChange }) => {
@@ -192,6 +193,8 @@ export const ModernSales: React.FC<TemplateProps> = ({ data, editable: _editable
               </div>
             </div>
           </div>
+          {/* Reference Images from Proposal */}
+          <ReferenceImages proposalPages={data.proposalPages} items={quote.items} />
         </div>
       </div>
 

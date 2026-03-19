@@ -50,7 +50,7 @@ const ProposalUpload: React.FC = () => {
     try {
       console.log('Processing PDF file:', file.name);
       // Extract PDF content
-      const { textContent, pageCount, images } = await extractPDFContent(file);
+      const { textContent, pageCount, images, pageImages } = await extractPDFContent(file);
 
       console.log('PDF extraction successful:', {
         fileName: file.name,
@@ -71,6 +71,7 @@ const ProposalUpload: React.FC = () => {
         pageCount,
         currentPage: 1,
         extractedImages: images,
+        pageImages: pageImages,
         uploadedAt: new Date(),
       };
       

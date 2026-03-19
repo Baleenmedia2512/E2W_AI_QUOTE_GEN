@@ -1,4 +1,4 @@
-import React, { useState, useRef } from 'react';
+import React, { useState, useRef, useEffect } from 'react';
 import { useHistory } from 'react-router-dom';
 import { useAppStore } from '../store';
 import { TemplateSelector } from '../components/TemplateSelector/TemplateSelector';
@@ -7,6 +7,8 @@ import { PremiumAgency } from '../components/Templates/PremiumAgency';
 import { ModernSales } from '../components/Templates/ModernSales';
 import { ClassicBusiness } from '../components/Templates/ClassicBusiness';
 import { exportToPDF } from '../services/pdfExportService';
+import { loadPageImages } from '../utils/imageStorage';
+import { ExtractedPage } from '../types';
 import './QuotePreviewPage.css';
 
 export const QuotePreviewPage: React.FC = () => {
@@ -17,13 +19,26 @@ export const QuotePreviewPage: React.FC = () => {
     clientInfo,
     selectedTemplate,
     setSelectedTemplate,
-    setCurrentQuote
+    setCurrentQuote,
+    proposal
   } = useAppStore();
 
   const [showTemplateSelector, setShowTemplateSelector] = useState(false);
   const [isExporting, setIsExporting] = useState(false);
   const [zoom, setZoom] = useState(100);
+  const [pageImages, setPageImages] = useState<ExtractedPage[]>(proposal.pageImages || []);
   const previewRef = useRef<HTMLDivElement>(null);
+
+  // Load page images from IndexedDB if not already in memory
+  useEffect(() => {
+    if (pageImages.length === 0) {
+      loadPageImages().then((images) => {
+        if (images.length > 0) {
+          setPageImages(images);
+        }
+      });
+    }
+  }, []);
 
   // Add sample item if quote has no items
   React.useEffect(() => {
@@ -92,7 +107,8 @@ export const QuotePreviewPage: React.FC = () => {
   const templateData = {
     company: companyInfo,
     client: clientInfo,
-    quote: currentQuote
+    quote: currentQuote,
+    proposalPages: pageImages,
   };
 
   const renderTemplate = () => {

@@ -7,10 +7,17 @@ pdfjsLib.GlobalWorkerOptions.workerSrc = workerSrc;
 
 console.log('PDF.js worker configured:', workerSrc);
 
+export interface ExtractedPage {
+  pageNumber: number;
+  text: string;
+  imageDataUrl: string;
+}
+
 export interface PDFExtractionResult {
   textContent: string;
   pageCount: number;
   images: string[];
+  pageImages: ExtractedPage[];
 }
 
 export const extractPDFContent = async (file: File): Promise<PDFExtractionResult> => {
@@ -25,8 +32,9 @@ export const extractPDFContent = async (file: File): Promise<PDFExtractionResult
     
     let textContent = '';
     const images: string[] = [];
+    const pageImages: ExtractedPage[] = [];
 
-    // Extract text from all pages
+    // Extract text and render page images
     for (let i = 1; i <= pageCount; i++) {
       const page = await pdf.getPage(i);
       const content = await page.getTextContent();
@@ -63,6 +71,27 @@ export const extractPDFContent = async (file: File): Promise<PDFExtractionResult
 
       textContent += pageText + '\n\n';
       console.log(`Page ${i}/${pageCount} extracted, text length:`, pageText.length);
+
+      // Render page as image for reference
+      try {
+        const viewport = page.getViewport({ scale: 1.0 });
+        const canvas = document.createElement('canvas');
+        canvas.width = viewport.width;
+        canvas.height = viewport.height;
+        const ctx = canvas.getContext('2d');
+        if (ctx) {
+          await page.render({ canvasContext: ctx, viewport }).promise;
+          const imageDataUrl = canvas.toDataURL('image/jpeg', 0.7);
+          pageImages.push({
+            pageNumber: i,
+            text: pageText,
+            imageDataUrl,
+          });
+          console.log(`Page ${i}/${pageCount} rendered as image`);
+        }
+      } catch (imgErr) {
+        console.warn(`Failed to render page ${i} as image:`, imgErr);
+      }
     }
 
     const finalText = textContent.trim();
@@ -77,6 +106,7 @@ export const extractPDFContent = async (file: File): Promise<PDFExtractionResult
       textContent: finalText,
       pageCount,
       images,
+      pageImages,
     };
   } catch (error: any) {
     console.error('Error extracting PDF content:', error);

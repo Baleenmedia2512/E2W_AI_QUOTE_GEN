@@ -1,0 +1,97 @@
+.reference-images-section {
+  margin-top: 30px;
+  padding: 20px;
+  border: 1px solid #e0e0e0;
+  border-radius: 6px;
+  background: #fafafa;
+  page-break-before: always;
+}
+
+.reference-images-title {
+  font-size: 16px;
+  font-weight: 600;
+  color: #333;
+  margin: 0 0 16px 0;
+  padding-bottom: 8px;
+  border-bottom: 2px solid #2980b9;
+}
+
+.reference-category-filter {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 16px;
+}
+
+.reference-filter-label {
+  font-size: 13px;
+  font-weight: 500;
+  color: #555;
+  white-space: nowrap;
+}
+
+.reference-toggle-button {
+  padding: 6px 12px;
+  font-size: 12px;
+  border: 1px solid #2980b9;
+  border-radius: 4px;
+  background: #fff;
+  color: #2980b9;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  font-weight: 500;
+}
+
+.reference-toggle-button:hover {
+  background: #2980b9;
+  color: #fff;
+}
+
+.reference-toggle-button:focus {
+  outline: none;
+  box-shadow: 0 0 0 2px rgba(41, 128, 185, 0.2);
+}
+
+.reference-no-match {
+  font-size: 13px;
+  color: #999;
+  font-style: italic;
+  text-align: center;
+  padding: 20px 0;
+}
+
+.reference-images-grid {
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+}
+
+.reference-image-item {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+}
+
+.reference-image {
+  width: 100%;
+  max-width: 100%;
+  height: auto;
+  border: 1px solid #ddd;
+  border-radius: 4px;
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.08);
+}
+
+.reference-image-caption {
+  font-size: 11px;
+  color: #888;
+  font-style: italic;
+}
+
+@media print {
+  .reference-images-section {
+    page-break-before: always;
+    border: 1px solid #ccc;
+    box-shadow: none;
+  }
+}

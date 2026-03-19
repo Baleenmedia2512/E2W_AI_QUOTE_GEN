@@ -4,6 +4,12 @@ import { CompanyInfo } from './company';
 import { ClientInfo } from './client';
 import { TemplateData, TemplateProps, TemplateType, Template, TemplateMetadata } from './template';
 
+export interface ExtractedPage {
+  pageNumber: number;
+  text: string;
+  imageDataUrl: string;
+}
+
 export interface ProposalData {
   file: File | null;
   fileName: string;
@@ -12,6 +18,7 @@ export interface ProposalData {
   pageCount: number;
   currentPage: number;
   extractedImages: string[];
+  pageImages: ExtractedPage[];
   uploadedAt: Date | null;
 }
 

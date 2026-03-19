@@ -1,5 +1,6 @@
 import React from 'react';
 import { TemplateProps } from '../../types';
+import { ReferenceImages } from './ReferenceImages';
 import './ClassicBusiness.css';
 
 export const ClassicBusiness: React.FC<TemplateProps> = ({ data, editable: _editable = false, onDataChange: _onDataChange }) => {
@@ -217,6 +218,9 @@ export const ClassicBusiness: React.FC<TemplateProps> = ({ data, editable: _edit
             </div>
           </div>
         </div>
+
+        {/* Reference Images from Proposal */}
+        <ReferenceImages proposalPages={data.proposalPages} items={quote.items} />
 
         {/* Footer */}
         <div className="classic-footer">

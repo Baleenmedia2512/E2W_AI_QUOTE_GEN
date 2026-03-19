@@ -2,10 +2,17 @@ import { CompanyInfo } from './company';
 import { ClientInfo } from './client';
 import { Quote } from './quote';
 
+export interface ExtractedPage {
+  pageNumber: number;
+  text: string;
+  imageDataUrl: string;
+}
+
 export interface TemplateData {
   company: CompanyInfo;
   client: ClientInfo;
   quote: Quote;
+  proposalPages?: ExtractedPage[];
 }
 
 export interface TemplateProps {

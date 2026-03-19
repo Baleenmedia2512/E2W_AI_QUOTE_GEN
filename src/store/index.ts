@@ -1,6 +1,7 @@
 import { create } from 'zustand';
 import { AppState, ProposalData, Message, Quote, CompanyInfo, ClientInfo, TemplateType } from '../types';
 import { loadCompanyInfo } from '../utils/localStorage';
+import { savePageImages as savePageImagesToDB, clearPageImages } from '../utils/imageStorage';
 
 const initialProposalState: ProposalData = {
   file: null,
@@ -10,6 +11,7 @@ const initialProposalState: ProposalData = {
   pageCount: 0,
   currentPage: 1,
   extractedImages: [],
+  pageImages: [],
   uploadedAt: null,
 };
 
@@ -56,13 +58,16 @@ export const useAppStore = create<AppState>((set) => ({
   // Proposal state
   proposal: initialProposalState,
   setProposal: (proposal) =>
-    set((state) => ({
-      proposal: { ...state.proposal, ...proposal },
-    })),
-  resetProposal: () =>
-    set({
-      proposal: initialProposalState,
+    set((state) => {
+      if (proposal.pageImages) {
+        savePageImagesToDB(proposal.pageImages);
+      }
+      return { proposal: { ...state.proposal, ...proposal } };
     }),
+  resetProposal: () => {
+    clearPageImages();
+    set({ proposal: initialProposalState });
+  },
 
   // Chat state
   messages: [],
