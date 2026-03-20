@@ -19,29 +19,60 @@ interface ReferenceImagesProps {
 }
 
 /**
- * Returns pages whose text contains ALL meaningful keywords from the category description.
- * This ensures "Full Bus Branding" only matches pages with "full" + "bus" + "branding",
- * not just pages with any one of those words.
+ * Returns pages whose text contains the specific service type keywords.
+ * Uses smart matching: "Bus Full Branding" requires both "bus" AND "full",
+ * while "Bus" alone matches any bus page.
  */
 function filterPagesByCategory(pages: ExtractedPage[], category: string): ExtractedPage[] {
-  const keywords = category
+  const desc = category.toLowerCase();
+  
+  // Extract meaningful keywords, excluding pricing/quantity terms
+  const words = category
     .toLowerCase()
     .split(/[\s,\-\/&]+/)
-    .filter((w) => w.length >= 3);
-
-  if (keywords.length === 0) return [];
+    .filter((w) => 
+      w.length >= 3 && 
+      !['rental', 'price', 'per', 'month', 'printing', 'fixing', 'display'].includes(w)
+    );
+  
+  if (words.length === 0) return [];
+  
+  // Determine which keywords MUST be present
+  let requiredKeywords: string[] = [];
+  
+  // Check for specific branding types (these require both vehicle + type)
+  if (desc.includes('full') && (desc.includes('bus') || desc.includes('auto') || desc.includes('tempo'))) {
+    // "Bus Full Branding" requires BOTH "bus" AND "full"
+    if (desc.includes('bus')) requiredKeywords = ['bus', 'full'];
+    else if (desc.includes('auto')) requiredKeywords = ['auto', 'full'];
+    else if (desc.includes('tempo')) requiredKeywords = ['tempo', 'full'];
+  } else if (desc.includes('semi') && (desc.includes('bus') || desc.includes('auto'))) {
+    // "Bus Semi Branding" requires BOTH "bus" AND "semi"
+    if (desc.includes('bus')) requiredKeywords = ['bus', 'semi'];
+    else if (desc.includes('auto')) requiredKeywords = ['auto', 'semi'];
+  } else if (desc.includes('back') && (desc.includes('bus') || desc.includes('auto'))) {
+    // "Auto Back Branding" requires BOTH "auto" AND "back"
+    if (desc.includes('bus')) requiredKeywords = ['bus', 'back'];
+    else if (desc.includes('auto')) requiredKeywords = ['auto', 'back'];
+  } else if (desc.includes('shelter')) {
+    // "Bus Shelter" requires BOTH "bus" AND "shelter"
+    requiredKeywords = ['bus', 'shelter'];
+  } else {
+    // Default: use the first 2 meaningful words (or just 1 if only 1 exists)
+    requiredKeywords = words.slice(0, 2);
+  }
 
   return pages.filter((page) => {
     const pageText = page.text.toLowerCase();
-    // Require ALL keywords to be present in the page (not just any one)
-    return keywords.every((kw) => pageText.includes(kw));
+    // ALL required keywords must be present in the page
+    return requiredKeywords.every((kw) => pageText.includes(kw));
   });
 }
 
 /**
  * Automatically filter pages by ALL quote item descriptions.
  * Returns pages that match any of the quote items.
- * ONLY includes pages with (2/2), (2/3), (3/3) etc. patterns - actual reference image pages.
+ * Prioritizes pages with (2/2), (2/3), (3/3) etc. patterns, but includes all matches if no pattern found.
  */
 function filterPagesByQuoteItems(pages: ExtractedPage[], items: QuoteItem[]): ExtractedPage[] {
   if (!items || items.length === 0) return pages;
@@ -51,17 +82,20 @@ function filterPagesByQuoteItems(pages: ExtractedPage[], items: QuoteItem[]): Ex
   items.forEach((item) => {
     const matchingPages = filterPagesByCategory(pages, item.description);
     
-    // ONLY include pages with (2/X), (3/X), (4/X) etc. patterns
-    // These are the actual reference image pages, not pricing pages
-    const relevantPages = matchingPages.filter(page => {
+    // First try: ONLY pages with (2/X), (3/X), (4/X) etc. patterns (reference image pages)
+    const referencePages = matchingPages.filter(page => {
       const text = page.text.toLowerCase();
-      // Only include pages with (2/2), (2/3), (3/3), etc. - reference image pages
-      // This automatically excludes (1/X) pricing pages and pricing summary tables
       return text.match(/\(\s*[2-9]\d*\s*\/\s*\d+\s*\)/);
     });
     
-    // Add all relevant reference image pages
-    relevantPages.forEach((page) => matchedPages.add(page.pageNumber));
+    // If we found reference pages with the pattern, use those
+    if (referencePages.length > 0) {
+      referencePages.forEach((page) => matchedPages.add(page.pageNumber));
+    } else {
+      // Fallback: If no pattern found, include all matching pages
+      // (user's PDF might not have the (X/Y) pattern)
+      matchingPages.forEach((page) => matchedPages.add(page.pageNumber));
+    }
   });
   
   return pages.filter((page) => matchedPages.has(page.pageNumber));

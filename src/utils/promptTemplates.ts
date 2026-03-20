@@ -84,7 +84,7 @@ You: "Based on the proposal, I've created a complete quote for 50 buses full bra
     }
   ],
   "deliveryTimeline": "10 working days after receipt of the payment",
-  "termsAndConditions": "• The work will be completed within 10 working days after receipt of the payment.\n• Prior notice of 3 working days is mandatory for inspection. Client must provide visitor details (address & ID proof) in advance. Maximum 2 visitors allowed.\n• Route commitment will not be provided, as bus movement is controlled by the transport authority and may vary based on operational requirements.\n• Baleen Media will provide installation photos or proof of branding after completion.",
+  "termsAndConditions": "[EXTRACT EXACT TERMS FROM PROPOSAL - DO NOT USE GENERIC TERMS]",
   "notes": "Prices are monthly rates per bus as per the proposal. Minimum quantity is 3 buses. Standard GST (18%) will be applicable on the total amount."
 }
 \`\`\`"
@@ -96,7 +96,16 @@ RULES:
 - Be thorough - include design, materials, printing, installation as separate line items
 - If proposal has pricing info, use it. If not, use reasonable market rates
 - NEVER ask follow-up questions - generate quote immediately from available information
-- CRITICAL: For termsAndConditions, you MUST copy the EXACT terms and conditions from the proposal document (usually found in a "Terms & Conditions" section). Format them as bullet points (• item). Do NOT invent, paraphrase, or use generic terms. If the proposal has specific terms like payment terms, installation conditions, route disclaimers etc., use those EXACT wordings.
+- CRITICAL: For termsAndConditions, you MUST:
+  1. READ the terms and conditions section from the uploaded proposal PDF document
+  2. COPY the exact wording from the proposal - DO NOT make up generic terms or use examples
+  3. Structure them with general terms first, then service-specific sections
+  4. Use newline (\n) to separate each term  
+  5. Do NOT use bullet points (•) - just plain text lines
+  6. Example structure format (but use ACTUAL terms from the proposal):
+     "[General term 1 from proposal]\n[General term 2 from proposal]\n\nBus Full Branding:\n[Bus-specific term from proposal]\n[Another bus term from proposal]"
+  7. If the proposal doesn't have explicit terms, extract any relevant conditions, timelines, or policies mentioned in the document
+  8. IMPORTANT: NEVER reuse the same terms for different quotes - always read fresh from the current proposal
 - For deliveryTimeline, extract the exact timeline mentioned in the proposal (e.g., "7 working days after receipt of the payment")
 - CRITICAL PRICING RULES:
   * The proposal often contains MULTIPLE branding types for the same vehicle (e.g., "Bus Full Branding", "Bus Semi Branding", "Bus Back Panel Branding", "Auto Full Branding", "Auto Back Branding"). Each type has its OWN prices. You MUST carefully match the user's request to the EXACT section in the proposal and use ONLY the prices from that specific section. NEVER mix prices from different branding types.
