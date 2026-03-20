@@ -41,7 +41,7 @@ function filterPagesByCategory(pages: ExtractedPage[], category: string): Extrac
 /**
  * Automatically filter pages by ALL quote item descriptions.
  * Returns pages that match any of the quote items.
- * SKIPS THE FIRST PAGE of each matched section (typically pricing/terms).
+ * ONLY includes pages with (2/2), (2/3), (3/3) etc. patterns - actual reference image pages.
  */
 function filterPagesByQuoteItems(pages: ExtractedPage[], items: QuoteItem[]): ExtractedPage[] {
   if (!items || items.length === 0) return pages;
@@ -51,11 +51,17 @@ function filterPagesByQuoteItems(pages: ExtractedPage[], items: QuoteItem[]): Ex
   items.forEach((item) => {
     const matchingPages = filterPagesByCategory(pages, item.description);
     
-    // Sort by page number and skip the first page (index 0)
-    const sortedPages = matchingPages.sort((a, b) => a.pageNumber - b.pageNumber);
+    // ONLY include pages with (2/X), (3/X), (4/X) etc. patterns
+    // These are the actual reference image pages, not pricing pages
+    const relevantPages = matchingPages.filter(page => {
+      const text = page.text.toLowerCase();
+      // Only include pages with (2/2), (2/3), (3/3), etc. - reference image pages
+      // This automatically excludes (1/X) pricing pages and pricing summary tables
+      return text.match(/\(\s*[2-9]\d*\s*\/\s*\d+\s*\)/);
+    });
     
-    // Skip first page, take pages from index 1 onwards (pages 2 and 3)
-    sortedPages.slice(1).forEach((page) => matchedPages.add(page.pageNumber));
+    // Add all relevant reference image pages
+    relevantPages.forEach((page) => matchedPages.add(page.pageNumber));
   });
   
   return pages.filter((page) => matchedPages.has(page.pageNumber));
