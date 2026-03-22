@@ -68,6 +68,22 @@ const QuotePreview: React.FC<QuotePreviewProps> = ({ quote, onUpdate, onSave }) 
     return item.lineItems?.reduce((sum, lineItem) => sum + calculateLineItemTotal(lineItem), 0) || 0;
   };
 
+  // Helper to get line items for rendering - handles both old and new structure
+  const getLineItemsForDisplay = (item: QuoteItem): LineItem[] => {
+    // If item has lineItems array (old structure), use it
+    if (item.lineItems && item.lineItems.length > 0) {
+      return item.lineItems;
+    }
+    // Otherwise, treat the item itself as a single line item (new structure)
+    return [{
+      id: item.id,
+      description: item.description,
+      quantity: item.quantity,
+      unitPrice: item.rate,
+      total: item.total
+    }];
+  };
+
   const calculateQuoteSubtotal = (): number => {
     return localQuote.items.reduce((sum, item) => sum + calculateItemSubtotal(item), 0);
   };
@@ -85,15 +101,29 @@ const QuotePreview: React.FC<QuotePreviewProps> = ({ quote, onUpdate, onSave }) 
 
     const updatedQuote = { ...localQuote };
     const item = updatedQuote.items[itemIndex];
-    if (!item.lineItems) return;
     
-    const lineItem = item.lineItems[lineItemIndex];
-    (lineItem as any)[field] = value;
-    lineItem.total = calculateLineItemTotal(lineItem);
-    
-    if (item.subtotal !== undefined) {
-      item.subtotal = calculateItemSubtotal(item);
+    // Handle old structure with lineItems array
+    if (item.lineItems && item.lineItems.length > 0) {
+      const lineItem = item.lineItems[lineItemIndex];
+      (lineItem as any)[field] = value;
+      lineItem.total = calculateLineItemTotal(lineItem);
+      
+      if (item.subtotal !== undefined) {
+        item.subtotal = calculateItemSubtotal(item);
+      }
+    } else {
+      // Handle new structure - update item directly
+      if (field === 'description') {
+        item.description = value;
+      } else if (field === 'quantity') {
+        item.quantity = value;
+        item.total = value * item.rate;
+      } else if (field === 'unitPrice') {
+        item.rate = value;
+        item.total = item.quantity * value;
+      }
     }
+    
     updatedQuote.subtotal = calculateQuoteSubtotal();
     updatedQuote.gstAmount = calculateGST(updatedQuote.subtotal);
     updatedQuote.total = calculateTotal(updatedQuote.subtotal, updatedQuote.gstAmount);
@@ -308,7 +338,7 @@ const QuotePreview: React.FC<QuotePreviewProps> = ({ quote, onUpdate, onSave }) 
                 {isMobile ? (
                   /* Mobile: Card-based layout */
                   <VStack spacing={3} align="stretch">
-                    {item.lineItems?.map((lineItem, lineItemIndex) => (
+                    {getLineItemsForDisplay(item).map((lineItem, lineItemIndex) => (
                       <Box
                         key={lineItem.id}
                         bg="gray.50"
@@ -322,14 +352,16 @@ const QuotePreview: React.FC<QuotePreviewProps> = ({ quote, onUpdate, onSave }) 
                           <Text fontSize="11px" fontWeight="600" color="gray.500" textTransform="uppercase" letterSpacing="0.5px">
                             Description
                           </Text>
-                          <IconButton
-                            aria-label="Delete line item"
-                            icon={<Icon as={FiTrash2} />}
-                            variant="ghost"
-                            colorScheme="red"
-                            size="xs"
-                            onClick={() => removeLineItem(itemIndex, lineItemIndex)}
-                          />
+                          {item.lineItems && item.lineItems.length > 0 && (
+                            <IconButton
+                              aria-label="Delete line item"
+                              icon={<Icon as={FiTrash2} />}
+                              variant="ghost"
+                              colorScheme="red"
+                              size="xs"
+                              onClick={() => removeLineItem(itemIndex, lineItemIndex)}
+                            />
+                          )}
                         </Flex>
                         {/* Description input full width - Textarea so long text is visible */}
                         <Box mb={3}>
@@ -418,35 +450,42 @@ const QuotePreview: React.FC<QuotePreviewProps> = ({ quote, onUpdate, onSave }) 
                     <Table variant="simple" size="sm">
                       <Thead>
                         <Tr bg="gray.50">
-                          <Th color="gray.600" fontWeight="600" fontSize="xs" textTransform="uppercase">
+                          <Th color="gray.600" fontWeight="600" fontSize="xs" textTransform="uppercase" width="40%">
                             Item Description
                           </Th>
-                          <Th color="gray.600" fontWeight="600" fontSize="xs" textTransform="uppercase" isNumeric>
+                          <Th color="gray.600" fontWeight="600" fontSize="xs" textTransform="uppercase" isNumeric width="15%">
                             Quantity
                           </Th>
-                          <Th color="gray.600" fontWeight="600" fontSize="xs" textTransform="uppercase" isNumeric>
+                          <Th color="gray.600" fontWeight="600" fontSize="xs" textTransform="uppercase" isNumeric width="20%">
                             Rate
                           </Th>
-                          <Th color="gray.600" fontWeight="600" fontSize="xs" textTransform="uppercase" isNumeric>
+                          <Th color="gray.600" fontWeight="600" fontSize="xs" textTransform="uppercase" isNumeric width="20%">
                             Amount
                           </Th>
-                          <Th></Th>
+                          <Th width="5%"></Th>
                         </Tr>
                       </Thead>
                       <Tbody>
-                        {item.lineItems?.map((lineItem, lineItemIndex) => (
+                        {getLineItemsForDisplay(item).map((lineItem, lineItemIndex) => (
                           <Tr key={lineItem.id} _hover={{ bg: 'gray.50' }}>
-                            <Td>
-                              <Input
+                            <Td verticalAlign="top">
+                              <Textarea
                                 value={lineItem.description || ''}
                                 onChange={(e) =>
                                   updateLineItem(itemIndex, lineItemIndex, 'description', e.target.value)
                                 }
                                 placeholder="Enter description"
                                 size="sm"
-                                variant="unstyled"
-                                _focus={{ bg: 'white', border: '1px solid', borderColor: '#750926' }}
+                                minH="40px"
+                                rows={2}
+                                resize="vertical"
+                                bg="transparent"
+                                border="1px solid transparent"
+                                borderRadius="6px"
+                                _hover={{ bg: 'gray.50', borderColor: 'gray.200' }}
+                                _focus={{ bg: 'white', border: '1px solid', borderColor: '#750926', boxShadow: '0 0 0 1px #750926' }}
                                 px={2}
+                                py={2}
                               />
                             </Td>
                             <Td isNumeric>
@@ -486,14 +525,16 @@ const QuotePreview: React.FC<QuotePreviewProps> = ({ quote, onUpdate, onSave }) 
                               {formatCurrency(calculateLineItemTotal(lineItem))}
                             </Td>
                             <Td>
-                              <IconButton
-                                aria-label="Delete line item"
-                                icon={<Icon as={FiTrash2} />}
-                                variant="ghost"
-                                colorScheme="red"
-                                size="xs"
-                                onClick={() => removeLineItem(itemIndex, lineItemIndex)}
-                              />
+                              {item.lineItems && item.lineItems.length > 0 && (
+                                <IconButton
+                                  aria-label="Delete line item"
+                                  icon={<Icon as={FiTrash2} />}
+                                  variant="ghost"
+                                  colorScheme="red"
+                                  size="xs"
+                                  onClick={() => removeLineItem(itemIndex, lineItemIndex)}
+                                />
+                              )}
                             </Td>
                           </Tr>
                         ))}
