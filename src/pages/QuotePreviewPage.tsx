@@ -31,12 +31,24 @@ export const QuotePreviewPage: React.FC = () => {
 
   // Load page images from IndexedDB if not already in memory
   useEffect(() => {
+    console.log('📄 QuotePreviewPage: Checking for page images...');
+    console.log('📄 Current pageImages state:', pageImages.length);
+    console.log('📄 Proposal pageImages from store:', proposal.pageImages?.length || 0);
+    
     if (pageImages.length === 0) {
       loadPageImages().then((images) => {
+        console.log('📄 Loaded from IndexedDB:', images.length, 'images');
         if (images.length > 0) {
           setPageImages(images);
+          console.log('✅ Page images loaded and set');
+        } else {
+          console.log('⚠️ No images found in IndexedDB');
         }
+      }).catch(err => {
+        console.error('❌ Failed to load page images:', err);
       });
+    } else {
+      console.log('✅ Page images already in state:', pageImages.length);
     }
   }, []);
 
@@ -110,6 +122,14 @@ export const QuotePreviewPage: React.FC = () => {
     quote: currentQuote,
     proposalPages: pageImages,
   };
+  
+  console.log('🎨 Template Data:', {
+    hasCompany: !!templateData.company,
+    hasClient: !!templateData.client,
+    hasQuote: !!templateData.quote,
+    proposalPagesCount: templateData.proposalPages?.length || 0,
+    quoteItemsCount: templateData.quote?.items?.length || 0,
+  });
 
   const renderTemplate = () => {
     switch (selectedTemplate) {
