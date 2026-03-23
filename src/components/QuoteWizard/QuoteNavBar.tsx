@@ -11,7 +11,6 @@ import {
   IconButton,
   Flex,
   Drawer,
-  DrawerBody,
   DrawerOverlay,
   DrawerContent,
   DrawerCloseButton,

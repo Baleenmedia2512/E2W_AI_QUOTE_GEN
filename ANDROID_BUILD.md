@@ -1,10 +1,24 @@
 # Android Build Setup
 
+## Quick Build (Recommended)
+
+### Build APK with One Command
+```powershell
+.\build-apk.ps1
+```
+This script will automatically:
+1. Build the web application
+2. Sync assets to Android
+3. Build the debug APK
+4. Copy it to the project root as `AI-Quote-Generator.apk`
+
+**APK Location:** `AI-Quote-Generator.apk` in the project root
+
 ## Prerequisites
 - Node.js and npm installed
-- Android Studio installed
+- Android Studio installed (or at least Android SDK)
 - Java JDK 11 or higher
-- Android SDK installed
+- Android SDK installed at: `%LOCALAPPDATA%\Android\Sdk`
 
 ## Setup Commands
 

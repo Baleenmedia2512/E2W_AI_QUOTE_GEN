@@ -24,8 +24,6 @@ interface ReferenceImagesProps {
  * Uses strict matching to ensure we get the right pages.
  */
 function filterPagesByCategory(pages: ExtractedPage[], category: string): ExtractedPage[] {
-  const desc = category.toLowerCase().trim();
-  
   console.log('🔍 Filtering pages for category:', category);
   
   // Extract the service type part only (before " - ")
