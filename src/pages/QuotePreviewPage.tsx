@@ -174,7 +174,7 @@ export const QuotePreviewPage: React.FC = () => {
         selectedTemplate
       );
       console.log('✅ PDF exported successfully');
-      alert('PDF exported successfully!');
+      // Success message is shown by the service itself (different for mobile vs web)
     } catch (error) {
       console.error('❌ PDF export error:', error);
       alert(`Failed to export PDF: ${error instanceof Error ? error.message : 'Unknown error'}`);
