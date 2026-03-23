@@ -48,6 +48,12 @@ function filterPagesByCategory(pages: ExtractedPage[], category: string): Extrac
   
   if (words.length === 0) return [];
   
+  // For keyword matching, use the original words but be flexible in matching
+  // Don't modify words like "awareness" that aren't actually plural
+  const requiredKeywords = words;
+  
+  console.log('🔑 Required keywords for matching:', requiredKeywords);
+  
   // Strategy: Build an exact heading pattern from the category
   // E.g., "Apartment Lift Branding" → /apartment\s+lift\s+branding/i
   // E.g., "Bus Full Branding" → /bus\s+full\s+branding/i
@@ -57,11 +63,6 @@ function filterPagesByCategory(pages: ExtractedPage[], category: string): Extrac
   const exactHeadingPattern = new RegExp(keywordPattern, 'i');
   
   console.log('🎯 Exact heading pattern:', exactHeadingPattern.source);
-  
-  // Determine required keywords (all significant words must be present)
-  const requiredKeywords = words;
-  
-  console.log('🔑 Required keywords for matching:', requiredKeywords);
 
   const matchedPages = pages.filter((page) => {
     // Clean up page text: Remove pipe characters and extra spaces that might split words
@@ -70,6 +71,8 @@ function filterPagesByCategory(pages: ExtractedPage[], category: string): Extrac
       .toLowerCase()
       .replace(/\s*\|\s*/g, '') // Remove pipes and surrounding spaces
       .replace(/\s+/g, ' ');    // Normalize multiple spaces to single space
+    
+    console.log(`🔍 Checking Page ${page.pageNumber} for keywords: [${requiredKeywords.join(', ')}]`);
     
     // EXCLUDE pricing summary pages (they contain pricing tables, not reference images)
     const isPricingSummary = pageText.includes('pricing summary') || 
@@ -84,12 +87,143 @@ function filterPagesByCategory(pages: ExtractedPage[], category: string): Extrac
     }
     
     // FLEXIBLE MATCHING: Check if ALL keywords are present (in any order, with flexible spacing)
-    const hasAllKeywords = requiredKeywords.every((kw) => pageText.includes(kw));
+    // For each keyword, check both the original form and without trailing 's' (for plural/singular)
+    const hasAllKeywords = requiredKeywords.every((kw) => {
+      // Check exact match first
+      if (pageText.includes(kw)) return true;
+      
+      // For words ending in 's', also check without the 's' (boards -> board)
+      // But only for actual plurals (not words like "awareness")
+      if (kw.endsWith('s') && kw.length > 4) {
+        const withoutS = kw.slice(0, -1);
+        // Only consider it a plural if removing 's' creates a valid word
+        // Avoid breaking words like "awareness" -> "awarenes"
+        if (!['awarenes', 'busines', 'congres', 'proces'].includes(withoutS)) {
+          if (pageText.includes(withoutS)) {
+            console.log(`  ✓ Found variation: "${kw}" matched as "${withoutS}"`);
+            return true;
+          }
+        }
+      }
+      
+      // For words not ending in 's', also check with 's' added (board -> boards)
+      if (!kw.endsWith('s')) {
+        const withS = kw + 's';
+        if (pageText.includes(withS)) {
+          console.log(`  ✓ Found variation: "${kw}" matched as "${withS}"`);
+          return true;
+        }
+      }
+      
+      // Fuzzy match for longer words (5+ chars) - check if keyword is at least 80% of the page word
+      // This handles typos like "awareness" vs "awarness"
+      if (kw.length >= 5) {
+        const words = pageText.split(' ');
+        for (const word of words) {
+          // Check if it's a close match (handles typos and variations)
+          // Must be similar length (within 2 characters)
+          if (word.length >= kw.length - 2 && word.length <= kw.length + 2) {
+            // Check if they start the same (first 4 characters) and are similar length
+            const startMatch = kw.substring(0, 4) === word.substring(0, 4);
+            if (startMatch) {
+              console.log(`  ✓ Found fuzzy match: "${kw}" matched as "${word}" (same start + similar length)`);
+              return true;
+            }
+            
+            // Alternative: Count common characters (regardless of position)
+            let commonChars = 0;
+            const kwChars = kw.split('');
+            const wordChars = word.split('');
+            const usedIndices = new Set();
+            
+            for (const kwChar of kwChars) {
+              for (let i = 0; i < wordChars.length; i++) {
+                if (!usedIndices.has(i) && kwChar === wordChars[i]) {
+                  commonChars++;
+                  usedIndices.add(i);
+                  break;
+                }
+              }
+            }
+            
+            const similarity = commonChars / kw.length;
+            if (similarity >= 0.85) {
+              console.log(`  ✓ Found fuzzy match: "${kw}" matched as "${word}" (${Math.round(similarity * 100)}% characters match)`);
+              return true;
+            }
+          }
+        }
+      }
+      
+      return false;
+    });
     
     if (!hasAllKeywords) {
-      const missingKeywords = requiredKeywords.filter(kw => !pageText.includes(kw));
+      // Use the same flexible matching for reporting missing keywords
+      const missingKeywords = requiredKeywords.filter(kw => {
+        if (pageText.includes(kw)) return false;
+        
+        // Check variations
+        if (kw.endsWith('s') && kw.length > 4) {
+          const withoutS = kw.slice(0, -1);
+          if (!['awarenes', 'busines', 'congres', 'proces'].includes(withoutS)) {
+            if (pageText.includes(withoutS)) return false;
+          }
+        }
+        
+        if (!kw.endsWith('s')) {
+          const withS = kw + 's';
+          if (pageText.includes(withS)) return false;
+        }
+        
+        // Check fuzzy match
+        if (kw.length >= 5) {
+          const words = pageText.split(' ');
+          for (const word of words) {
+            if (word.length >= kw.length - 2 && word.length <= kw.length + 2) {
+              // Check if they start the same
+              const startMatch = kw.substring(0, 4) === word.substring(0, 4);
+              if (startMatch) return false;
+              
+              // Check common characters
+              let commonChars = 0;
+              const kwChars = kw.split('');
+              const wordChars = word.split('');
+              const usedIndices = new Set();
+              
+              for (const kwChar of kwChars) {
+                for (let i = 0; i < wordChars.length; i++) {
+                  if (!usedIndices.has(i) && kwChar === wordChars[i]) {
+                    commonChars++;
+                    usedIndices.add(i);
+                    break;
+                  }
+                }
+              }
+              
+              if (commonChars / kw.length >= 0.85) return false;
+            }
+          }
+        }
+        
+        return true;
+      });
+      
       console.log(`❌ Page ${page.pageNumber} - Missing keywords: [${missingKeywords.join(', ')}]`);
+      console.log(`   Page text sample: ${pageText.substring(0, 200)}...`);
       return false;
+    }
+    
+    // PRIORITY 1: Check if this is explicitly a reference image page
+    const isReferenceImagePage = pageText.includes('reference image') || 
+                                pageText.includes('reference images') ||
+                                pageText.includes('sample image') ||
+                                pageText.includes('display area') ||
+                                pageText.includes('design specification');
+    
+    if (isReferenceImagePage) {
+      console.log(`✅ Page ${page.pageNumber} - REFERENCE IMAGE page detected!`);
+      return true;
     }
     
     // If all keywords are present, check if they appear close together (likely a heading)
@@ -118,7 +252,55 @@ function filterPagesByCategory(pages: ExtractedPage[], category: string): Extrac
   });
   
   console.log(`📊 Found ${matchedPages.length} matching pages for "${category}"`);
-  return matchedPages;
+  
+  // POST-PROCESSING: Look for reference image pages adjacent to keyword matches
+  // E.g., if page 32 has keywords but page 33 is reference image, include page 33
+  const pageNumbersToInclude = new Set<number>();
+  
+  matchedPages.forEach((page) => {
+    const pageText = page.text.toLowerCase().replace(/\s*\|\s*/g, '').replace(/\s+/g, ' ');
+    
+    // Check if this page has (1/X) pattern - skip it entirely
+    const hasFirstPagePattern = pageText.match(/\(1\/\d+\)/);
+    if (hasFirstPagePattern) {
+      console.log(`🔄 Page ${page.pageNumber} - Excluded (1/X pattern)`);
+      return;
+    }
+    
+    // Check if this is a reference image page
+    const isRefPage = pageText.includes('reference image') || 
+                     pageText.includes('design specification') ||
+                     pageText.match(/\(([2-9]\d*)\/\d+\)/);
+    
+    if (isRefPage) {
+      console.log(`🎯 Page ${page.pageNumber} - Reference image page found`);
+      pageNumbersToInclude.add(page.pageNumber);
+      return;
+    }
+    
+    // Check adjacent pages (next page) for reference images
+    const nextPage = pages.find(p => p.pageNumber === page.pageNumber + 1);
+    if (nextPage) {
+      const nextText = nextPage.text.toLowerCase().replace(/\s*\|\s*/g, '').replace(/\s+/g, ' ');
+      const nextIsRefPage = nextText.includes('reference image') || 
+                           nextText.includes('design specification') ||
+                           nextText.match(/\(([2-9]\d*)\/\d+\)/);
+      
+      if (nextIsRefPage) {
+        console.log(`🔄 Page ${page.pageNumber} - Skipped, using next page ${nextPage.pageNumber} (reference page)`);
+        pageNumbersToInclude.add(nextPage.pageNumber);
+        return;
+      }
+    }
+    
+    // No reference page found in adjacent pages, include current page
+    console.log(`✅ Page ${page.pageNumber} - Included (keyword match)`);
+    pageNumbersToInclude.add(page.pageNumber);
+  });
+  
+  const refinedPages = pages.filter(p => pageNumbersToInclude.has(p.pageNumber));
+  console.log(`📊 After refinement: ${refinedPages.length} pages for "${category}"`);
+  return refinedPages;
 }
 
 /**
@@ -214,12 +396,24 @@ function filterPagesByQuoteItems(pages: ExtractedPage[], items: QuoteItem[]): Ex
           const pageNum = parseInt(pattern[1]);
           const totalPages = parseInt(pattern[2]);
           console.log(`  📄 Page ${page.pageNumber} has pattern (${pageNum}/${totalPages})`);
+          // EXCLUDE page 1 explicitly (pricing page) - ALWAYS show page 2+ for reference images
+          if (pageNum === 1) {
+            console.log(`  ❌ Page ${page.pageNumber} - Excluded (page 1/X is pricing)`);
+            return false;
+          }
           // Accept if page number is 2 or higher (reference images, not pricing)
           return pageNum >= 2;
         }
         console.log(`  📄 Page ${page.pageNumber} - No (X/Y) pattern found`);
         
         // If no pattern, check if it looks like a reference page (has "reference" in text)
+        // BUT ALSO exclude if it has (1/X) pattern anywhere in the text
+        const hasFirstPagePattern = text.match(/\(1\/\d+\)/);
+        if (hasFirstPagePattern) {
+          console.log(`  ❌ Page ${page.pageNumber} - Excluded (found (1/X) pattern)`);
+          return false;
+        }
+        
         const looksLikeReference = text.includes('reference image') || 
                                   text.includes('sample') ||
                                   text.includes('example') ||
@@ -235,8 +429,23 @@ function filterPagesByQuoteItems(pages: ExtractedPage[], items: QuoteItem[]): Ex
         return result;
       } else {
         // If no (X/Y) pattern found, return all matching pages
-        console.log(`⚠️ No (X/Y) pattern found, using all ${matchingPages.length} matching pages`);
-        matchingPages.forEach((page) => matchedPages.add(page.pageNumber));
+        // BUT STILL exclude any (1/X) pages to avoid showing pricing pages
+        console.log(`⚠️ No (X/Y) pattern found for service type, checking all ${matchingPages.length} matching pages`);
+        
+        const filteredMatchingPages = matchingPages.filter(page => {
+          const text = page.text.toLowerCase().replace(/\s*\|\s*/g, '').replace(/\s+/g, ' ');
+          
+          // EXPLICIT CHECK: Exclude any page with (1/X) pattern (pricing page)
+          const hasFirstPagePattern = text.match(/\(1\/\d+\)/);
+          if (hasFirstPagePattern) {
+            console.log(`  ❌ Page ${page.pageNumber} - Excluded from service type fallback (found (1/X) pattern)`);
+            return false;
+          }
+          return true;
+        });
+        
+        console.log(`📊 After filtering out (1/X) pages from service type: ${filteredMatchingPages.length} pages remain`);
+        filteredMatchingPages.forEach((page) => matchedPages.add(page.pageNumber));
         const result = pages.filter((page) => matchedPages.has(page.pageNumber));
         return result;
       }
@@ -262,6 +471,13 @@ function filterPagesByQuoteItems(pages: ExtractedPage[], items: QuoteItem[]): Ex
         .replace(/\s*\|\s*/g, '') // Remove pipes and surrounding spaces
         .replace(/\s+/g, ' ');    // Normalize spaces
         
+      // EXPLICIT CHECK: Exclude any page with (1/X) pattern (pricing page)
+      const hasFirstPagePattern = text.match(/\(1\/\d+\)/);
+      if (hasFirstPagePattern) {
+        console.log(`  ❌ Page ${page.pageNumber} - Excluded (found (1/X) pattern - pricing page)`);
+        return false;
+      }
+        
       const hasReferencePattern = text.match(/\(([2-9]\d*)\/(\d+)\)/);
       if (hasReferencePattern) {
         console.log(`  ✅ Page ${page.pageNumber} has reference pattern: (2/X) or higher`);
@@ -276,8 +492,23 @@ function filterPagesByQuoteItems(pages: ExtractedPage[], items: QuoteItem[]): Ex
     } else {
       // Fallback: Include all matching pages if no (X/Y) pattern found
       // (user's PDF might not have the pattern)
-      console.log(`⚠️ No (X/Y) pattern found, using all ${matchingPages.length} matching pages`);
-      matchingPages.forEach((page) => matchedPages.add(page.pageNumber));
+      // BUT STILL exclude any (1/X) pages to avoid showing pricing pages
+      console.log(`⚠️ No (X/Y) pattern found for reference pages, checking all ${matchingPages.length} matching pages`);
+      
+      const filteredMatchingPages = matchingPages.filter(page => {
+        const text = page.text.toLowerCase().replace(/\s*\|\s*/g, '').replace(/\s+/g, ' ');
+        
+        // EXPLICIT CHECK: Exclude any page with (1/X) pattern (pricing page)
+        const hasFirstPagePattern = text.match(/\(1\/\d+\)/);
+        if (hasFirstPagePattern) {
+          console.log(`  ❌ Page ${page.pageNumber} - Excluded from fallback (found (1/X) pattern)`);
+          return false;
+        }
+        return true;
+      });
+      
+      console.log(`📊 After filtering out (1/X) pages: ${filteredMatchingPages.length} pages remain`);
+      filteredMatchingPages.forEach((page) => matchedPages.add(page.pageNumber));
     }
   });
   
