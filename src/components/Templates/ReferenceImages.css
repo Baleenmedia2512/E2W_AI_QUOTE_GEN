@@ -232,3 +232,33 @@
     clear: both;
   }
 }
+
+/* Mobile PDF Export Mode - optimized for mobile viewing */
+.pdf-export-mobile.pdf-export-mode .reference-images-section {
+  padding: 20px 15px;
+}
+
+.pdf-export-mobile.pdf-export-mode .reference-images-title {
+  font-size: 16px;
+  margin-bottom: 20px;
+}
+
+.pdf-export-mobile.pdf-export-mode .reference-image-row {
+  gap: 20px;
+  padding: 15px 0;
+}
+
+.pdf-export-mobile.pdf-export-mode .reference-image-item {
+  max-width: 100%;
+}
+
+.pdf-export-mobile.pdf-export-mode .reference-image {
+  max-height: 700px; /* Smaller for mobile */
+  border: 1px solid #ddd;
+}
+
+.pdf-export-mobile.pdf-export-mode .reference-image-caption {
+  font-size: 12px;
+  margin-top: 8px;
+}
+

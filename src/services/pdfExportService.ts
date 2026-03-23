@@ -1,6 +1,12 @@
 import jsPDF from 'jspdf';
 import html2canvas from 'html2canvas';
 import { TemplateType } from '../types';
+import { Capacitor } from '@capacitor/core';
+import { Filesystem, Directory } from '@capacitor/filesystem';
+import DownloadNotification from '../plugins/downloadNotification';
+
+// Check if running on mobile (Capacitor native app)
+const isMobile = () => Capacitor.isNativePlatform();
 
 export const exportToPDF = async (
   element: HTMLElement,
@@ -18,18 +24,32 @@ export const exportToPDF = async (
 
     console.log('📸 Capturing element as canvas...');
 
-    // Force desktop A4 layout for PDF capture regardless of screen size
-    const a4WidthPx = 794; // 210mm at 96dpi
+    // Detect if mobile for optimized PDF size
+    const isMobileDevice = isMobile();
+    const deviceWidth = window.innerWidth;
+    
+    // For mobile, use device-optimized width; for desktop, use A4
+    const pdfWidthPx = isMobileDevice ? Math.min(deviceWidth, 700) : 794; // 794 = 210mm at 96dpi
+    const scaleFactor = isMobileDevice ? 1.5 : 2; // Lower scale for mobile to reduce file size
+    
+    console.log('📱 Export settings:', { isMobileDevice, pdfWidthPx, scaleFactor });
+    
     const originalStyle = element.getAttribute('style') || '';
     const originalClass = element.className;
-    element.style.width = `${a4WidthPx}px`;
-    element.style.maxWidth = `${a4WidthPx}px`;
-    element.style.minWidth = `${a4WidthPx}px`;
+    element.style.width = `${pdfWidthPx}px`;
+    element.style.maxWidth = `${pdfWidthPx}px`;
+    element.style.minWidth = `${pdfWidthPx}px`;
     element.style.position = 'absolute';
     element.style.left = '-9999px';
     element.style.top = '0';
     // Force desktop styles by adding a class
     element.classList.add('pdf-export-mode');
+    
+    // Add mobile-specific class for mobile exports
+    if (isMobileDevice) {
+      element.classList.add('pdf-export-mobile');
+      element.style.fontSize = '13px'; // Slightly larger text for mobile
+    }
 
     // Calculate dynamic page break for reference images section
     const pageBreakElement = element.querySelector('.reference-page-break') as HTMLElement;
@@ -43,17 +63,17 @@ export const exportToPDF = async (
       // Calculate absolute position from top
       const contentBeforeBreak = pageBreakRect.top - containerRect.top;
       
-      // A4 page height at scale 2: approximately 1123px per page
-      const pageHeightPx = 1123;
+      // Page height calculation based on device
+      const pageHeightPx = isMobileDevice ? 900 : 1123;
       
       // Calculate how much content fills the current page
       const contentOnFirstPage = contentBeforeBreak % pageHeightPx;
       
       // Calculate spacer needed to reach exactly the next page boundary
-      // Add safety margin of 100px to ensure section title starts on new page
+      // Add safety margin to ensure section title starts on new page
       const spacerHeight = contentOnFirstPage > 0 
-        ? (pageHeightPx - contentOnFirstPage) + 100
-        : 200; // Minimum spacer if already at page boundary
+        ? (pageHeightPx - contentOnFirstPage) + (isMobileDevice ? 50 : 100)
+        : (isMobileDevice ? 100 : 200);
       
       pageBreakElement.style.height = `${spacerHeight}px`;
       console.log('📐 Page break spacer:', {
@@ -64,18 +84,18 @@ export const exportToPDF = async (
       });
     }
 
-    // Let the browser reflow with desktop dimensions
+    // Let the browser reflow with new dimensions
     await new Promise(r => setTimeout(r, 200));
 
-    // Capture the element as canvas with high quality
+    // Capture the element as canvas with appropriate quality
     const canvas = await html2canvas(element, {
-      scale: 2, // Higher quality
+      scale: scaleFactor,
       useCORS: true,
       allowTaint: true,
       backgroundColor: '#ffffff',
       logging: true,
-      width: a4WidthPx,
-      windowWidth: a4WidthPx
+      width: pdfWidthPx,
+      windowWidth: pdfWidthPx
     });
 
     // Restore original styles immediately after capture
@@ -84,16 +104,16 @@ export const exportToPDF = async (
     
     console.log('✅ Canvas captured:', canvas.width, 'x', canvas.height);
 
-    // Calculate dimensions for A4 in portrait mode
-    const imgWidth = 210; // A4 width in mm
-    const pageHeight = 297; // A4 height in mm
+    // Calculate dimensions - use A4 for desktop, mobile-optimized for mobile
+    const imgWidth = isMobileDevice ? 180 : 210; // Slightly smaller for mobile  
+    const pageHeight = isMobileDevice ? 270 : 297; // A4 height adjusted for mobile
     const imgHeight = (canvas.height * imgWidth) / canvas.width;
 
-    // Create PDF
+    // Create PDF with appropriate size
     const pdf = new jsPDF({
       orientation: 'portrait',
       unit: 'mm',
-      format: 'a4',
+      format: isMobileDevice ? [imgWidth, pageHeight] : 'a4', // Custom size for mobile
       compress: true
     });
 
@@ -102,7 +122,7 @@ export const exportToPDF = async (
     let pageNumber = 1;
 
     // Add image to first page
-    const imgData = canvas.toDataURL('image/png');
+    const imgData = canvas.toDataURL('image/png', 0.92); // Slightly compressed for mobile
     pdf.addImage(imgData, 'PNG', 0, position, imgWidth, imgHeight, undefined, 'FAST');
     heightLeft -= pageHeight;
 
@@ -115,18 +135,98 @@ export const exportToPDF = async (
       heightLeft -= pageHeight;
     }
 
+    console.log(`📄 PDF created with ${pageNumber} pages`);
+
+    // Add PDF metadata for better mobile viewing
+    pdf.setProperties({
+      title: `Quote ${quoteNumber}`,
+      subject: 'Quote Document',
+      author: 'AI Quote Generator',
+      keywords: 'quote, proposal',
+      creator: 'E2W Quote System'
+    });
+
+    // For mobile, set initial view to fit width
+    if (isMobileDevice) {
+      // @ts-ignore - jsPDF doesn't have types for setDisplayMode
+      pdf.setDisplayMode('fullwidth', 'continuous');
+    }
+
     // Generate filename
     const timestamp = new Date().toISOString().split('T')[0];
     const filename = `Quote_${quoteNumber}_${timestamp}.pdf`;
 
     console.log('💾 Saving PDF as:', filename);
-    // Save the PDF
-    pdf.save(filename);
+    
+    // Handle mobile vs web differently
+    if (isMobile()) {
+      console.log('📱 Mobile detected - using Filesystem API');
+      try {
+        // Get PDF as base64
+        const pdfBase64 = pdf.output('dataurlstring').split(',')[1];
+        
+        // Save to device's documents directory
+        const result = await Filesystem.writeFile({
+          path: filename,
+          data: pdfBase64,
+          directory: Directory.Documents,
+          recursive: true
+        });
+        
+        console.log('✅ PDF saved to:', result.uri);
+        
+        // Extract the actual file path from the URI
+        const filePath = result.uri.replace('file://', '');
+        
+        // Show download notification
+        try {
+          await DownloadNotification.showDownloadNotification({
+            filePath: filePath,
+            fileName: filename,
+            title: 'PDF Downloaded',
+            message: `${filename} is ready to view`
+          });
+          console.log('✅ Download notification shown');
+        } catch (notifError) {
+          console.error('⚠️ Failed to show notification:', notifError);
+          // Continue even if notification fails
+        }
+        
+        // Show success message
+        alert(`PDF saved successfully!\n\nFile: ${filename}\nLocation: Documents folder\n\nTap the notification to open the file.`);
+        
+        // Try to share if available (optional)
+        try {
+          if (navigator.share) {
+            const pdfBlob = pdf.output('blob');
+            const file = new File([pdfBlob], filename, { type: 'application/pdf' });
+            await navigator.share({
+              files: [file],
+              title: `Quote ${quoteNumber}`,
+              text: `Quote document ${filename}`
+            });
+            console.log('✅ PDF shared successfully');
+          }
+        } catch (shareError) {
+          console.log('ℹ️ Share not available or cancelled:', shareError);
+          // Not a critical error - file is already saved
+        }
+      } catch (error) {
+        console.error('❌ Mobile save error:', error);
+        // Fallback to browser download
+        console.log('🔄 Falling back to browser download');
+        pdf.save(filename);
+      }
+    } else {
+      // Web browser - use normal download
+      console.log('💻 Web detected - using browser download');
+      pdf.save(filename);
+    }
 
     // Restore cursor
     document.body.style.cursor = originalCursor;
     
-    console.log('✅ PDF saved successfully');
+    console.log('✅ PDF export complete');
     return Promise.resolve();
   } catch (error) {
     console.error('PDF Export Error:', error);
@@ -212,7 +312,57 @@ export const exportToPDFWithOptions = async (
     const timestamp = new Date().toISOString().split('T')[0];
     const finalFilename = filename || `Quote_${quoteNumber}_${timestamp}.pdf`;
 
-    pdf.save(finalFilename);
+    // Handle mobile vs web differently
+    if (isMobile()) {
+      console.log('📱 Mobile detected - using Filesystem API');
+      try {
+        const pdfBase64 = pdf.output('dataurlstring').split(',')[1];
+        
+        const result = await Filesystem.writeFile({
+          path: finalFilename,
+          data: pdfBase64,
+          directory: Directory.Documents,
+          recursive: true
+        });
+        
+        console.log('✅ PDF saved to:', result.uri);
+        
+        // Extract the actual file path from the URI
+        const filePath = result.uri.replace('file://', '');
+        
+        // Show download notification
+        try {
+          await DownloadNotification.showDownloadNotification({
+            filePath: filePath,
+            fileName: finalFilename,
+            title: 'PDF Downloaded',
+            message: `${finalFilename} is ready to view`
+          });
+          console.log('✅ Download notification shown');
+        } catch (notifError) {
+          console.error('⚠️ Failed to show notification:', notifError);
+        }
+        
+        alert(`PDF saved successfully!\n\nFile: ${finalFilename}\nLocation: Documents folder\n\nTap the notification to open.`);
+        
+        // Try to share if available
+        if (navigator.share) {
+          const pdfBlob = pdf.output('blob');
+          const file = new File([pdfBlob], finalFilename, { type: 'application/pdf' });
+          await navigator.share({
+            files: [file],
+            title: `Quote ${quoteNumber}`,
+            text: `Quote document ${finalFilename}`
+          });
+        }
+      } catch (error) {
+        console.error('❌ Mobile save error:', error);
+        pdf.save(finalFilename);
+      }
+    } else {
+      pdf.save(finalFilename);
+    }
+    
     document.body.style.cursor = 'default';
 
     return Promise.resolve();

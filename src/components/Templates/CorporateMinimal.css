@@ -840,3 +840,87 @@
   margin-top: 24px !important;
   padding-top: 14px !important;
 }
+
+/* Mobile PDF Export Mode - optimized for smaller screens */
+.pdf-export-mobile.pdf-export-mode.template-corporate-minimal {
+  padding: 24px 18px !important;
+  font-size: 13px !important;
+}
+
+.pdf-export-mobile.pdf-export-mode .template-header {
+  flex-direction: column;
+  gap: 16px;
+}
+
+.pdf-export-mobile.pdf-export-mode .company-logo {
+  max-width: 100px;
+  max-height: 42px;
+}
+
+.pdf-export-mobile.pdf-export-mode .company-name {
+  font-size: 18px !important;
+}
+
+.pdf-export-mobile.pdf-export-mode .company-contact {
+  font-size: 11px !important;
+}
+
+.pdf-export-mobile.pdf-export-mode .quote-title {
+  font-size: 20px !important;
+}
+
+.pdf-export-mobile.pdf-export-mode .quote-meta {
+  gap: 14px;
+}
+
+.pdf-export-mobile.pdf-export-mode .meta-label {
+  font-size: 11px !important;
+}
+
+.pdf-export-mobile.pdf-export-mode .meta-value {
+  font-size: 12px !important;
+}
+
+.pdf-export-mobile.pdf-export-mode .items-table th {
+  font-size: 12px !important;
+  padding: 8px 10px !important;
+}
+
+.pdf-export-mobile.pdf-export-mode .items-table td {
+  font-size: 12px !important;
+  padding: 8px 10px !important;
+}
+
+.pdf-export-mobile.pdf-export-mode .item-description {
+  font-size: 12px !important;
+}
+
+.pdf-export-mobile.pdf-export-mode .item-quantity,
+.pdf-export-mobile.pdf-export-mode .item-rate,
+.pdf-export-mobile.pdf-export-mode .item-total {
+  font-size: 12px !important;
+}
+
+.pdf-export-mobile.pdf-export-mode .totals-table th,
+.pdf-export-mobile.pdf-export-mode .totals-table td {
+  font-size: 12px !important;
+  padding: 8px 12px !important;
+}
+
+.pdf-export-mobile.pdf-export-mode .grand-total td {
+  font-size: 14px !important;
+}
+
+.pdf-export-mobile.pdf-export-mode .terms-section h3 {
+  font-size: 14px !important;
+}
+
+.pdf-export-mobile.pdf-export-mode .terms-list li {
+  font-size: 11px !important;
+  margin-bottom: 6px;
+}
+
+.pdf-export-mobile.pdf-export-mode .system-generated-notice {
+  font-size: 10px !important;
+}
+
