@@ -21,7 +21,6 @@ import {
   FiChevronRight,
   FiZoomIn,
   FiZoomOut,
-  FiArrowLeft,
 } from 'react-icons/fi';
 import { Document, Page, pdfjs } from 'react-pdf';
 import { useAppStore } from '../../store';
@@ -183,25 +182,6 @@ const ProposalViewer: React.FC = () => {
           bg={bgColor}
           position="relative"
         >
-          {/* Back to Summary Button Overlay */}
-          <Button
-            leftIcon={<Icon as={FiArrowLeft} />}
-            size="sm"
-            bg="white"
-            boxShadow="md"
-            border="1px solid"
-            borderColor="gray.300"
-            position="absolute"
-            top={4}
-            right={4}
-            zIndex={10}
-            _hover={{
-              bg: 'gray.50',
-            }}
-          >
-            Back to Summary
-          </Button>
-
           {/* PDF Document */}
           <Center p={{ base: 1, md: 6 }}>
             <Box
@@ -237,8 +217,8 @@ const ProposalViewer: React.FC = () => {
                   pageNumber={proposal.currentPage}
                   scale={isMobile ? undefined : scale}
                   width={isMobile && containerWidth > 0 ? containerWidth - 2 : undefined}
-                  renderTextLayer={true}
-                  renderAnnotationLayer={true}
+                  renderTextLayer={!isMobile}
+                  renderAnnotationLayer={!isMobile}
                 />
               </Document>
             </Box>
