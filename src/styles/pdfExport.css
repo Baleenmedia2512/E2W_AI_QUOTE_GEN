@@ -15,73 +15,263 @@
   line-height: 1.6;
   overflow: visible;
   margin: 0 !important;
-  padding: 0 !important;
+  padding: 0 !important;             /* No padding on container */
   position: relative !important;
 }
 
-/* Page 1 - Quotation Content - tight padding */
+/* Page 1 - Quotation Content - NO outer padding, template handles it */
 #pdf-page-1 {
-  padding: 20px !important;
+  padding: 0 !important;             /* Template inside handles padding */
+  page-break-after: always !important;
+  break-after: page !important;
+  -webkit-column-break-after: always !important;  /* Webkit support */
+  overflow: visible !important;
+  max-height: none !important;
 }
 
-/* Remove template padding when inside pdf-page-1 */
-#pdf-page-1 > .template-corporate-minimal,
-#pdf-page-1 > .template-modern-sales,
-#pdf-page-1 > .template-classic-business,
-#pdf-page-1 > .template-premium-agency {
-  padding: 20px !important;
+/* Template padding when inside pdf-page-1 - FORCE proper margins */
+/* Use html body prefix for maximum CSS specificity to override template defaults */
+html body #pdf-page-1.template-corporate-minimal,
+html body #pdf-page-1.template-modern-sales,
+html body #pdf-page-1.template-classic-business,
+html body #pdf-page-1.template-premium-agency,
+html body #pdf-page-1 > .template-corporate-minimal,
+html body #pdf-page-1 > .template-modern-sales,
+html body #pdf-page-1 > .template-class-business,
+html body #pdf-page-1 > .template-premium-agency,
+html body .template-corporate-minimal#pdf-page-1,
+html body .template-modern-sales#pdf-page-1,
+html body .template-classic-business#pdf-page-1,
+html body .template-premium-agency#pdf-page-1 {
+  padding: 50px 55px !important;     /* Large margins: 50px top/bottom, 55px left/right */
   margin: 0 !important;
+  max-width: 100% !important;
+  box-sizing: border-box !important;
+  width: 794px !important;
+  min-width: 794px !important;
+}
+
+/* Override .classic-container padding */
+html body #pdf-page-1 .classic-container {
+  padding: 0 !important;
+  margin: 0 !important;
+  width: 100% !important;
   max-width: 100% !important;
 }
 
+
+
 /* Page 2 - Reference Images Section - starts fresh */
-#pdf-page-2 {
+html body #pdf-page-2 {
   page-break-before: always !important;
   break-before: page !important;
-  padding: 30px !important;
+  -webkit-column-break-before: always !important;  /* Webkit support */
+  padding: 70px 55px 50px 55px !important;  /* Match page 1: 70px top, 55px sides, 50px bottom */
   margin: 0 !important;
+  margin-top: 0 !important;  /* Explicitly zero top margin */
+  display: block !important;
+  clear: both !important;
+  position: relative !important;
+  box-sizing: border-box !important;
+  width: 794px !important;
 }
 
 /* Prevent responsive CSS from affecting PDF sections during capture */
 #pdf-page-1 *,
 #pdf-page-2 * {
-  max-width: none !important;
-  flex-wrap: nowrap !important;      /* Keep tables/rows in one line */
+  max-width: 100% !important;
+  flex-wrap: wrap !important;        /* Allow wrapping if needed */
+  word-wrap: break-word !important;
+  overflow-wrap: break-word !important;
+  box-sizing: border-box !important;
 }
 
 /* Ensure tables don't wrap or break in PDF */
 #pdf-page-1 table,
 #pdf-page-2 table {
-  width: 100%;
-  table-layout: fixed;
+  width: 100% !important;
+  max-width: 100% !important;
+  table-layout: auto;                 /* Allow auto layout for better fitting */
   border-collapse: collapse;
+  font-size: 9px !important;          /* Even smaller font for tables with large margins */
+}
+
+#pdf-page-1 th,
+#pdf-page-1 td,
+#pdf-page-2 th,
+#pdf-page-2 td {
+  padding: 4px 5px !important;        /* Minimal cell padding for large margins */
+  font-size: 9px !important;
+  word-break: break-word !important;
+  line-height: 1.2 !important;
+}
+
+/* Make table column widths more compact */
+#pdf-page-1 .col-description {
+  width: 45% !important;
+}
+
+#pdf-page-1 .col-quantity {
+  width: 15% !important;
+}
+
+#pdf-page-1 .col-rate {
+  width: 20% !important;
+}
+
+#pdf-page-1 .col-total {
+  width: 20% !important;
+}
+
+/* Ensure text content doesn't overflow */
+#pdf-page-1 h1,
+#pdf-page-1 h2,
+#pdf-page-1 h3,
+#pdf-page-1 p,
+#pdf-page-1 div,
+#pdf-page-1 span {
+  max-width: 100% !important;
+  overflow-wrap: break-word !important;
+  word-wrap: break-word !important;
+}
+
+/* Company and client info sections */
+#pdf-page-1 .company-info,
+#pdf-page-1 .client-details,
+#pdf-page-1 .template-header {
+  max-width: 100% !important;
+  width: 100% !important;
+}
+
+/* Ensure quote items section fits properly */
+#pdf-page-1 .quote-items-section,
+#pdf-page-1 .items-container,
+#pdf-page-1 .totals-section {
+  max-width: 100% !important;
+  width: 100% !important;
+  overflow: hidden !important;
+  margin-bottom: 12px !important;     /* Reduced spacing between sections */
+}
+
+/* Compact section spacing */
+#pdf-page-1 .template-header,
+#pdf-page-1 .client-details {
+  margin-bottom: 10px !important;
+}
+
+#pdf-page-1 .system-generated-notice {
+  margin-top: 10px !important;
+  font-size: 9px !important;
+}
+
+/* Terms and notes sections */
+#pdf-page-1 .terms-section,
+#pdf-page-1 .notes-section {
+  max-width: 100% !important;
+  width: 100% !important;
+}
+
+#pdf-page-1 .terms-section ul,
+#pdf-page-1 .notes-section p {
+  font-size: 9px !important;          /* Smaller font for terms to fit with margins */
+  line-height: 1.4 !important;
+  padding-right: 0 !important;
+  margin-right: 0 !important;
+}
+
+#pdf-page-1 .terms-section ul li,
+#pdf-page-1 .notes-section p {
+  margin-bottom: 4px !important;
+}
+
+/* Adjust header/title sizes for better fit */
+#pdf-page-1 h1 {
+  font-size: 14px !important;
+  margin-bottom: 8px !important;
+}
+
+#pdf-page-1 h2 {
+  font-size: 13px !important;
+  margin-bottom: 6px !important;
+}
+
+#pdf-page-1 h3 {
+  font-size: 11px !important;
+  margin-bottom: 6px !important;
+}
+
+/* Make company logo smaller */
+#pdf-page-1 .company-logo,
+#pdf-page-1 .hero-logo,
+#pdf-page-1 .letterhead-logo,
+#pdf-page-1 .top-logo {
+  max-width: 90px !important;
+  max-height: 40px !important;
+}
+
+/* Reduce company and client section spacing */
+#pdf-page-1 .company-name,
+#pdf-page-1 .company-title,
+#pdf-page-1 .letterhead-name {
+  font-size: 16px !important;
+  margin-bottom: 4px !important;
+}
+
+#pdf-page-1 .company-details,
+#pdf-page-1 .client-details,
+#pdf-page-1 .letterhead-info,
+#pdf-page-1 .company-info p {
+  font-size: 9px !important;
+  line-height: 1.3 !important;
+  margin: 2px 0 !important;
 }
 
 /* Reference Images Section Styling */
 #pdf-page-2 .reference-images-section {
   margin: 0 !important;
-  padding: 0 !important;
+  padding: 20px 0 0 0 !important;  /* Added top padding for better spacing */
   border: none !important;
   background: transparent !important;
   page-break-inside: avoid !important;
+  break-inside: avoid !important;
+  -webkit-column-break-inside: avoid !important;  /* Webkit support */
+  display: block !important;
+  position: relative !important;
+}
+
+/* Structural spacer for PDF top spacing - forces content down */
+#pdf-page-2 .pdf-top-spacer {
+  display: block !important;
+  height: 20px !important;  /* Reduced since page already has 70px top padding */
+  width: 100% !important;
+  min-height: 20px !important;
+  margin: 0 !important;
+  padding: 0 !important;
+  background: transparent !important;
+  clear: both !important;
+  page-break-after: avoid !important;
 }
 
 #pdf-page-2 .reference-images-title {
   margin-top: 0 !important;
-  margin-bottom: 20px !important;
-  font-size: 18px;
-  font-weight: 600;
-  color: #333;
+  margin-bottom: 35px !important;  /* Increased from 20px to 35px */
+  padding-bottom: 12px !important;  /* Added padding */
+  font-size: 22px;  /* Increased from 18px to 22px */
+  font-weight: 700;  /* Increased from 600 to 700 */
+  color: #750926;  /* Changed from #333 to match branding */
   text-align: center;
+  border-bottom: 3px solid #750926;  /* Added border */
+  page-break-after: avoid !important;
+  break-after: avoid !important;
 }
 
-/* Individual reference image container */
-#pdf-page-2 .reference-image-item {
-  page-break-inside: avoid !important;
-  break-inside: avoid !important;
-  margin-bottom: 30px !important;
+/* Individual reference image row container */
+#pdf-page-2 .reference-image-row {
+  margin-bottom: 45px !important;  /* Increased from 30px */
   width: 100%;
   display: block;
+  page-break-inside: avoid !important;
+  break-inside: avoid !important;
 }
 
 /* Images in reference page fill width cleanly */
@@ -89,15 +279,20 @@
   width: 100% !important;
   max-width: 100% !important;
   height: auto !important;
+  max-height: 450px !important;  /* Added max-height to prevent overflow */
   display: block !important;
   margin: 10px 0 !important;
   page-break-inside: avoid !important;
   break-inside: avoid !important;
+  object-fit: contain !important;  /* Ensure images scale properly */
 }
 
 /* Image captions */
 #pdf-page-2 .reference-image-caption {
   font-size: 12px;
+  color: #666;
+  text-align: center;
+  margin: 10px 0 25px 0;  /* Increased bottom margin from 20px to 25px */
   color: #666;
   text-align: center;
   margin: 5px 0 20px 0;

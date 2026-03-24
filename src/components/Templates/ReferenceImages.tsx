@@ -584,6 +584,9 @@ export const ReferenceImages: React.FC<ReferenceImagesProps> = ({ proposalPages,
 
   return (
     <div className="reference-images-section">
+      {/* Structural spacer to force top spacing in PDF */}
+      <div className="pdf-top-spacer" style={{ height: '80px', width: '100%', display: 'block' }}></div>
+      
       <h3 className="reference-images-title">Reference Images from Proposal</h3>
       <div className="reference-images-grid">
         {groupedPages.map((group, groupIndex) => (

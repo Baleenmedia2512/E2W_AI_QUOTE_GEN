@@ -42,7 +42,7 @@ export const ModernSales: React.FC<TemplateProps> = ({ data, editable: _editable
 
   return (
     <>
-    <div className="template-modern-sales">
+    <div id="pdf-page-1" className="template-modern-sales">
       {/* Top Bar */}
       <div className="top-bar">
         <div className="bar-section">
@@ -202,10 +202,6 @@ export const ModernSales: React.FC<TemplateProps> = ({ data, editable: _editable
               </div>
             </div>
           </div>
-          {/* Reference Images from Proposal - only show for single service */}
-          {!isMultiService && (
-            <ReferenceImages proposalPages={data.proposalPages} items={quote.items} />
-          )}
         </div>
       </div>
 
@@ -216,6 +212,13 @@ export const ModernSales: React.FC<TemplateProps> = ({ data, editable: _editable
       </div>
     </div>
     
+    {/*Reference Images from Proposal - only show for single service */}
+    {!isMultiService && (
+      <div id="pdf-page-2">
+        <ReferenceImages proposalPages={data.proposalPages} items={quote.items} />
+      </div>
+    )}
+    
     {/* Multi-Service: Individual Service Pages */}
     {isMultiService && serviceGroups.map((group, groupIndex) => {
       const groupSubtotal = group.subtotal;
@@ -225,7 +228,7 @@ export const ModernSales: React.FC<TemplateProps> = ({ data, editable: _editable
       return (
         <React.Fragment key={groupIndex}>
           <div style={{ pageBreakBefore: 'always' }} />
-          <div className="template-modern-sales">
+          <div id="pdf-page-1" className="template-modern-sales">
             <div className="top-bar">
               <div className="bar-section">
                 {company.logo && (
@@ -366,10 +369,13 @@ export const ModernSales: React.FC<TemplateProps> = ({ data, editable: _editable
                   </div>
                 </div>
 
-                <ReferenceImages proposalPages={data.proposalPages} items={group.items} />
               </div>
             </div>
-          </div>
+            </div>
+
+            <div id="pdf-page-2">
+              <ReferenceImages proposalPages={data.proposalPages} items={group.items} />
+            </div>
         </React.Fragment>
       );
     })}

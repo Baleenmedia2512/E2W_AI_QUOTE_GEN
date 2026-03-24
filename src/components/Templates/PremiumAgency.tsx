@@ -42,7 +42,7 @@ export const PremiumAgency: React.FC<TemplateProps> = ({ data, editable: _editab
 
   return (
     <>
-    <div className="template-premium-agency">
+    <div id="pdf-page-1" className="template-premium-agency">
       {/* Hero Header */}
       <div className="hero-header">
         <div className="header-overlay">
@@ -219,17 +219,20 @@ export const PremiumAgency: React.FC<TemplateProps> = ({ data, editable: _editab
             </div>
           </div>
         </div>
-        {/* Reference Images from Proposal - only show for single service */}
-        {!isMultiService && (
-          <ReferenceImages proposalPages={data.proposalPages} items={quote.items} />
-        )}
       </div>
 
       {/* Footer */}
       <div className="footer">
         <p>Thank you for considering {company.name} for your project</p>
       </div>
-    </div>
+      </div>
+
+      {/* Reference Images from Proposal - only show for single service */}
+      {!isMultiService && (
+        <div id="pdf-page-2">
+          <ReferenceImages proposalPages={data.proposalPages} items={quote.items} />
+        </div>
+      )}
     
     {/* Multi-Service: Individual Service Pages */}
     {isMultiService && serviceGroups.map((group, groupIndex) => {
@@ -240,7 +243,7 @@ export const PremiumAgency: React.FC<TemplateProps> = ({ data, editable: _editab
       return (
         <React.Fragment key={groupIndex}>
           <div style={{ pageBreakBefore: 'always' }} />
-          <div className="template-premium-agency">
+          <div id="pdf-page-1" className="template-premium-agency">
             <div className="hero-header">
               <div className="header-overlay">
                 {company.logo && (
@@ -397,14 +400,17 @@ export const PremiumAgency: React.FC<TemplateProps> = ({ data, editable: _editab
                   </div>
                 </div>
               </div>
-
-              <ReferenceImages proposalPages={data.proposalPages} items={group.items} />
             </div>
 
-            <div className="footer">
-              <p>{company.name} - Professional {group.serviceType} Branding Services</p>
-            </div>
-          </div>
+              {/* Footer */}
+              <div className="footer">
+                <p>{company.name} - Professional {group.serviceType} Branding Services</p>
+              </div>
+              </div>
+
+              <div id="pdf-page-2">
+                <ReferenceImages proposalPages={data.proposalPages} items={group.items} />
+              </div>
         </React.Fragment>
       );
     })}

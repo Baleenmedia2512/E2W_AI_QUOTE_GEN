@@ -4,6 +4,11 @@
   height: 0 !important;
 }
 
+/* PDF top spacer - hidden in normal view, visible only in PDF export */
+.pdf-top-spacer {
+  display: none !important;
+}
+
 .reference-images-section {
   margin-top: 60px;
   padding: 30px 20px;
