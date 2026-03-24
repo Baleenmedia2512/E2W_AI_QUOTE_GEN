@@ -34,13 +34,27 @@ function filterPagesByCategory(pages: ExtractedPage[], category: string): Extrac
     console.log('📌 Using service type only:', serviceTypeOnly);
   }
   
+  // Synonym map for common advertising/media industry terms
+  const synonymMap: Record<string, string[]> = {
+    'ads': ['branding', 'advertising', 'ad', 'advertisement', 'advertisements'],
+    'branding': ['ads', 'advertising', 'ad', 'advertisement'],
+    'ad': ['branding', 'ads', 'advertising'],
+    'advertising': ['branding', 'ads', 'ad'],
+    'board': ['boards'],
+    'boards': ['board'],
+    'sticker': ['stickers'],
+    'stickers': ['sticker'],
+    'poster': ['posters'],
+    'posters': ['poster'],
+  };
+
   // Extract meaningful keywords, excluding pricing/quantity terms
   const words = serviceTypeOnly
     .toLowerCase()
     .split(/[\s,\-\/&]+/)
     .filter((w) => 
       w.length >= 3 && 
-      !['rental', 'price', 'per', 'month', 'and', 'the', 'for', 'from', 'display', 'printing', 'fixing', 'screen'].includes(w) &&
+      !['rental', 'price', 'per', 'month', 'and', 'the', 'for', 'from', 'display', 'printing', 'fixing'].includes(w) &&
       !w.includes('(') && !w.includes(')')  // Exclude anything with parentheses
     );
   
@@ -86,18 +100,85 @@ function filterPagesByCategory(pages: ExtractedPage[], category: string): Extrac
       return false;
     }
     
+    // Helper: check if a single keyword (or its synonyms/variations) appears in the page text
+    const keywordFoundInText = (kw: string, text: string): boolean => {
+      // Check exact match first
+      if (text.includes(kw)) return true;
+      
+      // Check synonyms
+      const synonyms = synonymMap[kw];
+      if (synonyms) {
+        for (const syn of synonyms) {
+          if (text.includes(syn)) {
+            console.log(`  ✓ Synonym match: "${kw}" matched via synonym "${syn}"`);
+            return true;
+          }
+        }
+      }
+      
+      // For words ending in 's', also check without the 's'
+      if (kw.endsWith('s') && kw.length > 4) {
+        const withoutS = kw.slice(0, -1);
+        if (!['awarenes', 'busines', 'congres', 'proces'].includes(withoutS)) {
+          if (text.includes(withoutS)) return true;
+        }
+      }
+      
+      // For words not ending in 's', also check with 's' added
+      if (!kw.endsWith('s')) {
+        const withS = kw + 's';
+        if (text.includes(withS)) return true;
+      }
+      
+      // Fuzzy match for longer words (5+ chars)
+      if (kw.length >= 5) {
+        const words = text.split(' ');
+        for (const word of words) {
+          if (word.length >= kw.length - 2 && word.length <= kw.length + 2) {
+            const startMatch = kw.substring(0, 4) === word.substring(0, 4);
+            if (startMatch) return true;
+            
+            let commonChars = 0;
+            const kwChars = kw.split('');
+            const wordChars = word.split('');
+            const usedIndices = new Set();
+            for (const kwChar of kwChars) {
+              for (let i = 0; i < wordChars.length; i++) {
+                if (!usedIndices.has(i) && kwChar === wordChars[i]) {
+                  commonChars++;
+                  usedIndices.add(i);
+                  break;
+                }
+              }
+            }
+            if (commonChars / kw.length >= 0.85) return true;
+          }
+        }
+      }
+      
+      return false;
+    };
+
     // FLEXIBLE MATCHING: Check if ALL keywords are present (in any order, with flexible spacing)
     // For each keyword, check both the original form and without trailing 's' (for plural/singular)
     const hasAllKeywords = requiredKeywords.every((kw) => {
       // Check exact match first
       if (pageText.includes(kw)) return true;
       
+      // Check synonyms from synonymMap
+      const synonyms = synonymMap[kw];
+      if (synonyms) {
+        for (const syn of synonyms) {
+          if (pageText.includes(syn)) {
+            console.log(`  ✓ Synonym match: "${kw}" matched via synonym "${syn}"`);
+            return true;
+          }
+        }
+      }
+      
       // For words ending in 's', also check without the 's' (boards -> board)
-      // But only for actual plurals (not words like "awareness")
       if (kw.endsWith('s') && kw.length > 4) {
         const withoutS = kw.slice(0, -1);
-        // Only consider it a plural if removing 's' creates a valid word
-        // Avoid breaking words like "awareness" -> "awarenes"
         if (!['awarenes', 'busines', 'congres', 'proces'].includes(withoutS)) {
           if (pageText.includes(withoutS)) {
             console.log(`  ✓ Found variation: "${kw}" matched as "${withoutS}"`);
@@ -115,22 +196,17 @@ function filterPagesByCategory(pages: ExtractedPage[], category: string): Extrac
         }
       }
       
-      // Fuzzy match for longer words (5+ chars) - check if keyword is at least 80% of the page word
-      // This handles typos like "awareness" vs "awarness"
+      // Fuzzy match for longer words (5+ chars)
       if (kw.length >= 5) {
         const words = pageText.split(' ');
         for (const word of words) {
-          // Check if it's a close match (handles typos and variations)
-          // Must be similar length (within 2 characters)
           if (word.length >= kw.length - 2 && word.length <= kw.length + 2) {
-            // Check if they start the same (first 4 characters) and are similar length
             const startMatch = kw.substring(0, 4) === word.substring(0, 4);
             if (startMatch) {
               console.log(`  ✓ Found fuzzy match: "${kw}" matched as "${word}" (same start + similar length)`);
               return true;
             }
             
-            // Alternative: Count common characters (regardless of position)
             let commonChars = 0;
             const kwChars = kw.split('');
             const wordChars = word.split('');
@@ -158,60 +234,23 @@ function filterPagesByCategory(pages: ExtractedPage[], category: string): Extrac
       return false;
     });
     
-    if (!hasAllKeywords) {
+    // RELAXED MATCHING: If strict match fails, try matching with at least 75% of keywords
+    // This handles cases where keyword naming differs slightly from PDF headings
+    const matchedCount = requiredKeywords.filter(kw => keywordFoundInText(kw, pageText)).length;
+    const matchRatio = matchedCount / requiredKeywords.length;
+    const hasRelaxedMatch = !hasAllKeywords && matchRatio >= 0.75 && matchedCount >= 2;
+    
+    if (!hasAllKeywords && !hasRelaxedMatch) {
       // Use the same flexible matching for reporting missing keywords
-      const missingKeywords = requiredKeywords.filter(kw => {
-        if (pageText.includes(kw)) return false;
-        
-        // Check variations
-        if (kw.endsWith('s') && kw.length > 4) {
-          const withoutS = kw.slice(0, -1);
-          if (!['awarenes', 'busines', 'congres', 'proces'].includes(withoutS)) {
-            if (pageText.includes(withoutS)) return false;
-          }
-        }
-        
-        if (!kw.endsWith('s')) {
-          const withS = kw + 's';
-          if (pageText.includes(withS)) return false;
-        }
-        
-        // Check fuzzy match
-        if (kw.length >= 5) {
-          const words = pageText.split(' ');
-          for (const word of words) {
-            if (word.length >= kw.length - 2 && word.length <= kw.length + 2) {
-              // Check if they start the same
-              const startMatch = kw.substring(0, 4) === word.substring(0, 4);
-              if (startMatch) return false;
-              
-              // Check common characters
-              let commonChars = 0;
-              const kwChars = kw.split('');
-              const wordChars = word.split('');
-              const usedIndices = new Set();
-              
-              for (const kwChar of kwChars) {
-                for (let i = 0; i < wordChars.length; i++) {
-                  if (!usedIndices.has(i) && kwChar === wordChars[i]) {
-                    commonChars++;
-                    usedIndices.add(i);
-                    break;
-                  }
-                }
-              }
-              
-              if (commonChars / kw.length >= 0.85) return false;
-            }
-          }
-        }
-        
-        return true;
-      });
+      const missingKeywords = requiredKeywords.filter(kw => !keywordFoundInText(kw, pageText));
       
-      console.log(`❌ Page ${page.pageNumber} - Missing keywords: [${missingKeywords.join(', ')}]`);
+      console.log(`❌ Page ${page.pageNumber} - Missing keywords: [${missingKeywords.join(', ')}] (matched ${matchedCount}/${requiredKeywords.length})`);
       console.log(`   Page text sample: ${pageText.substring(0, 200)}...`);
       return false;
+    }
+    
+    if (hasRelaxedMatch) {
+      console.log(`✅ Page ${page.pageNumber} - RELAXED match (${matchedCount}/${requiredKeywords.length} keywords, ${Math.round(matchRatio * 100)}%)`);
     }
     
     // PRIORITY 1: Check if this is explicitly a reference image page
@@ -321,7 +360,11 @@ function extractServiceType(items: QuoteItem[]): string | null {
       if (beforeDash.toLowerCase().includes('branding') || 
           beforeDash.toLowerCase().includes('shelter') ||
           beforeDash.toLowerCase().includes('signage') ||
-          beforeDash.toLowerCase().includes('printing')) {
+          beforeDash.toLowerCase().includes('printing') ||
+          beforeDash.toLowerCase().includes('ads') ||
+          beforeDash.toLowerCase().includes('advertising') ||
+          beforeDash.toLowerCase().includes('screen') ||
+          beforeDash.toLowerCase().includes('lobby')) {
         console.log('📌 Extracted service type from dash pattern:', beforeDash);
         return beforeDash;
       }
