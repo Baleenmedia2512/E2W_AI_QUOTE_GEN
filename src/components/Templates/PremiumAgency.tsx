@@ -364,16 +364,18 @@ export const PremiumAgency: React.FC<TemplateProps> = ({ data, editable: _editab
               <div className="terms-section">
                 <h3 className="section-title">Terms & Conditions</h3>
                 <div className="terms-grid">
-                  {quote.termsAndConditions
-                    ? filterTermsByServiceType(quote.termsAndConditions, group.serviceType)
-                        .map((term, i) => (
-                          <div className="term-item" key={i}>
-                            <div className="term-icon">✓</div>
-                            <div className="term-content">
-                              <p>{term}</p>
-                            </div>
+                  {(group.termsAndConditions || quote.termsAndConditions)
+                    ? (group.termsAndConditions
+                        ? group.termsAndConditions.split('\n').map((t: string) => t.trim().replace(/^[•\-\*]\s*/, '').trim()).filter(Boolean)
+                        : filterTermsByServiceType(quote.termsAndConditions, group.serviceType)
+                      ).map((term, i) => (
+                        <div className="term-item" key={i}>
+                          <div className="term-icon">✓</div>
+                          <div className="term-content">
+                            <p>{term}</p>
                           </div>
-                        ))
+                        </div>
+                      ))
                     : <div className="term-item"><div className="term-icon">✓</div><div className="term-content"><p>Standard terms and conditions apply</p></div></div>
                   }
                 </div>

@@ -17,6 +17,8 @@ export interface QuoteItem {
   title?: string;
   lineItems?: LineItem[];
   subtotal?: number;
+  // Per-item terms for multi-service quotes
+  termsAndConditions?: string;
 }
 
 export interface Quote {

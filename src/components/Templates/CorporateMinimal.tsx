@@ -336,9 +336,11 @@ export const CorporateMinimal: React.FC<TemplateProps> = ({ data, editable: _edi
                 <div className="terms-section">
                   <h3>Terms & Conditions:</h3>
                   <ul>
-                    {quote.termsAndConditions
-                      ? filterTermsByServiceType(quote.termsAndConditions, group.serviceType)
-                          .map((term, i) => <li key={i}>{term}</li>)
+                    {(group.termsAndConditions || quote.termsAndConditions)
+                      ? (group.termsAndConditions
+                          ? group.termsAndConditions.split('\n').map((t: string) => t.trim().replace(/^[•\-\*]\s*/, '').trim()).filter(Boolean)
+                          : filterTermsByServiceType(quote.termsAndConditions, group.serviceType)
+                        ).map((term, i) => <li key={i}>{term}</li>)
                       : <li>Standard terms and conditions apply</li>
                     }
                   </ul>

@@ -340,9 +340,11 @@ export const ModernSales: React.FC<TemplateProps> = ({ data, editable: _editable
                 <div className="terms-box">
                   <h3 className="terms-title">Terms & Conditions</h3>
                   <ul className="terms-list">
-                    {quote.termsAndConditions
-                      ? filterTermsByServiceType(quote.termsAndConditions, group.serviceType)
-                          .map((term, i) => <li key={i}>{term}</li>)
+                    {(group.termsAndConditions || quote.termsAndConditions)
+                      ? (group.termsAndConditions
+                          ? group.termsAndConditions.split('\n').map((t: string) => t.trim().replace(/^[•\-\*]\s*/, '').trim()).filter(Boolean)
+                          : filterTermsByServiceType(quote.termsAndConditions, group.serviceType)
+                        ).map((term, i) => <li key={i}>{term}</li>)
                       : <li>Standard terms and conditions apply</li>
                     }
                   </ul>

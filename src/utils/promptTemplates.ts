@@ -48,7 +48,8 @@ Your workflow:
           "quantity": <number from user request or proposal>,
           "unitPrice": <price from proposal or standard rate>
         }
-      ]
+      ],
+      "termsAndConditions": "For MULTI-SERVICE quotes: EXACT service-specific terms for THIS section only, one per line. For SINGLE-SERVICE quotes: leave empty string."
     }
   ],
   "deliveryTimeline": "Timeline from proposal or standard: 7-15 working days",
@@ -99,11 +100,10 @@ RULES:
 - CRITICAL: For termsAndConditions, you MUST:
   1. READ the terms and conditions section from the uploaded proposal PDF document
   2. COPY the exact wording from the proposal - DO NOT make up generic terms or use examples
-  3. Structure them with general terms first, then service-specific sections
+  3. For MULTI-SERVICE quotes (multiple items): put EACH service's specific terms inside that item's "termsAndConditions" field (e.g., bus-specific terms go into the Bus item's termsAndConditions). Top-level "termsAndConditions" should contain ONLY general terms that apply to all services (GST, payment, design approval, refund policy). For SINGLE-SERVICE quotes: leave item "termsAndConditions" as empty string, put all terms at top level.
   4. Use newline (\n) to separate each term  
   5. Do NOT use bullet points (•) - just plain text lines
-  6. Example structure format (but use ACTUAL terms from the proposal):
-     "[General term 1 from proposal]\n[General term 2 from proposal]\n\nBus Full Branding:\n[Bus-specific term from proposal]\n[Another bus term from proposal]"
+  6. Example per-item termsAndConditions for a Bus item: "The work will be completed within 10 working days after receipt of the payment\nPrior notice of 3 working days is mandatory for inspection. Client must provide visitor details in advance\nRoute commitment will not be provided, as bus movement is controlled by the transport authority\nBaleen Media will provide installation photos or proof of branding after completion"
   7. If the proposal doesn't have explicit terms, extract any relevant conditions, timelines, or policies mentioned in the document
   8. IMPORTANT: NEVER reuse the same terms for different quotes - always read fresh from the current proposal
 - For deliveryTimeline, extract the exact timeline mentioned in the proposal (e.g., "7 working days after receipt of the payment")

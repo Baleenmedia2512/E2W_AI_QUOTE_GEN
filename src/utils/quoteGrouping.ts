@@ -4,6 +4,7 @@ export interface ServiceGroup {
   serviceType: string;
   items: QuoteItem[];
   subtotal: number;
+  termsAndConditions?: string;
 }
 
 /**
@@ -58,10 +59,11 @@ export function groupItemsByServiceType(items: QuoteItem[]): ServiceGroup[] {
   });
   
   // Convert to array and calculate subtotals
-  return Array.from(groups.entries()).map(([serviceType, items]) => ({
+  return Array.from(groups.entries()).map(([serviceType, groupItems]) => ({
     serviceType,
-    items,
-    subtotal: items.reduce((sum, item) => sum + item.total, 0)
+    items: groupItems,
+    subtotal: groupItems.reduce((sum, item) => sum + item.total, 0),
+    termsAndConditions: groupItems[0]?.termsAndConditions
   }));
 }
 
