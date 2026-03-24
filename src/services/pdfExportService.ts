@@ -5,6 +5,146 @@ import { Capacitor } from '@capacitor/core';
 import { Filesystem, Directory } from '@capacitor/filesystem';
 import DownloadNotification from '../plugins/downloadNotification';
 
+// A4 dimensions at 96dpi (standard web resolution)
+const A4_WIDTH_PX = 794;   // 210mm at 96dpi
+
+/**
+ * Captures a specific section at fixed A4 dimensions for consistent PDF output
+ */
+const captureSectionAtA4 = async (containerId: string): Promise<HTMLCanvasElement | null> => {
+  const source = document.getElementById(containerId);
+  if (!source) {
+    console.warn(`⚠️ Section ${containerId} not found`);
+    return null;
+  }
+
+  console.log(`📸 Capturing section: ${containerId}`);
+  
+  // Create off-screen clone at fixed A4 width
+  const clone = source.cloneNode(true) as HTMLElement;
+  
+  Object.assign(clone.style, {
+    position: 'fixed',
+    top: '-99999px',
+    left: '-99999px',
+    width: `${A4_WIDTH_PX}px`,
+    minWidth: `${A4_WIDTH_PX}px`,
+    maxWidth: `${A4_WIDTH_PX}px`,
+    overflow: 'visible',
+    margin: '0',
+    padding: '0',
+    boxSizing: 'border-box',
+    backgroundColor: '#ffffff',
+    display: 'block'
+  });
+  
+  document.body.appendChild(clone);
+
+  try {
+    // Wait for fonts to load
+    await document.fonts.ready;
+    console.log('✅ Fonts loaded');
+    
+    // Wait for all images in the clone to load
+    const images = Array.from(clone.querySelectorAll('img'));
+    await Promise.all(
+      images.map(img => {
+        if (img.complete) return Promise.resolve();
+        return new Promise<void>((resolve) => {
+          img.onload = () => resolve();
+          img.onerror = () => resolve(); // Continue even if image fails
+        });
+      })
+    );
+    console.log(`✅ ${images.length} images loaded`);
+
+    // Small delay for final reflow
+    await new Promise(r => setTimeout(r, 150));
+
+    // Capture with html2canvas at fixed A4 width
+    const canvas = await html2canvas(clone, {
+      scale: 2,
+      width: A4_WIDTH_PX,
+      windowWidth: A4_WIDTH_PX,
+      scrollX: 0,
+      scrollY: 0,
+      useCORS: true,
+      allowTaint: false,
+      backgroundColor: '#ffffff',
+      logging: false
+    });
+
+    console.log(`✅ Section captured: ${canvas.width}x${canvas.height}px`);
+    return canvas;
+  } catch (error) {
+    console.error(`❌ Failed to capture ${containerId}:`, error);
+    throw error;
+  } finally {
+    // Clean up clone
+    document.body.removeChild(clone);
+  }
+};
+
+/**
+ * Legacy fallback: capture entire element if section IDs not found
+ */
+const legacyFullCapture = async (
+  element: HTMLElement,
+  pdf: jsPDF,
+  pdfWidth: number,
+  pdfHeight: number
+): Promise<void> => {
+  console.log('🔄 Using legacy full-element capture');
+  
+  const originalStyle = element.getAttribute('style') || '';
+  const originalClass = element.className;
+  
+  Object.assign(element.style, {
+    width: `${A4_WIDTH_PX}px`,
+    minWidth: `${A4_WIDTH_PX}px`,
+    maxWidth: `${A4_WIDTH_PX}px`,
+    position: 'absolute',
+    left: '-9999px',
+    top: '0'
+  });
+  
+  await document.fonts.ready;
+  await new Promise(r => setTimeout(r, 200));
+  
+  const canvas = await html2canvas(element, {
+    scale: 2,
+    useCORS: true,
+    allowTaint: false,
+    backgroundColor: '#ffffff',
+    logging: false,
+    width: A4_WIDTH_PX,
+    windowWidth: A4_WIDTH_PX,
+    scrollX: 0,
+    scrollY: 0
+  });
+  
+  // Restore styles
+  element.setAttribute('style', originalStyle);
+  element.className = originalClass;
+  
+  const imgData = canvas.toDataURL('image/png');
+  const aspectRatio = canvas.height / canvas.width;
+  const imgHeight = pdfWidth * aspectRatio;
+  
+  pdf.addImage(imgData, 'PNG', 0, 0, pdfWidth, imgHeight);
+  
+  // Handle multi-page if needed
+  let remainingHeight = imgHeight - pdfHeight;
+  let yOffset = -pdfHeight;
+  
+  while (remainingHeight > 0) {
+    pdf.addPage();
+    pdf.addImage(imgData, 'PNG', 0, yOffset, pdfWidth, imgHeight);
+    yOffset -= pdfHeight;
+    remainingHeight -= pdfHeight;
+  }
+};
+
 // Check if running on mobile (Capacitor native app)
 const isMobile = () => Capacitor.isNativePlatform();
 
@@ -22,122 +162,86 @@ export const exportToPDF = async (
     const originalCursor = document.body.style.cursor;
     document.body.style.cursor = 'wait';
 
-    console.log('📸 Capturing element as canvas...');
-
-    // Detect if mobile for optimized PDF size
     const isMobileDevice = isMobile();
-    const deviceWidth = window.innerWidth;
-    
-    // For mobile, use device-optimized width; for desktop, use A4
-    const pdfWidthPx = isMobileDevice ? Math.min(deviceWidth, 700) : 794; // 794 = 210mm at 96dpi
-    const scaleFactor = isMobileDevice ? 1.5 : 2; // Lower scale for mobile to reduce file size
-    
-    console.log('📱 Export settings:', { isMobileDevice, pdfWidthPx, scaleFactor });
-    
-    const originalStyle = element.getAttribute('style') || '';
-    const originalClass = element.className;
-    element.style.width = `${pdfWidthPx}px`;
-    element.style.maxWidth = `${pdfWidthPx}px`;
-    element.style.minWidth = `${pdfWidthPx}px`;
-    element.style.position = 'absolute';
-    element.style.left = '-9999px';
-    element.style.top = '0';
-    // Force desktop styles by adding a class
-    element.classList.add('pdf-export-mode');
-    
-    // Add mobile-specific class for mobile exports
-    if (isMobileDevice) {
-      element.classList.add('pdf-export-mobile');
-      element.style.fontSize = '13px'; // Slightly larger text for mobile
-    }
+    console.log('📱 Device type:', isMobileDevice ? 'Mobile' : 'Desktop');
 
-    // Calculate dynamic page break for reference images section
-    const pageBreakElement = element.querySelector('.reference-page-break') as HTMLElement;
-    const referenceSection = element.querySelector('.reference-images-section') as HTMLElement;
-    
-    if (pageBreakElement && referenceSection) {
-      // Get position of page break element
-      const pageBreakRect = pageBreakElement.getBoundingClientRect();
-      const containerRect = element.getBoundingClientRect();
-      
-      // Calculate absolute position from top
-      const contentBeforeBreak = pageBreakRect.top - containerRect.top;
-      
-      // Page height calculation based on device
-      const pageHeightPx = isMobileDevice ? 900 : 1123;
-      
-      // Calculate how much content fills the current page
-      const contentOnFirstPage = contentBeforeBreak % pageHeightPx;
-      
-      // Calculate spacer needed to reach exactly the next page boundary
-      // Add safety margin to ensure section title starts on new page
-      const spacerHeight = contentOnFirstPage > 0 
-        ? (pageHeightPx - contentOnFirstPage) + (isMobileDevice ? 50 : 100)
-        : (isMobileDevice ? 100 : 200);
-      
-      pageBreakElement.style.height = `${spacerHeight}px`;
-      console.log('📐 Page break spacer:', {
-        contentBefore: Math.round(contentBeforeBreak),
-        contentOnPage: Math.round(contentOnFirstPage),
-        spacerHeight: Math.round(spacerHeight),
-        totalAfterSpacer: Math.round(contentBeforeBreak + spacerHeight)
-      });
-    }
-
-    // Let the browser reflow with new dimensions
-    await new Promise(r => setTimeout(r, 200));
-
-    // Capture the element as canvas with appropriate quality
-    const canvas = await html2canvas(element, {
-      scale: scaleFactor,
-      useCORS: true,
-      allowTaint: true,
-      backgroundColor: '#ffffff',
-      logging: true,
-      width: pdfWidthPx,
-      windowWidth: pdfWidthPx
-    });
-
-    // Restore original styles immediately after capture
-    element.setAttribute('style', originalStyle);
-    element.className = originalClass;
-    
-    console.log('✅ Canvas captured:', canvas.width, 'x', canvas.height);
-
-    // Calculate dimensions - use A4 for desktop, mobile-optimized for mobile
-    const imgWidth = isMobileDevice ? 180 : 210; // Slightly smaller for mobile  
-    const pageHeight = isMobileDevice ? 270 : 297; // A4 height adjusted for mobile
-    const imgHeight = (canvas.height * imgWidth) / canvas.width;
-
-    // Create PDF with appropriate size
+    // Create PDF with A4 dimensions
     const pdf = new jsPDF({
       orientation: 'portrait',
       unit: 'mm',
-      format: isMobileDevice ? [imgWidth, pageHeight] : 'a4', // Custom size for mobile
+      format: 'a4', // Always A4: 210mm × 297mm
       compress: true
     });
 
-    let heightLeft = imgHeight;
-    let position = 0;
-    let pageNumber = 1;
+    const pdfWidth = 210; // mm
+    const pdfHeight = 297; // mm
+    let pageCount = 0;
 
-    // Add image to first page
-    const imgData = canvas.toDataURL('image/png', 0.92); // Slightly compressed for mobile
-    pdf.addImage(imgData, 'PNG', 0, position, imgWidth, imgHeight, undefined, 'FAST');
-    heightLeft -= pageHeight;
-
-    // Add additional pages if needed
-    while (heightLeft > 0) {
-      position = heightLeft - imgHeight;
-      pdf.addPage();
-      pageNumber++;
-      pdf.addImage(imgData, 'PNG', 0, position, imgWidth, imgHeight, undefined, 'FAST');
-      heightLeft -= pageHeight;
+    // --- SECTION 1: Quotation Content (Page 1) ---
+    console.log('📄 Capturing quotation content...');
+    const quotationCanvas = await captureSectionAtA4('pdf-page-1');
+    
+    if (quotationCanvas) {
+      const imgData1 = quotationCanvas.toDataURL('image/png');
+      const aspectRatio1 = quotationCanvas.height / quotationCanvas.width;
+      const imgHeight1 = pdfWidth * aspectRatio1;
+      
+      // Handle multi-page for quotation if needed
+      pdf.addImage(imgData1, 'PNG', 0, 0, pdfWidth, imgHeight1);
+      pageCount++;
+      console.log(`✅ Page 1 added (quotation): ${pdfWidth}×${Math.round(imgHeight1)}mm`);
+      
+      // If quotation content overflows, add pages
+      let remainingHeight = imgHeight1 - pdfHeight;
+      let yOffset = -pdfHeight;
+      while (remainingHeight > 0) {
+        pdf.addPage();
+        pageCount++;
+        pdf.addImage(imgData1, 'PNG', 0, yOffset, pdfWidth, imgHeight1);
+        yOffset -= pdfHeight;
+        remainingHeight -= pdfHeight;
+      }
+    } else {
+      console.warn('⚠️ Quotation section not found, using fallback full capture');
+      // Fallback to original method if sections not found
+      await legacyFullCapture(element, pdf, pdfWidth, pdfHeight);
+      pageCount = 1;
     }
 
-    console.log(`📄 PDF created with ${pageNumber} pages`);
+    // --- SECTION 2: Reference Images (Page 2+) ---
+    console.log('📄 Checking for reference images...');
+    const referenceCanvas = await captureSectionAtA4('pdf-page-2');
+    
+    if (referenceCanvas && referenceCanvas.height > 10) { // Check if section has content
+      pdf.addPage();
+      pageCount++;
+      
+      const imgData2 = referenceCanvas.toDataURL('image/png');
+      const aspectRatio2 = referenceCanvas.height / referenceCanvas.width;
+      const imgHeight2 = pdfWidth * aspectRatio2;
+      
+      pdf.addImage(imgData2, 'PNG', 0, 0, pdfWidth, imgHeight2);
+      console.log(`✅ Page ${pageCount} added (references): ${pdfWidth}×${Math.round(imgHeight2)}mm`);
+      
+      // If reference section is tall, handle multi-page
+      let remainingHeight = imgHeight2 - pdfHeight;
+      let yOffset = -pdfHeight;
+      
+      while (remainingHeight > 0) {
+        pdf.addPage();
+        pageCount++;
+        pdf.addImage(imgData2, 'PNG', 0, yOffset, pdfWidth, imgHeight2);
+        yOffset -= pdfHeight;
+        remainingHeight -= pdfHeight;
+        console.log(`✅ Additional page ${pageCount} added for overflow`);
+      }
+    } else {
+      console.log('ℹ️ No reference images section found or section is empty');
+    }
 
-    // Add PDF metadata for better mobile viewing
+    console.log(`📄 PDF created with ${pageCount} pages`);
+
+    // Add PDF metadata
     pdf.setProperties({
       title: `Quote ${quoteNumber}`,
       subject: 'Quote Document',

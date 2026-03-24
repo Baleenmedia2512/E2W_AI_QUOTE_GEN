@@ -1,0 +1,174 @@
+/**
+ * PDF Export Specific Styles
+ * Ensures consistent A4 rendering on all devices (mobile & desktop)
+ */
+
+/* Force A4 dimensions for PDF sections */
+#pdf-page-1,
+#pdf-page-2 {
+  width: 794px !important;           /* A4 width at 96dpi */
+  min-width: 794px !important;
+  max-width: 794px !important;
+  box-sizing: border-box;
+  background: #ffffff;
+  font-size: 13px;                   /* Fixed font size, not responsive */
+  line-height: 1.6;
+  overflow: visible;
+  margin: 0 !important;
+  padding: 0 !important;
+  position: relative !important;
+}
+
+/* Page 1 - Quotation Content - tight padding */
+#pdf-page-1 {
+  padding: 20px !important;
+}
+
+/* Remove template padding when inside pdf-page-1 */
+#pdf-page-1 > .template-corporate-minimal,
+#pdf-page-1 > .template-modern-sales,
+#pdf-page-1 > .template-classic-business,
+#pdf-page-1 > .template-premium-agency {
+  padding: 20px !important;
+  margin: 0 !important;
+  max-width: 100% !important;
+}
+
+/* Page 2 - Reference Images Section - starts fresh */
+#pdf-page-2 {
+  page-break-before: always !important;
+  break-before: page !important;
+  padding: 30px !important;
+  margin: 0 !important;
+}
+
+/* Prevent responsive CSS from affecting PDF sections during capture */
+#pdf-page-1 *,
+#pdf-page-2 * {
+  max-width: none !important;
+  flex-wrap: nowrap !important;      /* Keep tables/rows in one line */
+}
+
+/* Ensure tables don't wrap or break in PDF */
+#pdf-page-1 table,
+#pdf-page-2 table {
+  width: 100%;
+  table-layout: fixed;
+  border-collapse: collapse;
+}
+
+/* Reference Images Section Styling */
+#pdf-page-2 .reference-images-section {
+  margin: 0 !important;
+  padding: 0 !important;
+  border: none !important;
+  background: transparent !important;
+  page-break-inside: avoid !important;
+}
+
+#pdf-page-2 .reference-images-title {
+  margin-top: 0 !important;
+  margin-bottom: 20px !important;
+  font-size: 18px;
+  font-weight: 600;
+  color: #333;
+  text-align: center;
+}
+
+/* Individual reference image container */
+#pdf-page-2 .reference-image-item {
+  page-break-inside: avoid !important;
+  break-inside: avoid !important;
+  margin-bottom: 30px !important;
+  width: 100%;
+  display: block;
+}
+
+/* Images in reference page fill width cleanly */
+#pdf-page-2 .reference-image-item img {
+  width: 100% !important;
+  max-width: 100% !important;
+  height: auto !important;
+  display: block !important;
+  margin: 10px 0 !important;
+  page-break-inside: avoid !important;
+  break-inside: avoid !important;
+}
+
+/* Image captions */
+#pdf-page-2 .reference-image-caption {
+  font-size: 12px;
+  color: #666;
+  text-align: center;
+  margin: 5px 0 20px 0;
+  page-break-before: avoid !important;
+}
+
+/* Prevent page breaks inside image containers */
+#pdf-page-2 .service-images-group {
+  page-break-inside: avoid !important;
+  break-inside: avoid !important;
+  margin-bottom: 40px;
+}
+
+/* Service type headings in reference section */
+#pdf-page-2 .service-type-heading {
+  font-size: 16px;
+  font-weight: 600;
+  color: #750926;
+  margin: 30px 0 15px 0;
+  padding-bottom: 8px;
+  border-bottom: 2px solid #750926;
+  page-break-after: avoid !important;
+}
+
+/* Limit images per page by controlling spacing */
+#pdf-page-2 .reference-image-item:nth-child(3) {
+  page-break-before: always !important;
+}
+
+/* Prevent any media queries from affecting PDF sections */
+@media screen and (max-width: 768px) {
+  #pdf-page-1,
+  #pdf-page-2 {
+    width: 794px !important;
+    min-width: 794px !important;
+    font-size: 13px !important;
+  }
+  
+  #pdf-page-1 *,
+  #pdf-page-2 * {
+    flex-direction: row !important;  /* Override mobile stacking */
+  }
+}
+
+/* Print-specific rules */
+@media print {
+  #pdf-page-2 {
+    page-break-before: always !important;
+  }
+  
+  #pdf-page-2 .reference-image-item {
+    page-break-inside: avoid !important;
+  }
+  
+  #pdf-page-2 .reference-image-item img {
+    page-break-inside: avoid !important;
+    max-height: 400px !important;
+  }
+}
+
+/* Class added to sections during capture (optional) */
+.pdf-section-quotation,
+.pdf-section-references {
+  position: relative;
+  background: #ffffff;
+}
+
+/* Hide page break spacers */
+.reference-page-break {
+  display: none !important;
+  height: 0 !important;
+  margin: 0 !important;
+  padding: 0 !important;
+}
