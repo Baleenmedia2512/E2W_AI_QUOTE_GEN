@@ -390,9 +390,11 @@ export const ClassicBusiness: React.FC<TemplateProps> = ({ data, editable: _edit
               <div className="terms-section">
                 <h3 className="section-heading">Terms & Conditions</h3>
                 <ol className="terms-list">
-                  {quote.termsAndConditions
-                    ? filterTermsByServiceType(quote.termsAndConditions, group.serviceType)
-                        .map((term, i) => <li key={i}>{term}</li>)
+                  {(group.termsAndConditions || quote.termsAndConditions)
+                    ? (group.termsAndConditions
+                        ? group.termsAndConditions.split('\n').map((t: string) => t.trim().replace(/^[•\-\*]\s*/, '').trim()).filter(Boolean)
+                        : filterTermsByServiceType(quote.termsAndConditions, group.serviceType)
+                      ).map((term, i) => <li key={i}>{term}</li>)
                     : <li>Standard terms and conditions apply</li>
                   }
                 </ol>
