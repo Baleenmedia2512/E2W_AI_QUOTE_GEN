@@ -51,11 +51,11 @@ function filterPagesByCategory(pages: ExtractedPage[], category: string): Extrac
   // Extract meaningful keywords, excluding pricing/quantity terms
   const words = serviceTypeOnly
     .toLowerCase()
+    .replace(/[()]/g, ' ')  // Replace parentheses with spaces so inner words are preserved
     .split(/[\s,\-\/&]+/)
     .filter((w) => 
       w.length >= 3 && 
-      !['rental', 'price', 'per', 'month', 'and', 'the', 'for', 'from', 'display', 'printing', 'fixing'].includes(w) &&
-      !w.includes('(') && !w.includes(')')  // Exclude anything with parentheses
+      !['rental', 'price', 'per', 'month', 'and', 'the', 'for', 'from', 'display', 'printing', 'fixing'].includes(w)
     );
   
   console.log('📝 Extracted keywords:', words);
@@ -84,6 +84,7 @@ function filterPagesByCategory(pages: ExtractedPage[], category: string): Extrac
     const pageText = page.text
       .toLowerCase()
       .replace(/\s*\|\s*/g, '') // Remove pipes and surrounding spaces
+      .replace(/[()]/g, ' ')   // Replace parentheses with spaces so compound words like "starflex" become separate
       .replace(/\s+/g, ' ');    // Normalize multiple spaces to single space
     
     console.log(`🔍 Checking Page ${page.pageNumber} for keywords: [${requiredKeywords.join(', ')}]`);
