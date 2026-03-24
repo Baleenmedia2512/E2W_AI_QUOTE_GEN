@@ -259,6 +259,17 @@ const QuotePreview: React.FC<QuotePreviewProps> = ({ quote, onUpdate, onSave }) 
     onUpdate(updatedQuote);
   };
 
+  const updateItemTerms = (itemIndex: number, value: string) => {
+    if (!localQuote) return;
+    const updatedQuote = { ...localQuote };
+    updatedQuote.items = updatedQuote.items.map((item, i) =>
+      i === itemIndex ? { ...item, termsAndConditions: value } : item
+    );
+    updatedQuote.updatedAt = new Date();
+    setLocalQuote(updatedQuote);
+    onUpdate(updatedQuote);
+  };
+
   const subtotal = calculateQuoteSubtotal();
   const gst = calculateGST(subtotal);
   const total = calculateTotal(subtotal, gst);
@@ -691,6 +702,31 @@ const QuotePreview: React.FC<QuotePreviewProps> = ({ quote, onUpdate, onSave }) 
           _focus={{ borderColor: '#750926', boxShadow: '0 0 0 1px #750926' }}
         />
       </Box>
+
+      {/* Per-item terms — only shown for multi-service quotes */}
+      {localQuote.items.map((item, idx) =>
+        item.termsAndConditions ? (
+          <Box mt={6} key={item.id}>
+            <HStack justify="space-between" mb={2}>
+              <Text fontSize="sm" fontWeight="600" color="gray.700">
+                {item.title || item.description.split(' - ')[0]} — Terms & Conditions
+              </Text>
+              <Icon as={FiEdit3} color="gray.500" boxSize={4} />
+            </HStack>
+            <Textarea
+              value={item.termsAndConditions}
+              onChange={(e) => updateItemTerms(idx, e.target.value)}
+              placeholder="Enter service-specific terms..."
+              rows={6}
+              size="lg"
+              bg="white"
+              borderColor="gray.300"
+              _hover={{ borderColor: 'gray.400' }}
+              _focus={{ borderColor: '#750926', boxShadow: '0 0 0 1px #750926' }}
+            />
+          </Box>
+        ) : null
+      )}
     </Box>
   );
 };
