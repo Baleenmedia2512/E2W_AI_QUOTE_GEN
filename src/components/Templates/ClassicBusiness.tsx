@@ -44,6 +44,7 @@ export const ClassicBusiness: React.FC<TemplateProps> = ({ data, editable: _edit
     <>
     <div className="template-classic-business">
       <div className="classic-container">
+        <div id="pdf-page-1" className="template-classic-business">
         {/* Letterhead */}
         <div className="letterhead">
           <div className="letterhead-content">
@@ -227,10 +228,13 @@ export const ClassicBusiness: React.FC<TemplateProps> = ({ data, editable: _edit
             </div>
           </div>
         </div>
+        </div>
 
         {/* Reference Images from Proposal - only show for single service */}
         {!isMultiService && (
-          <ReferenceImages proposalPages={data.proposalPages} items={quote.items} />
+          <div id="pdf-page-2">
+            <ReferenceImages proposalPages={data.proposalPages} items={quote.items} />
+          </div>
         )}
 
         {/* Footer */}
@@ -255,6 +259,7 @@ export const ClassicBusiness: React.FC<TemplateProps> = ({ data, editable: _edit
           <div style={{ pageBreakBefore: 'always' }} />
           <div className="template-classic-business">
             <div className="classic-container">
+              <div id="pdf-page-1" className="template-classic-business">
               <div className="letterhead">
                 <div className="letterhead-content">
                   {company.logo && (
@@ -425,8 +430,11 @@ export const ClassicBusiness: React.FC<TemplateProps> = ({ data, editable: _edit
                   </div>
                 </div>
               </div>
+              </div>
 
-              <ReferenceImages proposalPages={data.proposalPages} items={group.items} />
+              <div id="pdf-page-2">
+                <ReferenceImages proposalPages={data.proposalPages} items={group.items} />
+              </div>
 
               <div className="classic-footer">
                 <div className="ornamental-line"></div>

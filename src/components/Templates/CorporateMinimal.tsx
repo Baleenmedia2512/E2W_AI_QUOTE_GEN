@@ -95,88 +95,92 @@ export const CorporateMinimal: React.FC<TemplateProps> = ({ data, editable: _edi
   // Single service quote (original behavior)
   if (!isMultiService) {
     return (
-      <div className="template-corporate-minimal">
-        {renderHeader()}
-        {renderClientDetails()}
+      <>
+        <div id="pdf-page-1" className="template-corporate-minimal">
+          {renderHeader()}
+          {renderClientDetails()}
 
-        {/* Quote Items */}
-        <div className="quote-items-section">
-          <table className="items-table">
-            <thead>
-              <tr>
-                <th className="col-description">Description</th>
-                <th className="col-quantity">Quantity</th>
-                <th className="col-rate">Rate</th>
-                <th className="col-total">Total</th>
-              </tr>
-            </thead>
-            <tbody>
-              {quote.items.map((item, index) => (
-                <tr key={index}>
-                  <td className="item-description">
-                    <div className="item-title">{item.description}</div>
-                    {item.details && <div className="item-details">{item.details}</div>}
-                  </td>
-                  <td className="item-quantity">{item.quantity}</td>
-                  <td className="item-rate">{formatCurrency(item.rate)}</td>
-                  <td className="item-total">{formatCurrency(item.total)}</td>
+          {/* Quote Items */}
+          <div className="quote-items-section">
+            <table className="items-table">
+              <thead>
+                <tr>
+                  <th className="col-description">Description</th>
+                  <th className="col-quantity">Quantity</th>
+                  <th className="col-rate">Rate</th>
+                  <th className="col-total">Total</th>
                 </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
+              </thead>
+              <tbody>
+                {quote.items.map((item, index) => (
+                  <tr key={index}>
+                    <td className="item-description">
+                      <div className="item-title">{item.description}</div>
+                      {item.details && <div className="item-details">{item.details}</div>}
+                    </td>
+                    <td className="item-quantity">{item.quantity}</td>
+                    <td className="item-rate">{formatCurrency(item.rate)}</td>
+                    <td className="item-total">{formatCurrency(item.total)}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
 
-        {/* Totals */}
-        <div className="totals-section">
-          <div className="totals-table">
-            <div className="total-row">
-              <span className="total-label">Subtotal:</span>
-              <span className="total-value">{formatCurrency(calculateSubtotal())}</span>
-            </div>
-            {quote.gstEnabled && (
+          {/* Totals */}
+          <div className="totals-section">
+            <div className="totals-table">
               <div className="total-row">
-                <span className="total-label">GST ({quote.gstPercentage}%):</span>
-                <span className="total-value">{formatCurrency(calculateGST())}</span>
+                <span className="total-label">Subtotal:</span>
+                <span className="total-value">{formatCurrency(calculateSubtotal())}</span>
               </div>
-            )}
-            <div className="total-row total-final">
-              <span className="total-label">Total (INR):</span>
-              <span className="total-value">{formatCurrency(calculateTotal())}</span>
+              {quote.gstEnabled && (
+                <div className="total-row">
+                  <span className="total-label">GST ({quote.gstPercentage}%):</span>
+                  <span className="total-value">{formatCurrency(calculateGST())}</span>
+                </div>
+              )}
+              <div className="total-row total-final">
+                <span className="total-label">Total (INR):</span>
+                <span className="total-value">{formatCurrency(calculateTotal())}</span>
+              </div>
             </div>
           </div>
-        </div>
 
-        {/* Terms & Conditions */}
-        {quote.notes && (
-          <div className="notes-section">
-            <h3>Notes:</h3>
-            <p>{quote.notes}</p>
+          {/* Terms & Conditions */}
+          {quote.notes && (
+            <div className="notes-section">
+              <h3>Notes:</h3>
+              <p>{quote.notes}</p>
+            </div>
+          )}
+
+          <div className="terms-section">
+            <h3>Terms & Conditions:</h3>
+            <ul>
+              {quote.termsAndConditions
+                ? quote.termsAndConditions
+                    .split(/\n|•|\d+\.\s/)
+                    .map(t => t.trim())
+                    .filter(Boolean)
+                    .map((term, i) => <li key={i}>{term}</li>)
+                : <li>Standard terms and conditions apply</li>
+              }
+            </ul>
           </div>
-        )}
 
-        <div className="terms-section">
-          <h3>Terms & Conditions:</h3>
-          <ul>
-            {quote.termsAndConditions
-              ? quote.termsAndConditions
-                  .split(/\n|•|\d+\.\s/)
-                  .map(t => t.trim())
-                  .filter(Boolean)
-                  .map((term, i) => <li key={i}>{term}</li>)
-              : <li>Standard terms and conditions apply</li>
-            }
-          </ul>
-        </div>
-
-        {/* System Generated Notice */}
-        <div className="system-generated-notice">
-          <p>This is a system-generated quotation and does not require a signature.</p>
-          <p className="generated-by">Generated by {company.name}</p>
+          {/* System Generated Notice */}
+          <div className="system-generated-notice">
+            <p>This is a system-generated quotation and does not require a signature.</p>
+            <p className="generated-by">Generated by {company.name}</p>
+          </div>
         </div>
 
         {/* Reference Images from Proposal */}
-        <ReferenceImages proposalPages={data.proposalPages} items={quote.items} />
-      </div>
+        <div id="pdf-page-2">
+          <ReferenceImages proposalPages={data.proposalPages} items={quote.items} />
+        </div>
+      </>
     );
   }
 
@@ -267,86 +271,90 @@ export const CorporateMinimal: React.FC<TemplateProps> = ({ data, editable: _edi
         return (
           <React.Fragment key={groupIndex}>
             <div style={{ pageBreakBefore: 'always' }} />
-            <div className="template-corporate-minimal">
-              {renderHeader()}
-              {renderClientDetails()}
+            <>
+              <div id="pdf-page-1" className="template-corporate-minimal">
+                {renderHeader()}
+                {renderClientDetails()}
 
-              <div className="quote-items-section">
-                <h3 style={{ marginBottom: '16px', fontSize: '18px', fontWeight: '600', color: '#750926' }}>
-                  {group.serviceType} Branding Services
-                </h3>
-                <table className="items-table">
-                  <thead>
-                    <tr>
-                      <th className="col-description">Description</th>
-                      <th className="col-quantity">Quantity</th>
-                      <th className="col-rate">Rate</th>
-                      <th className="col-total">Total</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {group.items.map((item, index) => (
-                      <tr key={index}>
-                        <td className="item-description">
-                          <div className="item-title">{item.description}</div>
-                          {item.details && <div className="item-details">{item.details}</div>}
-                        </td>
-                        <td className="item-quantity">{item.quantity}</td>
-                        <td className="item-rate">{formatCurrency(item.rate)}</td>
-                        <td className="item-total">{formatCurrency(item.total)}</td>
+                <div className="quote-items-section">
+                  <h3 style={{ marginBottom: '16px', fontSize: '18px', fontWeight: '600', color: '#750926' }}>
+                    {group.serviceType} Branding Services
+                  </h3>
+                  <table className="items-table">
+                    <thead>
+                      <tr>
+                        <th className="col-description">Description</th>
+                        <th className="col-quantity">Quantity</th>
+                        <th className="col-rate">Rate</th>
+                        <th className="col-total">Total</th>
                       </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
+                    </thead>
+                    <tbody>
+                      {group.items.map((item, index) => (
+                        <tr key={index}>
+                          <td className="item-description">
+                            <div className="item-title">{item.description}</div>
+                            {item.details && <div className="item-details">{item.details}</div>}
+                          </td>
+                          <td className="item-quantity">{item.quantity}</td>
+                          <td className="item-rate">{formatCurrency(item.rate)}</td>
+                          <td className="item-total">{formatCurrency(item.total)}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
 
-              <div className="totals-section">
-                <div className="totals-table">
-                  <div className="total-row">
-                    <span className="total-label">Subtotal:</span>
-                    <span className="total-value">{formatCurrency(groupSubtotal)}</span>
-                  </div>
-                  {quote.gstEnabled && (
+                <div className="totals-section">
+                  <div className="totals-table">
                     <div className="total-row">
-                      <span className="total-label">GST ({quote.gstPercentage}%):</span>
-                      <span className="total-value">{formatCurrency(groupGST)}</span>
+                      <span className="total-label">Subtotal:</span>
+                      <span className="total-value">{formatCurrency(groupSubtotal)}</span>
                     </div>
-                  )}
-                  <div className="total-row total-final">
-                    <span className="total-label">Total (INR):</span>
-                    <span className="total-value">{formatCurrency(groupTotal)}</span>
+                    {quote.gstEnabled && (
+                      <div className="total-row">
+                        <span className="total-label">GST ({quote.gstPercentage}%):</span>
+                        <span className="total-value">{formatCurrency(groupGST)}</span>
+                      </div>
+                    )}
+                    <div className="total-row total-final">
+                      <span className="total-label">Total (INR):</span>
+                      <span className="total-value">{formatCurrency(groupTotal)}</span>
+                    </div>
                   </div>
                 </div>
-              </div>
 
-              {/* Notes */}
-              {quote.notes && (
-                <div className="notes-section">
-                  <h3>Notes:</h3>
-                  <p>{filterNotesByServiceType(quote.notes, group.serviceType)}</p>
+                {/* Notes */}
+                {quote.notes && (
+                  <div className="notes-section">
+                    <h3>Notes:</h3>
+                    <p>{filterNotesByServiceType(quote.notes, group.serviceType)}</p>
+                  </div>
+                )}
+
+                {/* Terms & Conditions - Service Specific */}
+                <div className="terms-section">
+                  <h3>Terms & Conditions:</h3>
+                  <ul>
+                    {quote.termsAndConditions
+                      ? filterTermsByServiceType(quote.termsAndConditions, group.serviceType)
+                          .map((term, i) => <li key={i}>{term}</li>)
+                      : <li>Standard terms and conditions apply</li>
+                    }
+                  </ul>
                 </div>
-              )}
 
-              {/* Terms & Conditions - Service Specific */}
-              <div className="terms-section">
-                <h3>Terms & Conditions:</h3>
-                <ul>
-                  {quote.termsAndConditions
-                    ? filterTermsByServiceType(quote.termsAndConditions, group.serviceType)
-                        .map((term, i) => <li key={i}>{term}</li>)
-                    : <li>Standard terms and conditions apply</li>
-                  }
-                </ul>
-              </div>
-
-              <div className="system-generated-notice">
-                <p>This is a system-generated quotation and does not require a signature.</p>
-                <p className="generated-by">Generated by {company.name}</p>
+                <div className="system-generated-notice">
+                  <p>This is a system-generated quotation and does not require a signature.</p>
+                  <p className="generated-by">Generated by {company.name}</p>
+                </div>
               </div>
 
               {/* Service-specific reference images */}
-              <ReferenceImages proposalPages={data.proposalPages} items={group.items} />
-            </div>
+              <div id="pdf-page-2">
+                <ReferenceImages proposalPages={data.proposalPages} items={group.items} />
+              </div>
+            </>
           </React.Fragment>
         );
       })}

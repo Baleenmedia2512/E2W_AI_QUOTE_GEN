@@ -30,9 +30,9 @@ const captureSectionAtA4 = async (containerId: string): Promise<HTMLCanvasElemen
     width: `${A4_WIDTH_PX}px`,
     minWidth: `${A4_WIDTH_PX}px`,
     maxWidth: `${A4_WIDTH_PX}px`,
-    overflow: 'visible',
+    overflow: 'hidden',
     margin: '0',
-    padding: '0',
+    // NO padding here - let CSS handle it via template classes
     boxSizing: 'border-box',
     backgroundColor: '#ffffff',
     display: 'block'
