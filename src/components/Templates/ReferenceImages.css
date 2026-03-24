@@ -1,6 +1,7 @@
-/* Page break spacer - height set dynamically by PDF export service */
+/* Page break spacer - REMOVED, using CSS page-break instead */
 .reference-page-break {
-  display: none; /* Hidden in normal view */
+  display: none !important;
+  height: 0 !important;
 }
 
 .reference-images-section {
@@ -40,28 +41,35 @@
   gap: 30px;
   width: 100%;
   margin-bottom: 40px;
+  page-break-inside: avoid;
+  break-inside: avoid;
 }
 
 .reference-image-item {
   display: block;
   width: 100%;
   max-width: 700px;
-  margin: 0 auto;
+  margin: 0 auto 20px auto;
   padding: 0;
   clear: both;
   position: relative;
+  page-break-inside: avoid !important;
+  break-inside: avoid !important;
 }
 
 .reference-image {
   width: 100%;
-  max-width: 100%; /* Ensure image fits container */
+  max-width: 100%;
   height: auto;
+  max-height: 400px;
   border: 1px solid #ddd;
   border-radius: 4px;
   box-shadow: 0 1px 4px rgba(0, 0, 0, 0.08);
   display: block;
   object-fit: contain;
-  margin: 0 auto; /* Center image */
+  margin: 0 auto;
+  page-break-inside: avoid !important;
+  break-inside: avoid !important;
 }
 
 .reference-image-caption {
@@ -73,81 +81,92 @@
   display: block;
   margin-top: 10px;
   clear: both;
+  page-break-before: avoid !important;
 }
 
-/* PDF Export Mode - spacer height set dynamically */
-.pdf-export-mode .reference-page-break {
+/* === PDF EXPORT MODE === */
+
+/* When inside #pdf-page-2 (PDF export context) */
+#pdf-page-2 .reference-images-section {
+  margin: 0 !important;
+  padding: 0 !important;
+  border: none !important;
+  background: transparent !important;
+  width: 100% !important;
+}
+
+#pdf-page-2 .reference-images-title {
+  margin: 0 0 30px 0 !important;
+  padding-bottom: 10px !important;
+  font-size: 20px !important;
+  font-weight: 700 !important;
+  color: #750926 !important;
+  text-align: center !important;
+  border-bottom: 3px solid #750926 !important;
+  page-break-after: avoid !important;
+}
+
+#pdf-page-2 .reference-images-grid {
   display: block !important;
-  height: 200px; /* Default, overridden by JS */
-  clear: both;
-  background: transparent;
-  width: 100%;
-  visibility: hidden;
+  width: 100% !important;
 }
 
-.pdf-export-mode .reference-images-section {
-  margin-top: 0;
-  padding: 40px 30px;
-  border: none;
-  background: #fff;
-  display: block;
-  width: 100%;
-  box-sizing: border-box;
+/* Each row: max 2 images, prevent split */
+#pdf-page-2 .reference-image-row {
+  display: block !important;
+  width: 100% !important;
+  margin-bottom: 0 !important;
+  padding: 0 !important;
+  page-break-inside: avoid !important;
+  break-inside: avoid !important;
 }
 
-.pdf-export-mode .reference-images-title {
-  margin-bottom: 30px;
-  font-size: 18px;
-  page-break-after: avoid;
+#pdf-page-2 .reference-image-item {
+  display: block !important;
+  width: 100% !important;
+  max-width: 100% !important;
+  margin: 0 0 30px 0 !important;
+  padding: 0 !important;
+  page-break-inside: avoid !important;
+  break-inside: avoid !important;
 }
 
-.pdf-export-mode .reference-images-grid {
-  display: block;
-  width: 100%;
+#pdf-page-2 .reference-image {
+  width: 100% !important;
+  max-width: 100% !important;
+  height: auto !important;
+  max-height: 500px !important;
+  display: block !important;
+  margin: 0 auto !important;
+  border: 1px solid #ccc !important;
+  border-radius: 0 !important;
+  box-shadow: none !important;
+  object-fit: contain !important;
+  page-break-inside: avoid !important;
+  break-inside: avoid !important;
 }
 
-/* Each row contains max 2 images and forces page break after */
-.pdf-export-mode .reference-image-row {
-  display: flex;
-  flex-direction: column;
-  gap: 30px;
-  width: 100%;
-  page-break-inside: avoid;
-  page-break-after: always;
-  margin-bottom: 0;
-  padding: 20px 0;
+#pdf-page-2 .reference-image-caption {
+  font-size: 11px !important;
+  color: #666 !important;
+  text-align: center !important;
+  margin: 8px 0 20px 0 !important;
+  display: block !important;
+  font-style: italic !important;
+  page-break-before: avoid !important;
 }
 
-/* Last row should not force page break */
-.pdf-export-mode .reference-image-row:last-child {
-  page-break-after: auto;
+/* Limit to 2 images per page in PDF */
+#pdf-page-2 .reference-image-item:nth-child(2n+1) {
+  page-break-before: avoid !important;
 }
 
-.pdf-export-mode .reference-image-item {
-  display: block;
-  width: 100%;
-  max-width: 700px;
-  margin: 0 auto;
-  padding: 0;
-  clear: both;
-  position: relative;
-  page-break-inside: avoid;
+#pdf-page-2 .reference-image-item:nth-child(3),
+#pdf-page-2 .reference-image-item:nth-child(5),
+#pdf-page-2 .reference-image-item:nth-child(7) {
+  page-break-before: always !important;
+  break-before: page !important;
 }
-
-.pdf-export-mode .reference-image {
-  max-width: 100%;
-  max-height: 850px;
-  width: auto;
-  height: auto;
-  margin: 0 auto;
-  display: block;
-  object-fit: contain;
-  box-shadow: none;
-  border: 1px solid #ccc;
-  clear: both;
-}
-
-.pdf-export-mode .reference-image-caption {
   font-size: 13px;
   margin-top: 10px;
   text-align: center;

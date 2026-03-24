@@ -583,27 +583,24 @@ export const ReferenceImages: React.FC<ReferenceImagesProps> = ({ proposalPages,
   console.log('✅ ReferenceImages: Rendering', filteredPages.length, 'pages');
 
   return (
-    <>
-      <div className="reference-page-break" style={{ pageBreakBefore: 'always', height: '1px', clear: 'both' }}></div>
-      <div className="reference-images-section">
-        <h3 className="reference-images-title">Reference Images from Proposal</h3>
-        <div className="reference-images-grid">
-          {groupedPages.map((group, groupIndex) => (
-            <div key={`group-${groupIndex}`} className="reference-image-row">
-              {group.map((page) => (
-                <div key={page.pageNumber} className="reference-image-item">
-                  <img
-                    src={page.imageDataUrl}
-                    alt={`Proposal page ${page.pageNumber}`}
-                    className="reference-image"
-                  />
-                  <span className="reference-image-caption">Page {page.pageNumber}</span>
-                </div>
-              ))}
-            </div>
-          ))}
-        </div>
+    <div className="reference-images-section">
+      <h3 className="reference-images-title">Reference Images from Proposal</h3>
+      <div className="reference-images-grid">
+        {groupedPages.map((group, groupIndex) => (
+          <div key={`group-${groupIndex}`} className="reference-image-row">
+            {group.map((page) => (
+              <div key={page.pageNumber} className="reference-image-item">
+                <img
+                  src={page.imageDataUrl}
+                  alt={`Proposal page ${page.pageNumber}`}
+                  className="reference-image"
+                />
+                <span className="reference-image-caption">Page {page.pageNumber}</span>
+              </div>
+            ))}
+          </div>
+        ))}
       </div>
-    </>
+    </div>
   );
 };
