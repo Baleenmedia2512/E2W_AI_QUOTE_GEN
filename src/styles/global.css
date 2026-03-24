@@ -114,3 +114,24 @@ img {
     transform: translateZ(0);
   }
 }
+
+/* PDF Viewer Mobile Optimizations */
+@media (max-width: 768px) {
+  /* Disable text layer on mobile to prevent layout issues */
+  .react-pdf__Page__textContent {
+    display: none !important;
+  }
+  
+  /* Ensure canvas renders properly on mobile */
+  .react-pdf__Page__canvas {
+    max-width: 100%;
+    height: auto !important;
+    width: 100% !important;
+  }
+  
+  /* Make PDF page container fit mobile screen */
+  .react-pdf__Page {
+    max-width: 100%;
+    overflow: hidden;
+  }
+}
