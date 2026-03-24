@@ -112,7 +112,8 @@ const ChatInterface: React.FC = () => {
               quantity: item.quantity || 1,
               rate: item.unitPrice || 0,
               total: (item.quantity || 1) * (item.unitPrice || 0),
-              termsAndConditions: section.termsAndConditions || undefined
+              // Only store terms on the first line item of each section to avoid duplicate textareas
+              termsAndConditions: lineIndex === 0 ? (section.termsAndConditions || undefined) : undefined
             };
           });
         });
