@@ -42,171 +42,161 @@ export const ModernSales: React.FC<TemplateProps> = ({ data, editable: _editable
 
   return (
     <>
-    <div id="pdf-page-1" className="template-modern-sales">
-      {/* Top Bar */}
-      <div className="top-bar">
-        <div className="bar-section">
+    <div id={isMultiService ? "pdf-page-summary" : "pdf-page-1"} className="template-modern-sales">
+      {/* Header */}
+      <div className="ms-header">
+        <div className="ms-header-left">
           {company.logo && (
-            <img src={company.logo} alt={company.name} className="top-logo" />
+            <img src={company.logo} alt={company.name} className="ms-logo" />
           )}
-          <span className="company-title">{company.name}</span>
+          <div className="ms-company-name">{company.name}</div>
         </div>
-        <div className="bar-section">
-          <span className="quote-label">Quote #{quote.quoteNumber}</span>
+        <div className="ms-header-right">
+          <h1 className="ms-title">QUOTATION</h1>
+          <div className="ms-title-accent"></div>
         </div>
       </div>
 
-      {/* Main Container */}
-      <div className="main-container">
-        {/* Sidebar */}
-        <div className="sidebar">
-          <div className="sidebar-section">
-            <h3 className="sidebar-title">Quote Details</h3>
-            <div className="detail-row">
-              <span className="detail-key">Date Issued:</span>
-              <span className="detail-value">{formatDate(quote.date)}</span>
-            </div>
-            <div className="detail-row">
-              <span className="detail-key">Valid Until:</span>
-              <span className="detail-value">{formatDate(quote.validUntil)}</span>
-            </div>
-            <div className="detail-row">
-              <span className="detail-key">Quote Number:</span>
-              <span className="detail-value">{quote.quoteNumber}</span>
-            </div>
-          </div>
+      {/* Quote Info Strip */}
+      <div className="ms-info-strip">
+        <div className="ms-info-item">
+          <span className="ms-info-label">Quote No.</span>
+          <span className="ms-info-value">{quote.quoteNumber}</span>
+        </div>
+        <div className="ms-info-item">
+          <span className="ms-info-label">Date Issued</span>
+          <span className="ms-info-value">{formatDate(quote.date)}</span>
+        </div>
+        <div className="ms-info-item">
+          <span className="ms-info-label">Valid Until</span>
+          <span className="ms-info-value">{formatDate(quote.validUntil)}</span>
+        </div>
+      </div>
 
-          <div className="sidebar-section">
-            <h3 className="sidebar-title">Our Details</h3>
-            <p className="sidebar-text">{company.name}</p>
-            <p className="sidebar-text">{company.address}</p>
-            {company.phone && <p className="sidebar-text">{company.phone}</p>}
-            {company.email && <p className="sidebar-text">{company.email}</p>}
-            {company.abn && (
-              <div className="abn-badge">
-                <span>ABN: {company.abn}</span>
-              </div>
-            )}
+      {/* Body Content */}
+      <div className="ms-body">
+        {/* From / To Cards */}
+        <div className="ms-parties">
+          <div className="ms-party-card">
+            <div className="ms-party-label">FROM</div>
+            <p className="ms-party-name">{company.name}</p>
+            <p className="ms-party-detail">{company.address}</p>
+            {company.phone && <p className="ms-party-detail">T: {company.phone}</p>}
+            {company.email && <p className="ms-party-detail">E: {company.email}</p>}
+            {company.website && <p className="ms-party-detail">W: {company.website}</p>}
+            {company.abn && <p className="ms-party-detail ms-abn">ABN: {company.abn}</p>}
           </div>
-
-          <div className="sidebar-section">
-            <h3 className="sidebar-title">Client</h3>
-            <p className="sidebar-text sidebar-highlight">{client.name}</p>
-            {client.company && <p className="sidebar-text">{client.company}</p>}
-            {client.email && <p className="sidebar-text">{client.email}</p>}
-            {client.phone && <p className="sidebar-text">{client.phone}</p>}
-          </div>
-
-          <div className="sidebar-section total-preview">
-            <h3 className="sidebar-title">Total</h3>
-            <div className="total-amount">{formatCurrency(calculateTotal())}</div>
-            <p className="total-label">Inc. GST</p>
+          <div className="ms-party-card ms-party-accent">
+            <div className="ms-party-label">TO</div>
+            <p className="ms-party-name">{client.name}</p>
+            {client.company && <p className="ms-party-detail">{client.company}</p>}
+            {client.email && <p className="ms-party-detail">E: {client.email}</p>}
+            {client.phone && <p className="ms-party-detail">T: {client.phone}</p>}
+            {client.address && <p className="ms-party-detail">{client.address}</p>}
           </div>
         </div>
 
-        {/* Main Content */}
-        <div className="main-content">
-          <div className="content-header">
-            <h1 className="content-title">Your Quote</h1>
-            <p className="content-subtitle">
-              We're pleased to provide you with this quotation for your consideration
-            </p>
-          </div>
-
-          {/* Items List */}
-          <div className="items-container">
-            {quote.items.map((item, index) => (
-              <div key={index} className="item-card">
-                <div className="item-header">
-                  <div className="item-badge">{index + 1}</div>
-                  <h3 className="item-name">{item.description}</h3>
-                </div>
-                {item.details && (
-                  <p className="item-description">{item.details}</p>
+        {/* Items Table */}
+        <div className="ms-section">
+          <h3 className="ms-section-title">Scope of Work & Pricing</h3>
+          <table className="ms-table">
+            <thead>
+              <tr>
+                <th className="ms-col-num">#</th>
+                <th className="ms-col-desc">Description</th>
+                <th className="ms-col-qty">Qty</th>
+                <th className="ms-col-rate">Rate</th>
+                {quote.items.some(i => i.duration && i.duration > 1) && (
+                  <th className="ms-col-dur">Months</th>
                 )}
-                <div className="item-pricing">
-                  <div className="pricing-row">
-                    <span className="pricing-text">
-                      {item.quantity} × {formatCurrency(item.rate)}{item.duration && item.duration > 1 ? ` × ${item.duration} months` : ''}
-                    </span>
-                    <span className="pricing-amount">{formatCurrency(item.total)}</span>
+                <th className="ms-col-amt">Amount</th>
+              </tr>
+            </thead>
+            <tbody>
+              {quote.items.map((item, index) => (
+                <tr key={index}>
+                  <td className="ms-cell-num">{index + 1}</td>
+                  <td className="ms-cell-desc">
+                    <strong>{item.description}</strong>
+                    {item.details && <div className="ms-item-details">{item.details}</div>}
+                  </td>
+                  <td className="ms-cell-qty">{item.quantity}</td>
+                  <td className="ms-cell-rate">{formatCurrency(item.rate)}</td>
+                  {quote.items.some(i => i.duration && i.duration > 1) && (
+                    <td className="ms-cell-dur">{item.duration || 1}</td>
+                  )}
+                  <td className="ms-cell-amt">{formatCurrency(item.total)}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+
+        {/* Summary */}
+        <div className="ms-summary">
+          <div className="ms-summary-card">
+            <div className="ms-summary-row">
+              <span>Subtotal</span>
+              <span>{formatCurrency(calculateSubtotal())}</span>
+            </div>
+            {quote.gstEnabled && (
+              <div className="ms-summary-row">
+                <span>GST ({quote.gstPercentage}%)</span>
+                <span>{formatCurrency(calculateGST())}</span>
+              </div>
+            )}
+            <div className="ms-summary-row ms-summary-total">
+              <span>Total Amount</span>
+              <span>{formatCurrency(calculateTotal())}</span>
+            </div>
+          </div>
+        </div>
+
+        {/* Notes */}
+        {quote.notes && (
+          <div className="ms-notes">
+            <h3 className="ms-section-title">Additional Notes</h3>
+            <p className="ms-notes-text">{quote.notes}</p>
+          </div>
+        )}
+
+        {/* Terms */}
+        <div className="ms-terms">
+          <h3 className="ms-section-title">Terms & Conditions</h3>
+          <div className="ms-terms-grid">
+            {isMultiService 
+              ? DEFAULT_GENERAL_TERMS.map((term, i) => (
+                  <div className="ms-term-item" key={i}>
+                    <span className="ms-term-check">&#10003;</span>
+                    <span>{term}</span>
                   </div>
-                </div>
-              </div>
-            ))}
+                ))
+              : (quote.termsAndConditions
+                  ? quote.termsAndConditions
+                      .split(/\n|•|\d+\.\s/)
+                      .map(t => t.trim())
+                      .filter(Boolean)
+                      .map((term, i) => (
+                        <div className="ms-term-item" key={i}>
+                          <span className="ms-term-check">&#10003;</span>
+                          <span>{term}</span>
+                        </div>
+                      ))
+                  : <div className="ms-term-item"><span className="ms-term-check">&#10003;</span><span>Standard terms and conditions apply</span></div>
+                )
+            }
           </div>
+        </div>
 
-          {/* Calculation Breakdown */}
-          <div className="breakdown-section">
-            <div className="breakdown-card">
-              <div className="breakdown-row">
-                <span className="breakdown-label">Subtotal</span>
-                <span className="breakdown-value">{formatCurrency(calculateSubtotal())}</span>
-              </div>
-              {quote.gstEnabled && (
-                <div className="breakdown-row">
-                  <span className="breakdown-label">GST ({quote.gstPercentage}%)</span>
-                  <span className="breakdown-value">{formatCurrency(calculateGST())}</span>
-                </div>
-              )}
-              <div className="breakdown-row breakdown-total">
-                <span className="breakdown-label">Total Amount</span>
-                <span className="breakdown-value">{formatCurrency(calculateTotal())}</span>
-              </div>
-            </div>
-          </div>
-
-          {/* Notes */}
-          {quote.notes && (
-            <div className="notes-box">
-              <h3 className="notes-title">Important Notes</h3>
-              <p className="notes-text">{quote.notes}</p>
-            </div>
-          )}
-
-          {/* Terms */}
-          <div className="terms-box">
-            <h3 className="terms-title">Terms & Conditions</h3>
-            <ul className="terms-list">
-              {isMultiService 
-                ? DEFAULT_GENERAL_TERMS.map((term, i) => <li key={i}>{term}</li>)
-                : (quote.termsAndConditions
-                    ? quote.termsAndConditions
-                        .split(/\n|•|\d+\.\s/)
-                        .map(t => t.trim())
-                        .filter(Boolean)
-                        .map((term, i) => <li key={i}>{term}</li>)
-                    : <li>Standard terms and conditions apply</li>
-                  )
-              }
-            </ul>
-          </div>
-
-          {/* CTA Section */}
-          <div className="cta-section">
-            <h2 className="cta-title">Ready to proceed?</h2>
-            <p className="cta-text">
-              Sign below to accept this quotation and we'll get started on your project
-            </p>
-            <div className="signature-grid">
-              <div className="signature-field">
-                <label className="signature-label">Client Signature</label>
-                <div className="signature-box"></div>
-                <input type="text" placeholder="Print Name" className="signature-input" />
-                <input type="text" placeholder="Date" className="signature-input" />
-              </div>
-              <div className="signature-field">
-                <label className="signature-label">Authorized by {company.name}</label>
-                <div className="signature-box signature-filled">✓ Authorized</div>
-                <div className="authorized-date">{formatDate(new Date())}</div>
-              </div>
-            </div>
-          </div>
+        {/* System Generated Notice */}
+        <div className="ms-notice">
+          <p>This is a system-generated quotation and does not require a signature.</p>
+          <p className="ms-notice-by">Generated by {company.name}</p>
         </div>
       </div>
 
       {/* Footer */}
-      <div className="footer-bar">
+      <div className="ms-footer">
         <p>Thank you for your business | {company.name}</p>
         {company.website && <p>{company.website}</p>}
       </div>
@@ -229,155 +219,147 @@ export const ModernSales: React.FC<TemplateProps> = ({ data, editable: _editable
         <React.Fragment key={groupIndex}>
           <div style={{ pageBreakBefore: 'always' }} />
           <div id={`pdf-service-${groupIndex}`} className="template-modern-sales">
-            <div className="top-bar">
-              <div className="bar-section">
+            {/* Header */}
+            <div className="ms-header">
+              <div className="ms-header-left">
                 {company.logo && (
-                  <img src={company.logo} alt={company.name} className="top-logo" />
+                  <img src={company.logo} alt={company.name} className="ms-logo" />
                 )}
-                <span className="company-title">{company.name}</span>
+                <div className="ms-company-name">{company.name}</div>
               </div>
-              <div className="bar-section">
-                <span className="quote-label">{group.serviceType} Branding</span>
+              <div className="ms-header-right">
+                <h1 className="ms-title">{group.serviceType}</h1>
+                <div className="ms-title-accent"></div>
               </div>
             </div>
 
-            <div className="main-container">
-              <div className="sidebar">
-                <div className="sidebar-section">
-                  <h3 className="sidebar-title">Quote Details</h3>
-                  <div className="detail-row">
-                    <span className="detail-key">Date Issued:</span>
-                    <span className="detail-value">{formatDate(quote.date)}</span>
-                  </div>
-                  <div className="detail-row">
-                    <span className="detail-key">Valid Until:</span>
-                    <span className="detail-value">{formatDate(quote.validUntil)}</span>
-                  </div>
-                  <div className="detail-row">
-                    <span className="detail-key">Quote Number:</span>
-                    <span className="detail-value">{quote.quoteNumber}</span>
-                  </div>
+            {/* Quote Info Strip */}
+            <div className="ms-info-strip">
+              <div className="ms-info-item">
+                <span className="ms-info-label">Quote No.</span>
+                <span className="ms-info-value">{quote.quoteNumber}</span>
+              </div>
+              <div className="ms-info-item">
+                <span className="ms-info-label">Date Issued</span>
+                <span className="ms-info-value">{formatDate(quote.date)}</span>
+              </div>
+              <div className="ms-info-item">
+                <span className="ms-info-label">Valid Until</span>
+                <span className="ms-info-value">{formatDate(quote.validUntil)}</span>
+              </div>
+            </div>
+
+            <div className="ms-body">
+              {/* Parties */}
+              <div className="ms-parties">
+                <div className="ms-party-card">
+                  <div className="ms-party-label">FROM</div>
+                  <p className="ms-party-name">{company.name}</p>
+                  <p className="ms-party-detail">{company.address}</p>
+                  {company.phone && <p className="ms-party-detail">T: {company.phone}</p>}
+                  {company.email && <p className="ms-party-detail">E: {company.email}</p>}
                 </div>
-                
-                <div className="sidebar-section">
-                  <h3 className="sidebar-title">Service Type</h3>
-                  <p className="sidebar-text sidebar-highlight">{group.serviceType} Branding</p>
-                </div>
-                
-                <div className="sidebar-section">
-                  <h3 className="sidebar-title">Client</h3>
-                  <p className="sidebar-text">{client.name}</p>
-                  {client.company && <p className="sidebar-text">{client.company}</p>}
-                  {client.email && <p className="sidebar-text">{client.email}</p>}
-                  {client.phone && <p className="sidebar-text">{client.phone}</p>}
-                </div>
-                
-                <div className="sidebar-section total-preview">
-                  <h3 className="sidebar-title">Total</h3>
-                  <div className="total-amount">{formatCurrency(groupTotal)}</div>
-                  <p className="total-label">Inc. GST</p>
+                <div className="ms-party-card ms-party-accent">
+                  <div className="ms-party-label">TO</div>
+                  <p className="ms-party-name">{client.name}</p>
+                  {client.company && <p className="ms-party-detail">{client.company}</p>}
+                  {client.email && <p className="ms-party-detail">E: {client.email}</p>}
+                  {client.phone && <p className="ms-party-detail">T: {client.phone}</p>}
                 </div>
               </div>
 
-              <div className="main-content">
-                <div className="content-header">
-                  <h1 className="content-title">{group.serviceType} Branding Details</h1>
-                  <p className="content-subtitle">
-                    Detailed breakdown for {group.serviceType.toLowerCase()} branding services
-                  </p>
-                </div>
+              {/* Items */}
+              <div className="ms-section">
+                <h3 className="ms-section-title">{group.serviceType} Branding Services</h3>
+                <table className="ms-table">
+                  <thead>
+                    <tr>
+                      <th className="ms-col-num">#</th>
+                      <th className="ms-col-desc">Description</th>
+                      <th className="ms-col-qty">Qty</th>
+                      <th className="ms-col-rate">Rate</th>
+                      <th className="ms-col-amt">Amount</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {group.items.map((item, index) => (
+                      <tr key={index}>
+                        <td className="ms-cell-num">{index + 1}</td>
+                        <td className="ms-cell-desc">
+                          <strong>{item.description}</strong>
+                          {item.details && <div className="ms-item-details">{item.details}</div>}
+                        </td>
+                        <td className="ms-cell-qty">{item.quantity}</td>
+                        <td className="ms-cell-rate">{formatCurrency(item.rate)}</td>
+                        <td className="ms-cell-amt">{formatCurrency(item.total)}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
 
-                <div className="items-container">
-                  {group.items.map((item, index) => (
-                    <div key={index} className="item-card">
-                      <div className="item-header">
-                        <div className="item-badge">{index + 1}</div>
-                        <h3 className="item-name">{item.description}</h3>
-                      </div>
-                      {item.details && (
-                        <p className="item-description">{item.details}</p>
-                      )}
-                      <div className="item-pricing">
-                        <div className="pricing-row">
-                          <span className="pricing-text">
-                            {item.quantity} × {formatCurrency(item.rate)}
-                          </span>
-                          <span className="pricing-amount">{formatCurrency(item.total)}</span>
+              {/* Summary */}
+              <div className="ms-summary">
+                <div className="ms-summary-card">
+                  <div className="ms-summary-row">
+                    <span>Subtotal</span>
+                    <span>{formatCurrency(groupSubtotal)}</span>
+                  </div>
+                  {quote.gstEnabled && (
+                    <div className="ms-summary-row">
+                      <span>GST ({quote.gstPercentage}%)</span>
+                      <span>{formatCurrency(groupGST)}</span>
+                    </div>
+                  )}
+                  <div className="ms-summary-row ms-summary-total">
+                    <span>Total Amount</span>
+                    <span>{formatCurrency(groupTotal)}</span>
+                  </div>
+                </div>
+              </div>
+
+              {/* Notes */}
+              {quote.notes && (
+                <div className="ms-notes">
+                  <h3 className="ms-section-title">Additional Notes</h3>
+                  <p className="ms-notes-text">{filterNotesByServiceType(quote.notes, group.serviceType)}</p>
+                </div>
+              )}
+
+              {/* Terms */}
+              <div className="ms-terms">
+                <h3 className="ms-section-title">Terms & Conditions</h3>
+                <div className="ms-terms-grid">
+                  {(group.termsAndConditions || quote.termsAndConditions)
+                    ? (group.termsAndConditions
+                        ? group.termsAndConditions.split('\n').map((t: string) => t.trim().replace(/^[•\-\*]\s*/, '').trim()).filter(Boolean)
+                        : filterTermsByServiceType(quote.termsAndConditions, group.serviceType)
+                      ).map((term, i) => (
+                        <div className="ms-term-item" key={i}>
+                          <span className="ms-term-check">&#10003;</span>
+                          <span>{term}</span>
                         </div>
-                      </div>
-                    </div>
-                  ))}
+                      ))
+                    : <div className="ms-term-item"><span className="ms-term-check">&#10003;</span><span>Standard terms and conditions apply</span></div>
+                  }
                 </div>
+              </div>
 
-                <div className="breakdown-section">
-                  <div className="breakdown-card">
-                    <div className="breakdown-row">
-                      <span className="breakdown-label">Subtotal</span>
-                      <span className="breakdown-value">{formatCurrency(groupSubtotal)}</span>
-                    </div>
-                    {quote.gstEnabled && (
-                      <div className="breakdown-row">
-                        <span className="breakdown-label">GST ({quote.gstPercentage}%)</span>
-                        <span className="breakdown-value">{formatCurrency(groupGST)}</span>
-                      </div>
-                    )}
-                    <div className="breakdown-row breakdown-total">
-                      <span className="breakdown-label">Total Amount</span>
-                      <span className="breakdown-value">{formatCurrency(groupTotal)}</span>
-                    </div>
-                  </div>
-                </div>
-
-                {/* Notes */}
-                {quote.notes && (
-                  <div className="notes-box">
-                    <h3 className="notes-title">Important Notes</h3>
-                    <p className="notes-text">{filterNotesByServiceType(quote.notes, group.serviceType)}</p>
-                  </div>
-                )}
-
-                {/* Terms - Service Specific */}
-                <div className="terms-box">
-                  <h3 className="terms-title">Terms & Conditions</h3>
-                  <ul className="terms-list">
-                    {(group.termsAndConditions || quote.termsAndConditions)
-                      ? (group.termsAndConditions
-                          ? group.termsAndConditions.split('\n').map((t: string) => t.trim().replace(/^[•\-\*]\s*/, '').trim()).filter(Boolean)
-                          : filterTermsByServiceType(quote.termsAndConditions, group.serviceType)
-                        ).map((term, i) => <li key={i}>{term}</li>)
-                      : <li>Standard terms and conditions apply</li>
-                    }
-                  </ul>
-                </div>
-
-                {/* CTA Section */}
-                <div className="cta-section">
-                  <h2 className="cta-title">Ready to proceed?</h2>
-                  <p className="cta-text">
-                    Sign below to accept this {group.serviceType.toLowerCase()} branding quotation and we'll get started on your project
-                  </p>
-                  <div className="signature-grid">
-                    <div className="signature-field">
-                      <label className="signature-label">Client Signature</label>
-                      <div className="signature-box"></div>
-                      <input type="text" placeholder="Print Name" className="signature-input" />
-                      <input type="text" placeholder="Date" className="signature-input" />
-                    </div>
-                    <div className="signature-field">
-                      <label className="signature-label">Authorized by {company.name}</label>
-                      <div className="signature-box signature-filled">✓ Authorized</div>
-                      <div className="authorized-date">{formatDate(new Date())}</div>
-                    </div>
-                  </div>
-                </div>
-
+              {/* System Generated Notice */}
+              <div className="ms-notice">
+                <p>This is a system-generated quotation and does not require a signature.</p>
+                <p className="ms-notice-by">Generated by {company.name}</p>
               </div>
             </div>
-            </div>
 
-            <div id={`pdf-service-ref-${groupIndex}`}>
-              <ReferenceImages proposalPages={data.proposalPages} items={group.items} />
+            <div className="ms-footer">
+              <p>{company.name} - Professional {group.serviceType} Branding Services</p>
             </div>
+          </div>
+
+          <div id={`pdf-service-ref-${groupIndex}`}>
+            <ReferenceImages proposalPages={data.proposalPages} items={group.items} />
+          </div>
         </React.Fragment>
       );
     })}
