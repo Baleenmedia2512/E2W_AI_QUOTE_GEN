@@ -199,6 +199,7 @@ export const PremiumAgency: React.FC<TemplateProps> = ({ data, editable: _editab
       {/* Footer */}
       <div className="pa-footer">
         <p>Thank you for considering {company.name} for your project</p>
+        <p className="pa-footer-company">{company.name}</p>
       </div>
     </div>
 
@@ -355,6 +356,7 @@ export const PremiumAgency: React.FC<TemplateProps> = ({ data, editable: _editab
 
             <div className="pa-footer">
               <p>{company.name} - Professional {group.serviceType} Branding Services</p>
+              <p className="pa-footer-company">{company.name}</p>
             </div>
           </div>
 

@@ -37,7 +37,14 @@ const captureSectionAtA4 = async (containerId: string): Promise<HTMLCanvasElemen
     backgroundColor: '#ffffff',
     display: 'block'
   });
-  
+
+  // PremiumAgency: use flex column + fixed A4 height so .pa-body stretches to fill page
+  if (clone.classList.contains('template-premium-agency')) {
+    clone.style.display = 'flex';
+    clone.style.flexDirection = 'column';
+    clone.style.height = '1123px'; // 297mm at 96dpi - fixed, not min
+  }
+
   document.body.appendChild(clone);
 
   try {
