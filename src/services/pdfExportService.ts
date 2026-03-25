@@ -7,6 +7,7 @@ import DownloadNotification from '../plugins/downloadNotification';
 
 // A4 dimensions at 96dpi (standard web resolution)
 const A4_WIDTH_PX = 794;   // 210mm at 96dpi
+const A4_HEIGHT_PX = 1123;  // 297mm at 96dpi
 
 /**
  * Captures a specific section at fixed A4 dimensions for consistent PDF output
@@ -38,13 +39,6 @@ const captureSectionAtA4 = async (containerId: string): Promise<HTMLCanvasElemen
     display: 'block'
   });
 
-  // PremiumAgency: use flex column + fixed A4 height so .pa-body stretches to fill page
-  if (clone.classList.contains('template-premium-agency')) {
-    clone.style.display = 'flex';
-    clone.style.flexDirection = 'column';
-    clone.style.height = '1123px'; // 297mm at 96dpi - fixed, not min
-  }
-
   document.body.appendChild(clone);
 
   try {
@@ -68,10 +62,12 @@ const captureSectionAtA4 = async (containerId: string): Promise<HTMLCanvasElemen
     // Small delay for final reflow
     await new Promise(r => setTimeout(r, 150));
 
-    // Capture with html2canvas at fixed A4 width
+    // Capture with html2canvas at fixed A4 dimensions
+    const captureHeight = Math.max(clone.scrollHeight, A4_HEIGHT_PX);
     const canvas = await html2canvas(clone, {
       scale: 2,
       width: A4_WIDTH_PX,
+      height: captureHeight,
       windowWidth: A4_WIDTH_PX,
       scrollX: 0,
       scrollY: 0,
@@ -197,7 +193,7 @@ export const exportToPDF = async (
       const imgHeight = pdfWidth * aspectRatio;
       
       if (imgHeight <= pdfHeight) {
-        // Content fits within A4 — render as-is
+        // Content fits within A4 — render at full page
         pdf.addImage(imgData, 'PNG', 0, 0, pdfWidth, imgHeight);
         console.log(`✅ Page ${pageCount} added (${label}): ${pdfWidth}×${Math.round(imgHeight)}mm`);
       } else if (imgHeight <= pdfHeight * 1.5) {
