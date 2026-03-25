@@ -26,12 +26,21 @@ interface ReferenceImagesProps {
 function filterPagesByCategory(pages: ExtractedPage[], category: string): ExtractedPage[] {
   console.log('🔍 Filtering pages for category:', category);
   
-  // Extract the service type part only (before " - ")
+  // Extract the service type part by removing pricing/quantity suffixes
+  // This ensures "Mobile Van - Non LED Printing & Fixing Price" → "Mobile Van - Non LED"
+  // instead of incorrectly splitting at first " - " which gives just "Mobile Van"
   let serviceTypeOnly = category;
-  const dashIndex = category.indexOf(' - ');
-  if (dashIndex > 0) {
-    serviceTypeOnly = category.substring(0, dashIndex).trim();
-    console.log('📌 Using service type only:', serviceTypeOnly);
+  const pricingSuffixPattern = /\b(printing\s*&?\s*fixing|display\s+price|rental\s+price|printing\s+price|fixing\s+price)\b/i;
+  const pricingMatch = category.match(pricingSuffixPattern);
+  if (pricingMatch && pricingMatch.index && pricingMatch.index > 0) {
+    serviceTypeOnly = category.substring(0, pricingMatch.index).replace(/[\s\-&]+$/, '').trim();
+    console.log('📌 Using service type (pricing suffix removed):', serviceTypeOnly);
+  } else {
+    const dashIndex = category.indexOf(' - ');
+    if (dashIndex > 0) {
+      serviceTypeOnly = category.substring(0, dashIndex).trim();
+      console.log('📌 Using service type only:', serviceTypeOnly);
+    }
   }
   
   // Synonym map for common advertising/media industry terms
@@ -239,7 +248,14 @@ function filterPagesByCategory(pages: ExtractedPage[], category: string): Extrac
     // This handles cases where keyword naming differs slightly from PDF headings
     const matchedCount = requiredKeywords.filter(kw => keywordFoundInText(kw, pageText)).length;
     const matchRatio = matchedCount / requiredKeywords.length;
-    const hasRelaxedMatch = !hasAllKeywords && matchRatio >= 0.75 && matchedCount >= 2;
+    
+    // Negation words like "non" are critical differentiators — they MUST be present
+    // Without "non", "LED" vs "Non LED" would be indistinguishable
+    const negationWords = ['non', 'not', 'without', 'no'];
+    const criticalKeywords = requiredKeywords.filter(kw => negationWords.includes(kw));
+    const hasMissingCritical = criticalKeywords.some(kw => !keywordFoundInText(kw, pageText));
+    
+    const hasRelaxedMatch = !hasAllKeywords && matchRatio >= 0.75 && matchedCount >= 2 && !hasMissingCritical;
     
     if (!hasAllKeywords && !hasRelaxedMatch) {
       // Use the same flexible matching for reporting missing keywords
@@ -602,15 +618,18 @@ export const ReferenceImages: React.FC<ReferenceImagesProps> = ({ proposalPages,
       const hasReferenceImage = text.includes('reference image') ||
                                 text.includes('reference images');
       
-      // Check for (2/X), (3/X) etc. page numbering pattern — these are always reference pages
+      // Check for (X/Y) page numbering pattern
       const pagePattern = text.match(/\((\d+)\/(\d+)\)/);
-      const isMultiPageRef = pagePattern ? parseInt(pagePattern[1]) >= 2 : false;
+      const pageNum = pagePattern ? parseInt(pagePattern[1]) : 0;
+      const totalPages = pagePattern ? parseInt(pagePattern[2]) : 0;
+      // Last page of a section (e.g., 2/2, 3/3) is always reference images
+      const isLastPage = pagePattern ? pageNum === totalPages && pageNum >= 2 : false;
       
-      // Only classify as Design Spec if:
+      // Classify as Design Spec if:
       // 1. Has design spec keywords AND
       // 2. Does NOT have "reference image" text AND
-      // 3. Does NOT have a (2/X) or higher page pattern
-      if (hasDesignSpec && !hasReferenceImage && !isMultiPageRef) {
+      // 3. Is NOT the last page of a multi-page section (last page = reference images)
+      if (hasDesignSpec && !hasReferenceImage && !isLastPage) {
         designSpec.push(page);
       } else {
         reference.push(page);
