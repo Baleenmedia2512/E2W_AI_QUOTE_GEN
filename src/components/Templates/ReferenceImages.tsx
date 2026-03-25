@@ -596,11 +596,21 @@ export const ReferenceImages: React.FC<ReferenceImagesProps> = ({ proposalPages,
         .replace(/\s*\|\s*/g, '')
         .replace(/\s+/g, ' ');
       
-      const isDesignSpec = text.includes('design specification') ||
+      const hasDesignSpec = text.includes('design specification') ||
                            text.includes('design specifications') ||
                            text.includes('display area');
+      const hasReferenceImage = text.includes('reference image') ||
+                                text.includes('reference images');
       
-      if (isDesignSpec) {
+      // Check for (2/X), (3/X) etc. page numbering pattern — these are always reference pages
+      const pagePattern = text.match(/\((\d+)\/(\d+)\)/);
+      const isMultiPageRef = pagePattern ? parseInt(pagePattern[1]) >= 2 : false;
+      
+      // Only classify as Design Spec if:
+      // 1. Has design spec keywords AND
+      // 2. Does NOT have "reference image" text AND
+      // 3. Does NOT have a (2/X) or higher page pattern
+      if (hasDesignSpec && !hasReferenceImage && !isMultiPageRef) {
         designSpec.push(page);
       } else {
         reference.push(page);
