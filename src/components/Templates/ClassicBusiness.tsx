@@ -124,6 +124,9 @@ export const ClassicBusiness: React.FC<TemplateProps> = ({ data, editable: _edit
                 <th className="col-description">Description</th>
                 <th className="col-qty">Qty</th>
                 <th className="col-rate">Unit Price</th>
+                {quote.items.some(i => i.duration && i.duration > 1) && (
+                  <th className="col-duration">Months</th>
+                )}
                 <th className="col-amount">Amount</th>
               </tr>
             </thead>
@@ -139,6 +142,9 @@ export const ClassicBusiness: React.FC<TemplateProps> = ({ data, editable: _edit
                   </td>
                   <td className="cell-qty">{item.quantity}</td>
                   <td className="cell-rate">{formatCurrency(item.rate)}</td>
+                  {quote.items.some(i => i.duration && i.duration > 1) && (
+                    <td className="cell-duration">{item.duration || 1}</td>
+                  )}
                   <td className="cell-amount">{formatCurrency(item.total)}</td>
                 </tr>
               ))}

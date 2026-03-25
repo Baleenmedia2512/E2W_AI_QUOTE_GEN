@@ -100,7 +100,6 @@ export const CorporateMinimal: React.FC<TemplateProps> = ({ data, editable: _edi
           {renderHeader()}
           {renderClientDetails()}
 
-          {/* Quote Items */}
           <div className="quote-items-section">
             <table className="items-table">
               <thead>
@@ -108,6 +107,9 @@ export const CorporateMinimal: React.FC<TemplateProps> = ({ data, editable: _edi
                   <th className="col-description">Description</th>
                   <th className="col-quantity">Quantity</th>
                   <th className="col-rate">Rate</th>
+                  {quote.items.some(i => i.duration && i.duration > 1) && (
+                    <th className="col-duration">Months</th>
+                  )}
                   <th className="col-total">Total</th>
                 </tr>
               </thead>
@@ -120,6 +122,9 @@ export const CorporateMinimal: React.FC<TemplateProps> = ({ data, editable: _edi
                     </td>
                     <td className="item-quantity">{item.quantity}</td>
                     <td className="item-rate">{formatCurrency(item.rate)}</td>
+                    {quote.items.some(i => i.duration && i.duration > 1) && (
+                      <td className="item-duration">{item.duration || 1}</td>
+                    )}
                     <td className="item-total">{formatCurrency(item.total)}</td>
                   </tr>
                 ))}
@@ -202,6 +207,9 @@ export const CorporateMinimal: React.FC<TemplateProps> = ({ data, editable: _edi
                 <th className="col-description">Description</th>
                 <th className="col-quantity">Quantity</th>
                 <th className="col-rate">Rate</th>
+                {quote.items.some(i => i.duration && i.duration > 1) && (
+                  <th className="col-duration">Months</th>
+                )}
                 <th className="col-total">Total</th>
               </tr>
             </thead>
@@ -214,6 +222,9 @@ export const CorporateMinimal: React.FC<TemplateProps> = ({ data, editable: _edi
                   </td>
                   <td className="item-quantity">{item.quantity}</td>
                   <td className="item-rate">{formatCurrency(item.rate)}</td>
+                  {quote.items.some(i => i.duration && i.duration > 1) && (
+                    <td className="item-duration">{item.duration || 1}</td>
+                  )}
                   <td className="item-total">{formatCurrency(item.total)}</td>
                 </tr>
               ))}
@@ -286,6 +297,9 @@ export const CorporateMinimal: React.FC<TemplateProps> = ({ data, editable: _edi
                         <th className="col-description">Description</th>
                         <th className="col-quantity">Quantity</th>
                         <th className="col-rate">Rate</th>
+                        {group.items.some(i => i.duration && i.duration > 1) && (
+                          <th className="col-duration">Months</th>
+                        )}
                         <th className="col-total">Total</th>
                       </tr>
                     </thead>
@@ -298,6 +312,9 @@ export const CorporateMinimal: React.FC<TemplateProps> = ({ data, editable: _edi
                           </td>
                           <td className="item-quantity">{item.quantity}</td>
                           <td className="item-rate">{formatCurrency(item.rate)}</td>
+                          {group.items.some(i => i.duration && i.duration > 1) && (
+                            <td className="item-duration">{item.duration || 1}</td>
+                          )}
                           <td className="item-total">{formatCurrency(item.total)}</td>
                         </tr>
                       ))}

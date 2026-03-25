@@ -56,7 +56,7 @@ const QuotePreview: React.FC<QuotePreviewProps> = ({ quote, onUpdate, onSave }) 
   }
 
   const calculateLineItemTotal = (item: LineItem): number => {
-    return item.quantity * item.unitPrice;
+    return item.quantity * item.unitPrice * (item.duration || 1);
   };
 
   const calculateItemSubtotal = (item: QuoteItem): number => {
@@ -80,6 +80,7 @@ const QuotePreview: React.FC<QuotePreviewProps> = ({ quote, onUpdate, onSave }) 
       description: item.description,
       quantity: item.quantity,
       unitPrice: item.rate,
+      duration: item.duration,
       total: item.total
     }];
   };
@@ -117,10 +118,13 @@ const QuotePreview: React.FC<QuotePreviewProps> = ({ quote, onUpdate, onSave }) 
         item.description = value;
       } else if (field === 'quantity') {
         item.quantity = value;
-        item.total = value * item.rate;
+        item.total = value * item.rate * (item.duration || 1);
       } else if (field === 'unitPrice') {
         item.rate = value;
-        item.total = item.quantity * value;
+        item.total = item.quantity * value * (item.duration || 1);
+      } else if (field === 'duration') {
+        item.duration = value;
+        item.total = item.quantity * item.rate * (value || 1);
       }
     }
     
@@ -152,6 +156,7 @@ const QuotePreview: React.FC<QuotePreviewProps> = ({ quote, onUpdate, onSave }) 
       description: '',
       quantity: 1,
       unitPrice: 0,
+      duration: undefined,
       total: 0,
     };
 
@@ -437,6 +442,29 @@ const QuotePreview: React.FC<QuotePreviewProps> = ({ quote, onUpdate, onSave }) 
                               />
                             </NumberInput>
                           </Box>
+                          {lineItem.duration && lineItem.duration > 1 && (
+                            <Box flex={1}>
+                              <Text fontSize="11px" fontWeight="600" color="gray.500" textTransform="uppercase" letterSpacing="0.5px" mb={1}>
+                                Months
+                              </Text>
+                              <NumberInput
+                                value={lineItem.duration}
+                                onChange={(_, value) =>
+                                  updateLineItem(itemIndex, lineItemIndex, 'duration' as keyof LineItem, value)
+                                }
+                                min={1}
+                                size="sm"
+                              >
+                                <NumberInputField
+                                  textAlign="right"
+                                  bg="white"
+                                  borderColor="gray.200"
+                                  borderRadius="6px"
+                                  _focus={{ borderColor: '#750926', boxShadow: '0 0 0 1px #750926' }}
+                                />
+                              </NumberInput>
+                            </Box>
+                          )}
                         </Flex>
 
                         {/* Amount */}
@@ -461,16 +489,21 @@ const QuotePreview: React.FC<QuotePreviewProps> = ({ quote, onUpdate, onSave }) 
                     <Table variant="simple" size="sm">
                       <Thead>
                         <Tr bg="gray.50">
-                          <Th color="gray.600" fontWeight="600" fontSize="xs" textTransform="uppercase" width="40%">
+                          <Th color="gray.600" fontWeight="600" fontSize="xs" textTransform="uppercase" width={getLineItemsForDisplay(item).some(li => li.duration && li.duration > 1) ? "35%" : "40%"}>
                             Item Description
                           </Th>
-                          <Th color="gray.600" fontWeight="600" fontSize="xs" textTransform="uppercase" isNumeric width="15%">
+                          <Th color="gray.600" fontWeight="600" fontSize="xs" textTransform="uppercase" isNumeric width="12%">
                             Quantity
                           </Th>
-                          <Th color="gray.600" fontWeight="600" fontSize="xs" textTransform="uppercase" isNumeric width="20%">
+                          <Th color="gray.600" fontWeight="600" fontSize="xs" textTransform="uppercase" isNumeric width="15%">
                             Rate
                           </Th>
-                          <Th color="gray.600" fontWeight="600" fontSize="xs" textTransform="uppercase" isNumeric width="20%">
+                          {getLineItemsForDisplay(item).some(li => li.duration && li.duration > 1) && (
+                            <Th color="gray.600" fontWeight="600" fontSize="xs" textTransform="uppercase" isNumeric width="12%">
+                              Months
+                            </Th>
+                          )}
+                          <Th color="gray.600" fontWeight="600" fontSize="xs" textTransform="uppercase" isNumeric width="18%">
                             Amount
                           </Th>
                           <Th width="5%"></Th>
@@ -532,6 +565,24 @@ const QuotePreview: React.FC<QuotePreviewProps> = ({ quote, onUpdate, onSave }) 
                                 />
                               </NumberInput>
                             </Td>
+                            {getLineItemsForDisplay(item).some(li => li.duration && li.duration > 1) && (
+                              <Td isNumeric>
+                                <NumberInput
+                                  value={lineItem.duration || 1}
+                                  onChange={(_, value) =>
+                                    updateLineItem(itemIndex, lineItemIndex, 'duration' as keyof LineItem, value)
+                                  }
+                                  min={1}
+                                  size="sm"
+                                >
+                                  <NumberInputField
+                                    textAlign="right"
+                                    _focus={{ bg: 'white', border: '1px solid', borderColor: '#750926' }}
+                                    px={2}
+                                  />
+                                </NumberInput>
+                              </Td>
+                            )}
                             <Td isNumeric fontWeight="500">
                               {formatCurrency(calculateLineItemTotal(lineItem))}
                             </Td>
