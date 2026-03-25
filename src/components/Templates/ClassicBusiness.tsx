@@ -259,7 +259,7 @@ export const ClassicBusiness: React.FC<TemplateProps> = ({ data, editable: _edit
           <div style={{ pageBreakBefore: 'always' }} />
           <div className="template-classic-business">
             <div className="classic-container">
-              <div id="pdf-page-1" className="template-classic-business">
+              <div id={`pdf-service-${groupIndex}`} className="template-classic-business">
               <div className="letterhead">
                 <div className="letterhead-content">
                   {company.logo && (
@@ -434,7 +434,7 @@ export const ClassicBusiness: React.FC<TemplateProps> = ({ data, editable: _edit
               </div>
               </div>
 
-              <div id="pdf-page-2">
+              <div id={`pdf-service-ref-${groupIndex}`}>
                 <ReferenceImages proposalPages={data.proposalPages} items={group.items} />
               </div>
 

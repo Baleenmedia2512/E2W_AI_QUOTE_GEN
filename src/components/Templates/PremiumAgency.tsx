@@ -243,7 +243,7 @@ export const PremiumAgency: React.FC<TemplateProps> = ({ data, editable: _editab
       return (
         <React.Fragment key={groupIndex}>
           <div style={{ pageBreakBefore: 'always' }} />
-          <div id="pdf-page-1" className="template-premium-agency">
+          <div id={`pdf-service-${groupIndex}`} className="template-premium-agency">
             <div className="hero-header">
               <div className="header-overlay">
                 {company.logo && (
@@ -410,7 +410,7 @@ export const PremiumAgency: React.FC<TemplateProps> = ({ data, editable: _editab
               </div>
               </div>
 
-              <div id="pdf-page-2">
+              <div id={`pdf-service-ref-${groupIndex}`}>
                 <ReferenceImages proposalPages={data.proposalPages} items={group.items} />
               </div>
         </React.Fragment>
