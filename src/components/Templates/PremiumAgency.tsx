@@ -42,147 +42,134 @@ export const PremiumAgency: React.FC<TemplateProps> = ({ data, editable: _editab
 
   return (
     <>
-    <div id="pdf-page-1" className="template-premium-agency">
-      {/* Hero Header */}
-      <div className="hero-header">
-        <div className="header-overlay">
+    <div id={isMultiService ? "pdf-page-summary" : "pdf-page-1"} className="template-premium-agency">
+      {/* Header */}
+      <div className="pa-header">
+        <div className="pa-header-left">
           {company.logo && (
-            <img src={company.logo} alt={company.name} className="hero-logo" />
+            <img src={company.logo} alt={company.name} className="pa-logo" />
           )}
-          <h1 className="hero-title">PROFESSIONAL QUOTATION</h1>
-          <p className="hero-subtitle">Investment Proposal for Excellence</p>
+          <div className="pa-company-name">{company.name}</div>
+        </div>
+        <div className="pa-header-right">
+          <h1 className="pa-title">QUOTATION</h1>
+          <div className="pa-title-rule"></div>
+          <p className="pa-subtitle">{company.name}</p>
         </div>
       </div>
 
-      {/* Main Content */}
-      <div className="content-wrapper">
-        {/* Quote Info Bar */}
-        <div className="info-bar">
-          <div className="info-item">
-            <span className="info-label">Quote #</span>
-            <span className="info-value">{quote.quoteNumber}</span>
+      {/* Info Strip */}
+      <div className="pa-info-strip">
+        <div className="pa-info-item">
+          <span className="pa-info-label">Quote No.</span>
+          <span className="pa-info-value">{quote.quoteNumber}</span>
+        </div>
+        <div className="pa-info-item">
+          <span className="pa-info-label">Date Issued</span>
+          <span className="pa-info-value">{formatDate(quote.date)}</span>
+        </div>
+        <div className="pa-info-item">
+          <span className="pa-info-label">Valid Until</span>
+          <span className="pa-info-value">{formatDate(quote.validUntil)}</span>
+        </div>
+      </div>
+
+      {/* Body */}
+      <div className="pa-body">
+        {/* Parties */}
+        <div className="pa-parties">
+          <div className="pa-party-card">
+            <div className="pa-party-label">FROM</div>
+            <p className="pa-party-name">{company.name}</p>
+            <p className="pa-party-detail">{company.address}</p>
+            {company.phone && <p className="pa-party-detail">T: {company.phone}</p>}
+            {company.email && <p className="pa-party-detail">E: {company.email}</p>}
+            {company.website && <p className="pa-party-detail">W: {company.website}</p>}
+            {company.abn && <p className="pa-party-detail pa-abn">ABN: {company.abn}</p>}
           </div>
-          <div className="info-item">
-            <span className="info-label">Issued</span>
-            <span className="info-value">{formatDate(quote.date)}</span>
-          </div>
-          <div className="info-item">
-            <span className="info-label">Valid Until</span>
-            <span className="info-value">{formatDate(quote.validUntil)}</span>
+          <div className="pa-party-card pa-party-accent">
+            <div className="pa-party-label">TO</div>
+            <p className="pa-party-name">{client.name}</p>
+            {client.company && <p className="pa-party-detail">{client.company}</p>}
+            {client.email && <p className="pa-party-detail">E: {client.email}</p>}
+            {client.phone && <p className="pa-party-detail">T: {client.phone}</p>}
+            {client.address && <p className="pa-party-detail">{client.address}</p>}
           </div>
         </div>
 
-        {/* Two Column Layout */}
-        <div className="two-column-section">
-          <div className="column">
-            <div className="card">
-              <h3 className="card-title">From</h3>
-              <div className="card-content">
-                <p className="entity-name">{company.name}</p>
-                <p>{company.address}</p>
-                {company.phone && <p>T: {company.phone}</p>}
-                {company.email && <p>E: {company.email}</p>}
-                {company.website && <p>W: {company.website}</p>}
-                {company.abn && <p>ABN: {company.abn}</p>}
-              </div>
-            </div>
-          </div>
-          <div className="column">
-            <div className="card card-accent">
-              <h3 className="card-title">To</h3>
-              <div className="card-content">
-                <p className="entity-name">{client.name}</p>
-                {client.company && <p>{client.company}</p>}
-                {client.email && <p>E: {client.email}</p>}
-                {client.phone && <p>T: {client.phone}</p>}
-                {client.address && <p>{client.address}</p>}
-              </div>
-            </div>
-          </div>
-        </div>
-
-        {/* Investment Breakdown */}
-        <div className="services-section">
-          <h2 className="section-title">Investment Breakdown</h2>
-          <div className="services-list">
-            {quote.items.map((item, index) => (
-              <div key={index} className="service-item">
-                <div className="service-header">
-                  <span className="service-number">{String(index + 1).padStart(2, '0')}</span>
-                  <div className="service-content">
-                    <h4 className="service-name">{item.description}</h4>
-                    {item.details && <p className="service-details">{item.details}</p>}
-                  </div>
-                </div>
-                <div className="service-pricing">
-                  <div className="pricing-detail">
-                    <span className="pricing-label">Quantity</span>
-                    <span className="pricing-value">{item.quantity}</span>
-                  </div>
-                  <div className="pricing-detail">
-                    <span className="pricing-label">Rate</span>
-                    <span className="pricing-value">{formatCurrency(item.rate)}</span>
-                  </div>
-                  {item.duration && item.duration > 1 && (
-                    <div className="pricing-detail">
-                      <span className="pricing-label">Months</span>
-                      <span className="pricing-value">{item.duration}</span>
-                    </div>
+        {/* Items Table */}
+        <div className="pa-section">
+          <h3 className="pa-section-title">Investment Breakdown</h3>
+          <table className="pa-table">
+            <thead>
+              <tr>
+                <th className="pa-col-num">#</th>
+                <th className="pa-col-desc">Description</th>
+                <th className="pa-col-qty">Qty</th>
+                <th className="pa-col-rate">Rate</th>
+                {quote.items.some(i => i.duration && i.duration > 1) && (
+                  <th className="pa-col-dur">Months</th>
+                )}
+                <th className="pa-col-amt">Amount</th>
+              </tr>
+            </thead>
+            <tbody>
+              {quote.items.map((item, index) => (
+                <tr key={index}>
+                  <td className="pa-cell-num">{String(index + 1).padStart(2, '0')}</td>
+                  <td className="pa-cell-desc">
+                    <strong>{item.description}</strong>
+                    {item.details && <div className="pa-item-details">{item.details}</div>}
+                  </td>
+                  <td className="pa-cell-qty">{item.quantity}</td>
+                  <td className="pa-cell-rate">{formatCurrency(item.rate)}</td>
+                  {quote.items.some(i => i.duration && i.duration > 1) && (
+                    <td className="pa-cell-dur">{item.duration || 1}</td>
                   )}
-                  <div className="pricing-detail total-detail">
-                    <span className="pricing-label">Total</span>
-                    <span className="pricing-value">{formatCurrency(item.total)}</span>
-                  </div>
-                </div>
-              </div>
-            ))}
-          </div>
+                  <td className="pa-cell-amt">{formatCurrency(item.total)}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
         </div>
 
-        {/* Investment Summary */}
-        <div className="summary-section">
-          <div className="summary-card">
-            <h3 className="summary-title">Investment Summary</h3>
-            <div className="summary-rows">
-              <div className="summary-row">
-                <span className="summary-label">Subtotal</span>
-                <span className="summary-value">{formatCurrency(calculateSubtotal())}</span>
+        {/* Summary */}
+        <div className="pa-summary">
+          <div className="pa-summary-card">
+            <div className="pa-summary-row">
+              <span>Subtotal</span>
+              <span>{formatCurrency(calculateSubtotal())}</span>
+            </div>
+            {quote.gstEnabled && (
+              <div className="pa-summary-row">
+                <span>GST ({quote.gstPercentage}%)</span>
+                <span>{formatCurrency(calculateGST())}</span>
               </div>
-              {quote.gstEnabled && (
-                <div className="summary-row">
-                  <span className="summary-label">GST ({quote.gstPercentage}%)</span>
-                  <span className="summary-value">{formatCurrency(calculateGST())}</span>
-                </div>
-              )}
-              <div className="summary-row summary-total">
-                <span className="summary-label">Total Investment</span>
-                <span className="summary-value">{formatCurrency(calculateTotal())}</span>
-              </div>
+            )}
+            <div className="pa-summary-row pa-summary-total">
+              <span>Total Investment</span>
+              <span>{formatCurrency(calculateTotal())}</span>
             </div>
           </div>
         </div>
 
         {/* Notes */}
         {quote.notes && (
-          <div className="notes-section">
-            <h3 className="section-title">Additional Notes</h3>
-            <div className="notes-content">
-              <p>{quote.notes}</p>
-            </div>
+          <div className="pa-notes">
+            <h3 className="pa-section-title">Additional Notes</h3>
+            <p className="pa-notes-text">{quote.notes}</p>
           </div>
         )}
 
         {/* Terms */}
-        <div className="terms-section">
-          <h3 className="section-title">Terms & Conditions</h3>
-          <div className="terms-grid">
+        <div className="pa-terms">
+          <h3 className="pa-section-title">Terms & Conditions</h3>
+          <div className="pa-terms-grid">
             {isMultiService
               ? DEFAULT_GENERAL_TERMS.map((term, i) => (
-                  <div className="term-item" key={i}>
-                    <div className="term-icon">✓</div>
-                    <div className="term-content">
-                      <p>{term}</p>
-                    </div>
+                  <div className="pa-term-item" key={i}>
+                    <span className="pa-term-check">&#10003;</span>
+                    <span>{term}</span>
                   </div>
                 ))
               : (quote.termsAndConditions
@@ -191,54 +178,36 @@ export const PremiumAgency: React.FC<TemplateProps> = ({ data, editable: _editab
                       .map(t => t.trim())
                       .filter(Boolean)
                       .map((term, i) => (
-                        <div className="term-item" key={i}>
-                          <div className="term-icon">✓</div>
-                          <div className="term-content">
-                            <p>{term}</p>
-                          </div>
+                        <div className="pa-term-item" key={i}>
+                          <span className="pa-term-check">&#10003;</span>
+                          <span>{term}</span>
                         </div>
                       ))
-                  : <div className="term-item"><div className="term-icon">✓</div><div className="term-content"><p>Standard terms and conditions apply</p></div></div>
+                  : <div className="pa-term-item"><span className="pa-term-check">&#10003;</span><span>Standard terms and conditions apply</span></div>
                 )
             }
           </div>
         </div>
 
-        {/* Signature */}
-        <div className="signature-section">
-          <div className="signature-block">
-            <h4>Acceptance & Authorization</h4>
-            <p className="signature-text">
-              By signing below, you accept the terms and conditions outlined in this quotation
-            </p>
-            <div className="signature-areas">
-              <div className="signature-area">
-                <div className="signature-line"></div>
-                <p className="signature-label">Authorized by {company.name}</p>
-                <p className="signature-date">Date: {formatDate(new Date())}</p>
-              </div>
-              <div className="signature-area">
-                <div className="signature-line"></div>
-                <p className="signature-label">Client Signature</p>
-                <p className="signature-date">Date: _______________</p>
-              </div>
-            </div>
-          </div>
+        {/* System Generated Notice */}
+        <div className="pa-notice">
+          <p>This is a system-generated quotation and does not require a signature.</p>
+          <p className="pa-notice-by">Generated by {company.name}</p>
         </div>
       </div>
 
       {/* Footer */}
-      <div className="footer">
+      <div className="pa-footer">
         <p>Thank you for considering {company.name} for your project</p>
       </div>
-      </div>
+    </div>
 
-      {/* Reference Images from Proposal - only show for single service */}
-      {!isMultiService && (
-        <div id="pdf-page-2">
-          <ReferenceImages proposalPages={data.proposalPages} items={quote.items} />
-        </div>
-      )}
+    {/* Reference Images from Proposal - only show for single service */}
+    {!isMultiService && (
+      <div id="pdf-page-2">
+        <ReferenceImages proposalPages={data.proposalPages} items={quote.items} />
+      </div>
+    )}
     
     {/* Multi-Service: Individual Service Pages */}
     {isMultiService && serviceGroups.map((group, groupIndex) => {
@@ -250,175 +219,148 @@ export const PremiumAgency: React.FC<TemplateProps> = ({ data, editable: _editab
         <React.Fragment key={groupIndex}>
           <div style={{ pageBreakBefore: 'always' }} />
           <div id={`pdf-service-${groupIndex}`} className="template-premium-agency">
-            <div className="hero-header">
-              <div className="header-overlay">
+            {/* Header */}
+            <div className="pa-header">
+              <div className="pa-header-left">
                 {company.logo && (
-                  <img src={company.logo} alt={company.name} className="hero-logo" />
+                  <img src={company.logo} alt={company.name} className="pa-logo" />
                 )}
-                <h1 className="hero-title">{group.serviceType} BRANDING</h1>
-                <p className="hero-subtitle">Detailed Service Breakdown</p>
+                <div className="pa-company-name">{company.name}</div>
+              </div>
+              <div className="pa-header-right">
+                <h1 className="pa-title">{group.serviceType}</h1>
+                <div className="pa-title-rule"></div>
+                <p className="pa-subtitle">Service Breakdown</p>
               </div>
             </div>
 
-            <div className="content-wrapper">
-              <div className="info-bar">
-                <div className="info-item">
-                  <span className="info-label">Quote #</span>
-                  <span className="info-value">{quote.quoteNumber}</span>
+            {/* Info Strip */}
+            <div className="pa-info-strip">
+              <div className="pa-info-item">
+                <span className="pa-info-label">Quote No.</span>
+                <span className="pa-info-value">{quote.quoteNumber}</span>
+              </div>
+              <div className="pa-info-item">
+                <span className="pa-info-label">Date Issued</span>
+                <span className="pa-info-value">{formatDate(quote.date)}</span>
+              </div>
+              <div className="pa-info-item">
+                <span className="pa-info-label">Valid Until</span>
+                <span className="pa-info-value">{formatDate(quote.validUntil)}</span>
+              </div>
+            </div>
+
+            <div className="pa-body">
+              {/* Parties */}
+              <div className="pa-parties">
+                <div className="pa-party-card">
+                  <div className="pa-party-label">FROM</div>
+                  <p className="pa-party-name">{company.name}</p>
+                  <p className="pa-party-detail">{company.address}</p>
+                  {company.phone && <p className="pa-party-detail">T: {company.phone}</p>}
+                  {company.email && <p className="pa-party-detail">E: {company.email}</p>}
                 </div>
-                <div className="info-item">
-                  <span className="info-label">Issued</span>
-                  <span className="info-value">{formatDate(quote.date)}</span>
-                </div>
-                <div className="info-item">
-                  <span className="info-label">Valid Until</span>
-                  <span className="info-value">{formatDate(quote.validUntil)}</span>
+                <div className="pa-party-card pa-party-accent">
+                  <div className="pa-party-label">TO</div>
+                  <p className="pa-party-name">{client.name}</p>
+                  {client.company && <p className="pa-party-detail">{client.company}</p>}
+                  {client.email && <p className="pa-party-detail">E: {client.email}</p>}
+                  {client.phone && <p className="pa-party-detail">T: {client.phone}</p>}
                 </div>
               </div>
 
-              {/* Two Column Layout */}
-              <div className="two-column-section">
-                <div className="column">
-                  <div className="card">
-                    <h3 className="card-title">From</h3>
-                    <div className="card-content">
-                      <p className="entity-name">{company.name}</p>
-                      <p>{company.address}</p>
-                      {company.phone && <p>T: {company.phone}</p>}
-                      {company.email && <p>E: {company.email}</p>}
-                    </div>
+              {/* Items Table */}
+              <div className="pa-section">
+                <h3 className="pa-section-title">{group.serviceType} Branding Details</h3>
+                <table className="pa-table">
+                  <thead>
+                    <tr>
+                      <th className="pa-col-num">#</th>
+                      <th className="pa-col-desc">Description</th>
+                      <th className="pa-col-qty">Qty</th>
+                      <th className="pa-col-rate">Rate</th>
+                      <th className="pa-col-amt">Amount</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {group.items.map((item, index) => (
+                      <tr key={index}>
+                        <td className="pa-cell-num">{String(index + 1).padStart(2, '0')}</td>
+                        <td className="pa-cell-desc">
+                          <strong>{item.description}</strong>
+                          {item.details && <div className="pa-item-details">{item.details}</div>}
+                        </td>
+                        <td className="pa-cell-qty">{item.quantity}</td>
+                        <td className="pa-cell-rate">{formatCurrency(item.rate)}</td>
+                        <td className="pa-cell-amt">{formatCurrency(item.total)}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+
+              {/* Summary */}
+              <div className="pa-summary">
+                <div className="pa-summary-card">
+                  <div className="pa-summary-row">
+                    <span>Subtotal</span>
+                    <span>{formatCurrency(groupSubtotal)}</span>
                   </div>
-                </div>
-                <div className="column">
-                  <div className="card card-accent">
-                    <h3 className="card-title">To</h3>
-                    <div className="card-content">
-                      <p className="entity-name">{client.name}</p>
-                      {client.company && <p>{client.company}</p>}
-                      {client.email && <p>E: {client.email}</p>}
-                      {client.phone && <p>T: {client.phone}</p>}
-                      {client.address && <p>{client.address}</p>}
+                  {quote.gstEnabled && (
+                    <div className="pa-summary-row">
+                      <span>GST ({quote.gstPercentage}%)</span>
+                      <span>{formatCurrency(groupGST)}</span>
                     </div>
-                  </div>
-                </div>
-              </div>
-
-              <div className="services-section">
-                <h2 className="section-title">{group.serviceType} Branding Details</h2>
-                <div className="services-list">
-                  {group.items.map((item, index) => (
-                    <div key={index} className="service-item">
-                      <div className="service-header">
-                        <span className="service-number">{String(index + 1).padStart(2, '0')}</span>
-                        <div className="service-content">
-                          <h4 className="service-name">{item.description}</h4>
-                          {item.details && <p className="service-details">{item.details}</p>}
-                        </div>
-                      </div>
-                      <div className="service-pricing">
-                        <div className="pricing-detail">
-                          <span className="pricing-label">Quantity</span>
-                          <span className="pricing-value">{item.quantity}</span>
-                        </div>
-                        <div className="pricing-detail">
-                          <span className="pricing-label">Rate</span>
-                          <span className="pricing-value">{formatCurrency(item.rate)}</span>
-                        </div>
-                        <div className="pricing-detail total-detail">
-                          <span className="pricing-label">Total</span>
-                          <span className="pricing-value">{formatCurrency(item.total)}</span>
-                        </div>
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              </div>
-
-              <div className="summary-section">
-                <div className="summary-card">
-                  <h3 className="summary-title">Service Total</h3>
-                  <div className="summary-rows">
-                    <div className="summary-row">
-                      <span className="summary-label">Subtotal</span>
-                      <span className="summary-value">{formatCurrency(groupSubtotal)}</span>
-                    </div>
-                    {quote.gstEnabled && (
-                      <div className="summary-row">
-                        <span className="summary-label">GST ({quote.gstPercentage}%)</span>
-                        <span className="summary-value">{formatCurrency(groupGST)}</span>
-                      </div>
-                    )}
-                    <div className="summary-row summary-total">
-                      <span className="summary-label">Total</span>
-                      <span className="summary-value">{formatCurrency(groupTotal)}</span>
-                    </div>
+                  )}
+                  <div className="pa-summary-row pa-summary-total">
+                    <span>Total</span>
+                    <span>{formatCurrency(groupTotal)}</span>
                   </div>
                 </div>
               </div>
 
               {/* Notes */}
               {quote.notes && (
-                <div className="notes-section">
-                  <h3 className="section-title">Additional Notes</h3>
-                  <div className="notes-content">
-                    <p>{filterNotesByServiceType(quote.notes, group.serviceType)}</p>
-                  </div>
+                <div className="pa-notes">
+                  <h3 className="pa-section-title">Additional Notes</h3>
+                  <p className="pa-notes-text">{filterNotesByServiceType(quote.notes, group.serviceType)}</p>
                 </div>
               )}
 
-              {/* Terms - Service Specific */}
-              <div className="terms-section">
-                <h3 className="section-title">Terms & Conditions</h3>
-                <div className="terms-grid">
+              {/* Terms */}
+              <div className="pa-terms">
+                <h3 className="pa-section-title">Terms & Conditions</h3>
+                <div className="pa-terms-grid">
                   {(group.termsAndConditions || quote.termsAndConditions)
                     ? (group.termsAndConditions
                         ? group.termsAndConditions.split('\n').map((t: string) => t.trim().replace(/^[•\-\*]\s*/, '').trim()).filter(Boolean)
                         : filterTermsByServiceType(quote.termsAndConditions, group.serviceType)
                       ).map((term, i) => (
-                        <div className="term-item" key={i}>
-                          <div className="term-icon">✓</div>
-                          <div className="term-content">
-                            <p>{term}</p>
-                          </div>
+                        <div className="pa-term-item" key={i}>
+                          <span className="pa-term-check">&#10003;</span>
+                          <span>{term}</span>
                         </div>
                       ))
-                    : <div className="term-item"><div className="term-icon">✓</div><div className="term-content"><p>Standard terms and conditions apply</p></div></div>
+                    : <div className="pa-term-item"><span className="pa-term-check">&#10003;</span><span>Standard terms and conditions apply</span></div>
                   }
                 </div>
               </div>
 
-              {/* Signature */}
-              <div className="signature-section">
-                <div className="signature-block">
-                  <h4>Acceptance & Authorization</h4>
-                  <p className="signature-text">
-                    By signing below, you accept the terms and conditions for {group.serviceType.toLowerCase()} branding services outlined in this quotation
-                  </p>
-                  <div className="signature-areas">
-                    <div className="signature-area">
-                      <div className="signature-line"></div>
-                      <p className="signature-label">Authorized by {company.name}</p>
-                      <p className="signature-date">Date: {formatDate(new Date())}</p>
-                    </div>
-                    <div className="signature-area">
-                      <div className="signature-line"></div>
-                      <p className="signature-label">Client Signature</p>
-                      <p className="signature-date">Date: _______________</p>
-                    </div>
-                  </div>
-                </div>
+              {/* System Generated Notice */}
+              <div className="pa-notice">
+                <p>This is a system-generated quotation and does not require a signature.</p>
+                <p className="pa-notice-by">Generated by {company.name}</p>
               </div>
             </div>
 
-              {/* Footer */}
-              <div className="footer">
-                <p>{company.name} - Professional {group.serviceType} Branding Services</p>
-              </div>
-              </div>
+            <div className="pa-footer">
+              <p>{company.name} - Professional {group.serviceType} Branding Services</p>
+            </div>
+          </div>
 
-              <div id={`pdf-service-ref-${groupIndex}`}>
-                <ReferenceImages proposalPages={data.proposalPages} items={group.items} />
-              </div>
+          <div id={`pdf-service-ref-${groupIndex}`}>
+            <ReferenceImages proposalPages={data.proposalPages} items={group.items} />
+          </div>
         </React.Fragment>
       );
     })}
