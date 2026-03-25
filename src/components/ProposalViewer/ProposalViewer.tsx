@@ -39,6 +39,7 @@ const ProposalViewer: React.FC = () => {
   const borderColor = useColorModeValue('gray.200', 'gray.600');
   const bgColor = useColorModeValue('white', 'gray.700');
   const isMobile = useBreakpointValue({ base: true, md: false });
+  const [showAllPages, setShowAllPages] = useState(false);
 
   const measureContainer = useCallback(() => {
     if (pdfContainerRef.current) {
@@ -256,7 +257,7 @@ const ProposalViewer: React.FC = () => {
                 },
               }}
             >
-              {Array.from({ length: Math.min(proposal.pageCount, 10) }, (_, i) => i + 1).map((pageNum) => (
+              {Array.from({ length: showAllPages ? proposal.pageCount : Math.min(proposal.pageCount, 10) }, (_, i) => i + 1).map((pageNum) => (
                 <Box
                   key={pageNum}
                   cursor="pointer"
@@ -306,9 +307,16 @@ const ProposalViewer: React.FC = () => {
                   border="2px dashed"
                   borderColor="gray.300"
                   flexShrink={0}
+                  cursor="pointer"
+                  onClick={() => setShowAllPages(!showAllPages)}
+                  _hover={{
+                    bg: 'gray.200',
+                    borderColor: '#750926',
+                  }}
+                  transition="all 0.2s"
                 >
-                  <Text fontSize="sm" color="gray.600" fontWeight="500">
-                    +{proposal.pageCount - 10} more
+                  <Text fontSize="sm" color="gray.600" fontWeight="500" textAlign="center" px={1}>
+                    {showAllPages ? 'Show less' : `+${proposal.pageCount - 10} more`}
                   </Text>
                 </Center>
               )}
