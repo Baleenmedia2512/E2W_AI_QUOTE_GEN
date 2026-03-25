@@ -199,6 +199,7 @@ export const ModernSales: React.FC<TemplateProps> = ({ data, editable: _editable
       <div className="ms-footer">
         <p>Thank you for your business | {company.name}</p>
         {company.website && <p>{company.website}</p>}
+        <p className="ms-footer-company">{company.name}</p>
       </div>
     </div>
     
@@ -354,6 +355,7 @@ export const ModernSales: React.FC<TemplateProps> = ({ data, editable: _editable
 
             <div className="ms-footer">
               <p>{company.name} - Professional {group.serviceType} Branding Services</p>
+              <p className="ms-footer-company">{company.name}</p>
             </div>
           </div>
 
