@@ -10,7 +10,8 @@ Analyze the conversation and determine if the user wants to generate a quote. If
         {
           "description": "Item description",
           "quantity": 1,
-          "unitPrice": 0
+          "unitPrice": 0,
+          "duration": 1
         }
       ]
     }
@@ -18,6 +19,8 @@ Analyze the conversation and determine if the user wants to generate a quote. If
   "deliveryTimeline": "Estimated timeline",
   "termsAndConditions": "EXACT terms copied from the proposal document as bullet points"
 }
+
+IMPORTANT: When prices are per-month and user requests multiple months, include "duration" field with the number of months. Total = quantity × unitPrice × duration.
 
 If the user is asking a general question, provide a helpful answer without generating a quote structure.`;
 
@@ -46,7 +49,8 @@ Your workflow:
         {
           "description": "Specific item description with details",
           "quantity": <number from user request or proposal>,
-          "unitPrice": <price from proposal or standard rate>
+          "unitPrice": <price from proposal or standard rate>,
+          "duration": <number of months if applicable, omit or set to 1 for one-time pricing>
         }
       ],
       "termsAndConditions": "For MULTI-SERVICE quotes: EXACT service-specific terms for THIS section only, one per line. For SINGLE-SERVICE quotes: leave empty string."
@@ -116,7 +120,14 @@ RULES:
   * If there is a minimum quantity mentioned in the proposal (e.g., "Min. Quantity: 10 buses"), include that in the notes.
   * For monthly/recurring prices, the description must clearly state it is a monthly rate. For one-time prices, keep as-is.
   * Double-check: Before outputting, verify each unitPrice matches the EXACT number in the specific proposal section for the requested service type.
-  * COMMON MISTAKE TO AVOID: The proposal often shows prices in a table with columns like "DISPLAY PRICE" and "PRINTING & FIXING PRICE" and "GRAND TOTAL". The GRAND TOTAL is the sum of both columns for the minimum quantity - do NOT use the grand total or any derived/calculated number as a unit price. Use ONLY the individual per-unit prices from each column. For example, if Display is ₹14,000 per Bus and Printing is ₹5,000 per Bus, the unitPrices should be 14000 and 5000 respectively - NOT 19000 (which is their sum).`;
+  * COMMON MISTAKE TO AVOID: The proposal often shows prices in a table with columns like "DISPLAY PRICE" and "PRINTING & FIXING PRICE" and "GRAND TOTAL". The GRAND TOTAL is the sum of both columns for the minimum quantity - do NOT use the grand total or any derived/calculated number as a unit price. Use ONLY the individual per-unit prices from each column. For example, if Display is ₹14,000 per Bus and Printing is ₹5,000 per Bus, the unitPrices should be 14000 and 5000 respectively - NOT 19000 (which is their sum).
+- CRITICAL DURATION/MONTHS RULES:
+  * When the proposal prices are "per month" (e.g., "per frame month", "per screen month", "per bus per month") and the user requests a multi-month campaign (e.g., "3 months", "6 months"), you MUST include the "duration" field in the line item JSON.
+  * The "duration" field represents the number of months. The total for each line item will be calculated as: quantity × unitPrice × duration.
+  * Example: User asks for "100 apartment lift branding 3 months". Proposal says ₹2,500 per frame month. The line item should be: {"description": "Apartment Lift Branding - Display Price (per frame month)", "quantity": 100, "unitPrice": 2500, "duration": 3}. This gives total = 100 × 2500 × 3 = ₹750,000.
+  * If the user does NOT specify a duration or says "1 month", omit the "duration" field or set it to 1.
+  * NEVER multiply the duration into the quantity or the unitPrice. Keep them separate: quantity = number of units, unitPrice = per-unit per-month price from proposal, duration = number of months.
+  * The description should keep saying "per month" to reflect the actual rate. The duration multiplier is handled separately.`;
 
 export const SAMPLE_PROMPTS = [
   "Generate quote for 100 auto full branding",

@@ -106,12 +106,14 @@ const ChatInterface: React.FC = () => {
               description = `${sectionTitle} - ${description}`;
             }
             
+            const duration = item.duration && item.duration > 1 ? item.duration : undefined;
             return {
               id: `${sectionIndex}-${lineIndex}`,
               description: description,
               quantity: item.quantity || 1,
               rate: item.unitPrice || 0,
-              total: (item.quantity || 1) * (item.unitPrice || 0),
+              duration: duration,
+              total: (item.quantity || 1) * (item.unitPrice || 0) * (duration || 1),
               // Only store terms on the first line item of each section to avoid duplicate textareas
               termsAndConditions: lineIndex === 0 ? (section.termsAndConditions || undefined) : undefined
             };

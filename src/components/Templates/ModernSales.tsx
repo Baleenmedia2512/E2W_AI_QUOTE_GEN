@@ -127,7 +127,7 @@ export const ModernSales: React.FC<TemplateProps> = ({ data, editable: _editable
                 <div className="item-pricing">
                   <div className="pricing-row">
                     <span className="pricing-text">
-                      {item.quantity} × {formatCurrency(item.rate)}
+                      {item.quantity} × {formatCurrency(item.rate)}{item.duration && item.duration > 1 ? ` × ${item.duration} months` : ''}
                     </span>
                     <span className="pricing-amount">{formatCurrency(item.total)}</span>
                   </div>

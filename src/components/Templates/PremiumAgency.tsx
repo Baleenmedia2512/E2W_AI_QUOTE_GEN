@@ -123,6 +123,12 @@ export const PremiumAgency: React.FC<TemplateProps> = ({ data, editable: _editab
                     <span className="pricing-label">Rate</span>
                     <span className="pricing-value">{formatCurrency(item.rate)}</span>
                   </div>
+                  {item.duration && item.duration > 1 && (
+                    <div className="pricing-detail">
+                      <span className="pricing-label">Months</span>
+                      <span className="pricing-value">{item.duration}</span>
+                    </div>
+                  )}
                   <div className="pricing-detail total-detail">
                     <span className="pricing-label">Total</span>
                     <span className="pricing-value">{formatCurrency(item.total)}</span>
