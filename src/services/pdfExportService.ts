@@ -177,66 +177,104 @@ export const exportToPDF = async (
     const pdfHeight = 297; // mm
     let pageCount = 0;
 
-    // --- SECTION 1: Quotation Content (Page 1) ---
-    console.log('📄 Capturing quotation content...');
-    const quotationCanvas = await captureSectionAtA4('pdf-page-1');
-    
-    if (quotationCanvas) {
-      const imgData1 = quotationCanvas.toDataURL('image/png');
-      const aspectRatio1 = quotationCanvas.height / quotationCanvas.width;
-      const imgHeight1 = pdfWidth * aspectRatio1;
-      
-      // Handle multi-page for quotation if needed
-      pdf.addImage(imgData1, 'PNG', 0, 0, pdfWidth, imgHeight1);
-      pageCount++;
-      console.log(`✅ Page 1 added (quotation): ${pdfWidth}×${Math.round(imgHeight1)}mm`);
-      
-      // If quotation content overflows, add pages
-      let remainingHeight = imgHeight1 - pdfHeight;
-      let yOffset = -pdfHeight;
-      while (remainingHeight > 0) {
+    // Helper to add a captured canvas to the PDF
+    // Each section (summary, service detail, reference images) is designed as ONE page.
+    // Always scale to fit on a single A4 page unless content is more than 2x A4 height.
+    const addCanvasToPDF = (canvas: HTMLCanvasElement, label: string, isFirstPage: boolean) => {
+      if (!isFirstPage) {
         pdf.addPage();
-        pageCount++;
-        pdf.addImage(imgData1, 'PNG', 0, yOffset, pdfWidth, imgHeight1);
-        yOffset -= pdfHeight;
-        remainingHeight -= pdfHeight;
       }
-    } else {
-      console.warn('⚠️ Quotation section not found, using fallback full capture');
-      // Fallback to original method if sections not found
-      await legacyFullCapture(element, pdf, pdfWidth, pdfHeight);
-      pageCount = 1;
-    }
+      pageCount++;
+      const imgData = canvas.toDataURL('image/png');
+      const aspectRatio = canvas.height / canvas.width;
+      const imgHeight = pdfWidth * aspectRatio;
+      
+      if (imgHeight <= pdfHeight) {
+        // Content fits within A4 — render as-is
+        pdf.addImage(imgData, 'PNG', 0, 0, pdfWidth, imgHeight);
+        console.log(`✅ Page ${pageCount} added (${label}): ${pdfWidth}×${Math.round(imgHeight)}mm`);
+      } else if (imgHeight <= pdfHeight * 1.5) {
+        // Content overflows but is less than 1.5x A4 — scale to fit on one page
+        const scale = pdfHeight / imgHeight;
+        const scaledWidth = pdfWidth * scale;
+        const xOffset = (pdfWidth - scaledWidth) / 2; // Center horizontally
+        pdf.addImage(imgData, 'PNG', xOffset, 0, scaledWidth, pdfHeight);
+        console.log(`✅ Page ${pageCount} added (${label}): scaled to fit (${Math.round(imgHeight - pdfHeight)}mm overflow)`);
+      } else {
+        // Content is very tall (>1.5x A4) — split across multiple pages
+        pdf.addImage(imgData, 'PNG', 0, 0, pdfWidth, imgHeight);
+        console.log(`✅ Page ${pageCount} added (${label}): ${pdfWidth}×${Math.round(imgHeight)}mm`);
+        
+        let remainingHeight = imgHeight - pdfHeight;
+        let yOffset = -pdfHeight;
+        while (remainingHeight > 0) {
+          pdf.addPage();
+          pageCount++;
+          pdf.addImage(imgData, 'PNG', 0, yOffset, pdfWidth, imgHeight);
+          yOffset -= pdfHeight;
+          remainingHeight -= pdfHeight;
+          console.log(`✅ Additional page ${pageCount} added for overflow`);
+        }
+      }
+    };
 
-    // --- SECTION 2: Reference Images (Page 2+) ---
-    console.log('📄 Checking for reference images...');
-    const referenceCanvas = await captureSectionAtA4('pdf-page-2');
-    
-    if (referenceCanvas && referenceCanvas.height > 10) { // Check if section has content
-      pdf.addPage();
-      pageCount++;
-      
-      const imgData2 = referenceCanvas.toDataURL('image/png');
-      const aspectRatio2 = referenceCanvas.height / referenceCanvas.width;
-      const imgHeight2 = pdfWidth * aspectRatio2;
-      
-      pdf.addImage(imgData2, 'PNG', 0, 0, pdfWidth, imgHeight2);
-      console.log(`✅ Page ${pageCount} added (references): ${pdfWidth}×${Math.round(imgHeight2)}mm`);
-      
-      // If reference section is tall, handle multi-page
-      let remainingHeight = imgHeight2 - pdfHeight;
-      let yOffset = -pdfHeight;
-      
-      while (remainingHeight > 0) {
-        pdf.addPage();
-        pageCount++;
-        pdf.addImage(imgData2, 'PNG', 0, yOffset, pdfWidth, imgHeight2);
-        yOffset -= pdfHeight;
-        remainingHeight -= pdfHeight;
-        console.log(`✅ Additional page ${pageCount} added for overflow`);
+    // Check if this is a multi-service quote (has pdf-page-summary)
+    const isMultiService = !!document.getElementById('pdf-page-summary');
+
+    if (isMultiService) {
+      // --- MULTI-SERVICE QUOTE ---
+      console.log('📄 Multi-service quote detected');
+
+      // Capture summary page
+      const summaryCanvas = await captureSectionAtA4('pdf-page-summary');
+      if (summaryCanvas) {
+        addCanvasToPDF(summaryCanvas, 'summary', true);
+      }
+
+      // Capture each service group page + its reference images
+      let serviceIndex = 0;
+      while (true) {
+        const serviceCanvas = await captureSectionAtA4(`pdf-service-${serviceIndex}`);
+        if (!serviceCanvas) break; // No more service pages
+
+        addCanvasToPDF(serviceCanvas, `service-${serviceIndex}`, pageCount === 0);
+
+        // Capture reference images for this service
+        const refCanvas = await captureSectionAtA4(`pdf-service-ref-${serviceIndex}`);
+        if (refCanvas && refCanvas.height > 10) {
+          addCanvasToPDF(refCanvas, `service-ref-${serviceIndex}`, false);
+        }
+
+        serviceIndex++;
+      }
+
+      if (pageCount === 0) {
+        console.warn('⚠️ No multi-service sections captured, using fallback');
+        await legacyFullCapture(element, pdf, pdfWidth, pdfHeight);
+        pageCount = 1;
       }
     } else {
-      console.log('ℹ️ No reference images section found or section is empty');
+      // --- SINGLE-SERVICE QUOTE (original behavior) ---
+      console.log('📄 Capturing quotation content...');
+      const quotationCanvas = await captureSectionAtA4('pdf-page-1');
+      
+      if (quotationCanvas) {
+        addCanvasToPDF(quotationCanvas, 'quotation', true);
+      } else {
+        console.warn('⚠️ Quotation section not found, using fallback full capture');
+        await legacyFullCapture(element, pdf, pdfWidth, pdfHeight);
+        pageCount = 1;
+      }
+
+      // Reference Images (Page 2+)
+      console.log('📄 Checking for reference images...');
+      const referenceCanvas = await captureSectionAtA4('pdf-page-2');
+      
+      if (referenceCanvas && referenceCanvas.height > 10) {
+        addCanvasToPDF(referenceCanvas, 'references', false);
+      } else {
+        console.log('ℹ️ No reference images section found or section is empty');
+      }
     }
 
     console.log(`📄 PDF created with ${pageCount} pages`);

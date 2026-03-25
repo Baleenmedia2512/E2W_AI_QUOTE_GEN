@@ -188,7 +188,7 @@ export const CorporateMinimal: React.FC<TemplateProps> = ({ data, editable: _edi
   return (
     <>
       {/* Page 1: Summary Page */}
-      <div className="template-corporate-minimal">
+      <div id="pdf-page-summary" className="template-corporate-minimal">
         {renderHeader()}
         {renderClientDetails()}
 
@@ -272,7 +272,7 @@ export const CorporateMinimal: React.FC<TemplateProps> = ({ data, editable: _edi
           <React.Fragment key={groupIndex}>
             <div style={{ pageBreakBefore: 'always' }} />
             <>
-              <div id="pdf-page-1" className="template-corporate-minimal">
+              <div id={`pdf-service-${groupIndex}`} className="template-corporate-minimal">
                 {renderHeader()}
                 {renderClientDetails()}
 
@@ -353,7 +353,7 @@ export const CorporateMinimal: React.FC<TemplateProps> = ({ data, editable: _edi
               </div>
 
               {/* Service-specific reference images */}
-              <div id="pdf-page-2">
+              <div id={`pdf-service-ref-${groupIndex}`}>
                 <ReferenceImages proposalPages={data.proposalPages} items={group.items} />
               </div>
             </>

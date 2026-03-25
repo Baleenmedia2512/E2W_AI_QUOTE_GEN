@@ -228,7 +228,7 @@ export const ModernSales: React.FC<TemplateProps> = ({ data, editable: _editable
       return (
         <React.Fragment key={groupIndex}>
           <div style={{ pageBreakBefore: 'always' }} />
-          <div id="pdf-page-1" className="template-modern-sales">
+          <div id={`pdf-service-${groupIndex}`} className="template-modern-sales">
             <div className="top-bar">
               <div className="bar-section">
                 {company.logo && (
@@ -375,7 +375,7 @@ export const ModernSales: React.FC<TemplateProps> = ({ data, editable: _editable
             </div>
             </div>
 
-            <div id="pdf-page-2">
+            <div id={`pdf-service-ref-${groupIndex}`}>
               <ReferenceImages proposalPages={data.proposalPages} items={group.items} />
             </div>
         </React.Fragment>
