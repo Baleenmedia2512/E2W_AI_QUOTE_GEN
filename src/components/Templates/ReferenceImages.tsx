@@ -585,14 +585,47 @@ export const ReferenceImages: React.FC<ReferenceImagesProps> = ({ proposalPages,
     return filtered;
   }, [proposalPages, items]);
 
+  // Separate filtered pages into design specification pages and reference image pages
+  const { designSpecPages, referenceImagePages } = useMemo(() => {
+    const designSpec: ExtractedPage[] = [];
+    const reference: ExtractedPage[] = [];
+    
+    for (const page of filteredPages) {
+      const text = page.text
+        .toLowerCase()
+        .replace(/\s*\|\s*/g, '')
+        .replace(/\s+/g, ' ');
+      
+      const isDesignSpec = text.includes('design specification') ||
+                           text.includes('design specifications') ||
+                           text.includes('display area');
+      
+      if (isDesignSpec) {
+        designSpec.push(page);
+      } else {
+        reference.push(page);
+      }
+    }
+    
+    return { designSpecPages: designSpec, referenceImagePages: reference };
+  }, [filteredPages]);
+
   // Group images into pairs (max 2 per page)
-  const groupedPages = useMemo(() => {
+  const groupedDesignSpec = useMemo(() => {
     const groups: ExtractedPage[][] = [];
-    for (let i = 0; i < filteredPages.length; i += 2) {
-      groups.push(filteredPages.slice(i, i + 2));
+    for (let i = 0; i < designSpecPages.length; i += 2) {
+      groups.push(designSpecPages.slice(i, i + 2));
     }
     return groups;
-  }, [filteredPages]);
+  }, [designSpecPages]);
+
+  const groupedReferenceImages = useMemo(() => {
+    const groups: ExtractedPage[][] = [];
+    for (let i = 0; i < referenceImagePages.length; i += 2) {
+      groups.push(referenceImagePages.slice(i, i + 2));
+    }
+    return groups;
+  }, [referenceImagePages]);
 
   if (!proposalPages || proposalPages.length === 0) {
     console.log('❌ ReferenceImages: No proposal pages, returning null');
@@ -631,23 +664,49 @@ export const ReferenceImages: React.FC<ReferenceImagesProps> = ({ proposalPages,
       {/* Structural spacer to force top spacing in PDF */}
       <div className="pdf-top-spacer" style={{ height: '80px', width: '100%', display: 'block' }}></div>
       
-      <h3 className="reference-images-title">Reference Images from Proposal</h3>
-      <div className="reference-images-grid">
-        {groupedPages.map((group, groupIndex) => (
-          <div key={`group-${groupIndex}`} className="reference-image-row">
-            {group.map((page) => (
-              <div key={page.pageNumber} className="reference-image-item">
-                <img
-                  src={page.imageDataUrl}
-                  alt={`Proposal page ${page.pageNumber}`}
-                  className="reference-image"
-                />
-                <span className="reference-image-caption">Page {page.pageNumber}</span>
+      {groupedDesignSpec.length > 0 && (
+        <>
+          <h3 className="reference-images-title">Design Specification</h3>
+          <div className="reference-images-grid">
+            {groupedDesignSpec.map((group, groupIndex) => (
+              <div key={`design-spec-group-${groupIndex}`} className="reference-image-row">
+                {group.map((page) => (
+                  <div key={page.pageNumber} className="reference-image-item">
+                    <img
+                      src={page.imageDataUrl}
+                      alt={`Design specification - Page ${page.pageNumber}`}
+                      className="reference-image"
+                    />
+                    <span className="reference-image-caption">Page {page.pageNumber}</span>
+                  </div>
+                ))}
               </div>
             ))}
           </div>
-        ))}
-      </div>
+        </>
+      )}
+
+      {groupedReferenceImages.length > 0 && (
+        <>
+          <h3 className="reference-images-title">Reference Images from Proposal</h3>
+          <div className="reference-images-grid">
+            {groupedReferenceImages.map((group, groupIndex) => (
+              <div key={`ref-group-${groupIndex}`} className="reference-image-row">
+                {group.map((page) => (
+                  <div key={page.pageNumber} className="reference-image-item">
+                    <img
+                      src={page.imageDataUrl}
+                      alt={`Proposal page ${page.pageNumber}`}
+                      className="reference-image"
+                    />
+                    <span className="reference-image-caption">Page {page.pageNumber}</span>
+                  </div>
+                ))}
+              </div>
+            ))}
+          </div>
+        </>
+      )}
     </div>
   );
 };
