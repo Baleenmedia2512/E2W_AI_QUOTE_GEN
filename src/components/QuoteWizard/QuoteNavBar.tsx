@@ -40,12 +40,12 @@ const QuoteNavBar: React.FC = () => {
     <Box 
       bg="white" 
       borderBottom="1px solid" 
-      borderColor="gray.200" 
+      borderColor="gray.100" 
       py={4}
       position="sticky"
       top={0}
       zIndex={100}
-      boxShadow="sm"
+      boxShadow="0 1px 3px rgba(0, 0, 0, 0.04)"
     >
       <Container maxW="1280px">
         <Flex justify="space-between" align="center">
@@ -56,16 +56,17 @@ const QuoteNavBar: React.FC = () => {
             icon={<HamburgerIcon />}
             variant="ghost"
             onClick={onOpen}
-            color="gray.700"
+            color="gray.600"
+            borderRadius="12px"
             _hover={{ bg: 'gray.100' }}
           />
 
-          {/* App Title */}
+          {/* App Title with Gradient */}
           <Text 
             fontSize="xl" 
-            fontWeight="700" 
-            color="gray.900"
-            fontFamily="'DM Sans', sans-serif"
+            fontWeight="800" 
+            color="brand.500"
+            letterSpacing="-0.02em"
           >
             Create Quote
           </Text>
@@ -80,7 +81,8 @@ const QuoteNavBar: React.FC = () => {
                 onClick={() => handleNavigate(item.path)}
                 fontWeight="500"
                 color="gray.700"
-                _hover={{ bg: 'gray.100' }}
+                borderRadius="12px"
+                _hover={{ bg: 'brand.50', color: 'brand.600' }}
               >
                 {item.label}
               </Button>
@@ -93,7 +95,8 @@ const QuoteNavBar: React.FC = () => {
             icon={colorMode === 'light' ? <FiMoon /> : <FiSun />}
             onClick={toggleColorMode}
             variant="ghost"
-            color="gray.700"
+            color="gray.600"
+            borderRadius="12px"
             _hover={{ bg: 'gray.100' }}
           />
         </Flex>

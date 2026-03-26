@@ -6,6 +6,16 @@
   --safe-area-bottom: env(safe-area-inset-bottom, 0px);
   --safe-area-left: env(safe-area-inset-left, 0px);
   --safe-area-right: env(safe-area-inset-right, 0px);
+  
+  /* Modern color variables - Burgundy Theme */
+  --primary-gradient: linear-gradient(135deg, #C91F3D 0%, #A50D29 100%);
+  --primary-color: #C91F3D;
+  --primary-dark: #A50D29;
+  --dark-accent: #1A1D20;
+  --dark-bg: #212529;
+  --surface-shadow: 0 2px 8px rgba(0, 0, 0, 0.06);
+  --hover-shadow: 0 8px 24px rgba(0, 0, 0, 0.12);
+  --card-shadow: 0 4px 12px rgba(0, 0, 0, 0.08);
 }
 
 /* Prevent text size adjustment on orientation change */
@@ -15,25 +25,34 @@ html {
   text-size-adjust: 100%;
 }
 
-/* Smooth scrolling */
+/* Smooth scrolling with native feel */
 html {
   scroll-behavior: smooth;
   -webkit-overflow-scrolling: touch;
 }
 
-/* Base body styles */
+/* Base body styles - Pure white for native feel */
 body {
   margin: 0;
   padding: 0;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
   overscroll-behavior-y: none;
+  background: #FFFFFF !important;
 }
 
 /* Prevent horizontal scroll */
 #root {
   overflow-x: hidden;
   min-height: 100vh;
+  background: #FFFFFF;
+  padding-bottom: 64px; /* Space for bottom nav on mobile */
+}
+
+@media (min-width: 769px) {
+  #root {
+    padding-bottom: 0;
+  }
 }
 
 /* Better box-sizing */
@@ -41,6 +60,7 @@ body {
 *::before,
 *::after {
   box-sizing: border-box;
+  -webkit-tap-highlight-color: transparent;
 }
 
 /* Prevent input zoom on iOS (font-size must be >= 16px) */
@@ -64,10 +84,10 @@ body {
   }
 }
 
-/* Better scrollbar for mobile */
+/* Better scrollbar for mobile - Subtle and native-like */
 ::-webkit-scrollbar {
-  width: 4px;
-  height: 4px;
+  width: 3px;
+  height: 3px;
 }
 
 ::-webkit-scrollbar-track {
@@ -75,17 +95,21 @@ body {
 }
 
 ::-webkit-scrollbar-thumb {
-  background: rgba(0, 0, 0, 0.2);
-  border-radius: 4px;
+  background: rgba(201, 31, 61, 0.2);
+  border-radius: 10px;
 }
 
 @media (min-width: 769px) {
   ::-webkit-scrollbar {
-    width: 8px;
+    width: 6px;
   }
 
   ::-webkit-scrollbar-thumb {
-    background: rgba(0, 0, 0, 0.15);
+    background: rgba(201, 31, 61, 0.15);
+  }
+
+  ::-webkit-scrollbar-thumb:hover {
+    background: rgba(201, 31, 61, 0.3);
   }
 }
 
@@ -94,10 +118,112 @@ body {
   nav,
   .toolbar,
   .preview-toolbar,
-  .mobile-actions {
+  .mobile-actions,
+  button,
+  [role="button"] {
     -webkit-user-select: none;
     user-select: none;
   }
+}
+
+/* Smooth page transitions */
+.page-transition-enter {
+  opacity: 0;
+  transform: translateY(20px);
+}
+
+.page-transition-enter-active {
+  opacity: 1;
+  transform: translateY(0);
+  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+/* Card hover effects */
+.card-interactive {
+  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+  cursor: pointer;
+}
+
+.card-interactive:active {
+  transform: scale(0.98);
+}
+
+/* Native-like button press effect */
+button:active,
+[role="button"]:active {
+  transform: scale(0.96);
+}
+
+/* Floating Action Button style - Burgundy Theme */
+.fab {
+  position: fixed;
+  bottom: calc(80px + env(safe-area-inset-bottom));
+  right: 20px;
+  width: 56px;
+  height: 56px;
+  border-radius: 28px;
+  background: linear-gradient(135deg, #C91F3D 0%, #A50D29 100%);
+  box-shadow: 0 8px 24px rgba(201, 31, 61, 0.4);
+  z-index: 999;
+  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.fab:hover {
+  transform: translateY(-4px);
+  box-shadow: 0 12px 32px rgba(201, 31, 61, 0.5);
+}
+
+.fab:active {
+  transform: scale(0.92);
+}
+
+@media (min-width: 769px) {
+  .fab {
+    bottom: 20px;
+  }
+}
+
+/* Dark Accent Cards */
+.dark-card {
+  background: linear-gradient(135deg, #212529 0%, #1A1D20 100%);
+  color: white;
+  border-radius: 20px;
+  padding: 24px;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.3);
+}
+
+.dark-card-emphasis {
+  background: #0D0E10;
+  color: white;
+  border-radius: 20px;
+  padding: 32px 24px;
+  box-shadow: 0 12px 32px rgba(0, 0, 0, 0.5);
+  position: relative;
+  overflow: hidden;
+}
+
+.dark-card-emphasis::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 3px;
+  background: linear-gradient(90deg, #C91F3D 0%, #FF6B8A 100%);
+}
+
+/* Professional stat cards */
+.stat-card {
+  background: white;
+  border-radius: 16px;
+  padding: 20px;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.06);
+  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.stat-card:hover {
+  transform: translateY(-4px);
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.12);
 }
 
 /* Ensure images are responsive */

@@ -179,189 +179,289 @@ const ChatInterface: React.FC = () => {
   };
 
   return (
-    <Card
-      variant="outline"
-      borderRadius="xl"
-      boxShadow="sm"
-      h={{ base: 'auto', lg: 'calc(100vh - 400px)' }}
-      minH={{ base: '350px', lg: '400px' }}
-      maxH={{ base: 'calc(100vh - 250px)', lg: 'calc(100vh - 300px)' }}
+    <Box
       display="flex"
       flexDirection="column"
-      overflow="hidden"
+      h={{ base: 'auto', lg: 'calc(100vh - 520px)' }}
+      minH={{ base: '350px', lg: '400px' }}
+      maxH={{ base: 'calc(100vh - 250px)', lg: 'calc(100vh - 300px)' }}
     >
-      <CardHeader pb={3}>
-        <Heading size="md" fontWeight="600">AI Assistant</Heading>
-      </CardHeader>
-
-      <CardBody display="flex" flexDirection="column" flex={1} pt={0} overflow="hidden" pb={{ base: 2, md: 4 }}>
-        <VStack align="stretch" spacing={4} flex={1} overflow="hidden">
-          {/* Suggestion Chips */}
-          {messages.length === 0 && (
-            <Box>
-              <Text fontSize="sm" fontWeight="500" color="gray.600" mb={3}>
-                Try asking:
-              </Text>
-              <VStack align="stretch" spacing={2}>
-                {SUGGESTION_PROMPTS.map((prompt, index) => (
-                  <Button
-                    key={index}
-                    variant="outline"
-                    borderColor="#750926"
-                    color="#750926"
-                    size="sm"
-                    justifyContent="flex-start"
-                    textAlign="left"
-                    whiteSpace="normal"
-                    h="auto"
-                    py={2}
-                    px={4}
-                    borderRadius="full"
-                    fontWeight="400"
-                    onClick={() => handleSuggestionClick(prompt)}
-                    _hover={{
-                      bg: '#FFF0F3',
-                      borderColor: '#5a0619',
-                    }}
-                  >
-                    {prompt}
-                  </Button>
-                ))}
-              </VStack>
-            </Box>
-          )}
-
-          {/* AI Response Output Area */}
+      {/* Header - AI Assistant with Online Status */}
+      <HStack
+        justify="space-between"
+        align="center"
+        px={5}
+        py={4}
+        borderBottom="1px solid"
+        borderColor="gray.200"
+      >
+        <HStack spacing={2}>
           <Box
-            flex={1}
-            bg="gray.50"
-            borderRadius="lg"
-            p={{ base: 3, md: 4 }}
-            overflowY="auto"
-            minH="0"
+            bg="purple.500"
+            color="white"
+            w="32px"
+            h="32px"
+            borderRadius="full"
+            display="flex"
+            alignItems="center"
+            justifyContent="center"
+            fontSize="sm"
+            fontWeight="700"
           >
-            {messages.length === 0 ? (
-              <Flex justify="center" align="center" h="full">
-                <Text color="gray.400" fontSize="sm">
-                  {proposal.textContent
-                    ? 'Ask a question or click a suggestion above'
-                    : 'Upload a proposal to start chatting'}
-                </Text>
-              </Flex>
-            ) : (
-              <VStack align="stretch" spacing={4}>
-                {messages.map(message => (
+            G
+          </Box>
+          <Text fontSize="md" fontWeight="600" color="gray.800">
+            Gemini Assistant
+          </Text>
+        </HStack>
+        <HStack spacing={1}>
+          <Box w="8px" h="8px" borderRadius="full" bg="green.400" />
+          <Text fontSize="xs" color="green.500" fontWeight="500">
+            Online
+          </Text>
+        </HStack>
+      </HStack>
+
+      {/* Content Area */}
+      <VStack align="stretch" spacing={4} flex={1} overflow="hidden" p={4}>
+        {/* Suggestion Chips */}
+        {messages.length === 0 && (
+          <Box>
+            <Text fontSize="sm" fontWeight="500" color="gray.600" mb={3}>
+              Try asking:
+            </Text>
+            <VStack align="stretch" spacing={2}>
+              {SUGGESTION_PROMPTS.map((prompt, index) => (
+                <Button
+                  key={index}
+                  variant="outline"
+                  borderColor="gray.300"
+                  color="gray.700"
+                  size="sm"
+                  justifyContent="flex-start"
+                  textAlign="left"
+                  whiteSpace="normal"
+                  h="auto"
+                  py={2}
+                  px={4}
+                  borderRadius="full"
+                  fontWeight="400"
+                  onClick={() => handleSuggestionClick(prompt)}
+                  _hover={{
+                    bg: 'brand.50',
+                    borderColor: 'brand.500',
+                    color: 'brand.600',
+                  }}
+                >
+                  {prompt}
+                </Button>
+              ))}
+            </VStack>
+          </Box>
+        )}
+
+        {/* AI Response Output Area */}
+        <Box
+          flex={1}
+          bg="gray.50"
+          borderRadius="lg"
+          p={{ base: 3, md: 4 }}
+          overflowY="auto"
+          minH="0"
+        >
+          {messages.length === 0 ? (
+            <Flex justify="center" align="center" h="full">
+              <Text color="gray.500" fontSize="sm">
+                {proposal.textContent
+                  ? 'Ask a question or click a suggestion above'
+                  : 'Upload a proposal to start chatting'}
+              </Text>
+            </Flex>
+          ) : (
+            <VStack align="stretch" spacing={4}>
+              {messages.map(message => {
+                // Parse message content for special formatting
+                const lines = message.content.split('\n');
+                const hasQuoteHeader = lines[0]?.toLowerCase().includes('quote generated');
+
+                // Helper: bold key summary values
+                function boldSummary(line: string) {
+                  // Bold numbers and key phrases (e.g., 5 Mobile LED Vans, 3 months)
+                  return line.replace(/(\d+\s+Mobile LED Vans|\d+\s+months?|\d+\s+LED vans?|\d+\s+vans?)/gi, '<b>$1</b>');
+                }
+
+                return (
                   <Box
                     key={message.id}
                     alignSelf={message.role === 'user' ? 'flex-end' : 'flex-start'}
-                    maxW="85%"
+                    maxW={message.role === 'user' ? '85%' : '95%'}
                   >
-                    <Box
-                      bg={message.role === 'user' ? '#750926' : 'white'}
-                      color={message.role === 'user' ? 'white' : 'gray.800'}
-                      px={4}
-                      py={3}
-                      borderRadius="lg"
-                      boxShadow="sm"
-                      border={message.role === 'assistant' ? '1px solid' : 'none'}
-                      borderColor="gray.200"
-                    >
-                      <Text fontSize="sm" whiteSpace="pre-wrap">
-                        {message.content}
-                      </Text>
-                      <Text
-                        fontSize="xs"
-                        mt={1}
-                        opacity={0.7}
+                    {message.role === 'assistant' && hasQuoteHeader ? (
+                      // Special format for quote generation messages
+                      <Box>
+                        {/* Quote Header with Icon */}
+                        <HStack spacing={2} mb={2} align="flex-start">
+                          <Box
+                            as="span"
+                            color="purple.500"
+                            fontSize="lg"
+                            mt="2px"
+                          >
+                            ✓
+                          </Box>
+                          <Text
+                            fontSize="sm"
+                            fontWeight="600"
+                            color="purple.500"
+                          >
+                            {lines[0]}
+                          </Text>
+                        </HStack>
+
+                        {/* Rest of the message */}
+                        <Box
+                          bg="white"
+                          px={4}
+                          py={3}
+                          borderRadius="lg"
+                          boxShadow="0 2px 8px rgba(0, 0, 0, 0.08)"
+                        >
+                          {lines.slice(1).map((line, idx) => {
+                            // Check if this is a code block
+                            if (line.includes('```json') || line.includes('"quoteGenerated"') || line.includes('"title"') || line.includes('"lineItems"')) {
+                              return null; // Will render code block separately
+                            }
+                            // Bold summary values
+                            return (
+                              <Text key={idx} fontSize="sm" color="gray.800" mb={idx === 0 ? 2 : 0} dangerouslySetInnerHTML={{ __html: boldSummary(line) }} />
+                            );
+                          })}
+
+                          {/* Code Block - if message contains JSON */}
+                          {message.content.includes('```json') && (
+                            <Box
+                              bg="#23272F"
+                              color="white"
+                              p={3}
+                              borderRadius="lg"
+                              fontSize="xs"
+                              fontFamily="monospace"
+                              overflowX="auto"
+                              mt={3}
+                              maxW="340px"
+                              minW="220px"
+                              mx="auto"
+                              boxShadow="0 1px 4px rgba(0,0,0,0.10)"
+                            >
+                              <Text whiteSpace="pre" fontSize="xs" fontFamily="monospace">
+                                {message.content.match(/```json\n([\s\S]*?)```/)?.[1] || ''}
+                              </Text>
+                            </Box>
+                          )}
+                        </Box>
+                      </Box>
+                    ) : (
+                      // Regular message format
+                      <Box
+                        bg={message.role === 'user' ? 'brand.500' : 'white'}
+                        color={message.role === 'user' ? 'white' : 'gray.800'}
+                        px={4}
+                        py={3}
+                        borderRadius="lg"
+                        boxShadow={message.role === 'user' ? '0 2px 8px rgba(201, 31, 61, 0.3)' : '0 2px 8px rgba(0, 0, 0, 0.08)'}
                       >
-                        {message.timestamp.toLocaleTimeString([], {
-                          hour: '2-digit',
-                          minute: '2-digit',
-                        })}
-                      </Text>
-                    </Box>
+                        <Text fontSize="sm" whiteSpace="pre-wrap">
+                          {message.content}
+                        </Text>
+                        <Text
+                          fontSize="xs"
+                          mt={1}
+                          opacity={0.6}
+                        >
+                          {message.timestamp.toLocaleTimeString([], {
+                            hour: '2-digit',
+                            minute: '2-digit',
+                          })}
+                        </Text>
+                      </Box>
+                    )}
                   </Box>
-                ))}
+                );
+              })}
 
-                {/* Typing Indicator */}
-                {isLoading && (
-                  <Box alignSelf="flex-start">
-                    <Box bg="white" px={4} py={3} borderRadius="lg" border="1px solid" borderColor="gray.200">
-                      <Spinner size="sm" color="#750926" />
-                    </Box>
+              {/* Typing Indicator */}
+              {isLoading && (
+                <Box alignSelf="flex-start">
+                  <Box bg="white" px={4} py={3} borderRadius="lg" boxShadow="0 2px 8px rgba(0, 0, 0, 0.08)">
+                    <Spinner size="sm" color="brand.500" />
                   </Box>
-                )}
+                </Box>
+              )}
 
-                <div ref={messagesEndRef} />
-              </VStack>
-            )}
-          </Box>
+              <div ref={messagesEndRef} />
+            </VStack>
+          )}
+        </Box>
 
-          {/* Bottom Chat Input Bar */}
-          <HStack 
-            spacing={2} 
-            flexShrink={0} 
-            py={2}
-            px={1}
-            borderTop="1px solid"
-            borderColor="gray.100"
-            bg="white"
-            position="relative"
-            zIndex={1}
-            w="100%"
-          >
-            <Input
-              value={inputValue}
-              onChange={(e) => setInputValue(e.target.value)}
-              onKeyPress={(e) => {
-                if (e.key === 'Enter' && !e.shiftKey) {
-                  e.preventDefault();
-                  handleSendMessage();
-                }
-              }}
-              placeholder={
-                proposal.textContent
-                  ? 'Ask about the proposal...'
-                  : 'Upload a proposal to start...'
+        {/* Bottom Chat Input Bar */}
+        <HStack 
+          spacing={2} 
+          flexShrink={0} 
+          p={4}
+        >
+          <Input
+            value={inputValue}
+            onChange={(e) => setInputValue(e.target.value)}
+            onKeyPress={(e) => {
+              if (e.key === 'Enter' && !e.shiftKey) {
+                e.preventDefault();
+                handleSendMessage();
               }
-              disabled={isLoading || !proposal.textContent}
-              size="md"
-              borderRadius="lg"
-              bg="white"
-              borderColor="gray.300"
-              fontSize="16px"
-              h="44px"
-              w="100%"
-              _hover={{ borderColor: 'gray.400' }}
-              _focus={{
-                borderColor: '#750926',
-                boxShadow: '0 0 0 1px #750926',
-              }}
-            />
-            <IconButton
-              aria-label="Send message"
-              icon={<FiSend />}
-              onClick={handleSendMessage}
-              isDisabled={!inputValue.trim() || isLoading || !proposal.textContent}
-              bg="#750926"
-              color="white"
-              size="md"
-              h="44px"
-              w="44px"
-              minW="44px"
-              borderRadius="lg"
-              flexShrink={0}
-              _hover={{
-                bg: '#5a0619',
-              }}
-              _active={{
-                bg: '#0F3E8C',
-              }}
-            />
-          </HStack>
-        </VStack>
-      </CardBody>
-    </Card>
+            }}
+            placeholder={
+              proposal.textContent
+                ? 'Ask about this proposal...'
+                : 'Upload a proposal to start...'
+            }
+            disabled={isLoading || !proposal.textContent}
+            size="md"
+            borderRadius="lg"
+            bg="white"
+            borderColor="gray.200"
+            color="gray.800"
+            fontSize="16px"
+            h="44px"
+            w="100%"
+            _placeholder={{ color: 'gray.500' }}
+            _hover={{ borderColor: 'gray.300' }}
+            _focus={{
+              borderColor: 'brand.500',
+              boxShadow: '0 0 0 1px rgba(201, 31, 61, 0.5)',
+            }}
+          />
+          <IconButton
+            aria-label="Send message"
+            icon={<FiSend />}
+            onClick={handleSendMessage}
+            isDisabled={!inputValue.trim() || isLoading || !proposal.textContent}
+            bg="brand.500"
+            color="white"
+            size="md"
+            h="44px"
+            w="44px"
+            minW="44px"
+            borderRadius="lg"
+            flexShrink={0}
+            _hover={{
+              bg: 'brand.600',
+            }}
+            _active={{
+              transform: 'scale(0.95)',
+            }}
+          />
+        </HStack>
+      </VStack>
+    </Box>
   );
 };
 
