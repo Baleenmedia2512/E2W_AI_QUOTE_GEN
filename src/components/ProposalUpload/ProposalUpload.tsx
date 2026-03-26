@@ -18,6 +18,13 @@ import {
 import { FiUploadCloud, FiFile } from 'react-icons/fi';
 import { useAppStore } from '../../store';
 import { extractPDFContent, validatePDFFile } from '../../utils/pdfUtils';
+import { 
+  extractImageContent, 
+  extractExcelContent, 
+  validateImageFile, 
+  validateExcelFile,
+  detectFileType 
+} from '../../utils/fileUtils';
 
 
 const ProposalUpload: React.FC = () => {
@@ -32,8 +39,22 @@ const ProposalUpload: React.FC = () => {
   const bgColor = useColorModeValue('gray.50', 'gray.700');
 
   const processFile = async (file: File) => {
-    // Validate file
-    const validation = validatePDFFile(file);
+    // Detect file type
+    const fileType = detectFileType(file);
+    
+    // Validate file based on type
+    let validation: { valid: boolean; error?: string };
+    
+    if (fileType === 'pdf') {
+      validation = validatePDFFile(file);
+    } else if (fileType === 'image') {
+      validation = validateImageFile(file);
+    } else if (fileType === 'excel') {
+      validation = validateExcelFile(file);
+    } else {
+      validation = { valid: false, error: 'Unsupported file type. Please upload PDF, JPEG, or Excel files only.' };
+    }
+    
     if (!validation.valid) {
       toast({
         title: 'Error',
@@ -48,21 +69,65 @@ const ProposalUpload: React.FC = () => {
     setLoading(true);
 
     try {
-      console.log('Processing PDF file:', file.name);
-      // Extract PDF content
-      const { textContent, pageCount, images, pageImages } = await extractPDFContent(file);
+      let textContent: string;
+      let pageCount: number;
+      let images: string[];
+      let pageImages: any[];
+      let successMessage: string;
 
-      console.log('PDF extraction successful:', {
-        fileName: file.name,
-        pageCount,
-        textLength: textContent.length,
-        hasText: textContent.length > 0
-      });
+      // Extract content based on file type
+      if (fileType === 'pdf') {
+        console.log('Processing PDF file:', file.name);
+        const pdfResult = await extractPDFContent(file);
+        textContent = pdfResult.textContent;
+        pageCount = pdfResult.pageCount;
+        images = pdfResult.images;
+        pageImages = pdfResult.pageImages;
+        successMessage = 'PDF uploaded successfully!';
+        
+        console.log('PDF extraction successful:', {
+          fileName: file.name,
+          pageCount,
+          textLength: textContent.length,
+          hasText: textContent.length > 0
+        });
+      } else if (fileType === 'image') {
+        console.log('Processing JPEG image:', file.name);
+        const imageResult = await extractImageContent(file);
+        textContent = imageResult.textContent;
+        pageCount = imageResult.pageCount;
+        images = imageResult.images;
+        pageImages = imageResult.pageImages;
+        successMessage = 'Image uploaded and text extracted successfully!';
+        
+        console.log('Image extraction successful:', {
+          fileName: file.name,
+          textLength: textContent.length,
+          hasText: textContent.length > 0
+        });
+      } else if (fileType === 'excel') {
+        console.log('Processing Excel file:', file.name);
+        const excelResult = await extractExcelContent(file);
+        textContent = excelResult.textContent;
+        pageCount = excelResult.pageCount;
+        images = excelResult.images;
+        pageImages = excelResult.pageImages;
+        successMessage = `Excel file uploaded! ${pageCount} sheet(s) extracted.`;
+        
+        console.log('Excel extraction successful:', {
+          fileName: file.name,
+          sheetCount: pageCount,
+          textLength: textContent.length,
+          hasText: textContent.length > 0
+        });
+      } else {
+        throw new Error('Unsupported file type');
+      }
 
-      // Create object URL for PDF viewing
+      // Create object URL for viewing
       const fileUrl = URL.createObjectURL(file);
 
-      // Update store
+      // Update store with extracted data
       const proposalData = {
         file,
         fileName: file.name,
@@ -80,13 +145,13 @@ const ProposalUpload: React.FC = () => {
 
       toast({
         title: 'Success',
-        description: 'PDF uploaded successfully!',
+        description: successMessage,
         status: 'success',
         duration: 2000,
         isClosable: true,
       });
     } catch (err: any) {
-      const errorMessage = err.message || 'Failed to process PDF file. Please try again.';
+      const errorMessage = err.message || 'Failed to process file. Please try again.';
       toast({
         title: 'Error',
         description: errorMessage,
@@ -94,7 +159,7 @@ const ProposalUpload: React.FC = () => {
         duration: 3000,
         isClosable: true,
       });
-      console.error('PDF processing error:', err);
+      console.error('File processing error:', err);
     } finally {
       setLoading(false);
     }
@@ -143,7 +208,7 @@ const ProposalUpload: React.FC = () => {
         <input
           ref={fileInputRef}
           type="file"
-          accept=".pdf"
+          accept=".pdf,.jpg,.jpeg,.xlsx,.xls"
           onChange={handleFileSelect}
           style={{ display: 'none' }}
         />
@@ -170,9 +235,9 @@ const ProposalUpload: React.FC = () => {
             <VStack spacing={3}>
               <Icon as={FiUploadCloud} boxSize={12} color="brand.500" />
               <VStack spacing={1}>
-                <Heading size="sm" fontWeight="medium">Click to upload PDF</Heading>
+                <Heading size="sm" fontWeight="medium">Click to upload file</Heading>
                 <Text fontSize="sm" color="gray.500">or drag and drop</Text>
-                <Text fontSize="xs" color="gray.400">PDF files only (max 10MB)</Text>
+                <Text fontSize="xs" color="gray.400">PDF, JPEG, or Excel files (max 10MB)</Text>
               </VStack>
             </VStack>
           </Center>

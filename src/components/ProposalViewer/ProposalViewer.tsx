@@ -14,6 +14,7 @@ import {
   Icon,
   useColorModeValue,
   useBreakpointValue,
+  Image,
 } from '@chakra-ui/react';
 import {
   FiChevronLeft,
@@ -23,6 +24,7 @@ import {
 } from 'react-icons/fi';
 import { Document, Page, pdfjs } from 'react-pdf';
 import { useAppStore } from '../../store';
+import { detectFileType } from '../../utils/fileUtils';
 import 'react-pdf/dist/Page/AnnotationLayer.css';
 import 'react-pdf/dist/Page/TextLayer.css';
 
@@ -40,6 +42,9 @@ const ProposalViewer: React.FC = () => {
   const bgColor = useColorModeValue('white', 'gray.700');
   const isMobile = useBreakpointValue({ base: true, md: false });
   const [showAllPages, setShowAllPages] = useState(false);
+
+  // Detect file type from the uploaded file
+  const fileType = proposal.file ? detectFileType(proposal.file) : 'pdf';
 
   const measureContainer = useCallback(() => {
     if (pdfContainerRef.current) {
@@ -90,7 +95,7 @@ const ProposalViewer: React.FC = () => {
         <Center h={{ base: '300px', md: 'full' }} p={{ base: 4, md: 8 }}>
           <VStack spacing={3}>
             <Heading size="md" color="gray.400">No proposal uploaded</Heading>
-            <Text color="gray.500">Please upload a PDF file to view it here</Text>
+            <Text color="gray.500">Please upload a file to view it here</Text>
           </VStack>
         </Center>
       </Card>
@@ -115,60 +120,64 @@ const ProposalViewer: React.FC = () => {
             {proposal.fileName}
           </Heading>
           
-          {/* Pagination and Zoom Controls */}
+          {/* Pagination and Zoom/Sheet Controls */}
           <HStack spacing={{ base: 3, md: 6 }} flexWrap="wrap">
-            {/* Pagination */}
-            <HStack spacing={2}>
-              <IconButton
-                aria-label="Previous page"
-                icon={<Icon as={FiChevronLeft} />}
-                onClick={goToPrevPage}
-                isDisabled={proposal.currentPage === 1}
-                size="sm"
-                variant="ghost"
-                color="gray.600"
-              />
-              <Text fontSize="sm" fontWeight="500" color="gray.700" minW="80px" textAlign="center">
-                {proposal.currentPage} / {proposal.pageCount}
-              </Text>
-              <IconButton
-                aria-label="Next page"
-                icon={<Icon as={FiChevronRight} />}
-                onClick={goToNextPage}
-                isDisabled={proposal.currentPage === proposal.pageCount}
-                size="sm"
-                variant="ghost"
-                color="gray.600"
-              />
-            </HStack>
+            {/* Pagination - Show for PDF and multi-sheet Excel */}
+            {(fileType === 'pdf' || (fileType === 'excel' && proposal.pageCount > 1)) && (
+              <HStack spacing={2}>
+                <IconButton
+                  aria-label="Previous page"
+                  icon={<Icon as={FiChevronLeft} />}
+                  onClick={goToPrevPage}
+                  isDisabled={proposal.currentPage === 1}
+                  size="sm"
+                  variant="ghost"
+                  color="gray.600"
+                />
+                <Text fontSize="sm" fontWeight="500" color="gray.700" minW="80px" textAlign="center">
+                  {proposal.currentPage} / {proposal.pageCount}
+                </Text>
+                <IconButton
+                  aria-label="Next page"
+                  icon={<Icon as={FiChevronRight} />}
+                  onClick={goToNextPage}
+                  isDisabled={proposal.currentPage === proposal.pageCount}
+                  size="sm"
+                  variant="ghost"
+                  color="gray.600"
+                />
+              </HStack>
+            )}
 
-            {/* Zoom Controls */}
-            <HStack spacing={2}>
-              <IconButton
-                aria-label="Zoom out"
-                icon={<Icon as={FiZoomOut} />}
-                onClick={handleZoomOut}
-                size="sm"
-                variant="ghost"
-                color="gray.600"
-              />
-              <Text fontSize="sm" fontWeight="500" color="gray.700" minW="50px" textAlign="center">
-                {Math.round(scale * 100)}%
-              </Text>
-              <IconButton
-                aria-label="Zoom in"
-                icon={<Icon as={FiZoomIn} />}
-                onClick={handleZoomIn}
-                size="sm"
-                variant="ghost"
-                color="gray.600"
-              />
-            </HStack>
+            {/* Zoom Controls - Show for PDF and Images only */}
+            {(fileType === 'pdf' || fileType === 'image') && (
+              <HStack spacing={2}>
+                <IconButton
+                  aria-label="Zoom out"
+                  icon={<Icon as={FiZoomOut} />}
+                  onClick={handleZoomOut}
+                  size="sm"
+                  variant="ghost"
+                  color="gray.600"
+                />
+                <Text fontSize="sm" fontWeight="500" color="gray.700" minW="50px" textAlign="center">
+                  {Math.round(scale * 100)}%
+                </Text>
+                <IconButton
+                  aria-label="Zoom in"
+                  icon={<Icon as={FiZoomIn} />}
+                  onClick={handleZoomIn}
+                  size="sm"
+                  variant="ghost"
+                  color="gray.600"
+                />
+              </HStack>
+            )}
           </HStack>
         </Flex>
       </CardHeader>
 
-      {/* PDF Page Display Area */}
+      {/* File Display Area */}
       <CardBody
         flex={1}
         overflow="auto"
@@ -182,51 +191,116 @@ const ProposalViewer: React.FC = () => {
           bg={bgColor}
           position="relative"
         >
-          {/* PDF Document */}
-          <Center p={{ base: 1, md: 6 }}>
-            <Box
-              ref={pdfContainerRef}
-              borderWidth={1}
-              borderColor={borderColor}
-              borderRadius="lg"
-              overflow="hidden"
-              boxShadow="lg"
-              maxW="100%"
-              w="100%"
-            >
-              <Document
-                file={proposal.fileUrl}
-                onLoadSuccess={onDocumentLoadSuccess}
-                loading={
-                  <Center p={8} minW={{ base: '300px', md: '600px' }} minH={{ base: '400px', md: '800px' }}>
-                    <VStack spacing={3}>
-                      <Text color="gray.500">Loading PDF...</Text>
-                    </VStack>
-                  </Center>
-                }
-                error={
-                  <Center p={8} minW={{ base: '300px', md: '600px' }} minH={{ base: '400px', md: '800px' }}>
-                    <VStack spacing={3}>
-                      <Text color="red.500">Failed to load PDF</Text>
-                      <Text color="gray.500" fontSize="sm">Please try uploading again</Text>
-                    </VStack>
-                  </Center>
-                }
+          {/* Render based on file type */}
+          {fileType === 'pdf' && (
+            /* PDF Document */
+            <Center p={{ base: 1, md: 6 }}>
+              <Box
+                ref={pdfContainerRef}
+                borderWidth={1}
+                borderColor={borderColor}
+                borderRadius="lg"
+                overflow="hidden"
+                boxShadow="lg"
+                maxW="100%"
+                w="100%"
               >
-                <Page
-                  pageNumber={proposal.currentPage}
-                  scale={isMobile ? undefined : scale}
-                  width={isMobile && containerWidth > 0 ? containerWidth - 2 : undefined}
-                  renderTextLayer={!isMobile}
-                  renderAnnotationLayer={!isMobile}
+                <Document
+                  file={proposal.fileUrl}
+                  onLoadSuccess={onDocumentLoadSuccess}
+                  loading={
+                    <Center p={8} minW={{ base: '300px', md: '600px' }} minH={{ base: '400px', md: '800px' }}>
+                      <VStack spacing={3}>
+                        <Text color="gray.500">Loading PDF...</Text>
+                      </VStack>
+                    </Center>
+                  }
+                  error={
+                    <Center p={8} minW={{ base: '300px', md: '600px' }} minH={{ base: '400px', md: '800px' }}>
+                      <VStack spacing={3}>
+                        <Text color="red.500">Failed to load PDF</Text>
+                        <Text color="gray.500" fontSize="sm">Please try uploading again</Text>
+                      </VStack>
+                    </Center>
+                  }
+                >
+                  <Page
+                    pageNumber={proposal.currentPage}
+                    scale={isMobile ? undefined : scale}
+                    width={isMobile && containerWidth > 0 ? containerWidth - 2 : undefined}
+                    renderTextLayer={!isMobile}
+                    renderAnnotationLayer={!isMobile}
+                  />
+                </Document>
+              </Box>
+            </Center>
+          )}
+
+          {fileType === 'image' && (
+            /* JPEG Image */
+            <Center p={{ base: 1, md: 6 }}>
+              <Box
+                borderWidth={1}
+                borderColor={borderColor}
+                borderRadius="lg"
+                overflow="hidden"
+                boxShadow="lg"
+                maxW="100%"
+              >
+                <Image
+                  src={proposal.fileUrl}
+                  alt={proposal.fileName}
+                  maxW="100%"
+                  h="auto"
+                  transform={`scale(${scale})`}
+                  transformOrigin="top center"
+                  transition="transform 0.2s"
                 />
-              </Document>
+              </Box>
+            </Center>
+          )}
+
+          {fileType === 'excel' && (
+            /* Excel Data */
+            <Box p={{ base: 2, md: 6 }} overflow="auto">
+              <Box
+                borderWidth={1}
+                borderColor={borderColor}
+                borderRadius="lg"
+                bg="white"
+                p={{ base: 3, md: 6 }}
+                boxShadow="lg"
+              >
+                <VStack align="stretch" spacing={4}>
+                  <Heading size="sm" color="gray.700">
+                    Excel Data Preview
+                  </Heading>
+                  <Box
+                    fontSize="sm"
+                    fontFamily="monospace"
+                    whiteSpace="pre-wrap"
+                    color="gray.800"
+                    maxH="600px"
+                    overflow="auto"
+                    bg="gray.50"
+                    p={4}
+                    borderRadius="md"
+                    borderWidth={1}
+                    borderColor="gray.200"
+                  >
+                    {proposal.textContent}
+                  </Box>
+                  <Text fontSize="xs" color="gray.500">
+                    {proposal.pageCount} sheet(s) • Text extracted for AI processing
+                  </Text>
+                </VStack>
+              </Box>
             </Box>
-          </Center>
+          )}
         </Box>
 
-        {/* Quick Navigation Strip */}
-        {proposal.pageCount > 1 && (
+        {/* Quick Navigation Strip - Only for PDF */}
+        {fileType === 'pdf' && proposal.pageCount > 1 && (
           <Box
             borderTop="1px solid"
             borderColor="gray.200"

@@ -666,23 +666,7 @@ export const ReferenceImages: React.FC<ReferenceImagesProps> = ({ proposalPages,
     console.log('💡 Quote items:', items?.map(i => i.description) || []);
     console.log('💡 Tip: Check if page text contains keywords from quote items');
     
-    // In development, show a helpful message
-    if (process.env.NODE_ENV === 'development') {
-      return (
-        <div style={{ padding: '20px', margin: '20px', border: '2px dashed #ccc', background: '#f9f9f9' }}>
-          <h4>⚠️ No Reference Images Found</h4>
-          <p>No pages matched the quote items. Check browser console for details.</p>
-          <ul>
-            <li>Available pages: {proposalPages.length}</li>
-            <li>Quote items: {items?.length || 0}</li>
-            {items && items.length > 0 && (
-              <li>Looking for: {items.map(i => i.description).join(', ')}</li>
-            )}
-          </ul>
-        </div>
-      );
-    }
-    
+    // No matches found - return null to show clean quote without reference images
     return null;
   }
 

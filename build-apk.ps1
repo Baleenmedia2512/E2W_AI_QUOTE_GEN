@@ -37,7 +37,9 @@ Write-Host "`n[4/4] Copying APK..." -ForegroundColor Yellow
 Copy-Item "android\app\build\outputs\apk\debug\app-debug.apk" -Destination "AI-Quote-Generator.apk" -Force
 
 $apk = Get-Item "AI-Quote-Generator.apk"
-Write-Host "`n✓ SUCCESS! APK built successfully!" -ForegroundColor Green
+Write-Host ""
+Write-Host "SUCCESS! APK built successfully!" -ForegroundColor Green
 Write-Host "Location: $($apk.FullName)" -ForegroundColor Green
 Write-Host "Size: $([math]::Round($apk.Length/1MB, 2)) MB" -ForegroundColor Green
-Write-Host "`nYou can now install this APK on your Android device." -ForegroundColor Cyan
+Write-Host ""
+Write-Host "You can now install this APK on your Android device." -ForegroundColor Cyan
