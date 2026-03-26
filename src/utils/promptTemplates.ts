@@ -121,6 +121,17 @@ RULES:
   * For monthly/recurring prices, the description must clearly state it is a monthly rate. For one-time prices, keep as-is.
   * Double-check: Before outputting, verify each unitPrice matches the EXACT number in the specific proposal section for the requested service type.
   * COMMON MISTAKE TO AVOID: The proposal often shows prices in a table with columns like "DISPLAY PRICE" and "PRINTING & FIXING PRICE" and "GRAND TOTAL". The GRAND TOTAL is the sum of both columns for the minimum quantity - do NOT use the grand total or any derived/calculated number as a unit price. Use ONLY the individual per-unit prices from each column. For example, if Display is ₹14,000 per Bus and Printing is ₹5,000 per Bus, the unitPrices should be 14000 and 5000 respectively - NOT 19000 (which is their sum).
+- CRITICAL DAILY RATE CONVERSION RULE:
+  * IMPORTANT: Some campaigns (like Mobile Van LED) show "per day" rates with a "Total Price" column that represents the monthly cost (daily rate × 30 days OR daily rate × days in month).
+  * DETECTION: If the proposal says "per day month" or "Price: ₹X per day month" with a separate "Total Price: ₹Y per van month" or "Total Price: ₹Y", this is a DAILY RATE campaign.
+  * CONVERSION REQUIRED: When you detect daily rates:
+    1. DO NOT use the daily rate as unitPrice
+    2. Instead, use the "Total Price" value from the proposal as the unitPrice (this is already the monthly amount)
+    3. Update the description to say "(per month)" or "(per van month)" instead of "(per day)"
+    4. The duration field will still represent months
+  * Example: Proposal shows "Price: ₹10,850 per day month" and "Total Price: ₹3,25,500". You should output: {"description": "Mobile Van - LED Branding - Display Price (per month)", "quantity": 5, "unitPrice": 325500, "duration": 3}. This gives: 5 × 325,500 × 3 = ₹48,82,500 ✓ CORRECT.
+  * Why: If you incorrectly used the daily rate (10,850) with duration in months (3), you'd get: 5 × 10,850 × 3 = ₹1,62,750 ❌ WRONG (mixing daily rate with months).
+  * This conversion ensures ALL campaigns use monthly rates as unitPrice, keeping calculations consistent: quantity × monthly_rate × months.
 - CRITICAL DURATION/MONTHS RULES:
   * When the proposal prices are "per month" (e.g., "per frame month", "per screen month", "per bus per month") and the user requests a multi-month campaign (e.g., "3 months", "6 months"), you MUST include the "duration" field in the line item JSON.
   * The "duration" field represents the number of months. The total for each line item will be calculated as: quantity × unitPrice × duration.
