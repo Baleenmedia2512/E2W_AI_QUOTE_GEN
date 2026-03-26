@@ -257,16 +257,24 @@ const QuotePage: React.FC = () => {
   };
 
   return (
-    <Box minH="100vh" bg="#EDF1F7">
-      {/* Top Navigation */}
-      <QuoteNavBar />
+    <Box minH="100vh" bg="#F8FAFC">
+      {/* Top Navigation - Desktop Only */}
+      <Box display={{ base: 'none', md: 'block' }}>
+        <QuoteNavBar />
+      </Box>
 
       {/* Stepper */}
       <QuoteStepper currentStep={getStepNumber()} />
 
-      {/* Back/Next Navigation Arrows */}
-      <Box bg="white" borderBottom="1px solid" borderColor="gray.200" py={{ base: 2, md: 3 }}>
-        <Container maxW="1280px" px={{ base: 3, md: 4 }}>
+      {/* Back/Next Navigation Arrows - Modern Style */}
+      <Box 
+        bg="white" 
+        borderBottom="1px solid" 
+        borderColor="gray.100" 
+        py={{ base: 2, md: 3 }}
+        boxShadow="0 1px 3px rgba(0, 0, 0, 0.04)"
+      >
+        <Container maxW="1280px" px={{ base: 4, md: 6 }}>
           <HStack justify="space-between">
             <IconButton
               aria-label="Back"
@@ -274,8 +282,9 @@ const QuotePage: React.FC = () => {
               variant="ghost"
               onClick={handleBack}
               isDisabled={currentStep === 'company'}
-              colorScheme="blue"
+              colorScheme="brand"
               size="md"
+              borderRadius="12px"
             />
             <IconButton
               aria-label="Next"
@@ -288,15 +297,16 @@ const QuotePage: React.FC = () => {
                 (currentStep === 'preview' && !currentQuote) ||
                 (currentStep === 'template' && !selectedTemplate)
               }
-              colorScheme="blue"
+              colorScheme="brand"
               size="md"
+              borderRadius="12px"
             />
           </HStack>
         </Container>
       </Box>
 
       {/* Main Content - Centered Card */}
-      <Container maxW="900px" py={{ base: 4, md: 8 }} px={{ base: 3, md: 4 }}>
+      <Container maxW="900px" py={{ base: 4, md: 8 }} px={{ base: 4, md: 6 }}>
         <Box>
           {currentStep === 'company' && (
             <CompanyInfoForm
@@ -320,26 +330,38 @@ const QuotePage: React.FC = () => {
                 onUpdate={handleQuoteUpdate}
                 onSave={handleSaveQuote}
               />
-              <HStack spacing={3} justify="flex-end" bg="white" p={{ base: 4, md: 6 }} borderRadius="16px" boxShadow="sm" flexDir={{ base: 'column', sm: 'row' }} w="100%">
+              <HStack 
+                spacing={3} 
+                justify="flex-end" 
+                bg="white" 
+                p={{ base: 4, md: 6 }} 
+                borderRadius="20px" 
+                boxShadow="0 2px 8px rgba(0, 0, 0, 0.06)" 
+                flexDir={{ base: 'column', sm: 'row' }} 
+                w="100%"
+              >
                 <Button
                   variant="outline"
                   onClick={() => setCurrentStep('client')}
-                  size={{ base: 'md', md: 'lg' }}
+                  size="lg"
                   borderColor="gray.300"
                   _hover={{ bg: 'gray.50' }}
                   w={{ base: '100%', sm: 'auto' }}
+                  borderRadius="16px"
                 >
                   Back
                 </Button>
                 <Button
-                  bg="#750926"
+                  bg="brand.500"
                   color="white"
                   onClick={handleGeneratePDF}
-                  size={{ base: 'md', md: 'lg' }}
+                  size="lg"
                   px={{ base: 4, md: 8 }}
-                  _hover={{ bg: '#5a0619' }}
+                  _hover={{ bg: 'brand.600', transform: 'translateY(-1px)' }}
                   isDisabled={!companyInfo || !clientInfo || !currentQuote}
                   w={{ base: '100%', sm: 'auto' }}
+                  borderRadius="16px"
+                  boxShadow="0 4px 12px rgba(201, 31, 61, 0.3)"
                 >
                   {!companyInfo ? 'Add Company Info' : 
                    !clientInfo ? 'Add Client Info' : 
@@ -351,31 +373,51 @@ const QuotePage: React.FC = () => {
 
           {currentStep === 'template' && (
             <VStack spacing={6} align="stretch">
-              <Box bg="white" borderRadius={{ base: '12px', md: '16px' }} boxShadow="sm" p={{ base: 3, md: 6 }}>
-                <TemplateSelector selectedTemplate={selectedTemplate} onSelectTemplate={setSelectedTemplate} />
+              <Box 
+                bg="white" 
+                borderRadius="20px" 
+                boxShadow="0 2px 8px rgba(0, 0, 0, 0.06)" 
+                p={{ base: 4, md: 6 }}
+              >
+                <TemplateSelector 
+                  selectedTemplate={selectedTemplate} 
+                  onSelectTemplate={setSelectedTemplate} 
+                />
               </Box>
-              <HStack spacing={3} justify="space-between" bg="white" p={{ base: 4, md: 6 }} borderRadius="16px" boxShadow="sm" flexDir={{ base: 'column', sm: 'row' }} w="100%">
+              <HStack 
+                spacing={3} 
+                justify="space-between" 
+                bg="white" 
+                p={{ base: 4, md: 6 }} 
+                borderRadius="20px" 
+                boxShadow="0 2px 8px rgba(0, 0, 0, 0.06)" 
+                flexDir={{ base: 'column', sm: 'row' }} 
+                w="100%"
+              >
                 <Button
                   onClick={() => setCurrentStep('preview')}
                   variant="outline"
-                  size={{ base: 'md', md: 'lg' }}
+                  size="lg"
                   borderColor="gray.300"
                   _hover={{ bg: 'gray.50' }}
                   w={{ base: '100%', sm: 'auto' }}
+                  borderRadius="16px"
                 >
                   Back
                 </Button>
                 <Button
-                  bg="#750926"
+                  bg="brand.500"
                   color="white"
                   onClick={handleTemplateSelected}
-                  size={{ base: 'md', md: 'lg' }}
+                  size="lg"
                   px={{ base: 4, md: 8 }}
-                  _hover={{ bg: '#5a0619' }}
+                  _hover={{ bg: 'brand.600', transform: 'translateY(-1px)' }}
                   isDisabled={!selectedTemplate}
                   isLoading={isNavigating}
                   loadingText="Loading..."
                   w={{ base: '100%', sm: 'auto' }}
+                  borderRadius="16px"
+                  boxShadow="0 4px 12px rgba(201, 31, 61, 0.3)"
                 >
                   Preview & Export PDF
                 </Button>

@@ -5,6 +5,7 @@ import HomePage from './pages/HomePage';
 import QuotePage from './pages/QuotePage';
 import { QuotePreviewPage } from './pages/QuotePreviewPage';
 import { ErrorBoundary } from './components/ErrorBoundary/ErrorBoundary';
+import BottomNav from './components/BottomNav/BottomNav';
 import { registerServiceWorker } from './utils/pwa';
 
 const App: React.FC = () => {
@@ -19,7 +20,7 @@ const App: React.FC = () => {
 
   return (
     <ErrorBoundary>
-      <Box minH="100vh" bg="gray.50">
+      <Box minH="100vh" bg="white">
         <Router>
           <Switch>
             <Route exact path="/" component={HomePage} />
@@ -27,6 +28,7 @@ const App: React.FC = () => {
             <Route exact path="/preview" component={QuotePreviewPage} />
             <Route render={() => <Redirect to="/" />} />
           </Switch>
+          <BottomNav />
         </Router>
       </Box>
     </ErrorBoundary>
