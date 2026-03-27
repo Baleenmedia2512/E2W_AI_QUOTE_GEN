@@ -22,6 +22,7 @@
   display: flex;
   justify-content: space-between;
   align-items: center;
+  gap: 24px;
   background: linear-gradient(135deg, #0f172a 0%, #1e293b 60%, #334155 100%);
   padding: 20px 32px;
   color: #ffffff;
@@ -31,6 +32,8 @@
   display: flex;
   align-items: center;
   gap: 12px;
+  flex-shrink: 0;
+  min-width: 0;
 }
 
 .template-modern-sales .ms-logo {
@@ -40,6 +43,7 @@
   border-radius: 6px;
   background: rgba(255,255,255,0.1);
   padding: 4px;
+  flex-shrink: 0;
 }
 
 .template-modern-sales .ms-company-name {
@@ -47,10 +51,14 @@
   font-weight: 700;
   letter-spacing: 0.5px;
   color: #ffffff;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .template-modern-sales .ms-header-right {
   text-align: right;
+  flex-shrink: 0;
 }
 
 .template-modern-sales .ms-title {
