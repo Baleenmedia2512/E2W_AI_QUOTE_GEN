@@ -27,7 +27,7 @@ import {
   CardBody,
   useBreakpointValue,
 } from '@chakra-ui/react';
-import { FiSave, FiPlus, FiTrash2, FiEdit3 } from 'react-icons/fi';
+import { FiTrash2, FiEdit3 } from 'react-icons/fi';
 import { Quote, QuoteItem, LineItem } from '../../types/quote';
 import './QuotePreview.css';
 
