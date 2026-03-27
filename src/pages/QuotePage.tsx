@@ -329,12 +329,12 @@ const QuotePage: React.FC = () => {
                 onSave={handleSaveQuote}
               />
               <HStack 
-                spacing={3} 
+                spacing={4} 
                 justify="flex-end" 
                 bg="white" 
                 p={{ base: 4, md: 6 }} 
                 borderRadius="20px" 
-                boxShadow="0 2px 8px rgba(0, 0, 0, 0.06)" 
+                boxShadow="0 4px 12px rgba(0, 0, 0, 0.08)" 
                 flexDir={{ base: 'column', sm: 'row' }} 
                 w="100%"
               >
@@ -342,24 +342,40 @@ const QuotePage: React.FC = () => {
                   variant="outline"
                   onClick={() => setCurrentStep('client')}
                   size="lg"
+                  borderWidth="2px"
                   borderColor="gray.300"
-                  _hover={{ bg: 'gray.50' }}
+                  color="gray.700"
+                  fontWeight="600"
+                  px={8}
+                  _hover={{ 
+                    bg: 'gray.50', 
+                    borderColor: 'gray.400',
+                    transform: 'translateY(-2px)',
+                    boxShadow: '0 4px 12px rgba(0, 0, 0, 0.1)'
+                  }}
+                  _active={{ transform: 'scale(0.98)' }}
                   w={{ base: '100%', sm: 'auto' }}
-                  borderRadius="16px"
+                  borderRadius="12px"
                 >
-                  Back
+                  ← Back
                 </Button>
                 <Button
-                  bg="brand.500"
+                  bgGradient="linear(to-r, #C91F3D, #B31B3E)"
                   color="white"
                   onClick={handleGeneratePDF}
                   size="lg"
-                  px={{ base: 4, md: 8 }}
-                  _hover={{ bg: 'brand.600', transform: 'translateY(-1px)' }}
+                  fontWeight="600"
+                  px={{ base: 6, md: 10 }}
+                  _hover={{ 
+                    bgGradient: 'linear(to-r, #B31B3E, #9f1239)',
+                    transform: 'translateY(-2px)',
+                    boxShadow: '0 6px 20px rgba(201, 31, 61, 0.4)'
+                  }}
+                  _active={{ transform: 'scale(0.98)' }}
                   isDisabled={!companyInfo || !clientInfo || !currentQuote}
                   w={{ base: '100%', sm: 'auto' }}
-                  borderRadius="16px"
-                  boxShadow="0 4px 12px rgba(201, 31, 61, 0.3)"
+                  borderRadius="12px"
+                  boxShadow="0 4px 16px rgba(201, 31, 61, 0.3)"
                 >
                   {!companyInfo ? 'Add Company Info' : 
                    !clientInfo ? 'Add Client Info' : 
@@ -383,12 +399,12 @@ const QuotePage: React.FC = () => {
                 />
               </Box>
               <HStack 
-                spacing={3} 
+                spacing={4} 
                 justify="space-between" 
                 bg="white" 
                 p={{ base: 4, md: 6 }} 
                 borderRadius="20px" 
-                boxShadow="0 2px 8px rgba(0, 0, 0, 0.06)" 
+                boxShadow="0 4px 12px rgba(0, 0, 0, 0.08)" 
                 flexDir={{ base: 'column', sm: 'row' }} 
                 w="100%"
               >
@@ -396,26 +412,42 @@ const QuotePage: React.FC = () => {
                   onClick={() => setCurrentStep('preview')}
                   variant="outline"
                   size="lg"
+                  borderWidth="2px"
                   borderColor="gray.300"
-                  _hover={{ bg: 'gray.50' }}
+                  color="gray.700"
+                  fontWeight="600"
+                  px={8}
+                  _hover={{ 
+                    bg: 'gray.50', 
+                    borderColor: 'gray.400',
+                    transform: 'translateY(-2px)',
+                    boxShadow: '0 4px 12px rgba(0, 0, 0, 0.1)'
+                  }}
+                  _active={{ transform: 'scale(0.98)' }}
                   w={{ base: '100%', sm: 'auto' }}
-                  borderRadius="16px"
+                  borderRadius="12px"
                 >
-                  Back
+                  ← Back
                 </Button>
                 <Button
-                  bg="brand.500"
+                  bgGradient="linear(to-r, #C91F3D, #B31B3E)"
                   color="white"
                   onClick={handleTemplateSelected}
                   size="lg"
-                  px={{ base: 4, md: 8 }}
-                  _hover={{ bg: 'brand.600', transform: 'translateY(-1px)' }}
+                  fontWeight="600"
+                  px={{ base: 6, md: 10 }}
+                  _hover={{ 
+                    bgGradient: 'linear(to-r, #B31B3E, #9f1239)',
+                    transform: 'translateY(-2px)',
+                    boxShadow: '0 6px 20px rgba(201, 31, 61, 0.4)'
+                  }}
+                  _active={{ transform: 'scale(0.98)' }}
                   isDisabled={!selectedTemplate}
                   isLoading={isNavigating}
                   loadingText="Loading..."
                   w={{ base: '100%', sm: 'auto' }}
-                  borderRadius="16px"
-                  boxShadow="0 4px 12px rgba(201, 31, 61, 0.3)"
+                  borderRadius="12px"
+                  boxShadow="0 4px 16px rgba(201, 31, 61, 0.3)"
                 >
                   Preview & Export PDF
                 </Button>
