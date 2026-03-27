@@ -257,11 +257,9 @@ const QuotePage: React.FC = () => {
   };
 
   return (
-    <Box minH="100vh" bg="#F8FAFC">
-      {/* Top Navigation - Desktop Only */}
-      <Box display={{ base: 'none', md: 'block' }}>
-        <QuoteNavBar />
-      </Box>
+    <Box minH="100vh" bg="#F8FAFC" pt={{ base: '56px', md: '72px' }} pb={{ base: '80px', md: 0 }}>
+      {/* Top Navigation - All Screens */}
+      <QuoteNavBar />
 
       {/* Stepper */}
       <QuoteStepper currentStep={getStepNumber()} />

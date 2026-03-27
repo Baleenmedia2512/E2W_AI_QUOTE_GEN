@@ -30,9 +30,11 @@ const HomePage: React.FC = () => {
         bg="white"
         px={4}
         py={3}
-        position="sticky"
+        position="fixed"
         top={0}
-        zIndex={100}
+        left={0}
+        right={0}
+        zIndex={1001}
         display={{ base: 'flex', md: 'none' }}
         alignItems="center"
         justifyContent="space-between"
@@ -52,23 +54,8 @@ const HomePage: React.FC = () => {
             <Icon as={FiFileText} boxSize={4} />
           </Box>
           <Text fontSize="lg" fontWeight="800" color="brand.500">
-            AI Quote
+            Quote Buddy
           </Text>
-        </HStack>
-        <HStack spacing={2}>
-          <IconButton
-            aria-label="Toggle dark mode"
-            icon={colorMode === 'light' ? <FiMoon /> : <FiSun />}
-            onClick={toggleColorMode}
-            variant="ghost"
-            size="sm"
-          />
-          <IconButton
-            aria-label="Menu"
-            icon={<FiMenu />}
-            variant="ghost"
-            size="sm"
-          />
         </HStack>
       </Box>
 
@@ -80,9 +67,11 @@ const HomePage: React.FC = () => {
         px={{ base: 4, md: 8 }}
         py={{ base: 3, md: 4 }}
         boxShadow="0 1px 3px rgba(0, 0, 0, 0.04)"
-        position="sticky"
+        position="fixed"
         top={0}
-        zIndex={100}
+        left={0}
+        right={0}
+        zIndex={1001}
         display={{ base: 'none', md: 'block' }}
       >
         <Flex justify="space-between" align="center" maxW="1920px" mx="auto">
@@ -98,7 +87,7 @@ const HomePage: React.FC = () => {
               <Icon as={FiFileText} boxSize={5} />
             </Box>
             <Heading size="lg" color="brand.500" fontWeight="800" letterSpacing="-0.02em">
-              AI Quote
+              Quote Buddy
             </Heading>
           </HStack>
 
@@ -148,14 +137,6 @@ const HomePage: React.FC = () => {
               <Icon as={FiEye} boxSize={5} />
               <Box>Preview</Box>
             </HStack>
-            <IconButton
-              aria-label="Toggle dark mode"
-              icon={colorMode === 'light' ? <FiMoon /> : <FiSun />}
-              onClick={toggleColorMode}
-              variant="ghost"
-              size="md"
-              borderRadius="12px"
-            />
           </HStack>
         </Flex>
       </Box>
@@ -165,6 +146,8 @@ const HomePage: React.FC = () => {
         maxW="1920px"
         mx="auto"
         p={{ base: 3, sm: 4, md: 6 }}
+        pt={{ base: '76px', md: '96px' }}
+        pb={{ base: '84px', md: 6 }}
         gap={{ base: 3, md: 6 }}
         direction={{ base: 'column', lg: 'row' }}
       >
