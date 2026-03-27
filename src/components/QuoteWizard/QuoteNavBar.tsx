@@ -7,8 +7,6 @@ import {
   Text,
   Button,
   Icon,
-  useColorMode,
-  IconButton,
   Flex,
   Drawer,
   DrawerOverlay,
@@ -16,14 +14,12 @@ import {
   DrawerCloseButton,
   useDisclosure,
 } from '@chakra-ui/react';
-import { HamburgerIcon } from '@chakra-ui/icons';
-import { FiHome, FiFileText, FiEye, FiMoon, FiSun } from 'react-icons/fi';
+import { FiHome, FiFileText, FiEye } from 'react-icons/fi';
 import { useHistory } from 'react-router-dom';
 
 const QuoteNavBar: React.FC = () => {
   const history = useHistory();
-  const { colorMode, toggleColorMode } = useColorMode();
-  const { isOpen, onOpen, onClose } = useDisclosure();
+  const { isOpen, onClose } = useDisclosure();
 
   const navItems = [
     { label: 'Home', icon: FiHome, path: '/' },

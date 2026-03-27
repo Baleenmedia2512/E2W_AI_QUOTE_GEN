@@ -4,16 +4,11 @@ import {
   Flex,
   Heading,
   HStack,
-  VStack,
   Text,
   Icon,
-  IconButton,
   Badge,
-  Grid,
-  GridItem,
-  useColorMode,
 } from '@chakra-ui/react';
-import { FiHome, FiFileText, FiEye, FiMoon, FiSun, FiMenu } from 'react-icons/fi';
+import { FiHome, FiFileText, FiEye } from 'react-icons/fi';
 import { useHistory } from 'react-router-dom';
 import ProposalUpload from '../components/ProposalUpload/ProposalUpload';
 import ProposalViewer from '../components/ProposalViewer/ProposalViewer';
@@ -21,7 +16,6 @@ import ChatInterface from '../components/ChatInterface/ChatInterface';
 
 const HomePage: React.FC = () => {
   const history = useHistory();
-  const { colorMode, toggleColorMode } = useColorMode();
 
   return (
     <Box minH="100vh" bg="#F8FAFC">
