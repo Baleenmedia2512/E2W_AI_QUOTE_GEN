@@ -642,7 +642,6 @@ const QuotePreview: React.FC<QuotePreviewProps> = ({ quote, onUpdate, onSave }) 
 
               {/* Add Line Item Button */}
               <Button
-                leftIcon={<Icon as={FiPlus} />}
                 variant="outline"
                 size="sm"
                 borderWidth="2px"
@@ -683,7 +682,6 @@ const QuotePreview: React.FC<QuotePreviewProps> = ({ quote, onUpdate, onSave }) 
 
         {/* Add Section Button */}
         <Button
-          leftIcon={<Icon as={FiPlus} />}
           variant="outline"
           borderWidth="2px"
           borderColor="red.300"

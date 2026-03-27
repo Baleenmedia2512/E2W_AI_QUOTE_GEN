@@ -123,6 +123,16 @@ export const TemplateSelector: React.FC<TemplateSelectorProps> = ({
 
   return (
     <div className="template-selector">
+      {/* Header Section */}
+      <div className="template-selector-header">
+        <h2 className="template-heading">
+          Choose Your Template
+        </h2>
+        <p className="template-subtitle">
+          Select a professional design that matches your business style
+        </p>
+      </div>
+
       <div className="template-grid"
         style={{
           display: 'grid',
