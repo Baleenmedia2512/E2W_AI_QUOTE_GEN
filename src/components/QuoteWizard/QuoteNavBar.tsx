@@ -41,38 +41,74 @@ const QuoteNavBar: React.FC = () => {
       bg="white" 
       borderBottom="1px solid" 
       borderColor="gray.100" 
-      py={4}
-      position="sticky"
+      py={{ base: 3, md: 4 }}
+      position="fixed"
       top={0}
-      zIndex={100}
+      left={0}
+      right={0}
+      zIndex={1001}
       boxShadow="0 1px 3px rgba(0, 0, 0, 0.04)"
     >
       <Container maxW="1280px">
-        <Flex justify="space-between" align="center">
-          {/* Mobile Hamburger */}
-          <IconButton
-            display={{ base: 'flex', md: 'none' }}
-            aria-label="Open menu"
-            icon={<HamburgerIcon />}
-            variant="ghost"
-            onClick={onOpen}
-            color="gray.600"
-            borderRadius="12px"
-            _hover={{ bg: 'gray.100' }}
-          />
+        {/* Mobile Layout */}
+        <Flex 
+          justify="flex-start" 
+          align="center"
+          display={{ base: 'flex', md: 'none' }}
+        >
+          {/* Quote Buddy Logo & Title - Left Aligned */}
+          <HStack spacing={2}>
+            <Box
+              bg="brand.500"
+              color="white"
+              px={2}
+              py={1}
+              borderRadius="6px"
+              fontWeight="800"
+            >
+              <Icon as={FiFileText} boxSize={4} />
+            </Box>
+            <Text 
+              fontSize="lg" 
+              fontWeight="800" 
+              color="brand.500"
+              letterSpacing="-0.02em"
+            >
+              Quote Buddy
+            </Text>
+          </HStack>
+        </Flex>
 
-          {/* App Title with Gradient */}
-          <Text 
-            fontSize="xl" 
-            fontWeight="800" 
-            color="brand.500"
-            letterSpacing="-0.02em"
-          >
-            Create Quote
-          </Text>
+        {/* Desktop Layout */}
+        <Flex 
+          justify="space-between" 
+          align="center"
+          display={{ base: 'none', md: 'flex' }}
+        >
+          {/* Quote Buddy Logo & Title */}
+          <HStack spacing={3}>
+            <Box
+              bg="brand.500"
+              color="white"
+              px={3}
+              py={2}
+              borderRadius="8px"
+              fontWeight="800"
+            >
+              <Icon as={FiFileText} boxSize={5} />
+            </Box>
+            <Text 
+              fontSize="xl" 
+              fontWeight="800" 
+              color="brand.500"
+              letterSpacing="-0.02em"
+            >
+              Quote Buddy
+            </Text>
+          </HStack>
 
           {/* Desktop Navigation Links */}
-          <HStack spacing={1} display={{ base: 'none', md: 'flex' }}>
+          <HStack spacing={1}>
             {navItems.map((item) => (
               <Button
                 key={item.label}
@@ -88,17 +124,6 @@ const QuoteNavBar: React.FC = () => {
               </Button>
             ))}
           </HStack>
-
-          {/* Dark Mode Toggle */}
-          <IconButton
-            aria-label="Toggle dark mode"
-            icon={colorMode === 'light' ? <FiMoon /> : <FiSun />}
-            onClick={toggleColorMode}
-            variant="ghost"
-            color="gray.600"
-            borderRadius="12px"
-            _hover={{ bg: 'gray.100' }}
-          />
         </Flex>
       </Container>
 

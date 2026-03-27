@@ -50,9 +50,11 @@ const Layout: React.FC<LayoutProps> = ({ title, children }) => {
     <Box minH="100vh" bg={useColorModeValue('gray.50', 'gray.900')}>
       {/* Header */}
       <Box
-        position="sticky"
+        position="fixed"
         top={0}
-        zIndex={10}
+        left={0}
+        right={0}
+        zIndex={1001}
         bg={bgColor}
         borderBottom="1px"
         borderColor={borderColor}
@@ -127,9 +129,15 @@ const Layout: React.FC<LayoutProps> = ({ title, children }) => {
       </Drawer>
 
       {/* Main Content */}
-      <Container maxW="container.xl" py={{ base: 4, md: 8 }}>
-        {children}
-      </Container>
+      <Box pt="64px">
+        <Container 
+          maxW="container.xl" 
+          py={{ base: 4, md: 8 }}
+          pb={{ base: '80px', md: 8 }}
+        >
+          {children}
+        </Container>
+      </Box>
     </Box>
   );
 };
