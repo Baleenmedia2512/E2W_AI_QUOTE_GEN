@@ -1,13 +1,16 @@
-/* Client Info Form - Corporate SaaS Styling */
+/* Client Info Form - Premium Brand Styling */
 
 .client-info-form {
-  animation: fadeInUp 0.4s ease-out;
+  animation: fadeInUp 0.5s ease-out;
+  background: linear-gradient(180deg, #FFFFFF 0%, #FFFBFC 100%);
+  border-radius: 16px;
+  padding: 24px;
 }
 
 @keyframes fadeInUp {
   from {
     opacity: 0;
-    transform: translateY(20px);
+    transform: translateY(30px);
   }
   to {
     opacity: 1;
@@ -15,10 +18,11 @@
   }
 }
 
-/* Smooth input transitions */
+/* Smooth input transitions with brand colors */
 .chakra-input,
 .chakra-textarea {
-  transition: all 0.2s ease;
+  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+  font-weight: 500;
 }
 
 .chakra-input:focus,
@@ -26,23 +30,42 @@
   transform: translateY(-1px);
 }
 
-/* Button hover effects */
-.chakra-button {
-  transition: all 0.2s ease;
+.chakra-input:hover:not(:disabled),
+.chakra-textarea:hover:not(:disabled) {
+  transform: translateY(-1px);
 }
 
-.chakra-button:hover {
+/* Button hover effects with smooth animations */
+.chakra-button {
+  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+  font-weight: 600;
+}
+
+.chakra-button:hover:not(:disabled) {
   transform: translateY(-2px);
 }
 
 .chakra-button:active {
-  transform: translateY(0);
+  transform: scale(0.98);
+}
+
+/* Form labels with brand styling */
+.chakra-form__label {
+  margin-bottom: 8px;
+  letter-spacing: 0.3px;
+}
+
+/* Error messages styling */
+.chakra-form__error-message {
+  font-size: 13px;
+  margin-top: 6px;
+  font-weight: 500;
 }
 
 @media (max-width: 768px) {
   .client-info-form {
-    padding-left: 12px;
-    padding-right: 12px;
+    padding: 20px;
+    border-radius: 12px;
   }
 
   .chakra-input,
@@ -58,7 +81,11 @@
 
 @media (max-width: 480px) {
   .client-info-form {
-    padding-left: 8px;
-    padding-right: 8px;
+    padding: 16px;
+    border-radius: 8px;
+  }
+  
+  .chakra-heading {
+    font-size: 24px !important;
   }
 }

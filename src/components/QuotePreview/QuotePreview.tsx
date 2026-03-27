@@ -284,30 +284,43 @@ const QuotePreview: React.FC<QuotePreviewProps> = ({ quote, onUpdate, onSave }) 
   return (
     <Box className="quote-preview" py={{ base: 4, md: 8 }}>
       {/* Header with Title and Save Button */}
-      <Flex justify="space-between" align="center" mb={{ base: 4, md: 8 }} flexWrap="wrap" gap={3}>
-        <Heading 
-          size={{ base: 'md', md: 'lg' }}
-          fontWeight="500" 
-          color="gray.900" 
-          fontFamily="'DM Sans', sans-serif"
-        >
-          Quote Preview
-        </Heading>
+      <HStack justify="space-between" flexWrap="wrap" gap={3} mb={8}>
+        <Box>
+          <Heading 
+            size="xl"
+            fontWeight="800" 
+            bgGradient="linear(135deg, #C91F3D, #B31B3E, #7A1030)" 
+            bgClip="text"
+            letterSpacing="tight"
+            mb={1}
+          >
+            Quote Preview
+          </Heading>
+          <Text fontSize="sm" color="gray.600" fontWeight="500">
+            Review and customize your quote
+          </Text>
+        </Box>
         {onSave && (
           <Button
-            leftIcon={<Icon as={FiSave} />}
+            size="md"
             variant="outline"
-            borderColor="gray.300"
-            color="gray.700"
-            fontWeight="500"
+            borderColor="red.300"
+            color="red.600"
+            fontWeight="600"
             onClick={onSave}
-            size={{ base: 'sm', md: 'md' }}
-            _hover={{ bg: 'gray.50', borderColor: 'gray.400' }}
+            borderRadius="12px"
+            px={6}
+            _hover={{ 
+              bg: 'red.50',
+              borderColor: 'red.400',
+              transform: 'translateY(-2px)',
+              boxShadow: '0 4px 12px rgba(201, 31, 61, 0.2)'
+            }}
           >
-            Save Quote
+            Save Info
           </Button>
         )}
-      </Flex>
+      </HStack>
 
       {/* Quote Items - Each Section in a Card */}
       <VStack spacing={6} align="stretch">
@@ -315,29 +328,43 @@ const QuotePreview: React.FC<QuotePreviewProps> = ({ quote, onUpdate, onSave }) 
           <Card 
             key={item.id}
             bg="white"
-            borderRadius="12px"
-            border="1px solid"
+            borderRadius="16px"
+            border="2px solid"
             borderColor="gray.200"
-            boxShadow="sm"
+            boxShadow="0 4px 16px rgba(0, 0, 0, 0.06)"
+            transition="all 0.3s"
+            _hover={{
+              boxShadow: '0 8px 24px rgba(201, 31, 61, 0.12)',
+              borderColor: 'red.200'
+            }}
           >
             <CardBody p={{ base: 3, md: 6 }}>
               {/* Section Header with Editable Title and Delete Button */}
-              <Flex justify="space-between" align="center" mb={4}>
+              <Flex justify="space-between" align="center" mb={5}>
                 <Editable
                   defaultValue={item.title || item.description || 'Auto Full Branding'}
                   fontSize="lg"
-                  fontWeight="600"
+                  fontWeight="700"
                   color="gray.900"
                   width="full"
                   onChange={(value) => updateItem(itemIndex, 'title', value)}
                 >
                   <EditablePreview
-                    px={2}
-                    py={1}
-                    _hover={{ bg: 'gray.50' }}
+                    px={3}
+                    py={2}
+                    borderRadius="8px"
+                    _hover={{ bg: 'red.50', color: 'red.600' }}
                     cursor="text"
                   />
-                  <EditableInput px={2} py={1} />
+                  <EditableInput 
+                    px={3} 
+                    py={2}
+                    borderRadius="8px"
+                    _focus={{ 
+                      borderColor: 'red.500',
+                      boxShadow: '0 0 0 3px rgba(201, 31, 61, 0.15)'
+                    }}
+                  />
                 </Editable>
                 <IconButton
                   aria-label="Delete section"
@@ -345,6 +372,7 @@ const QuotePreview: React.FC<QuotePreviewProps> = ({ quote, onUpdate, onSave }) 
                   variant="ghost"
                   colorScheme="red"
                   size="sm"
+                  borderRadius="8px"
                   onClick={() => removeQuoteItem(itemIndex)}
                 />
               </Flex>
@@ -389,11 +417,17 @@ const QuotePreview: React.FC<QuotePreviewProps> = ({ quote, onUpdate, onSave }) 
                             placeholder="Enter description"
                             size="sm"
                             bg="white"
+                            borderWidth="2px"
                             borderColor="gray.200"
-                            borderRadius="6px"
+                            borderRadius="8px"
                             rows={2}
                             resize="none"
-                            _focus={{ borderColor: '#750926', boxShadow: '0 0 0 1px #750926' }}
+                            fontWeight="500"
+                            _hover={{ borderColor: 'red.300' }}
+                            _focus={{ 
+                              borderColor: 'red.500', 
+                              boxShadow: '0 0 0 3px rgba(201, 31, 61, 0.15)'
+                            }}
                           />
                         </Box>
 
@@ -611,19 +645,36 @@ const QuotePreview: React.FC<QuotePreviewProps> = ({ quote, onUpdate, onSave }) 
                 leftIcon={<Icon as={FiPlus} />}
                 variant="outline"
                 size="sm"
-                borderColor="gray.300"
-                color="gray.700"
+                borderWidth="2px"
+                borderColor="red.300"
+                color="red.600"
+                fontWeight="600"
+                borderRadius="10px"
                 onClick={() => addLineItem(itemIndex)}
-                _hover={{ bg: 'gray.50' }}
+                _hover={{ 
+                  bg: 'red.50',
+                  borderColor: 'red.400',
+                  transform: 'translateY(-1px)'
+                }}
                 mb={4}
               >
-                Add Line Item
+                ⚡ Add Line Item
               </Button>
 
               {/* Section Subtotal */}
-              <Flex justify="flex-end" pt={2} borderTop="1px solid" borderColor="gray.200">
-                <Text fontSize="sm" fontWeight="600" color="gray.700">
-                  Section Subtotal: <Text as="span" ml={4}>{formatCurrency(calculateItemSubtotal(item))}</Text>
+              <Flex 
+                justify="flex-end" 
+                pt={3} 
+                borderTop="2px solid" 
+                borderColor="red.100"
+                bg="red.50"
+                px={3}
+                py={2}
+                borderRadius="8px"
+                mt={2}
+              >
+                <Text fontSize="md" fontWeight="700" color="gray.800">
+                  Section Subtotal: <Text as="span" ml={3} color="red.600">{formatCurrency(calculateItemSubtotal(item))}</Text>
                 </Text>
               </Flex>
             </CardBody>
@@ -634,34 +685,54 @@ const QuotePreview: React.FC<QuotePreviewProps> = ({ quote, onUpdate, onSave }) 
         <Button
           leftIcon={<Icon as={FiPlus} />}
           variant="outline"
-          borderColor="gray.300"
-          color="gray.700"
+          borderWidth="2px"
+          borderColor="red.300"
+          color="red.600"
+          fontWeight="600"
+          size="md"
+          px={8}
+          borderRadius="12px"
           onClick={addQuoteItem}
-          _hover={{ bg: 'gray.50' }}
+          _hover={{ 
+            bg: 'red.50',
+            borderColor: 'red.400',
+            transform: 'translateY(-2px)',
+            boxShadow: '0 4px 12px rgba(201, 31, 61, 0.2)'
+          }}
+          _active={{ transform: 'scale(0.98)' }}
         >
-          Add Section
+          ➕ Add Section
         </Button>
       </VStack>
 
       {/* Totals Summary Block */}
-      <Box mt={{ base: 4, md: 8 }} p={{ base: 4, md: 6 }} bg="gray.100" borderRadius="12px">
+      <Box 
+        mt={{ base: 6, md: 8 }} 
+        p={{ base: 5, md: 6 }} 
+        bgGradient="linear(135deg, #FFF5F7, #FFECF0)"
+        borderRadius="16px"
+        border="2px solid"
+        borderColor="red.200"
+        boxShadow="0 4px 16px rgba(201, 31, 61, 0.1)"
+      >
         <VStack spacing={4} align="stretch">
           {/* Subtotal */}
-          <Flex justify="space-between" fontSize="md">
-            <Text fontWeight="500" color="gray.700">Subtotal:</Text>
-            <Text fontWeight="600" color="gray.900">{formatCurrency(subtotal)}</Text>
+          <Flex justify="space-between" fontSize="lg">
+            <Text fontWeight="600" color="gray.800">Subtotal:</Text>
+            <Text fontWeight="700" color="gray.900">{formatCurrency(subtotal)}</Text>
           </Flex>
 
           {/* GST Section */}
-          <Box bg="white" p={4} borderRadius="8px">
+          <Box bg="white" p={4} borderRadius="12px" border="2px solid" borderColor="gray.200">
             <VStack spacing={3} align="stretch">
               <HStack>
                 <Checkbox
                   isChecked={localQuote.gstEnabled}
                   onChange={toggleGST}
-                  colorScheme="blue"
+                  colorScheme="red"
+                  size="md"
                 >
-                  <Text fontSize="sm" fontWeight="500">Include GST</Text>
+                  <Text fontSize="md" fontWeight="600" color="gray.800">Include GST</Text>
                 </Checkbox>
               </HStack>
 
@@ -696,30 +767,30 @@ const QuotePreview: React.FC<QuotePreviewProps> = ({ quote, onUpdate, onSave }) 
 
           {/* GST Amount */}
           {localQuote.gstEnabled && (
-            <Flex justify="space-between" fontSize="md">
-              <Text fontWeight="500" color="gray.700">GST ({localQuote.gstPercentage}%):</Text>
-              <Text fontWeight="600" color="gray.900">{formatCurrency(gst)}</Text>
+            <Flex justify="space-between" fontSize="lg">
+              <Text fontWeight="600" color="gray.800">GST ({localQuote.gstPercentage}%):</Text>
+              <Text fontWeight="700" color="gray.900">{formatCurrency(gst)}</Text>
             </Flex>
           )}
 
           {/* Total */}
           <Flex 
             justify="space-between" 
-            pt={3} 
-            borderTop="2px solid" 
-            borderColor="gray.300"
-            fontSize="xl"
+            pt={4} 
+            borderTop="3px solid" 
+            borderColor="red.400"
+            fontSize="2xl"
           >
-            <Text fontWeight="700" color="gray.900">Total:</Text>
-            <Text fontWeight="700" color="gray.900">{formatCurrency(total)}</Text>
+            <Text fontWeight="800" color="gray.900">Total:</Text>
+            <Text fontWeight="800" color="red.600">{formatCurrency(total)}</Text>
           </Flex>
         </VStack>
       </Box>
 
       {/* Delivery Timeline */}
-      <Box mt={{ base: 4, md: 8 }}>
-        <Text fontSize="sm" fontWeight="600" color="gray.700" mb={2}>
-          Delivery Timeline
+      <Box mt={{ base: 6, md: 8 }}>
+        <Text fontSize="md" fontWeight="700" color="gray.800" mb={3}>
+          📅 Delivery Timeline
         </Text>
         <Input
           value={localQuote.deliveryTimeline || ''}
@@ -727,19 +798,26 @@ const QuotePreview: React.FC<QuotePreviewProps> = ({ quote, onUpdate, onSave }) 
           placeholder="e.g., 7 working days from receipt"
           size="lg"
           bg="white"
+          borderWidth="2px"
           borderColor="gray.300"
-          _hover={{ borderColor: 'gray.400' }}
-          _focus={{ borderColor: '#750926', boxShadow: '0 0 0 1px #750926' }}
+          borderRadius="12px"
+          fontWeight="500"
+          _hover={{ borderColor: 'red.300', boxShadow: '0 0 0 1px rgba(201, 31, 61, 0.1)' }}
+          _focus={{ 
+            borderColor: 'red.500', 
+            boxShadow: '0 0 0 3px rgba(201, 31, 61, 0.15)',
+            bg: 'white'
+          }}
         />
       </Box>
 
       {/* Terms and Conditions */}
       <Box mt={6}>
-        <HStack justify="space-between" mb={2}>
-          <Text fontSize="sm" fontWeight="600" color="gray.700">
-            Terms and Conditions
+        <HStack justify="space-between" mb={3}>
+          <Text fontSize="md" fontWeight="700" color="gray.800">
+            📋 Terms and Conditions
           </Text>
-          <Icon as={FiEdit3} color="gray.500" boxSize={4} />
+          <Icon as={FiEdit3} color="red.500" boxSize={5} />
         </HStack>
         <Textarea
           value={localQuote.termsAndConditions || ''}
@@ -748,9 +826,16 @@ const QuotePreview: React.FC<QuotePreviewProps> = ({ quote, onUpdate, onSave }) 
           rows={6}
           size="lg"
           bg="white"
+          borderWidth="2px"
           borderColor="gray.300"
-          _hover={{ borderColor: 'gray.400' }}
-          _focus={{ borderColor: '#750926', boxShadow: '0 0 0 1px #750926' }}
+          borderRadius="12px"
+          fontWeight="500"
+          _hover={{ borderColor: 'red.300', boxShadow: '0 0 0 1px rgba(201, 31, 61, 0.1)' }}
+          _focus={{ 
+            borderColor: 'red.500', 
+            boxShadow: '0 0 0 3px rgba(201, 31, 61, 0.15)',
+            bg: 'white'
+          }}
         />
       </Box>
 
@@ -758,11 +843,11 @@ const QuotePreview: React.FC<QuotePreviewProps> = ({ quote, onUpdate, onSave }) 
       {localQuote.items.map((item, idx) =>
         item.termsAndConditions ? (
           <Box mt={6} key={item.id}>
-            <HStack justify="space-between" mb={2}>
-              <Text fontSize="sm" fontWeight="600" color="gray.700">
-                {item.title || item.description.split(' - ')[0]} — Terms & Conditions
+            <HStack justify="space-between" mb={3}>
+              <Text fontSize="md" fontWeight="700" color="gray.800">
+                📝 {item.title || item.description.split(' - ')[0]} — Terms & Conditions
               </Text>
-              <Icon as={FiEdit3} color="gray.500" boxSize={4} />
+              <Icon as={FiEdit3} color="red.500" boxSize={5} />
             </HStack>
             <Textarea
               value={item.termsAndConditions}
@@ -771,9 +856,16 @@ const QuotePreview: React.FC<QuotePreviewProps> = ({ quote, onUpdate, onSave }) 
               rows={6}
               size="lg"
               bg="white"
+              borderWidth="2px"
               borderColor="gray.300"
-              _hover={{ borderColor: 'gray.400' }}
-              _focus={{ borderColor: '#750926', boxShadow: '0 0 0 1px #750926' }}
+              borderRadius="12px"
+              fontWeight="500"
+              _hover={{ borderColor: 'red.300', boxShadow: '0 0 0 1px rgba(201, 31, 61, 0.1)' }}
+              _focus={{ 
+                borderColor: 'red.500', 
+                boxShadow: '0 0 0 3px rgba(201, 31, 61, 0.15)',
+                bg: 'white'
+              }}
             />
           </Box>
         ) : null

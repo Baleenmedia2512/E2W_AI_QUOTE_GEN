@@ -107,15 +107,21 @@ const ClientInfoForm: React.FC<ClientInfoFormProps> = ({ onSubmit, onBack, initi
   return (
     <Box className="client-info-form" py={8}>
       {/* Section Title */}
-      <Heading 
-        size="lg" 
-        fontWeight="500" 
-        color="gray.900" 
-        mb={8}
-        fontFamily="'DM Sans', sans-serif"
-      >
-        Client Information
-      </Heading>
+      <Box mb={8}>
+        <Heading 
+          size="xl" 
+          fontWeight="800" 
+          bgGradient="linear(135deg, #C91F3D, #B31B3E, #7A1030)" 
+          bgClip="text"
+          letterSpacing="tight"
+          mb={1}
+        >
+          Client Information
+        </Heading>
+        <Text fontSize="sm" color="gray.600" fontWeight="500">
+          Tell us about your client
+        </Text>
+      </Box>
 
       <form onSubmit={handleSubmit}>
         <VStack spacing={6} align="stretch">
@@ -123,41 +129,53 @@ const ClientInfoForm: React.FC<ClientInfoFormProps> = ({ onSubmit, onBack, initi
           <Grid templateColumns={{ base: '1fr', md: 'repeat(2, 1fr)' }} gap={6}>
             <GridItem>
               <FormControl isRequired isInvalid={!!errors.name}>
-                <FormLabel fontSize="sm" fontWeight="600" color="gray.700">
+                <FormLabel fontSize="sm" fontWeight="700" color="gray.800">
                   Client Name <Text as="span" color="red.500">*</Text>
                 </FormLabel>
                 <Input
                   value={formData.name}
                   onChange={(e) => handleInputChange('name', e.target.value)}
-                  placeholder="ramesh"
+                  placeholder="Enter client name"
                   size="lg"
                   bg="white"
+                  borderWidth="2px"
                   borderColor="gray.300"
-                  _hover={{ borderColor: 'gray.400' }}
-                  _focus={{ borderColor: '#750926', boxShadow: '0 0 0 1px #750926' }}
-                  borderRadius="8px"
+                  fontWeight="500"
+                  _hover={{ borderColor: 'red.300', boxShadow: '0 0 0 1px rgba(201, 31, 61, 0.1)' }}
+                  _focus={{ 
+                    borderColor: 'red.500', 
+                    boxShadow: '0 0 0 3px rgba(201, 31, 61, 0.15)',
+                    bg: 'white'
+                  }}
+                  borderRadius="12px"
                 />
-                <FormErrorMessage>{errors.name}</FormErrorMessage>
+                <FormErrorMessage fontWeight="500">{errors.name}</FormErrorMessage>
               </FormControl>
             </GridItem>
 
             <GridItem>
               <FormControl isRequired isInvalid={!!errors.company}>
-                <FormLabel fontSize="sm" fontWeight="600" color="gray.700">
+                <FormLabel fontSize="sm" fontWeight="700" color="gray.800">
                   Company Name <Text as="span" color="red.500">*</Text>
                 </FormLabel>
                 <Input
                   value={formData.company}
                   onChange={(e) => handleInputChange('company', e.target.value)}
-                  placeholder="Ram Enterprises"
+                  placeholder="Enter company name"
                   size="lg"
                   bg="white"
+                  borderWidth="2px"
                   borderColor="gray.300"
-                  _hover={{ borderColor: 'gray.400' }}
-                  _focus={{ borderColor: '#750926', boxShadow: '0 0 0 1px #750926' }}
-                  borderRadius="8px"
+                  fontWeight="500"
+                  _hover={{ borderColor: 'red.300', boxShadow: '0 0 0 1px rgba(201, 31, 61, 0.1)' }}
+                  _focus={{ 
+                    borderColor: 'red.500', 
+                    boxShadow: '0 0 0 3px rgba(201, 31, 61, 0.15)',
+                    bg: 'white'
+                  }}
+                  borderRadius="12px"
                 />
-                <FormErrorMessage>{errors.company}</FormErrorMessage>
+                <FormErrorMessage fontWeight="500">{errors.company}</FormErrorMessage>
               </FormControl>
             </GridItem>
           </Grid>
@@ -165,22 +183,28 @@ const ClientInfoForm: React.FC<ClientInfoFormProps> = ({ onSubmit, onBack, initi
           {/* Address - Full Width (but max 50% width) */}
           <Box maxW={{ base: '100%', md: '50%' }}>
             <FormControl isRequired isInvalid={!!errors.address}>
-              <FormLabel fontSize="sm" fontWeight="600" color="gray.700">
+              <FormLabel fontSize="sm" fontWeight="700" color="gray.800">
                 Address <Text as="span" color="red.500">*</Text>
               </FormLabel>
               <Textarea
                 value={formData.address}
                 onChange={(e) => handleInputChange('address', e.target.value)}
-                placeholder="Madurai"
+                placeholder="Enter client address"
                 rows={3}
                 size="lg"
                 bg="white"
+                borderWidth="2px"
                 borderColor="gray.300"
-                _hover={{ borderColor: 'gray.400' }}
-                _focus={{ borderColor: '#750926', boxShadow: '0 0 0 1px #750926' }}
-                borderRadius="8px"
+                fontWeight="500"
+                _hover={{ borderColor: 'red.300', boxShadow: '0 0 0 1px rgba(201, 31, 61, 0.1)' }}
+                _focus={{ 
+                  borderColor: 'red.500', 
+                  boxShadow: '0 0 0 3px rgba(201, 31, 61, 0.15)',
+                  bg: 'white'
+                }}
+                borderRadius="12px"
               />
-              <FormErrorMessage>{errors.address}</FormErrorMessage>
+              <FormErrorMessage fontWeight="500">{errors.address}</FormErrorMessage>
             </FormControl>
           </Box>
 
@@ -188,8 +212,8 @@ const ClientInfoForm: React.FC<ClientInfoFormProps> = ({ onSubmit, onBack, initi
           <Grid templateColumns={{ base: '1fr', md: 'repeat(2, 1fr)' }} gap={6}>
             <GridItem>
               <FormControl isInvalid={!!errors.gst}>
-                <FormLabel fontSize="sm" fontWeight="600" color="gray.700">
-                  GST Number <Text as="span" color="gray.500" fontWeight="400">(Optional)</Text>
+                <FormLabel fontSize="sm" fontWeight="700" color="gray.800">
+                  GST Number <Text as="span" color="gray.500" fontWeight="400" fontSize="xs">(Optional)</Text>
                 </FormLabel>
                 <Input
                   value={formData.gst}
@@ -197,33 +221,45 @@ const ClientInfoForm: React.FC<ClientInfoFormProps> = ({ onSubmit, onBack, initi
                   placeholder="Enter GST number"
                   size="lg"
                   bg="white"
+                  borderWidth="2px"
                   borderColor="gray.300"
-                  _hover={{ borderColor: 'gray.400' }}
-                  _focus={{ borderColor: '#750926', boxShadow: '0 0 0 1px #750926' }}
-                  borderRadius="8px"
+                  fontWeight="500"
+                  _hover={{ borderColor: 'red.300', boxShadow: '0 0 0 1px rgba(201, 31, 61, 0.1)' }}
+                  _focus={{ 
+                    borderColor: 'red.500', 
+                    boxShadow: '0 0 0 3px rgba(201, 31, 61, 0.15)',
+                    bg: 'white'
+                  }}
+                  borderRadius="12px"
                 />
-                <FormErrorMessage>{errors.gst}</FormErrorMessage>
+                <FormErrorMessage fontWeight="500">{errors.gst}</FormErrorMessage>
               </FormControl>
             </GridItem>
 
             <GridItem>
               <FormControl isRequired isInvalid={!!errors.phone}>
-                <FormLabel fontSize="sm" fontWeight="600" color="gray.700">
+                <FormLabel fontSize="sm" fontWeight="700" color="gray.800">
                   Phone <Text as="span" color="red.500">*</Text>
                 </FormLabel>
                 <Input
                   value={formData.phone}
                   onChange={(e) => handleInputChange('phone', e.target.value)}
-                  placeholder="9360381404"
+                  placeholder="+1 (555) 000-0000"
                   type="tel"
                   size="lg"
                   bg="white"
+                  borderWidth="2px"
                   borderColor="gray.300"
-                  _hover={{ borderColor: 'gray.400' }}
-                  _focus={{ borderColor: '#750926', boxShadow: '0 0 0 1px #750926' }}
-                  borderRadius="8px"
+                  fontWeight="500"
+                  _hover={{ borderColor: 'red.300', boxShadow: '0 0 0 1px rgba(201, 31, 61, 0.1)' }}
+                  _focus={{ 
+                    borderColor: 'red.500', 
+                    boxShadow: '0 0 0 3px rgba(201, 31, 61, 0.15)',
+                    bg: 'white'
+                  }}
+                  borderRadius="12px"
                 />
-                <FormErrorMessage>{errors.phone}</FormErrorMessage>
+                <FormErrorMessage fontWeight="500">{errors.phone}</FormErrorMessage>
               </FormControl>
             </GridItem>
           </Grid>
@@ -231,61 +267,92 @@ const ClientInfoForm: React.FC<ClientInfoFormProps> = ({ onSubmit, onBack, initi
           {/* Email - Half Width */}
           <Box maxW={{ base: '100%', md: '50%' }}>
             <FormControl isRequired isInvalid={!!errors.email}>
-              <FormLabel fontSize="sm" fontWeight="600" color="gray.700">
+              <FormLabel fontSize="sm" fontWeight="700" color="gray.800">
                 Email <Text as="span" color="red.500">*</Text>
               </FormLabel>
               <Input
                 value={formData.email}
                 onChange={(e) => handleInputChange('email', e.target.value)}
-                placeholder="rameshbalapr3@gmail.com"
+                placeholder="client@example.com"
                 type="email"
                 size="lg"
                 bg="white"
+                borderWidth="2px"
                 borderColor="gray.300"
-                _hover={{ borderColor: 'gray.400' }}
-                _focus={{ borderColor: '#750926', boxShadow: '0 0 0 1px #750926' }}
-                borderRadius="8px"
+                fontWeight="500"
+                _hover={{ borderColor: 'red.300', boxShadow: '0 0 0 1px rgba(201, 31, 61, 0.1)' }}
+                _focus={{ 
+                  borderColor: 'red.500', 
+                  boxShadow: '0 0 0 3px rgba(201, 31, 61, 0.15)',
+                  bg: 'white'
+                }}
+                borderRadius="12px"
               />
-              <FormErrorMessage>{errors.email}</FormErrorMessage>
+              <FormErrorMessage fontWeight="500">{errors.email}</FormErrorMessage>
             </FormControl>
           </Box>
 
-          {/* Footer Buttons - All Outlined Style */}
-          <HStack justify="flex-end" spacing={3} pt={6}>
+          {/* Footer Buttons - Brand themed with gradient */}
+          <HStack justify="flex-end" spacing={4} pt={8}>
             {onBack && (
               <Button
                 onClick={onBack}
                 variant="outline"
                 size="lg"
+                borderWidth="2px"
                 borderColor="gray.300"
                 color="gray.700"
-                fontWeight="500"
-                _hover={{ bg: 'gray.50', borderColor: 'gray.400' }}
+                fontWeight="600"
+                px={8}
+                borderRadius="12px"
+                _hover={{ 
+                  bg: 'gray.50', 
+                  borderColor: 'gray.400',
+                  transform: 'translateY(-2px)',
+                  boxShadow: '0 4px 12px rgba(0, 0, 0, 0.1)'
+                }}
+                _active={{ transform: 'scale(0.98)' }}
               >
-                Back
+                ← Back
               </Button>
             )}
             <Button
               onClick={handleClearForm}
               variant="outline"
               size="lg"
+              borderWidth="2px"
               borderColor="gray.300"
               color="gray.700"
-              fontWeight="500"
-              _hover={{ bg: 'gray.50', borderColor: 'gray.400' }}
+              fontWeight="600"
+              px={8}
+              borderRadius="12px"
+              _hover={{ 
+                bg: 'gray.50', 
+                borderColor: 'gray.400',
+                transform: 'translateY(-2px)',
+                boxShadow: '0 4px 12px rgba(0, 0, 0, 0.1)'
+              }}
+              _active={{ transform: 'scale(0.98)' }}
             >
-              Clear
+              🔄 Clear
             </Button>
             <Button
               type="submit"
-              variant="outline"
               size="lg"
-              borderColor="gray.300"
-              color="gray.700"
-              fontWeight="500"
-              _hover={{ bg: 'gray.50', borderColor: 'gray.400' }}
+              bgGradient="linear(to-r, #C91F3D, #B31B3E)"
+              color="white"
+              fontWeight="600"
+              px={10}
+              borderRadius="12px"
+              boxShadow="0 4px 16px rgba(201, 31, 61, 0.3)"
+              _hover={{ 
+                bgGradient: 'linear(to-r, #B31B3E, #9f1239)',
+                transform: 'translateY(-2px)',
+                boxShadow: '0 6px 20px rgba(201, 31, 61, 0.4)'
+              }}
+              _active={{ transform: 'scale(0.98)' }}
             >
-              Continue
+              Continue →
             </Button>
           </HStack>
         </VStack>

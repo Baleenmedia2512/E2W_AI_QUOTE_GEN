@@ -1,10 +1,10 @@
-/* Quote Preview Component Styles */
+/* Quote Preview Component - Premium Brand Styling */
 
 /* Smooth fade-in animation */
 @keyframes fadeInUp {
   from {
     opacity: 0;
-    transform: translateY(20px);
+    transform: translateY(30px);
   }
   to {
     opacity: 1;
@@ -13,7 +13,7 @@
 }
 
 .quote-preview {
-  animation: fadeInUp 0.4s ease-out;
+  animation: fadeInUp 0.5s ease-out;
 }
 
 /* Remove spinner/stepper from number inputs */
@@ -32,17 +32,41 @@ input[type='number'] {
 .chakra-input,
 .chakra-textarea,
 .chakra-editable__preview {
-  transition: all 0.2s ease-in-out;
+  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.chakra-button:hover:not(:disabled) {
+  transform: translateY(-2px);
+}
+
+.chakra-button:active {
+  transform: scale(0.98);
 }
 
 /* Custom hover effects for table rows */
 .chakra-table tbody tr {
-  transition: background-color 0.15s ease-in-out;
+  transition: background-color 0.2s ease-in-out;
 }
 
-/* Totals block styling enhancements */
-.totals-block {
-  background: linear-gradient(135deg, #f7f8fa 0%, #edf1f7 100%);
+/* Card hover effects */
+.chakra-card {
+  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+/* Input and textarea focus effects */
+.chakra-input:focus,
+.chakra-textarea:focus {
+  transform: translateY(-1px);
+}
+
+.chakra-input:hover:not(:disabled),
+.chakra-textarea:hover:not(:disabled) {
+  transform: translateY(-1px);
+}
+
+/* Editable hover effects */
+.chakra-editable__preview:hover {
+  transition: all 0.2s ease-in-out;
 }
 
 /* Smooth scrolling for overflowing tables */
@@ -50,24 +74,22 @@ input[type='number'] {
   scroll-behavior: smooth;
 }
 
-/* Empty state styling if needed */
+/* Empty state styling */
 .quote-preview-empty {
   text-align: center;
   padding: 60px 20px;
+  animation: fadeInUp 0.5s ease-out;
 }
 
 .empty-message {
   color: #718096;
+  font-size: 16px;
 }
 
 /* Mobile Responsive Enhancements */
 @media (max-width: 768px) {
   .quote-preview {
     padding: 0;
-  }
-
-  .totals-block {
-    padding: 12px;
   }
 
   .quote-preview-empty {
@@ -87,17 +109,21 @@ input[type='number'] {
   .line-items-table td.line-item-delete::before {
     display: none;
   }
+  
+  .chakra-heading {
+    font-size: 24px !important;
+  }
 }
 
 @media (max-width: 480px) {
   .quote-preview {
     padding: 0;
   }
-}
-
-/* Mobile optimizations */
-@media (max-width: 768px) {
+  
   .quote-preview-empty {
+    padding: 20px 10px;
+  }
+}
     padding: 32px 16px;
   }
 }
