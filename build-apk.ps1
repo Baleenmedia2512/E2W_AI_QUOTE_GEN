@@ -1,7 +1,7 @@
-# Build APK Script for AI Quote Generator
+# Build APK Script for Quote Buddy
 # This script builds a debug APK for Android
 
-Write-Host "Building AI Quote Generator APK..." -ForegroundColor Cyan
+Write-Host "Building Quote Buddy APK..." -ForegroundColor Cyan
 
 # Step 1: Build web application
 Write-Host "`n[1/4] Building web app..." -ForegroundColor Yellow

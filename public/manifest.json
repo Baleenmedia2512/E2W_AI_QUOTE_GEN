@@ -1,6 +1,6 @@
 {
-  "name": "AI Quote Generator",
-  "short_name": "Quote Gen",
+  "name": "Quote Buddy",
+  "short_name": "Quote Buddy",
   "description": "AI-powered professional quote generation application",
   "start_url": "/",
   "display": "standalone",

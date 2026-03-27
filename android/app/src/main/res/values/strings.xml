@@ -1,7 +1,7 @@
 <?xml version='1.0' encoding='utf-8'?>
 <resources>
-    <string name="app_name">AI Quote Generator</string>
-    <string name="title_activity_main">AI Quote Generator</string>
+    <string name="app_name">Quote Buddy</string>
+    <string name="title_activity_main">Quote Buddy</string>
     <string name="package_name">com.baleenmedia.quotegen</string>
     <string name="custom_url_scheme">com.baleenmedia.quotegen</string>
 </resources>

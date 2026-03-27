@@ -1,4 +1,4 @@
-// Service Worker for AI Quote Generator PWA
+// Service Worker for Quote Buddy PWA
 const CACHE_NAME = 'ai-quote-gen-v1';
 const RUNTIME_CACHE = 'runtime-cache-v1';
 
@@ -132,7 +132,7 @@ self.addEventListener('push', (event) => {
   };
 
   event.waitUntil(
-    self.registration.showNotification('AI Quote Generator', options)
+    self.registration.showNotification('Quote Buddy', options)
   );
 });
 
