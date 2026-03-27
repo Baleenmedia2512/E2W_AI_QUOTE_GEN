@@ -1,4 +1,4 @@
-# AI Quote Generator
+# Quote Buddy
 
 A mobile-first React + Ionic application that uses AI to generate professional quotations from proposal PDFs.
 

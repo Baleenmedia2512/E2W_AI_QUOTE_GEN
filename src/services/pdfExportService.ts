@@ -286,7 +286,7 @@ export const exportToPDF = async (
     pdf.setProperties({
       title: `Quote ${quoteNumber}`,
       subject: 'Quote Document',
-      author: 'AI Quote Generator',
+      author: 'Quote Buddy',
       keywords: 'quote, proposal',
       creator: 'E2W Quote System'
     });

@@ -2,7 +2,7 @@ import { CapacitorConfig } from '@capacitor/cli';
 
 const config: CapacitorConfig = {
   appId: 'com.baleenmedia.quotegen',
-  appName: 'AI Quote Generator',
+  appName: 'Quote Buddy',
   webDir: 'dist',
   server: {
     androidScheme: 'https'

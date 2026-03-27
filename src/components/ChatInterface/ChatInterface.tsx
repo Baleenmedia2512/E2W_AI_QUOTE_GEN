@@ -212,7 +212,7 @@ const ChatInterface: React.FC = () => {
             G
           </Box>
           <Text fontSize="md" fontWeight="600" color="white">
-            Gemini Assistant
+            Quote Assistant
           </Text>
         </HStack>
         <HStack spacing={1}>
