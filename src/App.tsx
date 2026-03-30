@@ -4,9 +4,13 @@ import { Box } from '@chakra-ui/react';
 import HomePage from './pages/HomePage';
 import QuotePage from './pages/QuotePage';
 import { QuotePreviewPage } from './pages/QuotePreviewPage';
+import LoginPage from './pages/LoginPage';
+import UnauthorizedPage from './pages/UnauthorizedPage';
 import { ErrorBoundary } from './components/ErrorBoundary/ErrorBoundary';
 import BottomNav from './components/BottomNav/BottomNav';
+import { Header } from './components/Header';
 import { registerServiceWorker } from './utils/pwa';
+import { PrivateRoute } from './components/PrivateRoute';
 
 const App: React.FC = () => {
   useEffect(() => {
@@ -22,13 +26,31 @@ const App: React.FC = () => {
     <ErrorBoundary>
       <Box minH="100vh" bg="white">
         <Router>
-          <Switch>
-            <Route exact path="/" component={HomePage} />
-            <Route exact path="/quote" component={QuotePage} />
-            <Route exact path="/preview" component={QuotePreviewPage} />
-            <Route render={() => <Redirect to="/" />} />
-          </Switch>
-          <BottomNav />
+          <Route
+            render={({ location }) => {
+              // Don't show header on login page
+              const hideHeader = location.pathname === '/login';
+              return (
+                <>
+                  {!hideHeader && <Header />}
+                  <Switch>
+                    {/* Auth Routes - Public */}
+                    <Route exact path="/login" component={LoginPage} />
+                    <Route exact path="/unauthorized" component={UnauthorizedPage} />
+                    
+                    {/* Protected Routes - Requires Authentication */}
+                    <PrivateRoute exact path="/" component={HomePage} />
+                    <PrivateRoute exact path="/quote" component={QuotePage} />
+                    <PrivateRoute exact path="/preview" component={QuotePreviewPage} />
+                    
+                    {/* Fallback */}
+                    <Route render={() => <Redirect to="/" />} />
+                  </Switch>
+                  <BottomNav />
+                </>
+              );
+            }}
+          />
         </Router>
       </Box>
     </ErrorBoundary>
