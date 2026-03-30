@@ -13,6 +13,7 @@ import { useHistory } from 'react-router-dom';
 import ProposalUpload from '../components/ProposalUpload/ProposalUpload';
 import ProposalViewer from '../components/ProposalViewer/ProposalViewer';
 import ChatInterface from '../components/ChatInterface/ChatInterface';
+import { UserProfile } from '../components/UserProfile';
 
 const HomePage: React.FC = () => {
   const history = useHistory();
@@ -51,6 +52,10 @@ const HomePage: React.FC = () => {
             Quote Buddy
           </Text>
         </HStack>
+        {/* User Profile - Mobile */}
+        <Box display={{ base: 'block', md: 'none' }}>
+          <UserProfile />
+        </Box>
       </Box>
 
       {/* Desktop Header */}
@@ -131,6 +136,10 @@ const HomePage: React.FC = () => {
               <Icon as={FiEye} boxSize={5} />
               <Box>Preview</Box>
             </HStack>
+            {/* User Profile - Desktop */}
+            <Box ml={4}>
+              <UserProfile />
+            </Box>
           </HStack>
         </Flex>
       </Box>
