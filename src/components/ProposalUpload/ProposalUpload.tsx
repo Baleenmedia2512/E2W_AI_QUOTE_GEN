@@ -31,6 +31,7 @@ const ProposalUpload: React.FC = () => {
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [loading, setLoading] = useState(false);
   const [isDragging, setIsDragging] = useState(false);
+  const [processingFileType, setProcessingFileType] = useState<string>('file');
   const { proposal, setProposal } = useAppStore();
   const toast = useToast();
 
@@ -41,6 +42,7 @@ const ProposalUpload: React.FC = () => {
   const processFile = async (file: File) => {
     // Detect file type
     const fileType = detectFileType(file);
+    setProcessingFileType(fileType);
     
     // Validate file based on type
     let validation: { valid: boolean; error?: string };
@@ -277,7 +279,9 @@ const ProposalUpload: React.FC = () => {
           <Center mt={4}>
             <HStack spacing={3}>
               <Spinner size="sm" color="brand.500" />
-              <Text fontSize="sm" color="gray.600">Processing PDF...</Text>
+              <Text fontSize="sm" color="gray.600">
+                Processing {processingFileType === 'pdf' ? 'PDF' : processingFileType === 'image' ? 'image' : processingFileType === 'excel' ? 'Excel file' : 'file'}...
+              </Text>
             </HStack>
           </Center>
         )}
