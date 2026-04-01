@@ -606,6 +606,17 @@ export const ReferenceImages: React.FC<ReferenceImagesProps> = ({ proposalPages,
     const designSpec: ExtractedPage[] = [];
     const reference: ExtractedPage[] = [];
     
+    // Filter out direct JPEG uploads (single-page JPEG files)
+    // This excludes JPEG images uploaded directly, but keeps PDF-rendered images
+    const isDirectJPEGUpload = proposalPages && 
+                               proposalPages.length === 1 && 
+                               proposalPages[0].imageDataUrl?.startsWith('data:image/jpeg');
+    
+    if (isDirectJPEGUpload) {
+      console.log('🚫 ReferenceImages: Direct JPEG upload detected - skipping visual display');
+      return { designSpecPages: [], referenceImagePages: [] };
+    }
+    
     for (const page of filteredPages) {
       const text = page.text
         .toLowerCase()
@@ -637,7 +648,7 @@ export const ReferenceImages: React.FC<ReferenceImagesProps> = ({ proposalPages,
     }
     
     return { designSpecPages: designSpec, referenceImagePages: reference };
-  }, [filteredPages]);
+  }, [filteredPages, proposalPages]);
 
   // Group images into pairs (max 2 per page)
   const groupedDesignSpec = useMemo(() => {
