@@ -6,6 +6,11 @@ export interface Lead {
   phone: string;
   email: string;
   alternatePhone?: string;
+  city?: string;
+  state?: string;
+  pincode?: string;
+  campaign?: string;
+  source?: string;
   created_at?: string;
   updated_at?: string;
 }
@@ -17,4 +22,9 @@ export interface LeadSearchResult {
   email: string;
   address: string;
   alternatePhone?: string;
+  city?: string;
+  state?: string;
+  pincode?: string;
+  campaign?: string;
+  source?: string;
 }

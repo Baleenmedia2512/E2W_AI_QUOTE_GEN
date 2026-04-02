@@ -22,7 +22,7 @@ export const searchLeads = async (
     
     const { data, error } = await supabase
       .from('Lead')
-      .select('id, name, phone, email, address, alternatePhone')
+      .select('id, name, phone, email, address, alternatePhone, city, state, pincode, campaign, source')
       .or(`name.ilike.%${searchTerm}%,phone.ilike.%${searchTerm}%,email.ilike.%${searchTerm}%`)
       .limit(limit)
       .order('name', { ascending: true });
