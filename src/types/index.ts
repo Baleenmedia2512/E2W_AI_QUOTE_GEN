@@ -3,6 +3,7 @@ import { Quote, QuoteItem, LineItem } from './quote';
 import { CompanyInfo } from './company';
 import { ClientInfo } from './client';
 import { TemplateData, TemplateProps, TemplateType, Template, TemplateMetadata } from './template';
+import { Lead, LeadSearchResult } from './lead';
 
 export interface ExtractedPage {
   pageNumber: number;
@@ -53,4 +54,4 @@ export interface AppState {
   setSelectedTemplate: (template: TemplateType) => void;
 }
 
-export type { Message, Quote, QuoteItem, LineItem, CompanyInfo, ClientInfo, TemplateData, TemplateProps, TemplateType, Template, TemplateMetadata };
+export type { Message, Quote, QuoteItem, LineItem, CompanyInfo, ClientInfo, TemplateData, TemplateProps, TemplateType, Template, TemplateMetadata, Lead, LeadSearchResult };

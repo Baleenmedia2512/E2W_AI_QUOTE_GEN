@@ -13,7 +13,7 @@ import { useHistory } from 'react-router-dom';
 import QuoteNavBar from '../components/QuoteWizard/QuoteNavBar';
 import QuoteStepper from '../components/QuoteWizard/QuoteStepper';
 import CompanyInfoForm from '../components/CompanyInfoForm/CompanyInfoForm';
-import ClientInfoForm from '../components/ClientInfoForm/ClientInfoForm';
+import ClientInfoForm from '../components/ClientInfoForm/ClientInfoFormWithAutocomplete';
 import QuotePreview from '../components/QuotePreview/QuotePreview';
 import { TemplateSelector } from '../components/TemplateSelector/TemplateSelector';
 import { useAppStore } from '../store';
