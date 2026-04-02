@@ -196,14 +196,18 @@ export const AutocompleteInput: React.FC<AutocompleteInputProps> = ({
                 >
                   {formatDisplay(lead)}
                 </Text>
-                <Text fontSize="xs" color="gray.600" noOfLines={1}>
-                  {lead.phone} • {lead.email}
+                <Text fontSize="xs" color="gray.600" lineHeight="1.4">
+                  {[
+                    lead.phone,
+                    lead.email,
+                    lead.address,
+                    lead.city,
+                    lead.state,
+                    lead.pincode,
+                    lead.campaign,
+                    lead.source
+                  ].filter(Boolean).join(' | ')}
                 </Text>
-                {lead.address && (
-                  <Text fontSize="xs" color="gray.500" noOfLines={1} mt={0.5}>
-                    {lead.address}
-                  </Text>
-                )}
               </ListItem>
             ))}
           </List>

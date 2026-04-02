@@ -41,6 +41,7 @@ const ClientInfoFormWithAutocomplete: React.FC<ClientInfoFormWithAutocompletePro
   });
 
   const [errors, setErrors] = useState<Partial<Record<keyof ClientInfo, string>>>({});
+  const [searchValue, setSearchValue] = useState('');
 
   useEffect(() => {
     if (initialData) {
@@ -68,6 +69,12 @@ const ClientInfoFormWithAutocomplete: React.FC<ClientInfoFormWithAutocompletePro
     });
     // Clear all errors when a lead is selected
     setErrors({});
+  };
+
+  // Handle lead selection from separate search bar
+  const handleSearchSelect = (lead: LeadSearchResult) => {
+    handleLeadSelect(lead);
+    setSearchValue(''); // Clear search after selection
   };
 
   const validateForm = (): boolean => {
@@ -127,6 +134,33 @@ const ClientInfoFormWithAutocomplete: React.FC<ClientInfoFormWithAutocompletePro
 
   return (
     <Box className="client-info-form" py={8}>
+      {/* Dedicated Search Section */}
+      <Box 
+        mb={8} 
+        p={6} 
+        bg="gray.50" 
+        borderRadius="16px" 
+        borderWidth="2px" 
+        borderColor="gray.200"
+      >
+        <FormControl>
+          <FormLabel fontSize="sm" fontWeight="700" color="gray.700" mb={3}>
+            🔍 Search Existing Leads
+          </FormLabel>
+          <AutocompleteInput
+            value={searchValue}
+            onChange={setSearchValue}
+            onSelect={handleSearchSelect}
+            onSearch={searchLeads}
+            placeholder="Search by name, phone, or email..."
+            size="lg"
+          />
+          <Text fontSize="xs" color="gray.500" mt={2}>
+            Find and auto-fill client details from existing leads
+          </Text>
+        </FormControl>
+      </Box>
+
       {/* Section Title */}
       <Box mb={8}>
         <Heading 
@@ -153,14 +187,22 @@ const ClientInfoFormWithAutocomplete: React.FC<ClientInfoFormWithAutocompletePro
                 <FormLabel fontSize="sm" fontWeight="700" color="gray.800">
                   Client Name <Text as="span" color="red.500">*</Text>
                 </FormLabel>
-                {/* ENHANCED: Autocomplete Input instead of regular Input */}
-                <AutocompleteInput
+                <Input
                   value={formData.name}
-                  onChange={(value) => handleInputChange('name', value)}
-                  onSelect={handleLeadSelect}
-                  onSearch={searchLeads}
-                  placeholder="Start typing to search existing leads..."
-                  isInvalid={!!errors.name}
+                  onChange={(e) => handleInputChange('name', e.target.value)}
+                  placeholder="Enter client name"
+                  size="lg"
+                  bg="white"
+                  borderWidth="2px"
+                  borderColor="gray.300"
+                  fontWeight="500"
+                  _hover={{ borderColor: 'red.300', boxShadow: '0 0 0 1px rgba(201, 31, 61, 0.1)' }}
+                  _focus={{ 
+                    borderColor: 'red.500', 
+                    boxShadow: '0 0 0 3px rgba(201, 31, 61, 0.15)',
+                    bg: 'white'
+                  }}
+                  borderRadius="12px"
                 />
                 <FormErrorMessage fontWeight="500">{errors.name}</FormErrorMessage>
               </FormControl>
