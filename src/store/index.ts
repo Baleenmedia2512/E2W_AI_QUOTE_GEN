@@ -1,7 +1,9 @@
 import { create } from 'zustand';
 import { AppState, ProposalData, Message, Quote, CompanyInfo, ClientInfo, TemplateType } from '../types';
-import { loadCompanyInfo } from '../utils/localStorage';
+import { loadCompanyInfo, saveCompanyInfo as saveCompanyInfoToStorage } from '../utils/localStorage';
 import { savePageImages as savePageImagesToDB, clearPageImages } from '../utils/imageStorage';
+import { DEFAULT_COMPANY_INFO } from '../constants/defaultCompany';
+import { companyService } from '../services/companyService';
 
 const initialProposalState: ProposalData = {
   file: null,
@@ -54,6 +56,12 @@ const loadClientInfo = (): ClientInfo | null => {
   return null;
 };
 
+// Load company info with fallback to defaults
+const loadCompanyInfoWithDefaults = (): CompanyInfo => {
+  const saved = loadCompanyInfo();
+  return saved || DEFAULT_COMPANY_INFO;
+};
+
 export const useAppStore = create<AppState>((set) => ({
   // Proposal state
   proposal: initialProposalState,
@@ -103,16 +111,47 @@ export const useAppStore = create<AppState>((set) => ({
     }
   },
 
-  // Company state - Load from localStorage on init
-  companyInfo: loadCompanyInfo(),
+  // Company state - Load from localStorage on init, fallback to defaults
+  companyInfo: loadCompanyInfoWithDefaults(),
   setCompanyInfo: (info: CompanyInfo) => {
     set({ companyInfo: info });
-    // Persist to localStorage
+    // Persist to localStorage (always works, fallback)
     try {
       localStorage.setItem('companyInfo', JSON.stringify(info));
     } catch (error) {
       console.error('Failed to save company info to localStorage:', error);
     }
+    // Also persist to database (syncs across devices)
+    companyService.saveCompanySettings(info).catch(err => {
+      console.warn('Database sync failed, localStorage still working:', err);
+    });
+  },
+
+  // Sync company info from database (call on app init)
+  syncCompanyFromDatabase: async () => {
+    try {
+      const dbCompany = await companyService.getCompanySettings();
+      if (dbCompany) {
+        console.log('✅ Loaded company info from database');
+        set({ companyInfo: dbCompany });
+        // Also update localStorage cache
+        saveCompanyInfoToStorage(dbCompany);
+      } else {
+        console.log('ℹ️ No company info in database, using defaults/localStorage');
+      }
+    } catch (error) {
+      console.warn('⚠️ Database sync failed, using localStorage:', error);
+    }
+  },
+
+  // Enable real-time sync (optional, call after login)
+  enableCompanySync: () => {
+    const subscription = companyService.subscribeToChanges((updatedCompany) => {
+      console.log('🔄 Real-time update: Company info changed');
+      set({ companyInfo: updatedCompany });
+      saveCompanyInfoToStorage(updatedCompany);
+    });
+    return subscription;
   },
 
   // Client state - Load from localStorage on init

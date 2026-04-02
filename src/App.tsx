@@ -11,8 +11,12 @@ import BottomNav from './components/BottomNav/BottomNav';
 import { Header } from './components/Header';
 import { registerServiceWorker } from './utils/pwa';
 import { PrivateRoute } from './components/PrivateRoute';
+import { useCompanySync } from './hooks/useCompanySync';
 
 const App: React.FC = () => {
+  // Initialize database sync for company info (syncs across devices)
+  useCompanySync(true); // true = enable real-time updates
+
   useEffect(() => {
     // Register service worker for PWA support
     if (process.env.NODE_ENV === 'production') {
