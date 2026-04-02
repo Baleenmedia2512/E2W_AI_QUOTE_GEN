@@ -17,8 +17,6 @@ export const searchLeads = async (
     }
 
     console.log('🗄️ LeadService: Searching database for:', searchTerm);
-
-    const searchPattern = `%${searchTerm}%`;
     
     const { data, error } = await supabase
       .from('Lead')
