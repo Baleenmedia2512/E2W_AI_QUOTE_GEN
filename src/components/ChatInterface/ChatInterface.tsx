@@ -11,7 +11,7 @@ import {
   Flex,
   Icon,
 } from '@chakra-ui/react';
-import { FiSend, FiCheck, FiMic } from 'react-icons/fi';
+import { FiSend, FiCheck } from 'react-icons/fi';
 import { useHistory } from 'react-router-dom';
 import { useAppStore } from '../../store';
 import { sendMessageToGemini } from '../../services/geminiService';
@@ -210,26 +210,6 @@ const ChatInterface: React.FC = () => {
       }
     };
   }, []);
-
-  const toggleVoiceInput = () => {
-    if (!recognitionRef.current) {
-      alert('Speech recognition is not supported in your browser. Please use Chrome, Edge, or Safari.');
-      return;
-    }
-
-    if (isRecording) {
-      recognitionRef.current.stop();
-      setIsRecording(false);
-    } else {
-      try {
-        recognitionRef.current.start();
-        setIsRecording(true);
-      } catch (error) {
-        console.error('Error starting speech recognition:', error);
-        setIsRecording(false);
-      }
-    }
-  };
 
   return (
     <Box
