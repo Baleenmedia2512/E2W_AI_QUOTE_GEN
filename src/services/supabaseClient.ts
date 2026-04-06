@@ -1,12 +1,12 @@
 import { createClient } from '@supabase/supabase-js';
 
-// Extract credentials from connection string
-const SUPABASE_URL = 'https://wkwrrdcjknvupwsfdjtd.supabase.co';
+// Read from environment variables
+const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL || '';
+const SUPABASE_ANON_KEY = import.meta.env.VITE_SUPABASE_ANON_KEY || '';
 
-// You need to get the anon key from Supabase Dashboard -> Settings -> API
-// For direct PostgreSQL connection, we'll use the service role key or anon key
-// Replace this with your actual anon key from Supabase dashboard
-const SUPABASE_ANON_KEY = import.meta.env.VITE_SUPABASE_ANON_KEY || 'your-anon-key-here';
+if (!SUPABASE_URL || !SUPABASE_ANON_KEY) {
+  console.warn('⚠️ Supabase credentials missing in .env file');
+}
 
 export const supabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY, {
   auth: {

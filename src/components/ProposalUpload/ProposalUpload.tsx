@@ -1,4 +1,4 @@
-import React, { useRef, useState } from 'react';
+import React, { useRef, useState, useEffect } from 'react';
 import {
   Box,
   Button,
@@ -14,8 +14,19 @@ import {
   useToast,
   Spinner,
   useColorModeValue,
+  Divider,
+  Badge,
+  IconButton,
+  Collapse,
+  Modal,
+  ModalOverlay,
+  ModalContent,
+  ModalHeader,
+  ModalBody,
+  ModalFooter,
+  useDisclosure,
 } from '@chakra-ui/react';
-import { FiUploadCloud, FiFile } from 'react-icons/fi';
+import { FiUploadCloud, FiFile, FiClock, FiTrash2, FiChevronDown, FiChevronUp, FiFileText, FiImage, FiAlertTriangle } from 'react-icons/fi';
 import { useAppStore } from '../../store';
 import { extractPDFContent, validatePDFFile } from '../../utils/pdfUtils';
 import { 
@@ -25,6 +36,8 @@ import {
   validateExcelFile,
   detectFileType 
 } from '../../utils/fileUtils';
+import { findDuplicateProposal } from '../../utils/proposalStorage';
+import { findCloudDuplicate, cloudProposalToStored } from '../../services/supabaseProposalService';
 
 
 const ProposalUpload: React.FC = () => {
@@ -32,14 +45,160 @@ const ProposalUpload: React.FC = () => {
   const [loading, setLoading] = useState(false);
   const [isDragging, setIsDragging] = useState(false);
   const [processingFileType, setProcessingFileType] = useState<string>('file');
-  const { proposal, setProposal } = useAppStore();
+  const [showRecent, setShowRecent] = useState(false);
+  const { proposal, setProposal, recentProposals, loadRecentProposals, selectProposal, deleteProposalFromLibrary } = useAppStore();
   const toast = useToast();
+  
+  // Duplicate detection state
+  const { isOpen, onOpen, onClose } = useDisclosure();
+  const [pendingFile, setPendingFile] = useState<File | null>(null);
+  const [duplicateInfo, setDuplicateInfo] = useState<{ fileName: string; uploadedAt: Date } | null>(null);
 
   const borderColor = useColorModeValue('gray.200', 'gray.600');
   const dragBorderColor = useColorModeValue('brand.500', 'brand.300');
   const bgColor = useColorModeValue('gray.50', 'gray.700');
+  
+  // All useColorModeValue calls must be at top level (not conditional)
+  const dragBg = useColorModeValue('brand.50', 'brand.900');
+  const dragHoverBg = useColorModeValue('brand.50', 'brand.900');
+  const headerBgOpen = useColorModeValue('linear-gradient(135deg, #f6f8fb 0%, #ffffff 100%)', 'gray.800');
+  const headerBgClosed = useColorModeValue('transparent', 'transparent');
+  const headerHoverBg = useColorModeValue('gray.50', 'gray.800');
+  const cardBg = useColorModeValue('white', 'gray.800');
+  const cardHoverBg = useColorModeValue('brand.50', 'gray.750');
+  const cardBorderColor = useColorModeValue('gray.200', 'gray.700');
+  const fileTypeBarGradient = useColorModeValue('linear(to-b, brand.400, brand.600)', 'linear(to-b, brand.300, brand.500)');
+  const fileIconBg = useColorModeValue('linear(135deg, brand.50, brand.100)', 'linear(135deg, brand.900, brand.800)');
+  const textColor = useColorModeValue('gray.800', 'gray.100');
+  const metaTextColor = useColorModeValue('gray.600', 'gray.400');
+  const cloudBadgeBg = useColorModeValue('blue.50', 'blue.900');
+  const cloudBadgeColor = useColorModeValue('blue.600', 'blue.300');
+  const deleteHoverBg = useColorModeValue('red.50', 'red.900');
+  const modalOverlayBg = 'blackAlpha.700';
+  const modalIconBg = useColorModeValue('orange.100', 'orange.900');
+  const modalBoxBg = useColorModeValue('gray.50', 'gray.700');
+  const modalTextColor = useColorModeValue('gray.700', 'gray.300');
+  const modalNoteBg = useColorModeValue('blue.50', 'blue.900');
+  const modalNoteColor = useColorModeValue('blue.800', 'blue.200');
+  const dividerColor = useColorModeValue('gray.300', 'gray.600');
 
+  // Load recent proposals on mount and check cloud storage availability
+  useEffect(() => {
+    const initializeStorage = async () => {
+      // Check if cloud storage is available (Supabase)
+      const { checkCloudStorage } = useAppStore.getState();
+      await checkCloudStorage();
+      
+      // Load proposals from both local and cloud
+      await loadRecentProposals();
+    };
+    
+    initializeStorage();
+  }, [loadRecentProposals]);
+
+  // Check for duplicates before processing (CLOUD-ONLY when available, fallback to local)
   const processFile = async (file: File) => {
+    let duplicate: any = null;
+    const { cloudStorageEnabled } = useAppStore.getState();
+    
+    // If cloud storage is enabled, check ONLY cloud (skip local)
+    if (cloudStorageEnabled) {
+      try {
+        const cloudDuplicate = await findCloudDuplicate(file.name, file.size);
+        if (cloudDuplicate) {
+          duplicate = cloudProposalToStored(cloudDuplicate);
+          console.log('☁️ Duplicate found in cloud storage:', duplicate.fileName);
+        }
+      } catch (error) {
+        console.warn('⚠️ Cloud duplicate check failed:', error);
+      }
+    } else {
+      // Fallback to local IndexedDB check if cloud is not available
+      duplicate = await findDuplicateProposal(file.name, file.type || 'application/pdf', file.size);
+      if (duplicate) {
+        console.log('💾 Duplicate found in local storage:', duplicate.fileName);
+      }
+    }
+    
+    if (duplicate) {
+      // Duplicate found - show confirmation dialog
+      setPendingFile(file);
+      setDuplicateInfo({
+        fileName: duplicate.fileName,
+        uploadedAt: duplicate.uploadedAt,
+      });
+      onOpen(); // Open confirmation modal
+      return;
+    }
+    
+    // No duplicate - proceed with upload
+    await actualProcessFile(file);
+  };
+
+  // Handle user's choice from confirmation dialog (CLOUD-ONLY when available)
+  const handleReplaceConfirm = async () => {
+    onClose();
+    if (pendingFile) {
+      let duplicate: any = null;
+      const { cloudStorageEnabled } = useAppStore.getState();
+      
+      // If cloud is enabled, find and delete from cloud only
+      if (cloudStorageEnabled) {
+        try {
+          const cloudDuplicate = await findCloudDuplicate(
+            pendingFile.name,
+            pendingFile.size
+          );
+          if (cloudDuplicate) {
+            duplicate = cloudProposalToStored(cloudDuplicate);
+          }
+        } catch (error) {
+          console.warn('⚠️ Cloud duplicate check failed during replacement:', error);
+        }
+      } else {
+        // Fallback to local if cloud not available
+        duplicate = await findDuplicateProposal(
+          pendingFile.name,
+          pendingFile.type || 'application/pdf',
+          pendingFile.size
+        );
+      }
+      
+      if (duplicate) {
+        await deleteProposalFromLibrary(duplicate.id);
+      }
+      
+      // Process the new file
+      await actualProcessFile(pendingFile);
+      setPendingFile(null);
+      setDuplicateInfo(null);
+      
+      toast({
+        title: 'Replaced',
+        description: 'File replaced successfully with new version',
+        status: 'success',
+        duration: 2000,
+        isClosable: true,
+      });
+    }
+  };
+
+  const handleCancelUpload = () => {
+    onClose();
+    setPendingFile(null);
+    setDuplicateInfo(null);
+    
+    toast({
+      title: 'Upload Cancelled',
+      description: 'Using existing file from library',
+      status: 'info',
+      duration: 2000,
+      isClosable: true,
+    });
+  };
+
+  // Actual file processing logic (RENAMED from processFile)
+  const actualProcessFile = async (file: File) => {
     // Detect file type
     const fileType = detectFileType(file);
     setProcessingFileType(fileType);
@@ -201,7 +360,77 @@ const ProposalUpload: React.FC = () => {
     fileInputRef.current?.click();
   };
 
+  const handleLoadProposal = async (id: string) => {
+    setLoading(true);
+    try {
+      await selectProposal(id);
+      toast({
+        title: 'Success',
+        description: 'Proposal loaded from library',
+        status: 'success',
+        duration: 2000,
+        isClosable: true,
+      });
+    } catch (error) {
+      toast({
+        title: 'Error',
+        description: 'Failed to load proposal',
+        status: 'error',
+        duration: 3000,
+        isClosable: true,
+      });
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleDeleteProposal = async (id: string, fileName: string) => {
+    try {
+      await deleteProposalFromLibrary(id);
+      toast({
+        title: 'Deleted',
+        description: `${fileName} removed from library`,
+        status: 'info',
+        duration: 2000,
+        isClosable: true,
+      });
+    } catch (error) {
+      toast({
+        title: 'Error',
+        description: 'Failed to delete proposal',
+        status: 'error',
+        duration: 3000,
+        isClosable: true,
+      });
+    }
+  };
+
+  const formatFileSize = (bytes: number): string => {
+    if (bytes < 1024) return bytes + ' B';
+    if (bytes < 1024 * 1024) return (bytes / 1024).toFixed(1) + ' KB';
+    return (bytes / (1024 * 1024)).toFixed(1) + ' MB';
+  };
+
+  const formatRelativeTime = (date: Date): string => {
+    const now = new Date();
+    const diffMs = now.getTime() - new Date(date).getTime();
+    const diffDays = Math.floor(diffMs / (1000 * 60 * 60 * 24));
+    
+    if (diffDays === 0) return 'Today';
+    if (diffDays === 1) return 'Yesterday';
+    if (diffDays < 7) return `${diffDays} days ago`;
+    if (diffDays < 30) return `${Math.floor(diffDays / 7)} weeks ago`;
+    return new Date(date).toLocaleDateString();
+  };
+
+  const getFileIcon = (fileType: string) => {
+    if (fileType.includes('pdf')) return FiFileText;
+    if (fileType.includes('image') || fileType.includes('jpeg')) return FiImage;
+    return FiFile;
+  };
+
   return (
+    <>
     <Card variant="outline" borderRadius="xl" boxShadow="sm">
       <CardHeader>
         <Heading size="md" fontWeight="semibold">Upload Proposal</Heading>
@@ -222,7 +451,7 @@ const ProposalUpload: React.FC = () => {
             borderStyle="dashed"
             borderColor={isDragging ? dragBorderColor : borderColor}
             borderRadius="lg"
-            bg={isDragging ? useColorModeValue('brand.50', 'brand.900') : bgColor}
+            bg={isDragging ? dragBg : bgColor}
             cursor="pointer"
             transition="all 0.2s"
             onClick={handleUploadClick}
@@ -231,7 +460,7 @@ const ProposalUpload: React.FC = () => {
             onDrop={handleDrop}
             _hover={{
               borderColor: dragBorderColor,
-              bg: useColorModeValue('brand.50', 'brand.900'),
+              bg: dragHoverBg,
             }}
           >
             <VStack spacing={3}>
@@ -285,8 +514,320 @@ const ProposalUpload: React.FC = () => {
             </HStack>
           </Center>
         )}
+
+        {/* Recent Uploads Section - Enhanced UI */}
+        {recentProposals.length > 0 && (
+          <Box mt={6}>
+            <Divider mb={4} borderColor={dividerColor} />
+            
+            {/* Enhanced Header */}
+            <Box
+              position="relative"
+              cursor="pointer"
+              onClick={() => setShowRecent(!showRecent)}
+              p={3}
+              borderRadius="lg"
+              bg={showRecent ? headerBgOpen : headerBgClosed}
+              _hover={{
+                bg: headerHoverBg,
+              }}
+              transition="all 0.3s ease"
+            >
+              <HStack justify="space-between">
+                <HStack spacing={3}>
+                  {/* Clock Icon with Background */}
+                  <Center
+                    w={8}
+                    h={8}
+                    borderRadius="lg"
+                    bg={dragBg}
+                    color="brand.500"
+                  >
+                    <Icon as={FiClock} boxSize={4} />
+                  </Center>
+                  
+                  <VStack align="start" spacing={0}>
+                    <HStack spacing={2}>
+                      <Text fontSize="sm" fontWeight="bold" color={textColor}>
+                        Recent Uploads
+                      </Text>
+                      <Badge 
+                        colorScheme="brand" 
+                        fontSize="xs" 
+                        borderRadius="full"
+                        px={2}
+                        py={0.5}
+                        fontWeight="600"
+                      >
+                        {recentProposals.length}
+                      </Badge>
+                    </HStack>
+                    <Text fontSize="xs" color="gray.500" fontWeight="normal">
+                      {showRecent ? 'Click to hide' : 'Click to view saved files'}
+                    </Text>
+                  </VStack>
+                </HStack>
+                
+                {/* Toggle Button with Animation */}
+                <Center
+                  w={8}
+                  h={8}
+                  borderRadius="md"
+                  bg={cardBg}
+                  borderWidth={1}
+                  borderColor={cardBorderColor}
+                  transition="all 0.2s"
+                  _hover={{
+                    borderColor: 'brand.400',
+                    transform: 'scale(1.05)',
+                  }}
+                >
+                  <Icon 
+                    as={showRecent ? FiChevronUp : FiChevronDown} 
+                    boxSize={4}
+                    color="brand.500"
+                    transition="transform 0.2s"
+                  />
+                </Center>
+              </HStack>
+            </Box>
+
+            {/* Enhanced Proposal Cards */}
+            <Collapse in={showRecent} animateOpacity>
+              <VStack spacing={3} align="stretch" mt={3}>
+                {recentProposals.map((storedProposal) => (
+                  <Box
+                    key={storedProposal.id}
+                    position="relative"
+                    p={4}
+                    borderWidth={1}
+                    borderColor={cardBorderColor}
+                    borderRadius="xl"
+                    bg={cardBg}
+                    boxShadow="sm"
+                    _hover={{ 
+                      borderColor: 'brand.400',
+                      boxShadow: 'lg',
+                      transform: 'translateY(-2px)',
+                      bg: cardHoverBg
+                    }}
+                    transition="all 0.3s ease"
+                  >
+                    {/* File Type Indicator Bar */}
+                    <Box
+                      position="absolute"
+                      left={0}
+                      top={0}
+                      bottom={0}
+                      w="4px"
+                      borderLeftRadius="xl"
+                      bgGradient={fileTypeBarGradient}
+                    />
+                    
+                    <HStack spacing={4} align="start">
+                      {/* File Icon with Enhanced Styling */}
+                      <Center
+                        w={12}
+                        h={12}
+                        borderRadius="lg"
+                        bgGradient={fileIconBg}
+                        flexShrink={0}
+                        position="relative"
+                        boxShadow="sm"
+                      >
+                        <Icon
+                          as={getFileIcon(storedProposal.fileType)}
+                          boxSize={6}
+                          color="brand.500"
+                        />
+                      </Center>
+                      
+                      {/* File Details */}
+                      <VStack align="start" spacing={1} flex={1} minW={0}>
+                        <Text
+                          fontSize="sm"
+                          fontWeight="600"
+                          noOfLines={1}
+                          wordBreak="break-all"
+                          color={textColor}
+                        >
+                          {storedProposal.fileName}
+                        </Text>
+                        
+                        {/* Meta Information with Icons */}
+                        <HStack 
+                          spacing={3} 
+                          fontSize="xs" 
+                          color={metaTextColor}
+                          flexWrap="wrap"
+                        >
+                          <HStack spacing={1}>
+                            <Text fontWeight="500">{storedProposal.pageCount}</Text>
+                            <Text>pages</Text>
+                          </HStack>
+                          <Text color="gray.300">•</Text>
+                          <Text fontWeight="500">{formatFileSize(storedProposal.fileSize)}</Text>
+                          <Text color="gray.300">•</Text>
+                          <HStack spacing={1}>
+                            <Icon as={FiClock} boxSize={3} />
+                            <Text>{formatRelativeTime(storedProposal.uploadedAt)}</Text>
+                          </HStack>
+                          
+                          {/* Cloud Storage Indicator - Show uploaded by info */}
+                          {storedProposal.isCloudStored && (
+                            <>
+                              <Text color="gray.300">•</Text>
+                              <HStack 
+                                spacing={1}
+                                px={2}
+                                py={0.5}
+                                borderRadius="md"
+                                bg={cloudBadgeBg}
+                                color={cloudBadgeColor}
+                              >
+                                <Text fontSize="xs" fontWeight="500">
+                                  ☁️ {storedProposal.uploadedByName || 'Shared'}
+                                </Text>
+                              </HStack>
+                            </>
+                          )}
+                        </HStack>
+                      </VStack>
+                      
+                      {/* Action Buttons - Enhanced */}
+                      <VStack spacing={2} flexShrink={0}>
+                        <Button
+                          size="sm"
+                          colorScheme="brand"
+                          onClick={() => handleLoadProposal(storedProposal.id)}
+                          isDisabled={loading}
+                          leftIcon={<Icon as={FiUploadCloud} />}
+                          borderRadius="lg"
+                          fontWeight="600"
+                          px={4}
+                          boxShadow="sm"
+                          _hover={{
+                            transform: 'scale(1.05)',
+                            boxShadow: 'md',
+                          }}
+                          transition="all 0.2s"
+                        >
+                          Load
+                        </Button>
+                        <IconButton
+                          aria-label="Delete proposal"
+                          icon={<Icon as={FiTrash2} boxSize={4} />}
+                          size="sm"
+                          variant="ghost"
+                          colorScheme="red"
+                          onClick={() => handleDeleteProposal(storedProposal.id, storedProposal.fileName)}
+                          isDisabled={loading}
+                          borderRadius="lg"
+                          _hover={{
+                            bg: deleteHoverBg,
+                            transform: 'scale(1.1)',
+                          }}
+                          transition="all 0.2s"
+                        />
+                      </VStack>
+                    </HStack>
+                  </Box>
+                ))}
+              </VStack>
+            </Collapse>
+          </Box>
+        )}
       </CardBody>
     </Card>
+
+    {/* Duplicate Confirmation Modal */}
+    <Modal isOpen={isOpen} onClose={handleCancelUpload} isCentered>
+      <ModalOverlay bg={modalOverlayBg} backdropFilter="blur(4px)" />
+      <ModalContent mx={4} borderRadius="xl">
+        <ModalHeader pb={2}>
+          <HStack spacing={3}>
+            <Center
+              w={10}
+              h={10}
+              borderRadius="lg"
+              bg={modalIconBg}
+            >
+              <Icon as={FiAlertTriangle} boxSize={5} color="orange.500" />
+            </Center>
+            <VStack align="start" spacing={0}>
+              <Text fontSize="lg" fontWeight="bold">
+                File Already Exists
+              </Text>
+              <Text fontSize="sm" fontWeight="normal" color="gray.500">
+                This file is already in your library
+              </Text>
+            </VStack>
+          </HStack>
+        </ModalHeader>
+
+        <ModalBody py={4}>
+          <VStack align="start" spacing={3}>
+            <Box
+              p={3}
+              bg={modalBoxBg}
+              borderRadius="lg"
+              w="full"
+            >
+              <VStack align="start" spacing={1}>
+                <HStack spacing={2}>
+                  <Icon as={FiFile} boxSize={4} color="brand.500" />
+                  <Text fontSize="sm" fontWeight="600" noOfLines={1}>
+                    {duplicateInfo?.fileName}
+                  </Text>
+                </HStack>
+                <Text fontSize="xs" color="gray.500" pl={6}>
+                  Uploaded {duplicateInfo?.uploadedAt ? formatRelativeTime(duplicateInfo.uploadedAt) : ''}
+                </Text>
+              </VStack>
+            </Box>
+
+            <Text fontSize="sm" color={modalTextColor}>
+              Do you want to replace the existing file with the new one?
+            </Text>
+
+            <Box
+              p={3}
+              bg={modalNoteBg}
+              borderRadius="lg"
+              borderLeftWidth={3}
+              borderColor="blue.500"
+            >
+              <Text fontSize="xs" color={modalNoteColor}>
+                <strong>Note:</strong> Replacing will delete the old file and upload the new version.
+              </Text>
+            </Box>
+          </VStack>
+        </ModalBody>
+
+        <ModalFooter pt={2}>
+          <HStack spacing={3} w="full">
+            <Button
+              flex={1}
+              variant="outline"
+              onClick={handleCancelUpload}
+              borderRadius="lg"
+            >
+              Cancel
+            </Button>
+            <Button
+              flex={1}
+              colorScheme="brand"
+              onClick={handleReplaceConfirm}
+              borderRadius="lg"
+              fontWeight="600"
+            >
+              Yes, Replace
+            </Button>
+          </HStack>
+        </ModalFooter>
+      </ModalContent>
+    </Modal>
+  </>
   );
 };
 
