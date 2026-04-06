@@ -705,7 +705,8 @@ const ChatInterface: React.FC = () => {
               </>
             )}
             
-            <IconButton
+            {/* Voice input button hidden */}
+            {/* <IconButton
               aria-label={isRecording ? "Stop recording" : "Voice input"}
               icon={<FiMic />}
               onClick={toggleVoiceInput}
@@ -769,7 +770,7 @@ const ChatInterface: React.FC = () => {
               } : {
                 transition: 'all 0.3s cubic-bezier(0.4, 0, 0.2, 1)',
               }}
-            />
+            /> */}
           </Box>
           <IconButton
             aria-label="Send message"
