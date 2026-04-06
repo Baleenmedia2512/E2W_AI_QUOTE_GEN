@@ -11,7 +11,7 @@ import {
   Flex,
   Icon,
 } from '@chakra-ui/react';
-import { FiSend, FiCheck } from 'react-icons/fi';
+import { FiSend, FiCheck, FiMic } from 'react-icons/fi';
 import { useHistory } from 'react-router-dom';
 import { useAppStore } from '../../store';
 import { sendMessageToGemini } from '../../services/geminiService';
@@ -34,7 +34,9 @@ const ChatInterface: React.FC = () => {
   const [inputValue, setInputValue] = useState('');
   const [isLoading, setIsLoading] = useState(false);
   const [_error, setError] = useState<string | null>(null);
+  const [isRecording, setIsRecording] = useState(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
+  const recognitionRef = useRef<any>(null);
 
   // Load chat history on mount
   useEffect(() => {
@@ -173,6 +175,60 @@ const ChatInterface: React.FC = () => {
 
   const handleSuggestionClick = (suggestion: string) => {
     setInputValue(suggestion);
+  };
+
+  // Initialize speech recognition
+  useEffect(() => {
+    if ('webkitSpeechRecognition' in window || 'SpeechRecognition' in window) {
+      const SpeechRecognition = (window as any).webkitSpeechRecognition || (window as any).SpeechRecognition;
+      const recognition = new SpeechRecognition();
+      recognition.continuous = false;
+      recognition.interimResults = false;
+      recognition.lang = 'en-US';
+
+      recognition.onresult = (event: any) => {
+        const transcript = event.results[0][0].transcript;
+        setInputValue(prev => prev + (prev ? ' ' : '') + transcript);
+        setIsRecording(false);
+      };
+
+      recognition.onerror = (event: any) => {
+        console.error('Speech recognition error:', event.error);
+        setIsRecording(false);
+      };
+
+      recognition.onend = () => {
+        setIsRecording(false);
+      };
+
+      recognitionRef.current = recognition;
+    }
+
+    return () => {
+      if (recognitionRef.current) {
+        recognitionRef.current.stop();
+      }
+    };
+  }, []);
+
+  const toggleVoiceInput = () => {
+    if (!recognitionRef.current) {
+      alert('Speech recognition is not supported in your browser. Please use Chrome, Edge, or Safari.');
+      return;
+    }
+
+    if (isRecording) {
+      recognitionRef.current.stop();
+      setIsRecording(false);
+    } else {
+      try {
+        recognitionRef.current.start();
+        setIsRecording(true);
+      } catch (error) {
+        console.error('Error starting speech recognition:', error);
+        setIsRecording(false);
+      }
+    }
   };
 
   return (
@@ -572,6 +628,149 @@ const ChatInterface: React.FC = () => {
               opacity: 0.6,
             }}
           />
+          <Box position="relative" display="inline-flex" alignItems="center" justifyContent="center">
+            {/* Listening indicator text */}
+            {isRecording && (
+              <Text
+                position="absolute"
+                top="-28px"
+                fontSize="xs"
+                fontWeight="600"
+                color="red.500"
+                bg="white"
+                px={3}
+                py={1}
+                borderRadius="full"
+                boxShadow="0 2px 8px rgba(239, 68, 68, 0.2)"
+                border="1px solid"
+                borderColor="red.200"
+                whiteSpace="nowrap"
+                sx={{
+                  animation: 'fadeIn 0.3s ease-in-out',
+                  '@keyframes fadeIn': {
+                    from: { opacity: 0, transform: 'translateY(4px)' },
+                    to: { opacity: 1, transform: 'translateY(0)' },
+                  },
+                }}
+              >
+                🎙️ Listening...
+              </Text>
+            )}
+            
+            {/* Animated rings when recording */}
+            {isRecording && (
+              <>
+                <Box
+                  position="absolute"
+                  w="48px"
+                  h="48px"
+                  borderRadius="full"
+                  border="2px solid"
+                  borderColor="red.400"
+                  sx={{
+                    animation: 'ripple 1.5s ease-out infinite',
+                    '@keyframes ripple': {
+                      '0%': { 
+                        transform: 'scale(1)',
+                        opacity: 0.8,
+                      },
+                      '100%': { 
+                        transform: 'scale(1.8)',
+                        opacity: 0,
+                      },
+                    },
+                  }}
+                />
+                <Box
+                  position="absolute"
+                  w="48px"
+                  h="48px"
+                  borderRadius="full"
+                  border="2px solid"
+                  borderColor="red.300"
+                  sx={{
+                    animation: 'ripple 1.5s ease-out infinite 0.5s',
+                    '@keyframes ripple': {
+                      '0%': { 
+                        transform: 'scale(1)',
+                        opacity: 0.8,
+                      },
+                      '100%': { 
+                        transform: 'scale(1.8)',
+                        opacity: 0,
+                      },
+                    },
+                  }}
+                />
+              </>
+            )}
+            
+            <IconButton
+              aria-label={isRecording ? "Stop recording" : "Voice input"}
+              icon={<FiMic />}
+              onClick={toggleVoiceInput}
+              isDisabled={isLoading || !proposal.textContent}
+              bgGradient={isRecording 
+                ? "linear(to-br, red.500, red.600, pink.500)" 
+                : "linear(to-br, blue.500, blue.600, cyan.500)"
+              }
+              color="white"
+              size="md"
+              h="48px"
+              w="48px"
+              minW="48px"
+              borderRadius="full"
+              flexShrink={0}
+              fontSize="20px"
+              position="relative"
+              zIndex={1}
+              border="2px solid"
+              borderColor={isRecording ? "red.300" : "blue.300"}
+              boxShadow={isRecording 
+                ? "0 4px 20px rgba(239, 68, 68, 0.5), 0 0 30px rgba(239, 68, 68, 0.3), inset 0 1px 0 rgba(255,255,255,0.3)" 
+                : "0 4px 16px rgba(59, 130, 246, 0.4), 0 0 24px rgba(59, 130, 246, 0.2), inset 0 1px 0 rgba(255,255,255,0.3)"
+              }
+              _hover={{
+                bgGradient: isRecording 
+                  ? "linear(to-br, red.600, red.700, pink.600)" 
+                  : "linear(to-br, blue.600, blue.700, cyan.600)",
+                transform: 'translateY(-2px) scale(1.05)',
+                boxShadow: isRecording 
+                  ? '0 8px 28px rgba(239, 68, 68, 0.6), 0 0 40px rgba(239, 68, 68, 0.4), inset 0 1px 0 rgba(255,255,255,0.4)' 
+                  : '0 8px 24px rgba(59, 130, 246, 0.5), 0 0 32px rgba(59, 130, 246, 0.3), inset 0 1px 0 rgba(255,255,255,0.4)',
+                borderColor: isRecording ? "red.200" : "blue.200",
+              }}
+              _active={{
+                transform: 'scale(0.95)',
+                boxShadow: isRecording 
+                  ? '0 2px 12px rgba(239, 68, 68, 0.4), inset 0 2px 4px rgba(0,0,0,0.2)' 
+                  : '0 2px 12px rgba(59, 130, 246, 0.4), inset 0 2px 4px rgba(0,0,0,0.2)',
+              }}
+              _disabled={{
+                bgGradient: 'linear(to-br, gray.300, gray.400)',
+                color: 'gray.500',
+                cursor: 'not-allowed',
+                opacity: 0.6,
+                boxShadow: '0 2px 8px rgba(0, 0, 0, 0.1)',
+                borderColor: 'gray.300',
+              }}
+              sx={isRecording ? {
+                animation: 'micPulse 1.2s ease-in-out infinite',
+                '@keyframes micPulse': {
+                  '0%, 100%': { 
+                    transform: 'scale(1)',
+                    filter: 'brightness(1)',
+                  },
+                  '50%': { 
+                    transform: 'scale(1.08)',
+                    filter: 'brightness(1.15)',
+                  },
+                },
+              } : {
+                transition: 'all 0.3s cubic-bezier(0.4, 0, 0.2, 1)',
+              }}
+            />
+          </Box>
           <IconButton
             aria-label="Send message"
             icon={isLoading ? <Spinner size="sm" color="white" /> : <FiSend />}

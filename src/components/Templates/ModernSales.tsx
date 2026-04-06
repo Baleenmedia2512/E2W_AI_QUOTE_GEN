@@ -160,7 +160,7 @@ export const ModernSales: React.FC<TemplateProps> = ({ data, editable: _editable
           </div>
         )}
 
-        {/* Terms */}
+        {/* General Terms */}
         <div className="ms-terms">
           <h3 className="ms-section-title">Terms & Conditions</h3>
           <div className="ms-terms-grid">
@@ -187,6 +187,28 @@ export const ModernSales: React.FC<TemplateProps> = ({ data, editable: _editable
             }
           </div>
         </div>
+
+        {/* Item-specific Terms (for single-service quotes) */}
+        {!isMultiService && quote.items.map((item) => 
+          item.termsAndConditions ? (
+            <div key={item.id} className="ms-terms">
+              <h3 className="ms-section-title">{item.description.split(' - ')[0]} — Terms & Conditions</h3>
+              <div className="ms-terms-grid">
+                {item.termsAndConditions
+                  .split(/\n|•|\d+\.\s/)
+                  .map(t => t.trim())
+                  .filter(Boolean)
+                  .map((term, i) => (
+                    <div className="ms-term-item" key={i}>
+                      <span className="ms-term-check">&#10003;</span>
+                      <span>{term}</span>
+                    </div>
+                  ))
+                }
+              </div>
+            </div>
+          ) : null
+        )}
 
         {/* System Generated Notice */}
         <div className="ms-notice">

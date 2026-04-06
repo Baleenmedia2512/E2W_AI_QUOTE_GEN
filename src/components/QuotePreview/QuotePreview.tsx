@@ -45,6 +45,17 @@ const QuotePreview: React.FC<QuotePreviewProps> = ({ quote, onUpdate, onSave }) 
     setLocalQuote(quote);
   }, [quote]);
 
+  // Auto-resize all textareas when content changes
+  useEffect(() => {
+    const textareas = document.querySelectorAll('textarea');
+    textareas.forEach((textarea) => {
+      if (textarea.value) {
+        textarea.style.height = 'auto';
+        textarea.style.height = textarea.scrollHeight + 'px';
+      }
+    });
+  }, [localQuote?.termsAndConditions, localQuote?.items]);
+
   if (!localQuote) {
     return (
       <Card className="quote-preview-empty">
@@ -819,15 +830,30 @@ const QuotePreview: React.FC<QuotePreviewProps> = ({ quote, onUpdate, onSave }) 
         </HStack>
         <Textarea
           value={localQuote.termsAndConditions || ''}
-          onChange={(e) => updateTermsAndConditions(e.target.value)}
+          onChange={(e) => {
+            updateTermsAndConditions(e.target.value);
+            e.target.style.height = 'auto';
+            e.target.style.height = e.target.scrollHeight + 'px';
+          }}
           placeholder="Enter terms and conditions..."
-          rows={6}
+          minH="120px"
           size="lg"
           bg="white"
           borderWidth="2px"
           borderColor="gray.300"
           borderRadius="12px"
           fontWeight="500"
+          resize="vertical"
+          overflow="hidden"
+          onFocus={(e) => {
+            e.target.style.height = 'auto';
+            e.target.style.height = e.target.scrollHeight + 'px';
+          }}
+          sx={{
+            field: {
+              overflow: 'hidden !important',
+            }
+          }}
           _hover={{ borderColor: 'red.300', boxShadow: '0 0 0 1px rgba(201, 31, 61, 0.1)' }}
           _focus={{ 
             borderColor: 'red.500', 
@@ -849,15 +875,30 @@ const QuotePreview: React.FC<QuotePreviewProps> = ({ quote, onUpdate, onSave }) 
             </HStack>
             <Textarea
               value={item.termsAndConditions}
-              onChange={(e) => updateItemTerms(idx, e.target.value)}
+              onChange={(e) => {
+                updateItemTerms(idx, e.target.value);
+                e.target.style.height = 'auto';
+                e.target.style.height = e.target.scrollHeight + 'px';
+              }}
               placeholder="Enter service-specific terms..."
-              rows={6}
+              minH="120px"
               size="lg"
               bg="white"
               borderWidth="2px"
               borderColor="gray.300"
               borderRadius="12px"
               fontWeight="500"
+              resize="vertical"
+              overflow="hidden"
+              onFocus={(e) => {
+                e.target.style.height = 'auto';
+                e.target.style.height = e.target.scrollHeight + 'px';
+              }}
+              sx={{
+                field: {
+                  overflow: 'hidden !important',
+                }
+              }}
               _hover={{ borderColor: 'red.300', boxShadow: '0 0 0 1px rgba(201, 31, 61, 0.1)' }}
               _focus={{ 
                 borderColor: 'red.500', 
