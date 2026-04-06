@@ -11,6 +11,25 @@ export interface ExtractedPage {
   imageDataUrl: string;
 }
 
+export interface StoredProposal {
+  id: string;
+  fileName: string;
+  fileType: string;
+  fileSize: number;
+  fileBlob: Blob | null; // Null for cloud proposals (downloaded on-demand)
+  textContent: string;
+  pageCount: number;
+  extractedImages: string[];
+  pageImages: any[];
+  uploadedAt: Date;
+  // Cloud storage fields (optional - only when loaded from cloud)
+  isCloudStored?: boolean;
+  fileUrl?: string;
+  storagePath?: string;
+  uploadedByUserId?: string | null;
+  uploadedByName?: string | null;
+}
+
 export interface ProposalData {
   file: File | null;
   fileName: string;
@@ -52,6 +71,16 @@ export interface AppState {
   // Template state
   selectedTemplate: TemplateType;
   setSelectedTemplate: (template: TemplateType) => void;
+
+  // Proposal Library state (IndexedDB + Cloud hybrid)
+  recentProposals: StoredProposal[];
+  loadRecentProposals: () => Promise<void>;
+  selectProposal: (id: string) => Promise<void>;
+  deleteProposalFromLibrary: (id: string) => Promise<void>;
+  
+  // Cloud storage state (NEW - additive)
+  cloudStorageEnabled: boolean;
+  checkCloudStorage: () => Promise<void>;
 }
 
 export type { Message, Quote, QuoteItem, LineItem, CompanyInfo, ClientInfo, TemplateData, TemplateProps, TemplateType, Template, TemplateMetadata, Lead, LeadSearchResult };

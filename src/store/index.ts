@@ -1,9 +1,25 @@
 import { create } from 'zustand';
-import { AppState, ProposalData, Message, Quote, CompanyInfo, ClientInfo, TemplateType } from '../types';
+import { AppState, ProposalData, Message, Quote, CompanyInfo, ClientInfo, TemplateType, StoredProposal } from '../types';
 import { loadCompanyInfo, saveCompanyInfo as saveCompanyInfoToStorage } from '../utils/localStorage';
 import { savePageImages as savePageImagesToDB, clearPageImages } from '../utils/imageStorage';
 import { DEFAULT_COMPANY_INFO } from '../constants/defaultCompany';
 import { companyService } from '../services/companyService';
+import { useAuthStore } from './authStore';
+import { extractPDFContent } from '../utils/pdfUtils';
+import {
+  loadRecentProposals as loadProposalsFromDB,
+  loadProposalById,
+  deleteProposalFromLibrary as deleteProposalFromDB,
+  saveProposalToLibrary,
+} from '../utils/proposalStorage';
+import {
+  checkCloudStorageAvailability,
+  loadAllProposalsFromCloud,
+  uploadProposalToCloud,
+  deleteProposalFromCloud,
+  downloadProposalFile,
+  cloudProposalToStored,
+} from '../services/supabaseProposalService';
 
 const initialProposalState: ProposalData = {
   file: null,
@@ -70,6 +86,68 @@ export const useAppStore = create<AppState>((set) => ({
       if (proposal.pageImages) {
         savePageImagesToDB(proposal.pageImages);
       }
+      
+      // CLOUD-ONLY AUTO-SAVE: Save to cloud if available, fallback to local IndexedDB
+      if (proposal.file && proposal.textContent && proposal.fileName) {
+        const fullProposal = { ...state.proposal, ...proposal };
+        // Ensure file is not null before saving
+        if (fullProposal.file) {
+          // Check if cloud storage is enabled
+          if (state.cloudStorageEnabled) {
+            // CLOUD-ONLY: Upload to Supabase only (skip IndexedDB)
+            (async () => {
+              try {
+                // Get current user info from auth store
+                const authState = useAuthStore.getState();
+                const userId = authState.user?.id;
+                const userName = authState.user?.full_name;
+                
+                const result = await uploadProposalToCloud(
+                  fullProposal.file!,
+                  fullProposal.textContent,
+                  fullProposal.pageCount,
+                  userId,
+                  userName
+                );
+                
+                if (result.success && result.proposal) {
+                  console.log('☁️ Proposal uploaded to cloud successfully:', result.proposal.id);
+                } else {
+                  console.warn('⚠️ Cloud upload failed:', result.error);
+                }
+              } catch (cloudError) {
+                console.warn('⚠️ Cloud upload failed:', cloudError);
+              }
+              
+              // Reload recent proposals from cloud
+              const currentState = useAppStore.getState();
+              await currentState.loadRecentProposals();
+            })();
+          } else {
+            // FALLBACK: Save to IndexedDB (local storage) when cloud not available
+            saveProposalToLibrary({
+              fileName: fullProposal.fileName,
+              fileType: fullProposal.file.type || 'application/pdf',
+              fileSize: fullProposal.file.size,
+              fileBlob: fullProposal.file,
+              textContent: fullProposal.textContent,
+              pageCount: fullProposal.pageCount,
+              extractedImages: fullProposal.extractedImages,
+              pageImages: fullProposal.pageImages,
+              uploadedAt: fullProposal.uploadedAt || new Date(),
+            }).then(async (localId) => {
+              console.log('💾 Auto-saved proposal to IndexedDB:', localId);
+              
+              // Reload recent proposals from local
+              const currentState = useAppStore.getState();
+              await currentState.loadRecentProposals();
+            }).catch((err) => {
+              console.warn('⚠️ Failed to auto-save proposal:', err);
+            });
+          }
+        }
+      }
+      
       return { proposal: { ...state.proposal, ...proposal } };
     }),
   resetProposal: () => {
@@ -154,6 +232,171 @@ export const useAppStore = create<AppState>((set) => ({
     return subscription;
   },
 
+
+  // Proposal Library state (NEW - purely additive, doesn't affect existing code)
+  recentProposals: [],
+  
+  loadRecentProposals: async () => {
+    try {
+      // Check if cloud storage is available first
+      const state = useAppStore.getState();
+      let cloudProposals: StoredProposal[] = [];
+      let useCloudOnly = false;
+      
+      if (state.cloudStorageEnabled) {
+        try {
+          const rawCloudProposals = await loadAllProposalsFromCloud();
+          cloudProposals = rawCloudProposals.map(cloudProposalToStored);
+          console.log(`☁️ Loaded ${cloudProposals.length} cloud proposals from Supabase`);
+          useCloudOnly = true; // Successfully loaded from cloud, use cloud only
+        } catch (error) {
+          console.warn('⚠️ Failed to load cloud proposals, falling back to local:', error);
+          useCloudOnly = false;
+        }
+      }
+      
+      let finalProposals: StoredProposal[];
+      
+      if (useCloudOnly) {
+        // Use ONLY cloud proposals when cloud is available
+        finalProposals = cloudProposals.sort((a, b) => b.uploadedAt.getTime() - a.uploadedAt.getTime());
+        console.log(`📚 Showing ${finalProposals.length} cloud proposals only`);
+      } else {
+        // Fall back to local proposals if cloud is unavailable
+        const localProposals = await loadProposalsFromDB();
+        console.log(`💾 Loaded ${localProposals.length} local proposals from IndexedDB`);
+        finalProposals = localProposals.sort((a, b) => b.uploadedAt.getTime() - a.uploadedAt.getTime());
+        console.log(`📚 Showing ${finalProposals.length} local proposals (cloud unavailable)`);
+      }
+      
+      set({ recentProposals: finalProposals });
+    } catch (error) {
+      console.error('Failed to load recent proposals:', error);
+      set({ recentProposals: [] });
+    }
+  },
+
+  selectProposal: async (id: string) => {
+    try {
+      // HYBRID APPROACH: Try loading from IndexedDB first, then cloud if not found
+      let storedProposal = await loadProposalById(id);
+      let fileBlob: Blob | null = null;
+      
+      if (!storedProposal) {
+        // Not in IndexedDB, try downloading from cloud
+        console.log('💾 Proposal not found locally, checking cloud...');
+        const state = useAppStore.getState();
+        const cloudProposal = state.recentProposals.find(p => p.id === id && p.isCloudStored);
+        
+        if (cloudProposal && cloudProposal.storagePath) {
+          try {
+            fileBlob = await downloadProposalFile(cloudProposal.storagePath);
+            storedProposal = cloudProposal;
+            console.log('☁️ Downloaded proposal from cloud:', cloudProposal.fileName);
+          } catch (error) {
+            console.error('Failed to download cloud proposal:', error);
+            return;
+          }
+        } else {
+          console.error('Proposal not found in local or cloud storage:', id);
+          return;
+        }
+      }
+      
+      // Get file blob (either from IndexedDB or downloaded from cloud)
+      if (!fileBlob && !storedProposal.fileBlob) {
+        console.error('No file blob available for proposal');
+        return;
+      }
+      
+      const blob = fileBlob || storedProposal.fileBlob!;
+      
+      // Convert Blob back to File
+      const file = new File([blob], storedProposal.fileName, {
+        type: storedProposal.fileType,
+      });
+
+      // If downloaded from cloud, extract PDF content to get page images
+      let pageImages = storedProposal.pageImages;
+      let extractedImages = storedProposal.extractedImages;
+      
+      if (fileBlob && storedProposal.fileType === 'application/pdf') {
+        console.log('📄 Extracting images from cloud PDF...');
+        try {
+          const pdfResult = await extractPDFContent(file);
+          pageImages = pdfResult.pageImages;
+          extractedImages = pdfResult.images;
+          console.log(`✅ Extracted ${pageImages?.length || 0} page images from PDF`);
+        } catch (error) {
+          console.warn('⚠️ Failed to extract PDF images:', error);
+          // Continue with empty arrays if extraction fails
+        }
+      }
+
+      // Create object URL for viewing
+      const fileUrl = URL.createObjectURL(file);
+
+      // Load the proposal into current state
+      const proposalData = {
+        file,
+        fileName: storedProposal.fileName,
+        fileUrl,
+        textContent: storedProposal.textContent,
+        pageCount: storedProposal.pageCount,
+        currentPage: 1,
+        extractedImages: extractedImages,
+        pageImages: pageImages,
+        uploadedAt: storedProposal.uploadedAt,
+      };
+
+      set({ proposal: proposalData });
+      
+      // Save page images for viewer
+      if (pageImages && pageImages.length > 0) {
+        savePageImagesToDB(pageImages);
+        console.log(`💾 Saved ${pageImages.length} page images to IndexedDB`);
+      }
+
+      console.log('✅ Loaded proposal from library:', storedProposal.fileName);
+    } catch (error) {
+      console.error('Failed to select proposal:', error);
+    }
+  },
+
+  deleteProposalFromLibrary: async (id: string) => {
+    try {
+      // HYBRID APPROACH: Delete from both local and cloud if applicable
+      const state = useAppStore.getState();
+      const proposal = state.recentProposals.find(p => p.id === id);
+      
+      // Delete from local IndexedDB (if exists locally)
+      try {
+        await deleteProposalFromDB(id);
+        console.log('💾 Deleted from local IndexedDB:', id);
+      } catch (error) {
+        console.warn('⚠️ Not in local storage or already deleted:', error);
+      }
+      
+      // Delete from cloud if it's a cloud-stored proposal
+      if (proposal?.isCloudStored && proposal.storagePath && state.cloudStorageEnabled) {
+        try {
+          const success = await deleteProposalFromCloud(id);
+          if (success) {
+            console.log('☁️ Deleted from cloud storage:', id);
+          }
+        } catch (error) {
+          console.error('Failed to delete from cloud:', error);
+          // Continue even if cloud delete fails
+        }
+      }
+      
+      // Reload recent proposals after deletion (will merge local + cloud)
+      await state.loadRecentProposals();
+      console.log('✅ Deleted proposal and refreshed library');
+    } catch (error) {
+      console.error('Failed to delete proposal:', error);
+    }
+  },
   // Client state - Load from localStorage on init
   clientInfo: loadClientInfo(),
   setClientInfo: (info: ClientInfo) => {
@@ -177,6 +420,20 @@ export const useAppStore = create<AppState>((set) => ({
       console.log('✅ Template saved to localStorage:', template);
     } catch (error) {
       console.error('Failed to save template to localStorage:', error);
+    }
+  },
+
+  // Cloud Storage state (NEW - Hybrid approach: IndexedDB + Supabase)
+  cloudStorageEnabled: false,
+
+  checkCloudStorage: async () => {
+    try {
+      const isAvailable = await checkCloudStorageAvailability();
+      set({ cloudStorageEnabled: isAvailable });
+      console.log(isAvailable ? '☁️ Cloud storage enabled' : '💾 Using local storage only');
+    } catch (error) {
+      console.warn('⚠️ Cloud storage check failed, using local storage:', error);
+      set({ cloudStorageEnabled: false });
     }
   },
 }));

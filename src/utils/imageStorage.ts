@@ -1,5 +1,5 @@
 const DB_NAME = 'e2w_quote_gen';
-const DB_VERSION = 1;
+const DB_VERSION = 3;
 const STORE_NAME = 'proposal_images';
 const KEY = 'pageImages';
 
