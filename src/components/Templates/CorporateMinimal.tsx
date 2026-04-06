@@ -160,6 +160,7 @@ export const CorporateMinimal: React.FC<TemplateProps> = ({ data, editable: _edi
             </div>
           )}
 
+          {/* General Terms */}
           <div className="terms-section">
             <h3>Terms & Conditions:</h3>
             <ul>
@@ -173,6 +174,23 @@ export const CorporateMinimal: React.FC<TemplateProps> = ({ data, editable: _edi
               }
             </ul>
           </div>
+
+          {/* Item-specific Terms */}
+          {quote.items.map((item) => 
+            item.termsAndConditions ? (
+              <div key={item.id} className="terms-section">
+                <h3>{item.description.split(' - ')[0]} — Terms & Conditions:</h3>
+                <ul>
+                  {item.termsAndConditions
+                    .split(/\n|•|\d+\.\s/)
+                    .map(t => t.trim())
+                    .filter(Boolean)
+                    .map((term, i) => <li key={i}>{term}</li>)
+                  }
+                </ul>
+              </div>
+            ) : null
+          )}
 
           {/* System Generated Notice */}
           <div className="system-generated-notice">

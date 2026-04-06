@@ -161,7 +161,7 @@ export const PremiumAgency: React.FC<TemplateProps> = ({ data, editable: _editab
           </div>
         )}
 
-        {/* Terms */}
+        {/* General Terms */}
         <div className="pa-terms">
           <h3 className="pa-section-title">Terms & Conditions</h3>
           <div className="pa-terms-grid">
@@ -188,6 +188,28 @@ export const PremiumAgency: React.FC<TemplateProps> = ({ data, editable: _editab
             }
           </div>
         </div>
+
+        {/* Item-specific Terms (for single-service quotes) */}
+        {!isMultiService && quote.items.map((item) => 
+          item.termsAndConditions ? (
+            <div key={item.id} className="pa-terms">
+              <h3 className="pa-section-title">{item.description.split(' - ')[0]} — Terms & Conditions</h3>
+              <div className="pa-terms-grid">
+                {item.termsAndConditions
+                  .split(/\n|•|\d+\.\s/)
+                  .map(t => t.trim())
+                  .filter(Boolean)
+                  .map((term, i) => (
+                    <div className="pa-term-item" key={i}>
+                      <span className="pa-term-check">&#10003;</span>
+                      <span>{term}</span>
+                    </div>
+                  ))
+                }
+              </div>
+            </div>
+          ) : null
+        )}
 
         {/* System Generated Notice */}
         <div className="pa-notice">

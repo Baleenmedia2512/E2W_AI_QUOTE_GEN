@@ -174,7 +174,7 @@ export const ClassicBusiness: React.FC<TemplateProps> = ({ data, editable: _edit
           </div>
         )}
 
-        {/* Terms & Conditions */}
+        {/* General Terms & Conditions */}
         <div className="terms-section">
           <h3 className="section-heading">Terms & Conditions</h3>
           <ol className="terms-list">
@@ -191,6 +191,23 @@ export const ClassicBusiness: React.FC<TemplateProps> = ({ data, editable: _edit
             }
           </ol>
         </div>
+
+        {/* Item-specific Terms (for single-service quotes) */}
+        {!isMultiService && quote.items.map((item) => 
+          item.termsAndConditions ? (
+            <div key={item.id} className="terms-section">
+              <h3 className="section-heading">{item.description.split(' - ')[0]} — Terms & Conditions</h3>
+              <ol className="terms-list">
+                {item.termsAndConditions
+                  .split(/\n|•|\d+\.\s/)
+                  .map(t => t.trim())
+                  .filter(Boolean)
+                  .map((term, i) => <li key={i}>{term}</li>)
+                }
+              </ol>
+            </div>
+          ) : null
+        )}
 
         {/* System Generated Notice */}
         <div className="system-generated-notice">
