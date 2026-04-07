@@ -88,7 +88,21 @@ export const extractImageContent = async (file: File): Promise<FileExtractionRes
 - All lists and bullet points
 - All labels and descriptions
 
-Format the output as clean, structured text that maintains the original document's hierarchy and organization. Use tabs or pipes (|) to separate columns in tables.`;
+Format the output as clean, structured text that maintains the original document's hierarchy and organization. Use tabs or pipes (|) to separate columns in tables.
+
+CRITICAL FOR TABLES (ESPECIALLY RATE CARDS):
+1. If the image contains a table with COLUMN HEADERS at the top, you MUST preserve them EXACTLY and align them with their data columns
+2. For each data row, explicitly label which value belongs to which column
+3. For rate card tables with editions/cities as rows and categories as columns:
+   - First line: Extract ALL column headers from left to right (e.g., "Edition | Business/Finance | Education | Real Estate | Rental | Automobile Used | Automobile New | Service")
+   - Each data row: Start with the row label (edition/city name), then list ALL values in the SAME ORDER as the headers
+   - Use consistent pipe (|) separators between columns
+   - Example format:
+     Edition | Column1 | Column2 | Column3 | Column4
+     City1   | Value1  | Value2  | Value3  | Value4
+     City2   | Value1  | Value2  | Value3  | Value4
+4. VERIFY: Count the number of columns in the header row and ensure each data row has the SAME number of values
+5. If a table has merged cells or complex structure, use clear labels like "Column Name: Value" for each cell`;
     
     const result = await model.generateContent([
       prompt,
