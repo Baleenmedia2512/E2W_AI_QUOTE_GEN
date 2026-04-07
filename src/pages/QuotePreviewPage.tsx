@@ -483,34 +483,45 @@ export const QuotePreviewPage: React.FC = () => {
 
       {/* Preview Area */}
       <div className="preview-container">
-        {/* Auto-loading indicator */}
+        {/* Reference Image Loading Overlay */}
         {isLoadingImages && (
           <div style={{
             position: 'absolute',
-            top: '20px',
-            left: '50%',
-            transform: 'translateX(-50%)',
-            background: 'rgba(37, 99, 235, 0.95)',
-            color: 'white',
-            padding: '12px 24px',
-            borderRadius: '8px',
-            fontSize: '14px',
-            fontWeight: '500',
-            boxShadow: '0 4px 12px rgba(0, 0, 0, 0.15)',
+            top: 0,
+            left: 0,
+            right: 0,
+            bottom: 0,
+            backgroundColor: 'rgba(0, 0, 0, 0.75)',
             zIndex: 1000,
             display: 'flex',
+            flexDirection: 'column',
             alignItems: 'center',
-            gap: '10px'
+            justifyContent: 'center',
+            gap: '20px'
           }}>
             <div style={{
-              width: '16px',
-              height: '16px',
-              border: '2px solid rgba(255, 255, 255, 0.3)',
-              borderTop: '2px solid white',
+              width: '60px',
+              height: '60px',
+              border: '4px solid rgba(255, 255, 255, 0.2)',
+              borderTop: '4px solid #fff',
               borderRadius: '50%',
-              animation: 'spin 0.8s linear infinite'
+              animation: 'spin 1s linear infinite'
             }}></div>
-            Loading reference images from cloud...
+            <div style={{
+              color: '#fff',
+              fontSize: '18px',
+              fontWeight: '600',
+              textAlign: 'center',
+              maxWidth: '400px',
+              lineHeight: '1.5'
+            }}>
+              <div style={{ marginBottom: '8px' }}>
+                Please wait...
+              </div>
+              <div style={{ fontSize: '16px', fontWeight: '400', opacity: 0.9 }}>
+                The reference image is processing
+              </div>
+            </div>
           </div>
         )}
         <div className="preview-wrapper" style={{ transform: `scale(${zoom / 100})` }}>

@@ -71,9 +71,9 @@ function filterPagesByCategory(pages: ExtractedPage[], category: string): Extrac
   
   if (words.length === 0) return [];
   
-  // For keyword matching, use the original words but be flexible in matching
-  // Don't modify words like "awareness" that aren't actually plural
-  const requiredKeywords = words;
+  // Deduplicate keywords to avoid requiring the same word multiple times
+  // e.g., "Mobile Van Branding - Mobile Van - LED Branding" should only require 'mobile', 'van', 'branding', 'led' once each
+  const requiredKeywords = [...new Set(words)];
   
   console.log('🔑 Required keywords for matching:', requiredKeywords);
   

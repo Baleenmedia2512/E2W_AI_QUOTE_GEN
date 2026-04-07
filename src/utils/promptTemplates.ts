@@ -34,6 +34,89 @@ When multiple proposal documents are provided:
 - Reference which document(s) you used (mention file name in notes)
 - If similar services exist in multiple documents, use the most detailed or recent one
 
+📰 CLASSIFIED NEWSPAPER RATE CARD DETECTION & PARSING:
+When the proposal document is a CLASSIFIED DISPLAY ADVERTISEMENT RATE CARD (newspaper rate card with multiple editions/divisions and advertising categories):
+
+**DETECTION SIGNALS** - The document is a rate card if it contains:
+- Multiple edition names (e.g., "All Except Dubai", "Chennai", "Mumbai", "Erode", "Dubai", etc.)
+- Multiple advertising categories as column headers (e.g., "Real Estate", "Rental", "Education / Sales", "Automobile Used", "Automobile New", "Service / Announcement")
+- Rates "per sq.cm" or "per square centimeter"
+- A table structure with editions as rows and categories as columns
+
+**CRITICAL PARSING RULES** - When you detect a rate card:
+
+1. **IDENTIFY THE EXACT CATEGORY**: The user will request a specific category (e.g., "Real Estate", "Rental", "Education", "Automobile", "Service"). You MUST identify which category column they are requesting.
+
+2. **LOCATE THE EDITION/DIVISION ROW**: Find the row for the specific edition/city/division mentioned (e.g., "Erode", "Chennai", "Mumbai", etc.)
+
+3. **CROSS-REFERENCE CORRECTLY**: The price is at the INTERSECTION of:
+   - The EDITION ROW (horizontal)
+   - The CATEGORY COLUMN (vertical)
+   
+   Example from the rate card (simplified table):
+   
+   Edition         | Real Estate | Rental | Education | Service
+   ----------------|-------------|--------|-----------|--------
+   Erode           | 43          | 25     | 39        | 25
+   Chennai         | 610         | 231    | 410       | 211
+   
+   CRITICAL EXAMPLES:
+   - User asks: "Erode Real Estate" → Price = 43 (NOT 25, which is Rental)
+   - User asks: "Erode Rental" → Price = 25
+   - User asks: "Chennai Real Estate" → Price = 610 (NOT 231)
+
+4. **COMMON MISTAKES TO AVOID**:
+   - ❌ DO NOT pick the first number you see in the row
+   - ❌ DO NOT confuse category columns (Real Estate ≠ Rental ≠ Service)
+   - ❌ DO NOT use prices from a different edition/division
+   - ❌ DO NOT mix up column order - verify the column header matches the category requested
+
+5. **VERIFICATION STEP** - Before finalizing the quote:
+   - Re-read the table structure
+   - Confirm: "Is the price I selected from the CORRECT EDITION ROW?"
+   - Confirm: "Is the price I selected from the CORRECT CATEGORY COLUMN?"
+   - If uncertain, state the intersection point in your notes: "Price taken from [Edition Name] row × [Category Name] column"
+
+5a. **PARSING PIPE-SEPARATED TABLE DATA**:
+   When the rate card data is formatted with pipe separators (|), follow this EXACT process:
+   
+   STEP 1 - Identify the header row (starts with "Edition" or similar):
+   Example: "Edition | Business/Finance | Education | Real Estate | Rental | Automobile Used | Service"
+   
+   STEP 2 - Count column positions (0-indexed from left):
+   - Column 0 = Edition name
+   - Column 1 = First category (e.g., Business/Finance)
+   - Column 2 = Second category (e.g., Education)
+   - Column 3 = Third category (e.g., Real Estate)
+   - Column 4 = Fourth category (e.g., Rental)
+   - And so on...
+   
+   STEP 3 - When user requests a category, find its COLUMN NUMBER in the header
+   Example: If header is "Edition | Business | Education | Real Estate | Rental | Auto Used | Auto New | Service"
+   - "Real Estate" is at position 3 (fourth column, after Edition=0, Business=1, Education=2)
+   - "Rental" is at position 4
+   - "Service" is at position 7
+   
+   STEP 4 - Find the requested edition row and split by pipe (|)
+   Example row: "Vellore | 67 | 47 | 55 | 32 | 35 | 38 | 27"
+   Split result: ["Vellore", "67", "47", "55", "32", "35", "38", "27"]
+   
+   STEP 5 - Extract the value at the SAME POSITION as found in header
+   - If user wants "Vellore Real Estate" and Real Estate is at position 3:
+     → Value = array[3] = "55" ✅ CORRECT
+   - If user wants "Vellore Rental" and Rental is at position 4:
+     → Value = array[4] = "32" ✅ CORRECT
+   
+   STEP 6 - DOUBLE-CHECK by counting:
+   Count from left: "Edition(0) | Value1(1) | Value2(2) | Value3(3) | Value4(4)..."
+   Match the position number with the header position number.
+
+6. **QUOTE FORMAT** for classified ads:
+   - Description: "[Category] advertising in [Edition] (per sq.cm.)"
+   - Example: "Real Estate advertising in Erode division (per sq.cm.)"
+   - Unit price: The exact rate from the rate card (Rs. per sq.cm.)
+   - Quantity: Default to 1 sq.cm. for quoting purposes (mention actual size will vary in notes)
+
 IMPORTANT: When a user asks for a quote, IMMEDIATELY analyze the proposal document(s) and generate a complete quote. DO NOT ask questions - extract all necessary information from the proposal PDF(s).
 
 Your workflow:
@@ -61,7 +144,7 @@ Your workflow:
           "duration": <number of months if applicable, omit or set to 1 for one-time pricing>
         }
       ],
-      "termsAndConditions": "For MULTI-SERVICE quotes: EXACT service-specific terms for THIS section only, one per line. For SINGLE-SERVICE quotes: leave empty string."
+      "termsAndConditions": "MANDATORY: For SINGLE-SERVICE quotes (only 1 item in array), this MUST be empty string: \"\". For MULTI-SERVICE quotes: service-specific terms only."
     }
   ],
   "deliveryTimeline": "Timeline from proposal or standard: 7-15 working days",
@@ -69,6 +152,11 @@ Your workflow:
   "notes": "Any assumptions made based on proposal analysis"
 }
 \`\`\`
+
+⚠️ CRITICAL RULE - SINGLE vs MULTI SERVICE QUOTES:
+- If items array has ONLY 1 item (single service): item "termsAndConditions" = "" (empty string), ALL terms go to top-level "termsAndConditions"
+- If items array has 2+ items (multi service): item "termsAndConditions" = service-specific terms, top-level = general terms
+- NEVER put terms in both places for single-service quotes
 
 4. Before the JSON, provide a brief explanation of what was included
 
@@ -162,6 +250,27 @@ RULES:
        * ✅ INCLUDE only if the line is a complete sentence describing a business policy/rule
        * ✅ INCLUDE only lines that start with phrases like: "Prices are", "Payment", "Client must", "Work will", "If the client", "Material shall", "Refund", etc.
      - VALIDATION CHECK: For EACH line, ask: "Does this line describe HOW business is conducted, or WHAT is being sold?" If it's WHAT, EXCLUDE it. Only INCLUDE HOW (policies).
+  16. ⚠️ SPECIAL RULE FOR CLASSIFIED NEWSPAPER RATE CARDS:
+     - If the document is a CLASSIFIED DISPLAY ADVERTISEMENT RATE CARD (newspaper rates with editions and categories), the "Terms & Conditions" section often contains SERVICE RESTRICTIONS and PUBLICATION NOTES, NOT actual business terms.
+     - ❌ EXCLUDE these types of lines from termsAndConditions for rate cards:
+       * Lines starting with "No classified display ad for..." (publication restrictions)
+       * Lines about which edition or publication is excluded
+       * Lines about "Business Finance Rate" or category-specific rate rules
+       * Lines in regional languages (Tamil, Hindi, etc.) about service categories or publication guidelines
+       * Lines about "சர்வீஸ் கட்டத்தில்" or similar service category notes
+       * Lines containing "மூக்க்கம்கககம்க்" or similar regional text about service restrictions
+     - 🚨 CRITICAL FOR RATE CARD QUOTES: These service restriction notes should NEVER appear in ANY termsAndConditions field (neither item-level nor top-level)
+     - ✅ For classified newspaper rate cards: 
+       * Item-level termsAndConditions: ALWAYS use empty string ("") for single-service rate card quotes
+       * Top-level termsAndConditions: ONLY include if actual payment/delivery/refund policies exist, otherwise use empty string
+     - ✅ ONLY include actual business terms like payment methods, advance requirements, cancellation policies, GST clauses, publication timelines, complaint resolution, etc.
+     - VALIDATION: Before finalizing a rate card quote, check:
+       * Q: "Is this a single-service quote (only 1 item)?" → If YES: item termsAndConditions = ""
+       * Q: "Does this line start with 'No classified display ad'?" → If YES: EXCLUDE it
+       * Q: "Does this line contain Tamil/regional text about service categories?" → If YES: EXCLUDE it
+     - Example: "No classified display ad for Srilanka Edition" = ❌ Service restriction, NEVER include
+     - Example: "மூக்க்கம்கககம்க் கேமை விளம்பரங்களை Business Finance Rate தான் வாங்க வேண்டும்" = ❌ Category rule, NEVER include
+     - Example: "சர்வீஸ் கட்டத்தில் பிரசுரிக்க கடாது" = ❌ Service note, NEVER include
 - For deliveryTimeline, extract the exact timeline mentioned in the proposal (e.g., "7 working days after receipt of the payment")
 - CRITICAL PRICING RULES:
   * The proposal often contains MULTIPLE branding types for the same vehicle (e.g., "Bus Full Branding", "Bus Semi Branding", "Bus Back Panel Branding", "Auto Full Branding", "Auto Back Branding"). Each type has its OWN prices. You MUST carefully match the user's request to the EXACT section in the proposal and use ONLY the prices from that specific section. NEVER mix prices from different branding types.
