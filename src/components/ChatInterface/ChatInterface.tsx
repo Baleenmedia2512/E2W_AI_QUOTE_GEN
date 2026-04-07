@@ -18,6 +18,7 @@ import { sendMessageToGemini } from '../../services/geminiService';
 import { Message } from '../../types/chat';
 import { Quote, QuoteItem } from '../../types/quote';
 import { saveChatHistory, loadChatHistory } from '../../utils/localStorage';
+import { loadAllProposalsFromCloud } from '../../services/supabaseProposalService';
 
 const SUGGESTION_PROMPTS = [
   'Generate quote for 100 auto full branding',
@@ -77,9 +78,32 @@ const ChatInterface: React.FC = () => {
     setError(null);
 
     try {
+      // Load all proposals from cloud for multi-document search
+      let allProposals: any[] = [];
+      try {
+        allProposals = await loadAllProposalsFromCloud(100);
+      } catch (err) {
+        console.warn('Could not load proposals from cloud, using current proposal only:', err);
+      }
+
+      // Prepare proposal contexts for AI
+      let proposalContexts: Array<{fileName: string, content: string}> | undefined;
+      
+      if (allProposals && allProposals.length > 0) {
+        // Multi-document mode: Send ALL uploaded proposals to AI
+        proposalContexts = allProposals
+          .filter(p => p.text_content && p.text_content.trim().length > 50)
+          .map(p => ({
+            fileName: p.file_name,
+            content: p.text_content
+          }));
+        console.log(`📚 Multi-document search enabled: ${proposalContexts.length} documents available`);
+      }
+
       const response = await sendMessageToGemini({
         userMessage: userMessage.content,
-        proposalText: proposal.textContent,
+        proposalText: proposal.textContent, // Backward compatibility fallback
+        proposalTexts: proposalContexts, // NEW: Multi-document support
         chatHistory: messages,
       });
 
@@ -333,10 +357,10 @@ const ChatInterface: React.FC = () => {
         >
           {messages.length === 0 ? (
             <Flex justify="center" align="center" h="full">
-              <Text color="gray.400" fontSize="xs">
+              <Text color="gray.400" fontSize="xs" textAlign="center" px={4}>
                 {proposal.textContent
-                  ? 'Upload a PDF and ask me anything about it.'
-                  : 'Upload a proposal to start chatting'}
+                  ? 'Ask me anything about your uploaded proposals.'
+                  : 'Ask general questions or upload documents for custom quotes.'}
               </Text>
             </Flex>
           ) : (
@@ -577,9 +601,9 @@ const ChatInterface: React.FC = () => {
             placeholder={
               proposal.textContent
                 ? 'Ask about this proposal…'
-                : 'Upload a proposal to start…'
+                : 'Ask me anything about quotes…'
             }
-            disabled={isLoading || !proposal.textContent}
+            disabled={isLoading}
             size="md"
             borderRadius="full"
             bg="white"
@@ -690,7 +714,7 @@ const ChatInterface: React.FC = () => {
               aria-label={isRecording ? "Stop recording" : "Voice input"}
               icon={<FiMic />}
               onClick={toggleVoiceInput}
-              isDisabled={isLoading || !proposal.textContent}
+              isDisabled={isLoading}
               bgGradient={isRecording 
                 ? "linear(to-br, red.500, red.600, pink.500)" 
                 : "linear(to-br, blue.500, blue.600, cyan.500)"
@@ -756,7 +780,7 @@ const ChatInterface: React.FC = () => {
             aria-label="Send message"
             icon={isLoading ? <Spinner size="sm" color="white" /> : <FiSend />}
             onClick={handleSendMessage}
-            isDisabled={!inputValue.trim() || isLoading || !proposal.textContent}
+            isDisabled={!inputValue.trim() || isLoading}
             bgGradient="linear(to-r, #dc2626, #be123c)"
             color="white"
             size="md"

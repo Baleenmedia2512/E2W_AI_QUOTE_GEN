@@ -25,7 +25,8 @@ const enforceRateLimit = async (): Promise<void> => {
 
 export interface SendMessageParams {
   userMessage: string;
-  proposalText?: string;
+  proposalText?: string; // Single document (backward compatibility)
+  proposalTexts?: Array<{fileName: string, content: string}>; // Multi-document support
   chatHistory?: Message[];
 }
 
@@ -38,6 +39,7 @@ export interface GeminiResponse {
 export const sendMessageToGemini = async ({
   userMessage,
   proposalText = '',
+  proposalTexts,
   chatHistory = [],
 }: SendMessageParams): Promise<GeminiResponse> => {
   try {
@@ -51,8 +53,19 @@ export const sendMessageToGemini = async ({
     // Build context
     let contextPrompt = CHAT_SYSTEM_PROMPT + '\n\n';
     
-    if (proposalText) {
-      contextPrompt += `PROPOSAL DOCUMENT:\n${proposalText}\n\n`;
+    // Multi-document support (NEW - takes priority if provided)
+    if (proposalTexts && proposalTexts.length > 0) {
+      contextPrompt += `AVAILABLE PROPOSAL DOCUMENTS (${proposalTexts.length} total):\n\n`;
+      proposalTexts.forEach((doc, idx) => {
+        // Increased limit to capture full documents including Terms & Conditions sections
+        const preview = doc.content.substring(0, 50000); // Limit per document for token efficiency
+        contextPrompt += `--- DOCUMENT ${idx + 1}: ${doc.fileName} ---\n${preview}\n--- END OF DOCUMENT ${idx + 1} ---\n\n`;
+      });
+    }
+    // Single document support (backward compatibility)
+    else if (proposalText) {
+      // Ensure full document is sent for term extraction
+      contextPrompt += `PROPOSAL DOCUMENT:\n${proposalText.substring(0, 50000)}\n\n`;
     }
 
     // Add chat history for context

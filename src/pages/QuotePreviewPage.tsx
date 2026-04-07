@@ -7,8 +7,10 @@ import { PremiumAgency } from '../components/Templates/PremiumAgency';
 import { ModernSales } from '../components/Templates/ModernSales';
 import { ClassicBusiness } from '../components/Templates/ClassicBusiness';
 import { exportToPDF } from '../services/pdfExportService';
-import { loadPageImages } from '../utils/imageStorage';
+import { loadPageImages, savePageImages, clearPageImages } from '../utils/imageStorage';
 import { ExtractedPage } from '../types';
+import { loadAllProposalsFromCloud, downloadProposalFile } from '../services/supabaseProposalService';
+import { extractPDFContent } from '../utils/pdfUtils';
 import './QuotePreviewPage.css';
 
 export const QuotePreviewPage: React.FC = () => {
@@ -27,30 +29,213 @@ export const QuotePreviewPage: React.FC = () => {
   const [isExporting, setIsExporting] = useState(false);
   const [zoom, setZoom] = useState(100);
   const [pageImages, setPageImages] = useState<ExtractedPage[]>(proposal.pageImages || []);
+  const [isLoadingImages, setIsLoadingImages] = useState(false);
+  const [autoLoadAttempted, setAutoLoadAttempted] = useState(false);
   const previewRef = useRef<HTMLDivElement>(null);
 
   // Load page images from IndexedDB if not already in memory
   useEffect(() => {
-    console.log('📄 QuotePreviewPage: Checking for page images...');
-    console.log('📄 Current pageImages state:', pageImages.length);
-    console.log('📄 Proposal pageImages from store:', proposal.pageImages?.length || 0);
-    
-    if (pageImages.length === 0) {
-      loadPageImages().then((images) => {
-        console.log('📄 Loaded from IndexedDB:', images.length, 'images');
-        if (images.length > 0) {
-          setPageImages(images);
-          console.log('✅ Page images loaded and set');
-        } else {
-          console.log('⚠️ No images found in IndexedDB');
+    const checkAndLoadImages = async () => {
+      console.log('📄 QuotePreviewPage: Checking for page images...');
+      console.log('📄 Current pageImages state:', pageImages.length);
+      console.log('📄 Proposal pageImages from store:', proposal.pageImages?.length || 0);
+      console.log('📄 Current quote available:', !!currentQuote, 'items:', currentQuote?.items?.length || 0);
+      
+      if (pageImages.length === 0) {
+        try {
+          const images = await loadPageImages();
+          console.log('📄 Loaded from IndexedDB:', images.length, 'images');
+          
+          if (images.length > 0) {
+            // Validate if cached images match current quote
+            let isRelevant = false;
+            if (currentQuote && currentQuote.items && currentQuote.items.length > 0 && images.length > 0) {
+              const quoteKeywords = currentQuote.items
+                .map(item => item.description.toLowerCase())
+                .join(' ')
+                .split(/[\s,\-\/&]+/)
+                .filter(w => w.length >= 3 && !['the', 'and', 'per', 'rental', 'price', 'display', 'printing', 'fixing', 'month'].includes(w))
+                .slice(0, 5); // Top 5 keywords
+              
+              console.log('🔑 Validating cache with quote keywords:', quoteKeywords);
+              
+              const pagesText = images.map(p => p.text.toLowerCase()).join(' ');
+              const matchedKeywords = quoteKeywords.filter(kw => pagesText.includes(kw));
+              const matchCount = matchedKeywords.length;
+              const matchRate = matchCount / Math.max(quoteKeywords.length, 1);
+              
+              isRelevant = matchRate >= 0.3; // At least 30% match
+              console.log(`🔍 Cache validation: ${(matchRate * 100).toFixed(0)}% relevant (${matchCount}/${quoteKeywords.length} keywords matched: ${matchedKeywords.join(', ') || 'none'})`);
+              
+              if (!isRelevant) {
+                console.log('⚠️ Cached images NOT relevant to current quote - will trigger cloud reload');
+              } else {
+                console.log('✅ Cached images ARE relevant to current quote');
+              }
+            } else {
+              isRelevant = true; // No quote to validate against, accept cache
+              console.log('ℹ️ No quote items for validation, accepting cached images');
+            }
+            
+            if (isRelevant) {
+              setPageImages(images);
+              console.log('✅ Page images loaded and set from cache');
+            } else {
+              console.log('🔄 Cache invalid - clearing and triggering cloud reload');
+              // Clear invalid cache
+              await clearPageImages();
+              console.log('🗑️ Invalid cache cleared, auto-load will trigger fresh download');
+              // Don't set images, let auto-load handle it
+            }
+          } else {
+            console.log('⚠️ No images found in IndexedDB');
+          }
+        } catch (err) {
+          console.error('❌ Failed to load page images:', err);
         }
-      }).catch(err => {
-        console.error('❌ Failed to load page images:', err);
+      } else {
+        console.log('✅ Page images already in state:', pageImages.length);
+      }
+    };
+    
+    checkAndLoadImages();
+  }, []); // Only run once on mount
+
+  // Auto-load images from cloud if not available locally (NEW FEATURE)
+  useEffect(() => {
+    const autoLoadImagesFromCloud = async () => {
+      console.log('🔍 Auto-load check:', { 
+        pageImagesLength: pageImages.length, 
+        autoLoadAttempted, 
+        isLoadingImages,
+        hasQuote: !!currentQuote 
       });
-    } else {
-      console.log('✅ Page images already in state:', pageImages.length);
-    }
-  }, []);
+      
+      // Only attempt auto-load if:
+      // 1. No images currently loaded
+      // 2. Haven't already tried to auto-load (prevent infinite loops)
+      // 3. Not currently loading
+      if (pageImages.length === 0 && !autoLoadAttempted && !isLoadingImages) {
+        setAutoLoadAttempted(true); // Mark as attempted
+        setIsLoadingImages(true);
+        console.log('🔄 Auto-loading images from cloud...');
+
+        try {
+          // SMART MATCHING: Find document that matches quote items
+          let targetDoc = null;
+          
+          if (currentQuote && currentQuote.items && currentQuote.items.length > 0) {
+            // Extract keywords from quote items
+            const quoteKeywords = currentQuote.items
+              .map(item => item.description.toLowerCase())
+              .join(' ')
+              .replace(/[()]/g, ' ')
+              .split(/[\s,\-\/&]+/)
+              .filter(w => 
+                w.length >= 3 && 
+                !['the', 'and', 'per', 'for', 'from', 'with', 'price', 'rental', 'display', 'printing', 'fixing', 'month'].includes(w)
+              );
+            
+            console.log('🔑 Quote keywords:', quoteKeywords.slice(0, 10).join(', '));
+            
+            // Get ALL cloud documents (limit 50 for performance)
+            const cloudDocs = await loadAllProposalsFromCloud(50);
+            
+            if (cloudDocs && cloudDocs.length > 0) {
+              console.log('📚 Searching through', cloudDocs.length, 'cloud documents...');
+              
+              // Score each document based on keyword matches
+              const scoredDocs = cloudDocs.map(doc => {
+                const docText = doc.text_content.toLowerCase();
+                const matchCount = quoteKeywords.filter(keyword => 
+                  docText.includes(keyword)
+                ).length;
+                const score = matchCount / quoteKeywords.length; // Percentage of keywords found
+                
+                return { doc, score, matchCount };
+              });
+              
+              // Sort by score (highest first)
+              scoredDocs.sort((a, b) => b.score - a.score);
+              
+              // Log top 3 matches
+              console.log('📊 Top document matches:');
+              scoredDocs.slice(0, 3).forEach((item, idx) => {
+                console.log(`  ${idx + 1}. ${item.doc.file_name} - Score: ${(item.score * 100).toFixed(0)}% (${item.matchCount}/${quoteKeywords.length} keywords)`);
+              });
+              
+              // Use document with highest score if it's above threshold (20%)
+              if (scoredDocs[0].score >= 0.2) {
+                targetDoc = scoredDocs[0].doc;
+                console.log('✅ Best match:', targetDoc.file_name, `(${(scoredDocs[0].score * 100).toFixed(0)}% match)`);
+              } else {
+                // Fallback to most recent if no good match
+                targetDoc = cloudDocs[0];
+                console.log(`⚠️ No strong match found (best: ${(scoredDocs[0].score * 100).toFixed(0)}%), using most recent:`, targetDoc.file_name);
+              }
+            }
+          } else {
+            // No quote items, just use most recent
+            const cloudDocs = await loadAllProposalsFromCloud(1);
+            if (cloudDocs && cloudDocs.length > 0) {
+              targetDoc = cloudDocs[0];
+              console.log('ℹ️ No quote items for matching, using most recent:', targetDoc.file_name);
+            }
+          }
+          
+          // Download and process the selected document
+          if (targetDoc) {
+            console.log('📥 Downloading:', targetDoc.file_name);
+            
+            // Download the PDF file from cloud storage
+            const blob = await downloadProposalFile(targetDoc.storage_path);
+            
+            if (blob) {
+              // Convert blob to File object for extraction
+              const file = new File([blob], targetDoc.file_name, { 
+                type: targetDoc.file_type || 'application/pdf' 
+              });
+              
+              console.log('⚙️ Processing PDF:', targetDoc.page_count, 'pages');
+              
+              // Extract page images from PDF
+              const extractedData = await extractPDFContent(file);
+              
+              if (extractedData.pageImages && extractedData.pageImages.length > 0) {
+                console.log('✅ Extracted', extractedData.pageImages.length, 'page images');
+                
+                // Cache in IndexedDB for future use
+                await savePageImages(extractedData.pageImages);
+                console.log('💾 Cached in IndexedDB');
+                
+                // Update state to display images
+                setPageImages(extractedData.pageImages);
+                console.log('✅ Reference images ready from:', targetDoc.file_name);
+              } else {
+                console.log('⚠️ No page images extracted from PDF');
+              }
+            } else {
+              console.log('⚠️ Failed to download PDF from cloud');
+            }
+          } else {
+            console.log('ℹ️ No cloud documents available for auto-load');
+          }
+        } catch (error) {
+          console.error('❌ Auto-load images failed:', error);
+          // Fail silently - don't break the preview
+        } finally {
+          setIsLoadingImages(false);
+        }
+      }
+    };
+
+    // Small delay to let IndexedDB check complete first
+    const timer = setTimeout(() => {
+      autoLoadImagesFromCloud();
+    }, 500);
+
+    return () => clearTimeout(timer);
+  }, [pageImages.length, autoLoadAttempted, isLoadingImages]);
 
   // Add sample item if quote has no items
   React.useEffect(() => {
@@ -298,6 +483,36 @@ export const QuotePreviewPage: React.FC = () => {
 
       {/* Preview Area */}
       <div className="preview-container">
+        {/* Auto-loading indicator */}
+        {isLoadingImages && (
+          <div style={{
+            position: 'absolute',
+            top: '20px',
+            left: '50%',
+            transform: 'translateX(-50%)',
+            background: 'rgba(37, 99, 235, 0.95)',
+            color: 'white',
+            padding: '12px 24px',
+            borderRadius: '8px',
+            fontSize: '14px',
+            fontWeight: '500',
+            boxShadow: '0 4px 12px rgba(0, 0, 0, 0.15)',
+            zIndex: 1000,
+            display: 'flex',
+            alignItems: 'center',
+            gap: '10px'
+          }}>
+            <div style={{
+              width: '16px',
+              height: '16px',
+              border: '2px solid rgba(255, 255, 255, 0.3)',
+              borderTop: '2px solid white',
+              borderRadius: '50%',
+              animation: 'spin 0.8s linear infinite'
+            }}></div>
+            Loading reference images from cloud...
+          </div>
+        )}
         <div className="preview-wrapper" style={{ transform: `scale(${zoom / 100})` }}>
           <div ref={previewRef} className="preview-content">
             {renderTemplate()}
