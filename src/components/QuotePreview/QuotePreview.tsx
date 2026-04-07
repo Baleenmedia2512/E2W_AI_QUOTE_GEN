@@ -796,29 +796,32 @@ const QuotePreview: React.FC<QuotePreviewProps> = ({ quote, onUpdate, onSave }) 
         </VStack>
       </Box>
 
-      {/* Delivery Timeline */}
-      <Box mt={{ base: 6, md: 8 }}>
-        <Text fontSize="md" fontWeight="700" color="gray.800" mb={3}>
-          📅 Delivery Timeline
-        </Text>
-        <Input
-          value={localQuote.deliveryTimeline || ''}
-          onChange={(e) => updateDeliveryTimeline(e.target.value)}
-          placeholder="e.g., 7 working days from receipt"
-          size="lg"
-          bg="white"
-          borderWidth="2px"
-          borderColor="gray.300"
-          borderRadius="12px"
-          fontWeight="500"
-          _hover={{ borderColor: 'red.300', boxShadow: '0 0 0 1px rgba(201, 31, 61, 0.1)' }}
-          _focus={{ 
-            borderColor: 'red.500', 
-            boxShadow: '0 0 0 3px rgba(201, 31, 61, 0.15)',
-            bg: 'white'
-          }}
-        />
-      </Box>
+      {/* Delivery Timeline - Only show if specified */}
+      {localQuote.deliveryTimeline && 
+       !localQuote.deliveryTimeline.toLowerCase().includes('not specified') && (
+        <Box mt={{ base: 6, md: 8 }}>
+          <Text fontSize="md" fontWeight="700" color="gray.800" mb={3}>
+            📅 Delivery Timeline
+          </Text>
+          <Input
+            value={localQuote.deliveryTimeline || ''}
+            onChange={(e) => updateDeliveryTimeline(e.target.value)}
+            placeholder="e.g., 7 working days from receipt"
+            size="lg"
+            bg="white"
+            borderWidth="2px"
+            borderColor="gray.300"
+            borderRadius="12px"
+            fontWeight="500"
+            _hover={{ borderColor: 'red.300', boxShadow: '0 0 0 1px rgba(201, 31, 61, 0.1)' }}
+            _focus={{ 
+              borderColor: 'red.500', 
+              boxShadow: '0 0 0 3px rgba(201, 31, 61, 0.15)',
+              bg: 'white'
+            }}
+          />
+        </Box>
+      )}
 
       {/* Terms and Conditions */}
       <Box mt={6}>
