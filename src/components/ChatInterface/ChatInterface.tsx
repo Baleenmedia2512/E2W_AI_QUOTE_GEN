@@ -315,9 +315,8 @@ const ChatInterface: React.FC = () => {
     <Box
       display="flex"
       flexDirection="column"
-      h={{ base: 'auto', lg: 'calc(100vh - 520px)' }}
-      minH={{ base: '350px', lg: '400px' }}
-      maxH={{ base: 'calc(100vh - 250px)', lg: 'calc(100vh - 300px)' }}
+      h="100%"
+      w="100%"
       borderRadius="14px"
       border="1px solid"
       borderColor="gray.200"
@@ -658,56 +657,73 @@ const ChatInterface: React.FC = () => {
         <HStack 
           spacing={3} 
           flexShrink={0} 
-          px={4}
-          py={3}
+          px={{ base: 3, md: 4 }}
+          py={{ base: 4, md: 4 }}
           borderTop="2px solid"
-          borderColor="gray.200"
+          borderColor="gray.300"
           bg="white"
-          boxShadow="0 -2px 10px rgba(0, 0, 0, 0.05)"
+          boxShadow="0 -4px 20px rgba(0, 0, 0, 0.08)"
         >
-          <Input
-            value={inputValue}
-            onChange={(e) => setInputValue(e.target.value)}
-            onKeyPress={(e) => {
-              if (e.key === 'Enter' && !e.shiftKey) {
-                e.preventDefault();
-                handleSendMessage();
+          <Box position="relative" flex={1}>
+            <Input
+              value={inputValue}
+              onChange={(e) => setInputValue(e.target.value)}
+              onKeyPress={(e) => {
+                if (e.key === 'Enter' && !e.shiftKey) {
+                  e.preventDefault();
+                  handleSendMessage();
+                }
+              }}
+              placeholder={
+                proposal.textContent
+                  ? '💬 Ask about this proposal...'
+                  : '✨ Type your message here - ask anything about quotes...'
               }
-            }}
-            placeholder={
-              proposal.textContent
-                ? 'Ask about this proposal…'
-                : 'Ask me anything about quotes…'
-            }
-            disabled={isLoading}
-            size="md"
-            borderRadius="full"
-            bg="white"
-            border="2px solid"
-            borderColor="gray.300"
-            color="gray.900"
-            fontSize="14px"
-            h="48px"
-            w="100%"
-            px={5}
-            fontWeight="500"
-            _placeholder={{ color: 'gray.500', fontSize: '14px' }}
-            _hover={{ 
-              borderColor: 'red.400',
-              boxShadow: '0 0 0 1px rgba(220, 38, 38, 0.1)',
-            }}
-            _focus={{
-              borderColor: 'red.500',
-              boxShadow: '0 0 0 3px rgba(220, 38, 38, 0.1)',
-              outline: 'none',
-            }}
-            _disabled={{
-              bg: 'gray.100',
-              color: 'gray.500',
-              cursor: 'not-allowed',
-              opacity: 0.6,
-            }}
-          />
+              disabled={isLoading}
+              size="lg"
+              borderRadius="16px"
+              bg="gray.50"
+              border="2px solid"
+              borderColor="gray.300"
+              color="gray.900"
+              fontSize={{ base: '16px', md: '16px' }}
+              h={{ base: '56px', md: '60px' }}
+              w="100%"
+              px={{ base: 5, md: 6 }}
+              fontWeight="500"
+              transition="all 0.2s ease"
+              _placeholder={{ 
+                color: 'gray.500', 
+                fontSize: { base: '15px', md: '16px' },
+                fontWeight: '500',
+              }}
+              _hover={{ 
+                borderColor: 'brand.400',
+                bg: 'white',
+                boxShadow: '0 0 0 1px rgba(201, 31, 61, 0.2), 0 4px 16px rgba(0, 0, 0, 0.08)',
+              }}
+              _focus={{
+                borderColor: 'brand.500',
+                bg: 'white',
+                boxShadow: '0 0 0 4px rgba(201, 31, 61, 0.15), 0 8px 24px rgba(201, 31, 61, 0.12)',
+                outline: 'none',
+              }}
+              _disabled={{
+                bg: 'gray.100',
+                color: 'gray.400',
+                cursor: 'not-allowed',
+                opacity: 0.7,
+                borderColor: 'gray.300',
+              }}
+              sx={{
+                '&::placeholder': {
+                  textOverflow: 'ellipsis',
+                  overflow: 'hidden',
+                  whiteSpace: 'nowrap',
+                }
+              }}
+            />
+          </Box>
           <Box position="relative" display="inline-flex" alignItems="center" justifyContent="center">
             {/* Listening indicator text */}
             {isRecording && (
@@ -854,33 +870,34 @@ const ChatInterface: React.FC = () => {
           </Box>
           <IconButton
             aria-label="Send message"
-            icon={isLoading ? <Spinner size="sm" color="white" /> : <FiSend />}
+            icon={isLoading ? <Spinner size="sm" color="white" thickness="3px" /> : <FiSend />}
             onClick={handleSendMessage}
             isDisabled={!inputValue.trim() || isLoading}
-            bgGradient="linear(to-r, #dc2626, #be123c)"
+            bgGradient="linear(to-br, brand.500, brand.600)"
             color="white"
-            size="md"
-            h="48px"
-            w="48px"
-            minW="48px"
-            borderRadius="full"
+            size="lg"
+            h={{ base: '56px', md: '60px' }}
+            w={{ base: '56px', md: '60px' }}
+            minW={{ base: '56px', md: '60px' }}
+            borderRadius="16px"
             flexShrink={0}
-            fontSize="20px"
-            boxShadow="0 4px 12px rgba(220, 38, 38, 0.3)"
+            fontSize="22px"
+            transition="all 0.2s ease"
+            boxShadow="0 4px 20px rgba(201, 31, 61, 0.4), 0 2px 8px rgba(201, 31, 61, 0.25)"
             _hover={{
-              bgGradient: "linear(to-r, #be123c, #9f1239)",
-              transform: 'translateY(-1px)',
-              boxShadow: '0 6px 16px rgba(220, 38, 38, 0.4)',
+              bgGradient: "linear(to-br, brand.600, brand.700)",
+              transform: 'translateY(-2px) scale(1.05)',
+              boxShadow: '0 8px 28px rgba(201, 31, 61, 0.5), 0 4px 12px rgba(201, 31, 61, 0.35)',
             }}
             _active={{
               transform: 'scale(0.95)',
-              boxShadow: '0 2px 8px rgba(220, 38, 38, 0.3)',
+              boxShadow: '0 2px 12px rgba(201, 31, 61, 0.35)',
             }}
             _disabled={{
-              bgGradient: 'linear(to-r, gray.200, gray.300)',
-              color: 'white',
+              bgGradient: 'linear(to-br, gray.300, gray.400)',
+              color: 'gray.500',
               cursor: 'not-allowed',
-              opacity: 0.75,
+              opacity: 0.6,
               boxShadow: '0 2px 8px rgba(0, 0, 0, 0.1)',
               filter: 'grayscale(0.3)',
             }}
