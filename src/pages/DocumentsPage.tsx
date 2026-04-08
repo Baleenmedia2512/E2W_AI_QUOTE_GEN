@@ -8,12 +8,13 @@ import {
   Icon,
   Badge,
 } from '@chakra-ui/react';
-import { FiHome, FiFileText, FiEye, FiMessageSquare, FiFolder } from 'react-icons/fi';
+import { FiFolder, FiHome, FiFileText, FiEye } from 'react-icons/fi';
 import { useHistory } from 'react-router-dom';
-import ChatInterface from '../components/ChatInterface/ChatInterface';
+import ProposalUpload from '../components/ProposalUpload/ProposalUpload';
+import ProposalViewer from '../components/ProposalViewer/ProposalViewer';
 import { UserProfile } from '../components/UserProfile';
 
-const HomePage: React.FC = () => {
+const DocumentsPage: React.FC = () => {
   const history = useHistory();
 
   return (
@@ -44,10 +45,10 @@ const HomePage: React.FC = () => {
             fontWeight="800"
             fontSize="sm"
           >
-            <Icon as={FiMessageSquare} boxSize={4} />
+            <Icon as={FiFolder} boxSize={4} />
           </Box>
           <Text fontSize="lg" fontWeight="800" color="brand.500">
-            Quote Buddy
+            Documents
           </Text>
         </HStack>
         {/* User Profile - Mobile */}
@@ -81,10 +82,10 @@ const HomePage: React.FC = () => {
               borderRadius="8px"
               fontWeight="800"
             >
-              <Icon as={FiMessageSquare} boxSize={5} />
+              <Icon as={FiFolder} boxSize={5} />
             </Box>
             <Heading size="lg" color="brand.500" fontWeight="800" letterSpacing="-0.02em">
-              Quote Buddy
+              Documents
             </Heading>
           </HStack>
 
@@ -157,68 +158,79 @@ const HomePage: React.FC = () => {
         </Flex>
       </Box>
 
-      {/* Main Content - Fixed Height Layout */}
-      <Box
-        position="fixed"
-        top={{ base: '65px', md: '85px' }}
-        bottom={{ base: '64px', md: '20px' }}
-        left={0}
-        right={0}
-        overflow="hidden"
+      {/* Main Content */}
+      <Flex
+        maxW="1920px"
+        mx="auto"
+        p={{ base: 3, sm: 4, md: 6 }}
+        pt={{ base: '76px', md: '96px' }}
+        pb={{ base: '84px', md: 6 }}
+        gap={{ base: 3, md: 6 }}
+        direction={{ base: 'column', lg: 'row' }}
       >
+        {/* LEFT PANEL - Upload */}
         <Box
-          maxW="1400px"
-          mx="auto"
-          h="100%"
+          flex={{ lg: '0 0 380px' }}
+          w={{ base: '100%', lg: '380px' }}
           display="flex"
           flexDirection="column"
-          px={{ base: 3, md: 6 }}
-          py={{ base: 2, md: 4 }}
+          gap={3}
         >
-          {/* Compact Hero Banner */}
+          {/* Hero Card with Gradient */}
           <Box
-            bgGradient="linear(to-r, brand.500, brand.600)"
-            borderRadius={{ base: '12px', md: '16px' }}
-            p={{ base: 3, md: 4 }}
+            bgGradient="linear(to-br, brand.500, brand.600)"
+            borderRadius="20px"
+            p={6}
             color="white"
-            mb={{ base: 2, md: 3 }}
-            flexShrink={0}
+            position="relative"
+            overflow="hidden"
+            boxShadow="0 8px 24px rgba(201, 31, 61, 0.3)"
           >
-            <HStack justify="space-between" align="center">
-              <HStack spacing={2}>
-                <Badge
-                  bg="rgba(255,255,255,0.25)"
-                  color="white"
-                  px={2}
-                  py={1}
-                  borderRadius="full"
-                  fontSize="xs"
-                  fontWeight="600"
-                >
-                  ✨ AI Powered
-                </Badge>
-                <Text fontSize={{ base: 'sm', md: 'md' }} fontWeight="700">
-                  Just chat to create quotes instantly!
-                </Text>
-              </HStack>
+            <HStack justify="space-between" mb={4}>
+              <Badge
+                bg="rgba(255,255,255,0.25)"
+                color="white"
+                px={3}
+                py={1}
+                borderRadius="full"
+                fontSize="xs"
+                fontWeight="600"
+                textTransform="uppercase"
+              >
+                Document Manager
+              </Badge>
+              <Box
+                bg="rgba(255,255,255,0.2)"
+                px={2}
+                py={1}
+                borderRadius="6px"
+                fontSize="xs"
+                fontWeight="700"
+              >
+                PDF
+              </Box>
             </HStack>
+            
+            <Heading size="lg" mb={3} fontWeight="800" lineHeight="1.2">
+              Upload & View Proposals
+            </Heading>
+            
+            <Text fontSize="sm" opacity={0.95} lineHeight="1.6">
+              Upload BTL proposal PDFs and view them instantly. Documents are saved to cloud for easy access.
+            </Text>
           </Box>
 
-          {/* Chat Interface - Full Height */}
-          <Box
-            flex="1"
-            bg="white"
-            borderRadius={{ base: '12px', md: '16px' }}
-            overflow="hidden"
-            boxShadow="0 2px 12px rgba(0, 0, 0, 0.08)"
-            minH={0}
-          >
-            <ChatInterface />
-          </Box>
+          {/* Upload Proposal */}
+          <ProposalUpload />
         </Box>
-      </Box>
+
+        {/* RIGHT PANEL - PDF Viewer */}
+        <Box flex="1" minW="0" w={{ base: '100%', lg: 'auto' }}>
+          <ProposalViewer />
+        </Box>
+      </Flex>
     </Box>
   );
 };
 
-export default HomePage;
+export default DocumentsPage;
