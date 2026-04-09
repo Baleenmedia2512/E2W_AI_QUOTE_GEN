@@ -55,26 +55,30 @@
   width: 100%;
   max-width: 700px;
   margin: 0 auto 20px auto;
-  padding: 0;
+  padding: 20px;
   clear: both;
   position: relative;
   page-break-inside: avoid !important;
   break-inside: avoid !important;
+  overflow: hidden;
+  background: white;
+  height: 350px;
 }
 
 .reference-image {
   width: 100%;
   max-width: 100%;
   height: auto;
-  max-height: 400px;
+  max-height: none;
   border: 1px solid #ddd;
   border-radius: 4px;
   box-shadow: 0 1px 4px rgba(0, 0, 0, 0.08);
   display: block;
   object-fit: contain;
-  margin: 0 auto;
+  margin: -110px auto 0 auto;
   page-break-inside: avoid !important;
   break-inside: avoid !important;
+  position: relative;
 }
 
 .reference-image-caption {
@@ -131,9 +135,12 @@
   width: 100% !important;
   max-width: 100% !important;
   margin: 0 0 30px 0 !important;
-  padding: 0 !important;
+  padding: 20px !important;
   page-break-inside: avoid !important;
   break-inside: avoid !important;
+  overflow: hidden !important;
+  background: white !important;
+  height: 400px !important;
 }
 
 #pdf-page-2 .reference-image {
@@ -141,24 +148,23 @@
   max-width: 100% !important;
   height: auto !important;
   max-height: 500px !important;
+  display: blonone !important;
   display: block !important;
-  margin: 0 auto !important;
-  border: 1px solid #ccc !important;
+  margin: -12x solid #ccc !important;
   border-radius: 0 !important;
   box-shadow: none !important;
   object-fit: contain !important;
   page-break-inside: avoid !important;
   break-inside: avoid !important;
+  position: relative !important;
 }
 
 #pdf-page-2 .reference-image-caption {
-  font-size: 11px !important;
-  color: #666 !important;
-  text-align: center !important;
-  margin: 8px 0 20px 0 !important;
-  display: block !important;
-  font-style: italic !important;
-  page-break-before: avoid !important;
+  display: none !important;
+  visibility: hidden !important;
+  height: 0 !important;
+  margin: 0 !important;
+  padding: 0 !important;
 }
 
 /* Limit to 2 images per page in PDF */
@@ -249,11 +255,11 @@
   }
 
   .reference-image-caption {
-    margin-top: 10px;
-    font-size: 13px;
-    display: block;
-    text-align: center;
-    clear: both;
+    display: none !important;
+    visibility: hidden !important;
+    height: 0 !important;
+    margin: 0 !important;
+    padding: 0 !important;
   }
 }
 
@@ -282,7 +288,52 @@
 }
 
 .pdf-export-mobile.pdf-export-mode .reference-image-caption {
-  font-size: 12px;
-  margin-top: 8px;
+  display: none !important;
+  visibility: hidden !important;
+  height: 0 !important;
+  margin: 0 !important;
+  padding: 0 !important;
+}
+
+/* Mobile Responsive - Apply window/frame effect on mobile devices */
+@media screen and (max-width: 768px) {
+  .reference-image-item {
+    height: 450px !important;
+    padding: 15px !important;
+    overflow: hidden !important;
+    background: white !important;
+  }
+  
+  .reference-image {
+    margin: -50px auto 0 auto !important;
+    max-height: none !important;
+  }
+  
+  .reference-image-caption {
+    display: none !important;
+    visibility: hidden !important;
+    opacity: 0 !important;
+    height: 0 !important;
+    margin: 0 !important;
+    padding: 0 !important;
+  }
+  
+  .reference-images-section .reference-image-caption,
+  .reference-image-item .reference-image-caption,
+  span.reference-image-caption {
+    display: none !important;
+  }
+}
+
+/* Tablet Responsive */
+@media screen and (min-width: 769px) and (max-width: 1024px) {
+  .reference-image-item {
+    height: 350px !important;
+    padding: 18px !important;
+  }
+  
+  .reference-image {
+    margin: -110px auto 0 auto !important;
+  }
 }
 
