@@ -54,6 +54,7 @@
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
+  text-transform: uppercase;
 }
 
 .template-modern-sales .ms-header-right {
@@ -355,6 +356,7 @@
   font-style: normal;
   color: #1e293b;
   font-size: 11px;
+  text-transform: uppercase;
 }
 
 /* ===== RESPONSIVE ===== */

@@ -80,30 +80,24 @@ const ClientInfoFormWithAutocomplete: React.FC<ClientInfoFormWithAutocompletePro
   const validateForm = (): boolean => {
     const newErrors: Partial<Record<keyof ClientInfo, string>> = {};
 
+    // MANDATORY: Client Name
     if (!formData.name.trim()) {
       newErrors.name = 'Client name is required';
     }
 
-    if (!formData.company.trim()) {
-      newErrors.company = 'Company name is required';
-    }
-
-    if (!formData.address.trim()) {
-      newErrors.address = 'Address is required';
-    }
-
+    // MANDATORY: Phone
     if (!formData.phone.trim()) {
       newErrors.phone = 'Phone is required';
     } else if (!/^\+?[\d\s-()]+$/.test(formData.phone)) {
       newErrors.phone = 'Invalid phone number';
     }
 
-    if (!formData.email.trim()) {
-      newErrors.email = 'Email is required';
-    } else if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(formData.email)) {
+    // OPTIONAL: Email (validate format only if provided)
+    if (formData.email.trim() && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(formData.email)) {
       newErrors.email = 'Invalid email address';
     }
 
+    // OPTIONAL: GST (validate format only if provided)
     if (formData.gst && !/^[A-Z0-9]{2,15}$/.test(formData.gst.trim())) {
       newErrors.gst = 'Invalid GST format';
     }
@@ -209,9 +203,9 @@ const ClientInfoFormWithAutocomplete: React.FC<ClientInfoFormWithAutocompletePro
             </GridItem>
 
             <GridItem>
-              <FormControl isRequired isInvalid={!!errors.company}>
+              <FormControl isInvalid={!!errors.company}>
                 <FormLabel fontSize="sm" fontWeight="700" color="gray.800">
-                  Company Name <Text as="span" color="red.500">*</Text>
+                  Company Name <Text as="span" color="gray.500" fontWeight="400" fontSize="xs">(Optional)</Text>
                 </FormLabel>
                 <Input
                   value={formData.company}
@@ -237,9 +231,9 @@ const ClientInfoFormWithAutocomplete: React.FC<ClientInfoFormWithAutocompletePro
 
           {/* Address - Full Width (but max 50% width) */}
           <Box maxW={{ base: '100%', md: '50%' }}>
-            <FormControl isRequired isInvalid={!!errors.address}>
+            <FormControl isInvalid={!!errors.address}>
               <FormLabel fontSize="sm" fontWeight="700" color="gray.800">
-                Address <Text as="span" color="red.500">*</Text>
+                Address <Text as="span" color="gray.500" fontWeight="400" fontSize="xs">(Optional)</Text>
               </FormLabel>
               <Textarea
                 value={formData.address}
@@ -321,9 +315,9 @@ const ClientInfoFormWithAutocomplete: React.FC<ClientInfoFormWithAutocompletePro
 
           {/* Email - Half Width */}
           <Box maxW={{ base: '100%', md: '50%' }}>
-            <FormControl isRequired isInvalid={!!errors.email}>
+            <FormControl isInvalid={!!errors.email}>
               <FormLabel fontSize="sm" fontWeight="700" color="gray.800">
-                Email <Text as="span" color="red.500">*</Text>
+                Email <Text as="span" color="gray.500" fontWeight="400" fontSize="xs">(Optional)</Text>
               </FormLabel>
               <Input
                 value={formData.email}
