@@ -121,6 +121,22 @@
   margin: 0;
 }
 
+/* Company Contact Section */
+.template-classic-business .company-contact-section {
+  margin: 16px 32px 12px;
+  text-align: center;
+}
+
+.template-classic-business .company-contact-details {
+  font-size: 9px;
+  color: #666;
+  line-height: 1.6;
+}
+
+.template-classic-business .company-contact-details p {
+  margin: 2px 0;
+}
+
 /* Reference Section */
 .template-classic-business .reference-section {
   margin: 0 32px 12px;
@@ -502,6 +518,7 @@
   color: #d4af37;
   margin: 3px 0 0;
   font-style: normal;
+  text-transform: uppercase;
 }
 
 /* Mobile Responsiveness */
