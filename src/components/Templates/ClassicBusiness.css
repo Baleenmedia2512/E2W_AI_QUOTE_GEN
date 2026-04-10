@@ -536,6 +536,35 @@
   text-transform: uppercase;
 }
 
+/* Company Contact Footer */
+.template-classic-business .company-contact-footer {
+  margin-top: 12px;
+  padding-top: 10px;
+  border-top: 2px solid transparent;
+  border-image: linear-gradient(90deg, #d4af37, #f4d03f, #d4af37) 1;
+}
+
+.template-classic-business .company-contact-footer .footer-divider {
+  height: 2px;
+  background: linear-gradient(90deg, #d4af37, #f4d03f, #d4af37);
+  margin-bottom: 8px;
+  box-shadow: 0 1px 3px rgba(212, 175, 55, 0.3);
+}
+
+.template-classic-business .company-contact-footer .footer-content {
+  display: flex;
+  justify-content: center;
+  gap: 24px;
+  flex-wrap: wrap;
+}
+
+.template-classic-business .company-contact-footer .footer-item {
+  font-size: 11px;
+  color: #5c0f1e;
+  font-weight: 600;
+  font-family: Georgia, 'Times New Roman', Times, serif;
+}
+
 /* Mobile Responsiveness */
 @media (max-width: 768px) {
   .template-classic-business .classic-container {

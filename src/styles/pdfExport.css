@@ -347,6 +347,34 @@ html body [id^="pdf-service-ref-"] {
   margin-top: 10px !important;
 }
 
+/* Company Contact Footer */
+.company-contact-footer {
+  margin-top: 20px !important;
+  padding-top: 12px !important;
+}
+
+.company-contact-footer .footer-divider {
+  height: 1px !important;
+  background: linear-gradient(90deg, transparent, #b8d4e8, transparent) !important;
+  margin-bottom: 10px !important;
+}
+
+.company-contact-footer .footer-content {
+  display: flex !important;
+  justify-content: center !important;
+  align-items: center !important;
+  flex-wrap: wrap !important;
+  gap: 20px !important;
+  font-size: 9px !important;
+  color: #636e72 !important;
+}
+
+.company-contact-footer .footer-item {
+  display: inline-flex !important;
+  align-items: center !important;
+  gap: 6px !important;
+}
+
 /* Terms and notes sections */
 #pdf-page-1 .terms-section,
 #pdf-page-1 .notes-section,

@@ -40,6 +40,17 @@ export const ClassicBusiness: React.FC<TemplateProps> = ({ data, editable: _edit
     });
   };
 
+  // Render company contact footer (appears on every page)
+  const renderCompanyFooter = () => (
+    <div className="company-contact-footer">
+      <div className="footer-divider"></div>
+      <div className="footer-content">
+        {company.website && <span className="footer-item">🌐 {company.website}</span>}
+        {company.address && <span className="footer-item">📍 {company.address}</span>}
+      </div>
+    </div>
+  );
+
   return (
     <>
     <div className="template-classic-business">
@@ -217,8 +228,14 @@ export const ClassicBusiness: React.FC<TemplateProps> = ({ data, editable: _edit
         {!isMultiService && (
           <div id="pdf-page-2" className="template-classic-business">
             <ReferenceImages proposalPages={data.proposalPages} items={quote.items} />
+            
+            {/* Company Contact Footer */}
+            {renderCompanyFooter()}
           </div>
         )}
+
+        {/* Company Contact Footer */}
+        {renderCompanyFooter()}
 
         {/* Footer */}
         <div className="classic-footer">
@@ -307,8 +324,9 @@ export const ClassicBusiness: React.FC<TemplateProps> = ({ data, editable: _edit
                     : <li>Standard terms and conditions apply</li>
                   }
                 </ol>
-              </div>
-              </div>
+              </div>                
+                {/* Company Contact Footer */}
+                {renderCompanyFooter()}              </div>
 
               <div id={`pdf-service-ref-${groupIndex}`} className="template-classic-business">
                 <ReferenceImages proposalPages={data.proposalPages} items={group.items} />
@@ -327,6 +345,9 @@ export const ClassicBusiness: React.FC<TemplateProps> = ({ data, editable: _edit
                     </div>
                   </>
                 )}
+                
+                {/* Company Contact Footer */}
+                {renderCompanyFooter()}
               </div>
             </div>
           </div>

@@ -40,6 +40,17 @@ export const PremiumAgency: React.FC<TemplateProps> = ({ data, editable: _editab
     });
   };
 
+  // Render company contact footer (appears on every page)
+  const renderCompanyFooter = () => (
+    <div className="company-contact-footer">
+      <div className="footer-divider"></div>
+      <div className="footer-content">
+        {company.website && <span className="footer-item">🌐 {company.website}</span>}
+        {company.address && <span className="footer-item">📍 {company.address}</span>}
+      </div>
+    </div>
+  );
+
   return (
     <>
     <div id={isMultiService ? "pdf-page-summary" : "pdf-page-1"} className="template-premium-agency">
@@ -206,6 +217,9 @@ export const PremiumAgency: React.FC<TemplateProps> = ({ data, editable: _editab
         )}
       </div>
 
+      {/* Company Contact Footer */}
+      {renderCompanyFooter()}
+
       {/* Footer */}
       <div className="pa-footer">
         <p>Thank you for considering {company.name.toUpperCase()} for your project</p>
@@ -217,6 +231,9 @@ export const PremiumAgency: React.FC<TemplateProps> = ({ data, editable: _editab
     {!isMultiService && (
       <div id="pdf-page-2" className="template-premium-agency">
         <ReferenceImages proposalPages={data.proposalPages} items={quote.items} />
+        
+        {/* Company Contact Footer */}
+        {renderCompanyFooter()}
       </div>
     )}
     
@@ -300,6 +317,9 @@ export const PremiumAgency: React.FC<TemplateProps> = ({ data, editable: _editab
                 </div>
               </div>
             </div>
+            
+            {/* Company Contact Footer */}
+            {renderCompanyFooter()}
           </div>
 
           <div id={`pdf-service-ref-${groupIndex}`} className="template-premium-agency">
@@ -317,6 +337,9 @@ export const PremiumAgency: React.FC<TemplateProps> = ({ data, editable: _editab
                 </div>
               </>
             )}
+            
+            {/* Company Contact Footer */}
+            {renderCompanyFooter()}
           </div>
         </React.Fragment>
       );
