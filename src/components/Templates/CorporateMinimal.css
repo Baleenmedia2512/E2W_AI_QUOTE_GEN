@@ -407,6 +407,34 @@
   font-size: 12px;
 }
 
+/* ─── Company Contact Footer ─── */
+.template-corporate-minimal .company-contact-footer {
+  margin-top: 20px;
+  padding-top: 12px;
+}
+
+.template-corporate-minimal .company-contact-footer .footer-divider {
+  height: 1px;
+  background: linear-gradient(90deg, transparent, #b8d4e8, transparent);
+  margin-bottom: 10px;
+}
+
+.template-corporate-minimal .company-contact-footer .footer-content {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 20px;
+  font-size: 11px;
+  color: #636e72;
+}
+
+.template-corporate-minimal .company-contact-footer .footer-item {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
 /* ─── Tablet ─── */
 @media (max-width: 768px) {
   .template-corporate-minimal {

@@ -40,6 +40,17 @@ export const ModernSales: React.FC<TemplateProps> = ({ data, editable: _editable
     });
   };
 
+  // Render company contact footer (appears on every page)
+  const renderCompanyFooter = () => (
+    <div className="company-contact-footer">
+      <div className="footer-divider"></div>
+      <div className="footer-content">
+        {company.website && <span className="footer-item">🌐 {company.website}</span>}
+        {company.address && <span className="footer-item">📍 {company.address}</span>}
+      </div>
+    </div>
+  );
+
   return (
     <>
     <div id={isMultiService ? "pdf-page-summary" : "pdf-page-1"} className="template-modern-sales">
@@ -205,6 +216,9 @@ export const ModernSales: React.FC<TemplateProps> = ({ data, editable: _editable
         )}
       </div>
 
+      {/* Company Contact Footer */}
+      {renderCompanyFooter()}
+
       {/* Footer */}
       <div className="ms-footer">
         <p>Thank you for your business | {company.name.toUpperCase()}</p>
@@ -217,6 +231,9 @@ export const ModernSales: React.FC<TemplateProps> = ({ data, editable: _editable
     {!isMultiService && (
       <div id="pdf-page-2" className="template-modern-sales">
         <ReferenceImages proposalPages={data.proposalPages} items={quote.items} />
+        
+        {/* Company Contact Footer */}
+        {renderCompanyFooter()}
       </div>
     )}
     
@@ -300,6 +317,9 @@ export const ModernSales: React.FC<TemplateProps> = ({ data, editable: _editable
                 </div>
               </div>
             </div>
+            
+            {/* Company Contact Footer */}
+            {renderCompanyFooter()}
           </div>
 
           <div id={`pdf-service-ref-${groupIndex}`} className="template-modern-sales">
@@ -317,6 +337,9 @@ export const ModernSales: React.FC<TemplateProps> = ({ data, editable: _editable
                 </div>
               </>
             )}
+            
+            {/* Company Contact Footer */}
+            {renderCompanyFooter()}
           </div>
         </React.Fragment>
       );

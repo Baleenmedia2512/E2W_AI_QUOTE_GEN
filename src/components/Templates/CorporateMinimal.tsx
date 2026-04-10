@@ -94,6 +94,17 @@ export const CorporateMinimal: React.FC<TemplateProps> = ({ data, editable: _edi
     </div>
   );
 
+  // Render company contact footer (appears on every page)
+  const renderCompanyFooter = () => (
+    <div className="company-contact-footer">
+      <div className="footer-divider"></div>
+      <div className="footer-content">
+        {company.website && <span className="footer-item">🌐 {company.website}</span>}
+        {company.address && <span className="footer-item">📍 {company.address}</span>}
+      </div>
+    </div>
+  );
+
   // Single service quote (original behavior)
   if (!isMultiService) {
     return (
@@ -190,11 +201,17 @@ export const CorporateMinimal: React.FC<TemplateProps> = ({ data, editable: _edi
           <div className="system-generated-notice">
             <p>This is a system-generated quotation and does not require a signature.</p>
           </div>
+          
+          {/* Company Contact Footer */}
+          {renderCompanyFooter()}
         </div>
 
         {/* Reference Images from Proposal */}
         <div id="pdf-page-2" className="template-corporate-minimal">
           <ReferenceImages proposalPages={data.proposalPages} items={quote.items} />
+          
+          {/* Company Contact Footer */}
+          {renderCompanyFooter()}
         </div>
       </>
     );
@@ -269,6 +286,9 @@ export const CorporateMinimal: React.FC<TemplateProps> = ({ data, editable: _edi
             {DEFAULT_GENERAL_TERMS.map((term, i) => <li key={i}>{term}</li>)}
           </ul>
         </div>
+        
+        {/* Company Contact Footer */}
+        {renderCompanyFooter()}
       </div>
 
       {/* Pages 2+: Individual Service Pages */}
@@ -349,6 +369,9 @@ export const CorporateMinimal: React.FC<TemplateProps> = ({ data, editable: _edi
                     }
                   </ul>
                 </div>
+                
+                {/* Company Contact Footer */}
+                {renderCompanyFooter()}
               </div>
 
               {/* Service-specific reference images */}
@@ -361,6 +384,9 @@ export const CorporateMinimal: React.FC<TemplateProps> = ({ data, editable: _edi
                     <p>This is a system-generated quotation and does not require a signature.</p>
                   </div>
                 )}
+                
+                {/* Company Contact Footer */}
+                {renderCompanyFooter()}
               </div>
             </>
           </React.Fragment>
