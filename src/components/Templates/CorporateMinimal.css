@@ -379,18 +379,24 @@
 
 /* ─── System Generated Notice ─── */
 .template-corporate-minimal .system-generated-notice {
-  margin-top: 24px;
-  padding-top: 14px;
-  border-top: 2px solid #e4e9f0;
+  margin-top: 32px;
+  padding: 16px 24px;
+  background: linear-gradient(135deg, #f0f7ff 0%, #e8f4f8 100%);
+  border: 1px solid #b8d4e8;
+  border-left: 4px solid #1a3a5c;
+  border-radius: 8px;
   text-align: center;
+  box-shadow: 0 2px 8px rgba(26, 58, 92, 0.08);
+  position: relative;
 }
 
 .template-corporate-minimal .system-generated-notice p {
-  font-size: 11.5px;
-  color: #636e72;
+  font-size: 13px;
+  color: #1a3a5c;
   margin: 0;
-  font-style: italic;
-  letter-spacing: 0.2px;
+  font-weight: 500;
+  letter-spacing: 0.3px;
+  line-height: 1.6;
 }
 
 .template-corporate-minimal .system-generated-notice .generated-by {

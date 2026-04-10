@@ -220,9 +220,131 @@ html body [id^="pdf-service-ref-"] {
 
 #pdf-page-1 .system-generated-notice,
 #pdf-page-summary .system-generated-notice,
-[id^="pdf-service-"]:not([id^="pdf-service-ref-"]) .system-generated-notice {
+[id^="pdf-service-"]:not([id^="pdf-service-ref-"]) .system-generated-notice,
+[id^="pdf-service-ref-"] .system-generated-notice {
+  margin-top: 24px !important;
+  padding: 16px 24px !important;
+  border-radius: 8px !important;
+  text-align: center !important;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.08) !important;
+  position: relative !important;
+  box-sizing: border-box !important;
+}
+
+/* Corporate Minimal styling */
+.template-corporate-minimal .system-generated-notice {
+  background: linear-gradient(135deg, #f0f7ff 0%, #e8f4f8 100%) !important;
+  border: 1px solid #b8d4e8 !important;
+  border-left: 4px solid #1a3a5c !important;
+}
+
+.template-corporate-minimal .system-generated-notice p {
+  font-size: 13px !important;
+  color: #1a3a5c !important;
+  font-weight: 500 !important;
+  letter-spacing: 0.3px !important;
+  line-height: 1.6 !important;
+  margin: 0 !important;
+}
+
+/* Classic Business styling */
+.template-classic-business .system-generated-notice {
+  background: linear-gradient(135deg, #fffbf0 0%, #fef8e8 100%) !important;
+  border: 1px solid #e6dcc4 !important;
+  border-top: 3px solid #d4af37 !important;
+}
+
+.template-classic-business .system-generated-notice::before {
+  content: '✓' !important;
+  position: absolute !important;
+  left: 50% !important;
+  top: -15px !important;
+  transform: translateX(-50%) !important;
+  width: 30px !important;
+  height: 30px !important;
+  background: linear-gradient(135deg, #d4af37, #f4d47c) !important;
+  border-radius: 50% !important;
+  color: #fff !important;
+  font-size: 16px !important;
+  font-weight: bold !important;
+  line-height: 30px !important;
+  text-align: center !important;
+}
+
+.template-classic-business .system-generated-notice p {
+  font-size: 12px !important;
+  color: #5a4a2a !important;
+  font-weight: 500 !important;
+  letter-spacing: 0.3px !important;
+  line-height: 1.6 !important;
+  margin: 0 !important;
+}
+
+/* Footer elements inside reference sections */
+[id^="pdf-service-ref-"] .pa-notice,
+[id^="pdf-service-ref-"] .ms-notice {
+  margin-top: 24px !important;
+  padding: 16px 24px !important;
+  border-radius: 8px !important;
+  text-align: center !important;
+  box-shadow: 0 3px 10px rgba(0, 0, 0, 0.12) !important;
+  position: relative !important;
+}
+
+[id^="pdf-service-ref-"] .pa-notice {
+  background: linear-gradient(135deg, #faf8f5 0%, #f5f0e8 100%) !important;
+  border: 1px solid #d4c4a8 !important;
+  border-left: 4px solid #8b7355 !important;
+}
+
+[id^="pdf-service-ref-"] .pa-notice::before {
+  content: '🛡️' !important;
+  position: absolute !important;
+  left: 12px !important;
+  top: 50% !important;
+  transform: translateY(-50%) !important;
+  font-size: 22px !important;
+  opacity: 0.7 !important;
+}
+
+[id^="pdf-service-ref-"] .pa-notice p {
+  font-size: 12px !important;
+  color: #5a4a3a !important;
+  font-weight: 500 !important;
+  letter-spacing: 0.3px !important;
+  line-height: 1.6 !important;
+  margin: 0 !important;
+}
+
+[id^="pdf-service-ref-"] .ms-notice {
+  background: linear-gradient(135deg, #f0fdf4 0%, #dcfce7 100%) !important;
+  border: 1px solid #86efac !important;
+  border-left: 4px solid #059669 !important;
+}
+
+[id^="pdf-service-ref-"] .ms-notice::before {
+  content: '✔️' !important;
+  position: absolute !important;
+  left: 12px !important;
+  top: 50% !important;
+  transform: translateY(-50%) !important;
+  font-size: 20px !important;
+  opacity: 0.8 !important;
+}
+
+[id^="pdf-service-ref-"] .ms-notice p {
+  font-size: 12px !important;
+  color: #047857 !important;
+  font-weight: 600 !important;
+  letter-spacing: 0.3px !important;
+  line-height: 1.6 !important;
+  margin: 0 !important;
+}
+
+[id^="pdf-service-ref-"] .pa-footer,
+[id^="pdf-service-ref-"] .ms-footer,
+[id^="pdf-service-ref-"] .classic-footer {
   margin-top: 10px !important;
-  font-size: 9px !important;
 }
 
 /* Terms and notes sections */
