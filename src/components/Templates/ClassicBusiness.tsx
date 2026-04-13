@@ -1,7 +1,7 @@
 import React from 'react';
 import { TemplateProps } from '../../types';
 import { ReferenceImages } from './ReferenceImages';
-import { isMultiServiceQuote, groupItemsByServiceType, filterTermsByServiceType, DEFAULT_GENERAL_TERMS } from '../../utils/quoteGrouping';
+import { isMultiServiceQuote, groupItemsByServiceType, filterTermsByServiceType, DEFAULT_GENERAL_TERMS, getServiceGroupHeading } from '../../utils/quoteGrouping';
 import './ClassicBusiness.css';
 
 export const ClassicBusiness: React.FC<TemplateProps> = ({ data, editable: _editable = false, onDataChange: _onDataChange }) => {
@@ -261,7 +261,7 @@ export const ClassicBusiness: React.FC<TemplateProps> = ({ data, editable: _edit
             <div className="classic-container">
               <div id={`pdf-service-${groupIndex}`} className="template-classic-business">
               <div className="items-section">
-                <h3 className="section-heading">{group.serviceType} Branding Services</h3>
+                <h3 className="section-heading">{getServiceGroupHeading(group)}</h3>
                 <table className="classic-table">
                   <thead>
                     <tr>
@@ -340,7 +340,7 @@ export const ClassicBusiness: React.FC<TemplateProps> = ({ data, editable: _edit
                     <div className="classic-footer">
                       <div className="ornamental-line"></div>
                       <p className="footer-text">
-                        {company.name.toUpperCase()} - Professional {group.serviceType} Branding Services
+                        {company.name.toUpperCase()} - Professional Branding Services
                       </p>
                     </div>
                   </>

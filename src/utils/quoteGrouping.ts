@@ -278,3 +278,20 @@ export function filterNotesByServiceType(notes: string | undefined, serviceType:
   
   return filteredLines.join(' ');
 }
+
+/**
+ * Get a clean heading for a service group
+ * For single items, use the full description. For multiple items, use the first item's description.
+ */
+export function getServiceGroupHeading(group: ServiceGroup): string {
+  if (group.items.length === 1) {
+    // Single item: use full description, removing unnecessary parts
+    const description = group.items[0].description;
+    // Remove "- Display Price (per board)" type suffixes
+    return description.split(' - ')[0];
+  } else {
+    // Multiple items: extract common heading or use first item
+    const firstDescription = group.items[0].description.split(' - ')[0];
+    return firstDescription;
+  }
+}

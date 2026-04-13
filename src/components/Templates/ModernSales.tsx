@@ -1,7 +1,7 @@
 import React from 'react';
 import { TemplateProps } from '../../types';
 import { ReferenceImages } from './ReferenceImages';
-import { isMultiServiceQuote, groupItemsByServiceType, filterTermsByServiceType, DEFAULT_GENERAL_TERMS } from '../../utils/quoteGrouping';
+import { isMultiServiceQuote, groupItemsByServiceType, filterTermsByServiceType, DEFAULT_GENERAL_TERMS, getServiceGroupHeading } from '../../utils/quoteGrouping';
 import './ModernSales.css';
 
 export const ModernSales: React.FC<TemplateProps> = ({ data, editable: _editable = false, onDataChange: _onDataChange }) => {
@@ -250,7 +250,7 @@ export const ModernSales: React.FC<TemplateProps> = ({ data, editable: _editable
             <div className="ms-body">
               {/* Items */}
               <div className="ms-section">
-                <h3 className="ms-section-title">{group.serviceType} Branding Services</h3>
+                <h3 className="ms-section-title">{getServiceGroupHeading(group)}</h3>
                 <table className="ms-table">
                   <thead>
                     <tr>
@@ -332,7 +332,7 @@ export const ModernSales: React.FC<TemplateProps> = ({ data, editable: _editable
                   <p>This is a system-generated quotation and does not require a signature.</p>
                 </div>
                 <div className="ms-footer">
-                  <p>{company.name.toUpperCase()} - Professional {group.serviceType} Branding Services</p>
+                  <p>{company.name.toUpperCase()} - Professional Branding Services</p>
                   <p className="ms-footer-company">{company.name}</p>
                 </div>
               </>
