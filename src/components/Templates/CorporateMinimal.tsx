@@ -1,7 +1,7 @@
 import React from 'react';
 import { TemplateProps } from '../../types';
 import { ReferenceImages } from './ReferenceImages';
-import { isMultiServiceQuote, groupItemsByServiceType, filterTermsByServiceType, DEFAULT_GENERAL_TERMS } from '../../utils/quoteGrouping';
+import { isMultiServiceQuote, groupItemsByServiceType, filterTermsByServiceType, DEFAULT_GENERAL_TERMS, getServiceGroupHeading } from '../../utils/quoteGrouping';
 import './CorporateMinimal.css';
 
 export const CorporateMinimal: React.FC<TemplateProps> = ({ data, editable: _editable = false, onDataChange: _onDataChange }) => {
@@ -304,7 +304,7 @@ export const CorporateMinimal: React.FC<TemplateProps> = ({ data, editable: _edi
               <div id={`pdf-service-${groupIndex}`} className="template-corporate-minimal">
                 <div className="quote-items-section">
                   <h3 style={{ marginBottom: '16px', fontSize: '18px', fontWeight: '600', color: '#750926' }}>
-                    {group.serviceType} Branding Services
+                    {getServiceGroupHeading(group)}
                   </h3>
                   <table className="items-table">
                     <thead>
