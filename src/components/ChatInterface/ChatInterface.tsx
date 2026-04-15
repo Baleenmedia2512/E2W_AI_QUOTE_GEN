@@ -11,7 +11,7 @@ import {
   Flex,
   Icon,
 } from '@chakra-ui/react';
-import { FiSend, FiCheck } from 'react-icons/fi';
+import { FiSend, FiCheck, FiMic } from 'react-icons/fi';
 import { useHistory } from 'react-router-dom';
 import { useAppStore } from '../../store';
 import { sendMessageToGemini } from '../../services/geminiService';
@@ -20,6 +20,8 @@ import { Quote, QuoteItem } from '../../types/quote';
 import { saveChatHistory, loadChatHistory } from '../../utils/localStorage';
 import { loadAllProposalsFromCloud } from '../../services/supabaseProposalService';
 import { DEFAULT_GENERAL_TERMS } from '../../utils/quoteGrouping';
+import { SpeechRecognition } from '@capacitor-community/speech-recognition';
+import { Capacitor } from '@capacitor/core';
 
 const SUGGESTION_PROMPTS = [
   'Generate quote for 100 auto full branding',
@@ -277,39 +279,136 @@ const ChatInterface: React.FC = () => {
     setInputValue(suggestion);
   };
 
-  // Initialize speech recognition
+  // Initialize speech recognition for mobile using Capacitor plugin
   useEffect(() => {
-    if ('webkitSpeechRecognition' in window || 'SpeechRecognition' in window) {
-      const SpeechRecognition = (window as any).webkitSpeechRecognition || (window as any).SpeechRecognition;
-      const recognition = new SpeechRecognition();
-      recognition.continuous = false;
-      recognition.interimResults = false;
-      recognition.lang = 'en-US';
-
-      recognition.onresult = (event: any) => {
-        const transcript = event.results[0][0].transcript;
-        setInputValue(prev => prev + (prev ? ' ' : '') + transcript);
-        setIsRecording(false);
-      };
-
-      recognition.onerror = (event: any) => {
-        console.error('Speech recognition error:', event.error);
-        setIsRecording(false);
-      };
-
-      recognition.onend = () => {
-        setIsRecording(false);
-      };
-
-      recognitionRef.current = recognition;
+    // Request permission on component mount for mobile
+    if (Capacitor.isNativePlatform()) {
+      SpeechRecognition.requestPermissions().catch(err => {
+        console.warn('Microphone permission denied:', err);
+      });
     }
 
     return () => {
-      if (recognitionRef.current) {
-        recognitionRef.current.stop();
+      // Cleanup: stop any ongoing recognition
+      if (Capacitor.isNativePlatform() && isRecording) {
+        SpeechRecognition.stop().catch(() => {});
       }
     };
   }, []);
+
+  // Toggle voice input - for both mobile (Capacitor) and web (fallback)
+  const toggleVoiceInput = async () => {
+    if (isRecording) {
+      // Stop recording
+      setIsRecording(false);
+      if (Capacitor.isNativePlatform()) {
+        try {
+          await SpeechRecognition.stop();
+        } catch (err) {
+          console.error('Error stopping voice recognition:', err);
+        }
+      } else if (recognitionRef.current) {
+        recognitionRef.current.stop();
+      }
+    } else {
+      // Start recording
+      setIsRecording(true);
+      
+      if (Capacitor.isNativePlatform()) {
+        // Mobile: Use Capacitor Speech Recognition plugin
+        try {
+          // Check if speech recognition is available
+          const available = await SpeechRecognition.available();
+          if (!available.available) {
+            throw new Error('Speech recognition not available on this device');
+          }
+
+          // Check and request permissions
+          const permStatus = await SpeechRecognition.checkPermissions();
+          if (permStatus.speechRecognition !== 'granted') {
+            const permResult = await SpeechRecognition.requestPermissions();
+            if (permResult.speechRecognition !== 'granted') {
+              throw new Error('Microphone permission denied');
+            }
+          }
+
+          // Start listening - Result comes back directly from this call
+          const result = await SpeechRecognition.start({
+            language: 'en-US',
+            maxResults: 5,
+            prompt: '🎤 Speak now...',
+            partialResults: true,
+            popup: true,
+          });
+
+          console.log('Speech recognition result:', result);
+
+          // Extract the recognized text from the result
+          if (result && result.matches && result.matches.length > 0) {
+            const transcript = result.matches[0];
+            console.log('Recognized text:', transcript);
+            setInputValue(prev => prev + (prev ? ' ' : '') + transcript);
+          } else {
+            console.warn('No speech recognized');
+          }
+          
+          setIsRecording(false);
+        } catch (err: any) {
+          console.error('Voice recognition error:', err);
+          setIsRecording(false);
+          
+          // Only show error if it's not a user cancellation
+          if (err.message && !err.message.toLowerCase().includes('cancel')) {
+            const errorMessage: Message = {
+              id: Date.now().toString(),
+              role: 'assistant',
+              content: `Voice input error: ${err.message || 'Could not access microphone'}`,
+              timestamp: new Date(),
+              isError: true,
+            };
+            setMessages(prev => [...prev, errorMessage]);
+          }
+        }
+      } else {
+        // Web fallback: Use Web Speech API
+        if ('webkitSpeechRecognition' in window || 'SpeechRecognition' in window) {
+          const SpeechRecognitionAPI = (window as any).webkitSpeechRecognition || (window as any).SpeechRecognition;
+          const recognition = new SpeechRecognitionAPI();
+          recognition.continuous = false;
+          recognition.interimResults = false;
+          recognition.lang = 'en-US';
+
+          recognition.onresult = (event: any) => {
+            const transcript = event.results[0][0].transcript;
+            setInputValue(prev => prev + (prev ? ' ' : '') + transcript);
+            setIsRecording(false);
+          };
+
+          recognition.onerror = (event: any) => {
+            console.error('Speech recognition error:', event.error);
+            setIsRecording(false);
+          };
+
+          recognition.onend = () => {
+            setIsRecording(false);
+          };
+
+          recognitionRef.current = recognition;
+          recognition.start();
+        } else {
+          setIsRecording(false);
+          const errorMessage: Message = {
+            id: Date.now().toString(),
+            role: 'assistant',
+            content: 'Voice input is not supported in this browser.',
+            timestamp: new Date(),
+            isError: true,
+          };
+          setMessages(prev => [...prev, errorMessage]);
+        }
+      }
+    }
+  };
 
   return (
     <Box
@@ -801,8 +900,8 @@ const ChatInterface: React.FC = () => {
               </>
             )}
             
-            {/* Voice input button hidden */}
-            {/* <IconButton
+            {/* Voice input button */}
+            <IconButton
               aria-label={isRecording ? "Stop recording" : "Voice input"}
               icon={<FiMic />}
               onClick={toggleVoiceInput}
@@ -866,7 +965,7 @@ const ChatInterface: React.FC = () => {
               } : {
                 transition: 'all 0.3s cubic-bezier(0.4, 0, 0.2, 1)',
               }}
-            /> */}
+            />
           </Box>
           <IconButton
             aria-label="Send message"
