@@ -337,3 +337,25 @@
   }
 }
 
+/* === AUTO-CROPPED IMAGES (Gemini Vision) === */
+/* These override all context-specific styles for cleanly cropped individual images */
+
+.reference-image-item.cropped {
+  height: auto !important;
+  max-height: none !important;
+  overflow: visible !important;
+  padding: 10px 20px !important;
+}
+
+.reference-image.cropped-image {
+  margin: 0 auto !important;
+  max-height: 400px !important;
+  width: auto !important;
+  max-width: 100% !important;
+  object-fit: contain !important;
+  display: block !important;
+  border: 1px solid #ddd !important;
+  border-radius: 4px !important;
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.08) !important;
+}
+

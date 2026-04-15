@@ -9,6 +9,7 @@ export interface ExtractedPage {
   pageNumber: number;
   text: string;
   imageDataUrl: string;
+  croppedImages?: string[];
 }
 
 export interface StoredProposal {

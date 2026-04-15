@@ -7,6 +7,7 @@ interface ExtractedPage {
   pageNumber: number;
   text: string;
   imageDataUrl: string;
+  croppedImages?: string[];
 }
 
 function openDB(): Promise<IDBDatabase> {
