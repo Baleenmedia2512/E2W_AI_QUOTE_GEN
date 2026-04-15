@@ -5,6 +5,7 @@ interface ExtractedPage {
   pageNumber: number;
   text: string;
   imageDataUrl: string;
+  croppedImages?: string[];
 }
 
 interface QuoteItem {
@@ -13,9 +14,43 @@ interface QuoteItem {
   [key: string]: any;
 }
 
+interface DisplayImage {
+  key: string;
+  imageUrl: string;
+  alt: string;
+  isCropped: boolean;
+  pageNumber: number;
+}
+
 interface ReferenceImagesProps {
   proposalPages?: ExtractedPage[];
   items?: QuoteItem[];
+}
+
+function flattenToDisplayImages(pages: ExtractedPage[], prefix: string): DisplayImage[] {
+  const images: DisplayImage[] = [];
+  for (const page of pages) {
+    if (page.croppedImages && page.croppedImages.length > 0) {
+      page.croppedImages.forEach((url, idx) => {
+        images.push({
+          key: `${prefix}-crop-${page.pageNumber}-${idx}`,
+          imageUrl: url,
+          alt: `${prefix === 'ref' ? 'Reference image' : 'Design specification'} - Page ${page.pageNumber}`,
+          isCropped: true,
+          pageNumber: page.pageNumber,
+        });
+      });
+    } else {
+      images.push({
+        key: `${prefix}-page-${page.pageNumber}`,
+        imageUrl: page.imageDataUrl,
+        alt: `${prefix === 'ref' ? 'Proposal page' : 'Design specification - Page'} ${page.pageNumber}`,
+        isCropped: false,
+        pageNumber: page.pageNumber,
+      });
+    }
+  }
+  return images;
 }
 
 /**
@@ -27,19 +62,33 @@ function filterPagesByCategory(pages: ExtractedPage[], category: string): Extrac
   console.log('🔍 Filtering pages for category:', category);
   
   // Extract the service type part by removing pricing/quantity suffixes
-  // This ensures "Mobile Van - Non LED Printing & Fixing Price" → "Mobile Van - Non LED"
-  // instead of incorrectly splitting at first " - " which gives just "Mobile Van"
+  // Preserves sub-type qualifiers like "Underground Station", "Interior", "Non LED"
+  // E.g., "Metro Branding – Underground Station - Display Price" → "Metro Branding – Underground Station"
+  // E.g., "Mobile Van - Non LED Printing & Fixing Price" → "Mobile Van - Non LED"
   let serviceTypeOnly = category;
   const pricingSuffixPattern = /\b(printing\s*&?\s*fixing|display\s+price|rental\s+price|printing\s+price|fixing\s+price)\b/i;
   const pricingMatch = category.match(pricingSuffixPattern);
   if (pricingMatch && pricingMatch.index && pricingMatch.index > 0) {
-    serviceTypeOnly = category.substring(0, pricingMatch.index).replace(/[\s\-&]+$/, '').trim();
+    serviceTypeOnly = category.substring(0, pricingMatch.index).replace(/[\s\-–—&]+$/, '').trim();
     console.log('📌 Using service type (pricing suffix removed):', serviceTypeOnly);
   } else {
-    const dashIndex = category.indexOf(' - ');
-    if (dashIndex > 0) {
-      serviceTypeOnly = category.substring(0, dashIndex).trim();
-      console.log('📌 Using service type only:', serviceTypeOnly);
+    // Only fall back to first-dash split if no sub-type qualifiers are present
+    // Sub-type qualifiers: words like interior, underground, exterior, station, etc.
+    const subTypePattern = /\b(interior|underground|exterior|station|rooftop|skyway|elevated|platform|non\s*led|led)\b/i;
+    const hasSubType = subTypePattern.test(category);
+    
+    if (hasSubType) {
+      // Has sub-type — strip only known pricing terms from the end, keep everything else
+      serviceTypeOnly = category
+        .replace(/\s*[-–—]\s*\b(display\s+price|rental\s+price|printing\s+price|fixing\s+price|printing\s*&?\s*fixing\s*price?|per\s+month|rate|price)\b.*$/i, '')
+        .replace(/[\s\-–—&]+$/, '').trim();
+      console.log('📌 Using service type (sub-type preserved):', serviceTypeOnly);
+    } else {
+      const dashIndex = category.indexOf(' - ');
+      if (dashIndex > 0) {
+        serviceTypeOnly = category.substring(0, dashIndex).trim();
+        console.log('📌 Using service type only:', serviceTypeOnly);
+      }
     }
   }
   
@@ -99,11 +148,18 @@ function filterPagesByCategory(pages: ExtractedPage[], category: string): Extrac
     console.log(`🔍 Checking Page ${page.pageNumber} for keywords: [${requiredKeywords.join(', ')}]`);
     
     // EXCLUDE pricing summary pages (they contain pricing tables, not reference images)
+    // Detect currency symbols/patterns that indicate pricing content
+    const hasCurrencyPatterns = (pageText.match(/₹|rs\.?\s*[\d,]+|[\d,]+\.00/g) || []).length >= 3;
+    const hasPricingColumns = (pageText.includes('unit price') || pageText.includes('unit of measure') || 
+                               pageText.includes('price per') || pageText.includes('campaign'));
+    const hasQuantityColumns = pageText.includes('quantity') || pageText.includes('min.') || pageText.includes('min ');
     const isPricingSummary = pageText.includes('pricing summary') || 
                             pageText.includes('price list') ||
                             pageText.includes('rate card') ||
                             (pageText.includes('activity') && pageText.includes('branding activities')) ||
-                            (pageText.includes('unit price') && pageText.includes('total'));
+                            (pageText.includes('unit price') && pageText.includes('total')) ||
+                            (hasCurrencyPatterns && hasPricingColumns) ||
+                            (hasCurrencyPatterns && hasQuantityColumns);
     
     if (isPricingSummary) {
       console.log(`❌ Page ${page.pageNumber} - Excluded (pricing summary table)`);
@@ -361,27 +417,53 @@ function filterPagesByCategory(pages: ExtractedPage[], category: string): Extrac
 
 /**
  * Extract the main service type from all quote items.
+ * Removes only pricing/quantity suffixes, preserving sub-type qualifiers.
  * E.g., "Bus Full Branding - Display Price" → "Bus Full Branding"
- * E.g., "Apartment Lift Branding - Printing" → "Apartment Lift Branding"
+ * E.g., "Metro Branding – Underground Station - Display Price" → "Metro Branding – Underground Station"
+ * E.g., "Apartment Lift Branding - Printing & Fixing Price" → "Apartment Lift Branding"
  */
 function extractServiceType(items: QuoteItem[]): string | null {
-  // Look for common service type patterns in item descriptions
+  // Pricing/quantity suffixes to strip — the part AFTER the real service name
+  const pricingSuffixPattern = /\s*[-–—]\s*\b(display\s+price|rental\s+price|printing\s+price|fixing\s+price|printing\s*&?\s*fixing\s*price?|per\s+month|rate|price)\b.*$/i;
+
   for (const item of items) {
     const desc = item.description;
     
-    // Try to extract everything before " - " (the service type is usually before the dash)
-    const dashMatch = desc.match(/^([^-]+)\s*-/);
+    // Step 1: Strip pricing suffix only (preserves sub-type like "Underground Station")
+    let serviceType = desc.replace(pricingSuffixPattern, '').trim();
+    // Also strip trailing dashes/spaces
+    serviceType = serviceType.replace(/[\s\-–—&]+$/, '').trim();
+    
+    const lower = serviceType.toLowerCase();
+    
+    // Check if the cleaned string contains a service keyword
+    if (lower.includes('branding') || 
+        lower.includes('shelter') ||
+        lower.includes('signage') ||
+        lower.includes('printing') ||
+        lower.includes('ads') ||
+        lower.includes('advertising') ||
+        lower.includes('screen') ||
+        lower.includes('lobby') ||
+        lower.includes('hoarding') ||
+        lower.includes('board')) {
+      console.log('📌 Extracted service type (pricing suffix removed):', serviceType);
+      return serviceType;
+    }
+    
+    // Fallback: Try splitting at first dash only if no pricing suffix was found
+    const dashMatch = desc.match(/^([^-–—]+)\s*[-–—]/);
     if (dashMatch) {
       const beforeDash = dashMatch[1].trim();
-      // Check if it contains "branding" or other service keywords
-      if (beforeDash.toLowerCase().includes('branding') || 
-          beforeDash.toLowerCase().includes('shelter') ||
-          beforeDash.toLowerCase().includes('signage') ||
-          beforeDash.toLowerCase().includes('printing') ||
-          beforeDash.toLowerCase().includes('ads') ||
-          beforeDash.toLowerCase().includes('advertising') ||
-          beforeDash.toLowerCase().includes('screen') ||
-          beforeDash.toLowerCase().includes('lobby')) {
+      const bdLower = beforeDash.toLowerCase();
+      if (bdLower.includes('branding') || 
+          bdLower.includes('shelter') ||
+          bdLower.includes('signage') ||
+          bdLower.includes('printing') ||
+          bdLower.includes('ads') ||
+          bdLower.includes('advertising') ||
+          bdLower.includes('screen') ||
+          bdLower.includes('lobby')) {
         console.log('📌 Extracted service type from dash pattern:', beforeDash);
         return beforeDash;
       }
@@ -390,9 +472,9 @@ function extractServiceType(items: QuoteItem[]): string | null {
     // Fallback: Match any "[Something] Branding" pattern
     const brandingMatch = desc.match(/([a-z\s]+branding)/i);
     if (brandingMatch) {
-      const serviceType = brandingMatch[1].trim();
-      console.log('📌 Extracted service type from branding pattern:', serviceType);
-      return serviceType;
+      const matchedType = brandingMatch[1].trim();
+      console.log('📌 Extracted service type from branding pattern:', matchedType);
+      return matchedType;
     }
     
     // Also check for specific vehicle/building patterns (backward compatibility)
@@ -439,12 +521,18 @@ function filterPagesByQuoteItems(pages: ExtractedPage[], items: QuoteItem[]): Ex
           .replace(/\s*\|\s*/g, '') // Remove pipes and surrounding spaces
           .replace(/\s+/g, ' ');    // Normalize spaces
         
-        // Skip pricing summary pages
+        // Skip pricing summary pages (strengthened to catch metro-style tables)
+        const innerCurrencyMatches = (text.match(/₹|rs\.?\s*[\d,]+|[\d,]+\.00/g) || []).length;
+        const innerHasPricingCols = text.includes('unit price') || text.includes('unit of measure') || 
+                                    text.includes('price per') || text.includes('campaign');
+        const innerHasQtyCols = text.includes('quantity') || text.includes('min.') || text.includes('min ');
         const isPricingSummary = text.includes('pricing summary') || 
                                 text.includes('price list') ||
                                 text.includes('rate card') ||
                                 (text.includes('activity') && text.includes('branding activities')) ||
-                                (text.includes('unit price') && text.includes('total'));
+                                (text.includes('unit price') && text.includes('total')) ||
+                                (innerCurrencyMatches >= 3 && innerHasPricingCols) ||
+                                (innerCurrencyMatches >= 3 && innerHasQtyCols);
         
         if (isPricingSummary) {
           console.log(`  ❌ Page ${page.pageNumber} - Excluded (pricing summary)`);
@@ -623,6 +711,18 @@ export const ReferenceImages: React.FC<ReferenceImagesProps> = ({ proposalPages,
         .replace(/\s*\|\s*/g, '')
         .replace(/\s+/g, ' ');
       
+      // Detect if page is actually a pricing table (should be excluded entirely)
+      const currencyMatches = (text.match(/₹|rs\.?\s*[\d,]+|[\d,]+\.00/g) || []).length;
+      const isPricingTable = currencyMatches >= 3 && 
+                            (text.includes('unit price') || text.includes('unit of measure') || 
+                             text.includes('price per') || text.includes('quantity') ||
+                             text.includes('campaign') || text.includes('min.'));
+      
+      if (isPricingTable) {
+        console.log(`🚫 Page ${page.pageNumber} - Excluded from sections (pricing table with ${currencyMatches} currency references)`);
+        continue; // Skip pricing tables entirely — they are NOT reference images or design specs
+      }
+      
       const hasDesignSpec = text.includes('design specification') ||
                            text.includes('design specifications') ||
                            text.includes('display area');
@@ -636,33 +736,47 @@ export const ReferenceImages: React.FC<ReferenceImagesProps> = ({ proposalPages,
       // Last page of a section (e.g., 2/2, 3/3) is always reference images
       const isLastPage = pagePattern ? pageNum === totalPages && pageNum >= 2 : false;
       
-      // Classify as Design Spec if:
+      // Detect if page is image-heavy (has cropped images or very little text)
+      // Pages with "Design Specification" heading but mostly photos should go to reference images
+      const hasCroppedImages = page.croppedImages && page.croppedImages.length > 0;
+      const isTextLight = text.replace(/[^a-z]/g, '').length < 200; // Very little actual text content
+      const isImageHeavyPage = hasCroppedImages || isTextLight;
+      // Page numbered 2+ in a multi-page section is always a visual/reference page
+      const isLaterPage = pagePattern ? pageNum >= 2 : false;
+      
+      // Classify as Design Spec ONLY if:
       // 1. Has design spec keywords AND
       // 2. Does NOT have "reference image" text AND
-      // 3. Is NOT the last page of a multi-page section (last page = reference images)
-      if (hasDesignSpec && !hasReferenceImage && !isLastPage) {
+      // 3. Is NOT the last page of a multi-page section AND
+      // 4. Is NOT an image-heavy page (photos with "Design Spec" title = reference, not spec)
+      // 5. Is NOT a later page (2/3, 3/3 etc.) in a multi-page section
+      if (hasDesignSpec && !hasReferenceImage && !isLastPage && !isImageHeavyPage && !isLaterPage) {
         designSpec.push(page);
+        console.log(`📐 Page ${page.pageNumber} → Design Specification (text-heavy spec page)`);
       } else {
         reference.push(page);
+        console.log(`🖼️ Page ${page.pageNumber} → Reference Images (${isImageHeavyPage ? 'image-heavy' : isLaterPage ? 'later page in section' : isLastPage ? 'last page' : hasReferenceImage ? 'has reference keyword' : 'default'})`);
       }
     }
     
     return { designSpecPages: designSpec, referenceImagePages: reference };
   }, [filteredPages, proposalPages]);
 
-  // Group images into pairs (max 2 per page)
+  // Group images into pairs (max 2 per page) — flatten cropped images
   const groupedDesignSpec = useMemo(() => {
-    const groups: ExtractedPage[][] = [];
-    for (let i = 0; i < designSpecPages.length; i += 2) {
-      groups.push(designSpecPages.slice(i, i + 2));
+    const displayImages = flattenToDisplayImages(designSpecPages, 'design-spec');
+    const groups: DisplayImage[][] = [];
+    for (let i = 0; i < displayImages.length; i += 2) {
+      groups.push(displayImages.slice(i, i + 2));
     }
     return groups;
   }, [designSpecPages]);
 
   const groupedReferenceImages = useMemo(() => {
-    const groups: ExtractedPage[][] = [];
-    for (let i = 0; i < referenceImagePages.length; i += 2) {
-      groups.push(referenceImagePages.slice(i, i + 2));
+    const displayImages = flattenToDisplayImages(referenceImagePages, 'ref');
+    const groups: DisplayImage[][] = [];
+    for (let i = 0; i < displayImages.length; i += 2) {
+      groups.push(displayImages.slice(i, i + 2));
     }
     return groups;
   }, [referenceImagePages]);
@@ -694,14 +808,14 @@ export const ReferenceImages: React.FC<ReferenceImagesProps> = ({ proposalPages,
           <div className="reference-images-grid">
             {groupedDesignSpec.map((group, groupIndex) => (
               <div key={`design-spec-group-${groupIndex}`} className="reference-image-row">
-                {group.map((page) => (
-                  <div key={page.pageNumber} className="reference-image-item">
+                {group.map((img) => (
+                  <div key={img.key} className={`reference-image-item${img.isCropped ? ' cropped' : ''}`}>
                     <img
-                      src={page.imageDataUrl}
-                      alt={`Design specification - Page ${page.pageNumber}`}
-                      className="reference-image"
+                      src={img.imageUrl}
+                      alt={img.alt}
+                      className={`reference-image${img.isCropped ? ' cropped-image' : ''}`}
                     />
-                    <span className="reference-image-caption">Page {page.pageNumber}</span>
+                    {!img.isCropped && <span className="reference-image-caption">Page {img.pageNumber}</span>}
                   </div>
                 ))}
               </div>
@@ -716,14 +830,14 @@ export const ReferenceImages: React.FC<ReferenceImagesProps> = ({ proposalPages,
           <div className="reference-images-grid">
             {groupedReferenceImages.map((group, groupIndex) => (
               <div key={`ref-group-${groupIndex}`} className="reference-image-row">
-                {group.map((page) => (
-                  <div key={page.pageNumber} className="reference-image-item">
+                {group.map((img) => (
+                  <div key={img.key} className={`reference-image-item${img.isCropped ? ' cropped' : ''}`}>
                     <img
-                      src={page.imageDataUrl}
-                      alt={`Proposal page ${page.pageNumber}`}
-                      className="reference-image"
+                      src={img.imageUrl}
+                      alt={img.alt}
+                      className={`reference-image${img.isCropped ? ' cropped-image' : ''}`}
                     />
-                    <span className="reference-image-caption">Page {page.pageNumber}</span>
+                    {!img.isCropped && <span className="reference-image-caption">Page {img.pageNumber}</span>}
                   </div>
                 ))}
               </div>
