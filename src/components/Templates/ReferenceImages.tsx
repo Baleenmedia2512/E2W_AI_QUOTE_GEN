@@ -489,6 +489,74 @@ function extractServiceType(items: QuoteItem[]): string | null {
 }
 
 /**
+ * Extract ALL unique service types from quote items (for multi-service quotes).
+ * Returns an array of unique service type strings.
+ */
+function extractAllServiceTypes(items: QuoteItem[]): string[] {
+  const pricingSuffixPattern = /\s*[-–—]\s*\b(display\s+price|rental\s+price|printing\s+price|fixing\s+price|printing\s*&?\s*fixing\s*price?|per\s+month|rate|price)\b.*$/i;
+  const seen = new Set<string>();
+  const results: string[] = [];
+
+  for (const item of items) {
+    const desc = item.description;
+    
+    let serviceType = desc.replace(pricingSuffixPattern, '').trim();
+    serviceType = serviceType.replace(/[\s\-–—&]+$/, '').trim();
+    
+    const lower = serviceType.toLowerCase();
+    let extracted: string | null = null;
+    
+    if (lower.includes('branding') || 
+        lower.includes('shelter') ||
+        lower.includes('signage') ||
+        lower.includes('printing') ||
+        lower.includes('ads') ||
+        lower.includes('advertising') ||
+        lower.includes('screen') ||
+        lower.includes('lobby') ||
+        lower.includes('hoarding') ||
+        lower.includes('board')) {
+      extracted = serviceType;
+    }
+    
+    if (!extracted) {
+      const dashMatch = desc.match(/^([^-–—]+)\s*[-–—]/);
+      if (dashMatch) {
+        const beforeDash = dashMatch[1].trim();
+        const bdLower = beforeDash.toLowerCase();
+        if (bdLower.includes('branding') || bdLower.includes('shelter') ||
+            bdLower.includes('signage') || bdLower.includes('printing') ||
+            bdLower.includes('ads') || bdLower.includes('advertising') ||
+            bdLower.includes('screen') || bdLower.includes('lobby')) {
+          extracted = beforeDash;
+        }
+      }
+    }
+    
+    if (!extracted) {
+      const brandingMatch = desc.match(/([a-z\s]+branding)/i);
+      if (brandingMatch) extracted = brandingMatch[1].trim();
+    }
+    
+    if (!extracted) {
+      const vehicleMatch = desc.match(/(bus|auto|tempo|apartment|building|lift|elevator|residential|commercial)\s+(full|semi|back|panel|shelter|rickshaw|branding)/i);
+      if (vehicleMatch) extracted = vehicleMatch[0];
+    }
+    
+    if (extracted) {
+      const key = extracted.toLowerCase();
+      if (!seen.has(key)) {
+        seen.add(key);
+        results.push(extracted);
+        console.log('📌 Extracted service type:', extracted);
+      }
+    }
+  }
+  
+  return results;
+}
+
+/**
  * Automatically filter pages by ALL quote item descriptions.
  * Returns pages that match any of the quote items.
  * Prioritizes pages with (2/2), (2/3), (3/3) etc. patterns (reference image pages).
@@ -501,106 +569,87 @@ function filterPagesByQuoteItems(pages: ExtractedPage[], items: QuoteItem[]): Ex
   
   const matchedPages = new Set<number>();
   
-  // First, try to extract a common service type from all items
-  const serviceType = extractServiceType(items);
-  if (serviceType) {
-    console.log('🎯 Detected service type:', serviceType);
+  // Extract ALL unique service types from quote items
+  const serviceTypes = extractAllServiceTypes(items);
+  
+  if (serviceTypes.length > 0) {
+    console.log(`🎯 Detected ${serviceTypes.length} service type(s):`, serviceTypes);
     
-    // Use the service type to filter pages
-    const matchingPages = filterPagesByCategory(pages, serviceType);
-    
-    if (matchingPages.length > 0) {
-      console.log(`📊 Found ${matchingPages.length} pages matching service type`);
+    // Loop through EACH service type and collect pages
+    for (const serviceType of serviceTypes) {
+      console.log(`\n🔍 Searching pages for: "${serviceType}"`);
+      const matchingPages = filterPagesByCategory(pages, serviceType);
       
-      // Filter to only reference pages (2/X or higher)
-      // BUT ALSO accept pages with (X/2) where X >= 2 (like 2/2)
-      const referencePages = matchingPages.filter(page => {
-        // Clean up text: remove pipes that might split words
-        const text = page.text
-          .toLowerCase()
-          .replace(/\s*\|\s*/g, '') // Remove pipes and surrounding spaces
-          .replace(/\s+/g, ' ');    // Normalize spaces
+      if (matchingPages.length > 0) {
+        console.log(`📊 Found ${matchingPages.length} pages matching "${serviceType}"`);
         
-        // Skip pricing summary pages (strengthened to catch metro-style tables)
-        const innerCurrencyMatches = (text.match(/₹|rs\.?\s*[\d,]+|[\d,]+\.00/g) || []).length;
-        const innerHasPricingCols = text.includes('unit price') || text.includes('unit of measure') || 
-                                    text.includes('price per') || text.includes('campaign');
-        const innerHasQtyCols = text.includes('quantity') || text.includes('min.') || text.includes('min ');
-        const isPricingSummary = text.includes('pricing summary') || 
-                                text.includes('price list') ||
-                                text.includes('rate card') ||
-                                (text.includes('activity') && text.includes('branding activities')) ||
-                                (text.includes('unit price') && text.includes('total')) ||
-                                (innerCurrencyMatches >= 3 && innerHasPricingCols) ||
-                                (innerCurrencyMatches >= 3 && innerHasQtyCols);
-        
-        if (isPricingSummary) {
-          console.log(`  ❌ Page ${page.pageNumber} - Excluded (pricing summary)`);
-          return false;
-        }
-        
-        const pattern = text.match(/\((\d+)\/(\d+)\)/);
-        if (pattern) {
-          const pageNum = parseInt(pattern[1]);
-          const totalPages = parseInt(pattern[2]);
-          console.log(`  📄 Page ${page.pageNumber} has pattern (${pageNum}/${totalPages})`);
-          // EXCLUDE page 1 explicitly (pricing page) - ALWAYS show page 2+ for reference images
-          if (pageNum === 1) {
-            console.log(`  ❌ Page ${page.pageNumber} - Excluded (page 1/X is pricing)`);
-            return false;
-          }
-          // Accept if page number is 2 or higher (reference images, not pricing)
-          return pageNum >= 2;
-        }
-        console.log(`  📄 Page ${page.pageNumber} - No (X/Y) pattern found`);
-        
-        // If no pattern, check if it looks like a reference page (has "reference" in text)
-        // BUT ALSO exclude if it has (1/X) pattern anywhere in the text
-        const hasFirstPagePattern = text.match(/\(1\/\d+\)/);
-        if (hasFirstPagePattern) {
-          console.log(`  ❌ Page ${page.pageNumber} - Excluded (found (1/X) pattern)`);
-          return false;
-        }
-        
-        const looksLikeReference = text.includes('reference image') || 
-                                  text.includes('sample') ||
-                                  text.includes('example') ||
-                                  !isPricingSummary; // Accept if not a pricing page
-        
-        return looksLikeReference;
-      });
-      
-      if (referencePages.length > 0) {
-        console.log(`✅ Found ${referencePages.length} reference pages for service type "${serviceType}"`);
-        referencePages.forEach((page) => matchedPages.add(page.pageNumber));
-        const result = pages.filter((page) => matchedPages.has(page.pageNumber));
-        return result;
-      } else {
-        // If no (X/Y) pattern found, return all matching pages
-        // BUT STILL exclude any (1/X) pages to avoid showing pricing pages
-        console.log(`⚠️ No (X/Y) pattern found for service type, checking all ${matchingPages.length} matching pages`);
-        
-        const filteredMatchingPages = matchingPages.filter(page => {
-          const text = page.text.toLowerCase().replace(/\s*\|\s*/g, '').replace(/\s+/g, ' ');
+        // Filter to only reference pages (2/X or higher)
+        const referencePages = matchingPages.filter(page => {
+          const text = page.text
+            .toLowerCase()
+            .replace(/\s*\|\s*/g, '')
+            .replace(/\s+/g, ' ');
           
-          // EXPLICIT CHECK: Exclude any page with (1/X) pattern (pricing page)
-          const hasFirstPagePattern = text.match(/\(1\/\d+\)/);
-          if (hasFirstPagePattern) {
-            console.log(`  ❌ Page ${page.pageNumber} - Excluded from service type fallback (found (1/X) pattern)`);
+          // Skip pricing summary pages
+          const innerCurrencyMatches = (text.match(/₹|rs\.?\s*[\d,]+|[\d,]+\.00/g) || []).length;
+          const innerHasPricingCols = text.includes('unit price') || text.includes('unit of measure') || 
+                                      text.includes('price per') || text.includes('campaign');
+          const innerHasQtyCols = text.includes('quantity') || text.includes('min.') || text.includes('min ');
+          const isPricingSummary = text.includes('pricing summary') || 
+                                  text.includes('price list') ||
+                                  text.includes('rate card') ||
+                                  (text.includes('activity') && text.includes('branding activities')) ||
+                                  (text.includes('unit price') && text.includes('total')) ||
+                                  (innerCurrencyMatches >= 3 && innerHasPricingCols) ||
+                                  (innerCurrencyMatches >= 3 && innerHasQtyCols);
+          
+          if (isPricingSummary) {
             return false;
           }
-          return true;
+          
+          const pattern = text.match(/\((\d+)\/(\d+)\)/);
+          if (pattern) {
+            const pageNum = parseInt(pattern[1]);
+            if (pageNum === 1) return false;
+            return pageNum >= 2;
+          }
+          
+          const hasFirstPagePattern = text.match(/\(1\/\d+\)/);
+          if (hasFirstPagePattern) return false;
+          
+          const looksLikeReference = text.includes('reference image') || 
+                                    text.includes('sample') ||
+                                    text.includes('example') ||
+                                    !isPricingSummary;
+          
+          return looksLikeReference;
         });
         
-        console.log(`📊 After filtering out (1/X) pages from service type: ${filteredMatchingPages.length} pages remain`);
-        filteredMatchingPages.forEach((page) => matchedPages.add(page.pageNumber));
-        const result = pages.filter((page) => matchedPages.has(page.pageNumber));
-        return result;
+        if (referencePages.length > 0) {
+          console.log(`✅ Found ${referencePages.length} reference pages for "${serviceType}"`);
+          referencePages.forEach((page) => matchedPages.add(page.pageNumber));
+        } else {
+          // Fallback: include all matching except (1/X) pricing pages
+          const filteredMatchingPages = matchingPages.filter(page => {
+            const text = page.text.toLowerCase().replace(/\s*\|\s*/g, '').replace(/\s+/g, ' ');
+            const hasFirstPagePattern = text.match(/\(1\/\d+\)/);
+            return !hasFirstPagePattern;
+          });
+          filteredMatchingPages.forEach((page) => matchedPages.add(page.pageNumber));
+        }
+      } else {
+        console.log(`⚠️ No pages found for "${serviceType}"`);
       }
+    }
+    
+    if (matchedPages.size > 0) {
+      const result = pages.filter((page) => matchedPages.has(page.pageNumber));
+      console.log(`📊 Final result: ${result.length} reference pages for ${serviceTypes.length} service type(s)`);
+      return result;
     }
   }
   
-  // Fallback: Process each item individually
+  // Fallback: Process each item individually (unchanged from original)
   items.forEach((item) => {
     console.log('🔍 Processing item:', item.description);
     const matchingPages = filterPagesByCategory(pages, item.description);

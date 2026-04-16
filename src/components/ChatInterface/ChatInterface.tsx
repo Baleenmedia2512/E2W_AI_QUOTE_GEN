@@ -115,7 +115,21 @@ const ChatInterface: React.FC = () => {
         role: 'assistant',
         content: response.message,
         timestamp: new Date(),
+        isServiceNotFound: response.isServiceNotFound,
+        availableServices: response.availableServices,
+        isPartialMatch: response.isPartialMatch,
+        validServices: response.validServices,
+        missingServices: response.missingServices,
       };
+
+      // If service not found, show suggestion message instead of raw AI response
+      if (response.isServiceNotFound && response.availableServices) {
+        assistantMessage.content = response.serviceNotFoundMessage || 
+          `The requested service is not available in the proposal. Please select from the available services below:`;
+        setMessages(prev => [...prev, assistantMessage]);
+        setIsLoading(false);
+        return;
+      }
 
       setMessages(prev => [...prev, assistantMessage]);
 
@@ -277,6 +291,40 @@ const ChatInterface: React.FC = () => {
 
   const handleSuggestionClick = (suggestion: string) => {
     setInputValue(suggestion);
+  };
+
+  // Handle clicking a service suggestion button (auto-sends as new message)
+  const handleServiceSuggestionClick = (serviceName: string, isPartialMatch?: boolean, validServices?: string[]) => {
+    // Extract the original quantity from the last user message if possible
+    const lastUserMsg = [...messages].reverse().find(m => m.role === 'user');
+    let quantity = '';
+    if (lastUserMsg) {
+      const qtyMatch = lastUserMsg.content.match(/(\d+)\s/);
+      if (qtyMatch) quantity = qtyMatch[1] + ' ';
+    }
+    
+    // For partial match: combine valid services + replacement
+    if (isPartialMatch && validServices && validServices.length > 0 && lastUserMsg) {
+      // Extract ALL quantities from the original user message
+      const allQtys = [...lastUserMsg.content.matchAll(/(\d+)/g)].map(m => m[1]);
+      // Build combined quote: valid services from original + replacement for missing
+      const validParts = validServices.map((svc, idx) => {
+        const qty = allQtys[idx] || allQtys[0] || '';
+        return `${qty} ${svc}`.trim();
+      });
+      // Use second quantity for replacement if available, otherwise first
+      const replacementQty = allQtys.length > 1 ? allQtys[allQtys.length - 1] : (allQtys[0] || '');
+      validParts.push(`${replacementQty} ${serviceName}`.trim());
+      setInputValue(`Generate quote for ${validParts.join(' and ')}`);
+    } else {
+      setInputValue(`Generate quote for ${quantity}${serviceName}`);
+    }
+    
+    // Auto-send after a brief tick so the input updates
+    setTimeout(() => {
+      const sendBtn = document.querySelector('[data-send-btn]') as HTMLButtonElement;
+      if (sendBtn) sendBtn.click();
+    }, 100);
   };
 
   // Initialize speech recognition for mobile using Capacitor plugin
@@ -671,43 +719,123 @@ const ChatInterface: React.FC = () => {
                       </Box>
                     ) : (
                       // Regular message format
-                      <Box
-                        bgGradient={message.role === 'user' 
-                          ? 'linear(135deg, #dc2626 0%, #be123c 50%, #9f1239 100%)' 
-                          : undefined
-                        }
-                        bg={message.role === 'user' ? undefined : 'white'}
-                        border={message.role === 'user' ? 'none' : '1px solid'}
-                        borderColor={message.role === 'user' ? undefined : 'gray.200'}
-                        color={message.role === 'user' ? 'white' : 'gray.800'}
-                        px={{ base: 4, md: 5 }}
-                        py={{ base: 3.5, md: 4 }}
-                        borderRadius={message.role === 'user' ? '20px 20px 4px 20px' : '4px 16px 16px 16px'}
-                        boxShadow={message.role === 'user' 
-                          ? '0 8px 16px rgba(220, 38, 38, 0.25), 0 2px 4px rgba(220, 38, 38, 0.1)' 
-                          : '0 4px 12px rgba(0, 0, 0, 0.06), 0 1px 3px rgba(0, 0, 0, 0.08)'
-                        }
-                      >
-                        <Text 
-                          fontSize="14px" 
-                          whiteSpace="pre-wrap"
-                          lineHeight="1.6"
-                          fontWeight="500"
+                      <Box>
+                        <Box
+                          bgGradient={message.role === 'user' 
+                            ? 'linear(135deg, #dc2626 0%, #be123c 50%, #9f1239 100%)' 
+                            : undefined
+                          }
+                          bg={message.role === 'user' ? undefined : 'white'}
+                          border={message.role === 'user' ? 'none' : '1px solid'}
+                          borderColor={message.role === 'user' ? undefined : 'gray.200'}
+                          color={message.role === 'user' ? 'white' : 'gray.800'}
+                          px={{ base: 4, md: 5 }}
+                          py={{ base: 3.5, md: 4 }}
+                          borderRadius={message.role === 'user' ? '20px 20px 4px 20px' : '4px 16px 16px 16px'}
+                          boxShadow={message.role === 'user' 
+                            ? '0 8px 16px rgba(220, 38, 38, 0.25), 0 2px 4px rgba(220, 38, 38, 0.1)' 
+                            : '0 4px 12px rgba(0, 0, 0, 0.06), 0 1px 3px rgba(0, 0, 0, 0.08)'
+                          }
                         >
-                          {message.content}
-                        </Text>
-                        <Text
-                          fontSize="11px"
-                          mt={2}
-                          opacity={message.role === 'user' ? 0.75 : 0.6}
-                          fontWeight="500"
-                          letterSpacing="tight"
-                        >
-                          {message.timestamp.toLocaleTimeString([], {
-                            hour: '2-digit',
-                            minute: '2-digit',
-                          })}
-                        </Text>
+                          <Text 
+                            fontSize="14px" 
+                            whiteSpace="pre-wrap"
+                            lineHeight="1.6"
+                            fontWeight="500"
+                          >
+                            {message.content}
+                          </Text>
+                          <Text
+                            fontSize="11px"
+                            mt={2}
+                            opacity={message.role === 'user' ? 0.75 : 0.6}
+                            fontWeight="500"
+                            letterSpacing="tight"
+                          >
+                            {message.timestamp.toLocaleTimeString([], {
+                              hour: '2-digit',
+                              minute: '2-digit',
+                            })}
+                          </Text>
+                        </Box>
+
+                        {/* Service suggestion buttons when service not found */}
+                        {message.isServiceNotFound && message.availableServices && message.availableServices.length > 0 && (
+                          <Box mt={3}>
+                            {/* Show valid services info for partial matches */}
+                            {message.isPartialMatch && message.validServices && message.validServices.length > 0 && (
+                              <Box mb={2} px={1}>
+                                <Text fontSize="12px" fontWeight="600" color="green.600">
+                                  ✅ {message.validServices.join(', ')} — available
+                                </Text>
+                                {message.missingServices && message.missingServices.length > 0 && (
+                                  <Text fontSize="12px" fontWeight="600" color="red.500" mt={0.5}>
+                                    ❌ {message.missingServices.join(', ')} — not available
+                                  </Text>
+                                )}
+                                <Text fontSize="12px" color="gray.500" mt={1}>
+                                  Select a replacement below to generate a combined quote:
+                                </Text>
+                              </Box>
+                            )}
+                            {!message.isPartialMatch && (
+                              <Text fontSize="12px" fontWeight="600" color="gray.500" mb={2} px={1}>
+                                Available services:
+                              </Text>
+                            )}
+                            <VStack align="stretch" spacing={2}>
+                              {/* Group by category */}
+                              {(() => {
+                                const categories = new Map<string, typeof message.availableServices>();
+                                message.availableServices!.forEach(svc => {
+                                  const cat = svc.category || 'Other';
+                                  if (!categories.has(cat)) categories.set(cat, []);
+                                  categories.get(cat)!.push(svc);
+                                });
+                                return Array.from(categories.entries()).map(([category, services]) => (
+                                  <Box key={category}>
+                                    <Text fontSize="11px" fontWeight="700" color="gray.400" textTransform="uppercase" letterSpacing="wider" mb={1} px={1}>
+                                      {category}
+                                    </Text>
+                                    <VStack align="stretch" spacing={1.5}>
+                                      {services!.map((svc, idx) => (
+                                        <Button
+                                          key={idx}
+                                          variant="outline"
+                                          size="sm"
+                                          justifyContent="flex-start"
+                                          textAlign="left"
+                                          whiteSpace="normal"
+                                          h="auto"
+                                          py={2.5}
+                                          px={4}
+                                          borderRadius="12px"
+                                          fontWeight="500"
+                                          fontSize="13px"
+                                          borderColor="blue.200"
+                                          color="blue.700"
+                                          bg="blue.50"
+                                          onClick={() => handleServiceSuggestionClick(svc.name, message.isPartialMatch, message.validServices)}
+                                          isDisabled={isLoading}
+                                          _hover={{
+                                            bg: 'blue.100',
+                                            borderColor: 'blue.400',
+                                            transform: 'translateX(4px)',
+                                            boxShadow: '0 2px 8px rgba(59, 130, 246, 0.2)',
+                                          }}
+                                          transition="all 0.2s ease"
+                                          leftIcon={<Text fontSize="14px">→</Text>}
+                                        >
+                                          {svc.name}
+                                        </Button>
+                                      ))}
+                                    </VStack>
+                                  </Box>
+                                ));
+                              })()}
+                            </VStack>
+                          </Box>
+                        )}
                       </Box>
                     )}
                   </Box>
@@ -969,6 +1097,7 @@ const ChatInterface: React.FC = () => {
           </Box>
           <IconButton
             aria-label="Send message"
+            data-send-btn
             icon={isLoading ? <Spinner size="sm" color="white" thickness="3px" /> : <FiSend />}
             onClick={handleSendMessage}
             isDisabled={!inputValue.trim() || isLoading}
