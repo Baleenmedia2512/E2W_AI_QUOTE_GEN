@@ -343,7 +343,7 @@ Your workflow:
       "title": "Section Name (e.g., Design & Artwork, Vehicle Branding, Printing Services)",
       "lineItems": [
         {
-          "description": "Specific item description with details",
+          "description": "🔴 CRITICAL FORMAT: MUST start with FULL service type name, then pricing component. Example: 'Bus Semi Branding - Rental Price (per bus month)' NOT just 'Rental Price (per bus month)'",
           "quantity": <number from user request or proposal>,
           "unitPrice": <price from proposal or standard rate>,
           "duration": <number of months if applicable, omit or set to 1 for one-time pricing>
@@ -357,6 +357,21 @@ Your workflow:
   "notes": "Any assumptions made based on proposal analysis"
 }
 \`\`\`
+
+🔴 CRITICAL LINE ITEM DESCRIPTION FORMAT RULE:
+- EVERY line item description MUST start with the FULL service type name from the proposal
+- Format: "[Full Service Type Name] - [Pricing Component] ([Unit])"
+- ✅ CORRECT Examples:
+  * "Bus Semi Branding - Rental Price (per bus month)"
+  * "Bus Semi Branding - Printing & Fixing Price (per bus month)"
+  * "Auto Full Branding - Display Price (per auto)"
+  * "Apartment Lift Branding - Display Price (per frame month)"
+- ❌ WRONG Examples (missing service type name):
+  * "Rental Price (per bus month)" ← Missing "Bus Semi Branding"
+  * "Printing & Fixing Price (per bus month)" ← Missing "Bus Semi Branding"
+  * "Display Price (per auto)" ← Missing "Auto Full Branding"
+- WHY THIS IS CRITICAL: The description is used to match reference images from the proposal. Without the full service type name (e.g., "Bus Semi Branding"), the system cannot distinguish between "Bus Full Branding", "Bus Semi Branding", and "Bus Back Branding" images, causing wrong reference images to appear.
+- EXTRACTION: The full service type name should be extracted from the proposal heading/section title (e.g., if the proposal section is titled "Bus Semi Branding", that exact phrase must prefix ALL line items in that section)
 
 ⚠️ CRITICAL RULE - SINGLE vs MULTI SERVICE QUOTES:
 - If items array has ONLY 1 item (single service): item "termsAndConditions" = "" (empty string), ALL terms go to top-level "termsAndConditions"
@@ -398,6 +413,38 @@ You: "✓ Found exact match: Bus Full Branding. Generating quote for 50 units...
   "deliveryTimeline": "10 working days after receipt of the payment",
   "termsAndConditions": "[EXACT terms from proposal]",
   "notes": "Prices are monthly rates per bus as per the proposal."
+}
+\`\`\`"
+
+EXAMPLE 1B - EXACT_MATCH (Bus Semi Branding):
+User: "Generate quote for 10 bus semi branding"
+You: "✓ Found exact match: Bus Semi Branding. Generating quote for 10 units...
+
+\`\`\`json
+{
+  "quoteGenerated": true,
+  "matchType": "exact",
+  "items": [
+    {
+      "title": "Bus Semi Branding",
+      "lineItems": [
+        {
+          "description": "Bus Semi Branding - Rental Price (per bus month)",
+          "quantity": 10,
+          "unitPrice": 14000
+        },
+        {
+          "description": "Bus Semi Branding - Printing & Fixing Price (per bus month)",
+          "quantity": 10,
+          "unitPrice": 5000
+        }
+      ],
+      "termsAndConditions": ""
+    }
+  ],
+  "deliveryTimeline": "10 working days after receipt of the payment",
+  "termsAndConditions": "[EXACT terms from proposal]",
+  "notes": "Prices are monthly rates per bus as per the proposal. Note: Each description starts with 'Bus Semi Branding' to ensure correct reference image filtering."
 }
 \`\`\`"
 
@@ -595,7 +642,18 @@ RULES:
   * Example: User asks for "100 apartment lift branding 3 months". Proposal says ₹2,500 per frame month. The line item should be: {"description": "Apartment Lift Branding - Display Price (per frame month)", "quantity": 100, "unitPrice": 2500, "duration": 3}. This gives total = 100 × 2500 × 3 = ₹750,000.
   * If the user does NOT specify a duration or says "1 month", omit the "duration" field or set it to 1.
   * NEVER multiply the duration into the quantity or the unitPrice. Keep them separate: quantity = number of units, unitPrice = per-unit per-month price from proposal, duration = number of months.
-  * The description should keep saying "per month" to reflect the actual rate. The duration multiplier is handled separately.`;
+  * The description should keep saying "per month" to reflect the actual rate. The duration multiplier is handled separately.
+- 🔴 FINAL VALIDATION BEFORE GENERATING QUOTE:
+  * STEP 1: Check EVERY line item description
+  * STEP 2: Ask yourself: "Does this description start with the FULL service type name?"
+  * STEP 3: If NO → STOP and fix it by prepending the service type name
+  * STEP 4: Examples to verify:
+    - ✅ "Bus Semi Branding - Rental Price (per bus month)" → CORRECT (starts with "Bus Semi Branding")
+    - ❌ "Rental Price (per bus month)" → WRONG (missing "Bus Semi Branding" prefix)
+    - ✅ "Auto Full Branding - Display Price (per auto)" → CORRECT (starts with "Auto Full Branding")
+    - ❌ "Display Price (per auto)" → WRONG (missing "Auto Full Branding" prefix)
+  * This validation ensures reference images will be correctly filtered to match the exact service type`;
+
 
 export const SAMPLE_PROMPTS = [
   "Generate quote for 100 auto full branding",
