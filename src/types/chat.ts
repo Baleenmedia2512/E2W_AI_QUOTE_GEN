@@ -1,6 +1,18 @@
 export interface ServiceSuggestion {
   name: string;
   category: string;
+  similarity?: string;
+}
+
+export interface GroupedServices {
+  vehicleType: string;
+  requestedQuantity?: number;
+  services: ServiceSuggestion[];
+}
+
+export interface CategoryServices {
+  category: string;
+  services: { name: string }[];
 }
 
 export interface Message {
@@ -9,12 +21,28 @@ export interface Message {
   content: string;
   timestamp: Date;
   isError?: boolean;
+  matchType?: string; // "exact", "multiple", "partial", "none"
+  
+  // MULTIPLE_MATCH
+  isMultipleMatch?: boolean;
+  groupedServices?: GroupedServices[];
+  
+  // PARTIAL_MATCH
+  isPartialMatch?: boolean;
+  requestedService?: string;
+  requestedQuantity?: number;
+  closestServices?: ServiceSuggestion[];
+  alternativeServices?: ServiceSuggestion[];
+  
+  // NO_MATCH
+  isNoMatch?: boolean;
+  allServicesGrouped?: CategoryServices[];
+  
+  // DEPRECATED (kept for backward compatibility)
   isServiceNotFound?: boolean;
   availableServices?: ServiceSuggestion[];
-  // Partial match: some services exist, some don't
-  isPartialMatch?: boolean;
-  validServices?: string[]; // e.g., ["40 Bus Full Branding"]
-  missingServices?: string[]; // e.g., ["Bus Back Branding"]
+  validServices?: string[];
+  missingServices?: string[];
 }
 
 export interface ChatState {
