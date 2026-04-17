@@ -109,7 +109,7 @@ export const ClassicBusiness: React.FC<TemplateProps> = ({ data, editable: _edit
         <div className="address-block">
           <div className="address-label">To:</div>
           <div className="address-content">
-            <p className="recipient-name">{client.name}</p>
+            <p className="recipient-name">{client.name.toUpperCase()}</p>
             {client.company && <p>{client.company}</p>}
             {client.address && <p>{client.address}</p>}
             {client.email && <p>Email: {client.email}</p>}
@@ -120,7 +120,7 @@ export const ClassicBusiness: React.FC<TemplateProps> = ({ data, editable: _edit
 
         {/* Introduction */}
         <div className="introduction">
-          <p>Dear {client.name},</p>
+          <p>Dear {client.name.toUpperCase()},</p>
           <p>
             Thank you for your interest in our services. We are pleased to submit this quotation
             for your consideration. Below you will find a detailed breakdown of the proposed

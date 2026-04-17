@@ -100,7 +100,7 @@ export const ModernSales: React.FC<TemplateProps> = ({ data, editable: _editable
           </div>
           <div className="ms-party-card ms-party-accent">
             <div className="ms-party-label">TO</div>
-            <p className="ms-party-name">{client.name}</p>
+            <p className="ms-party-name">{client.name.toUpperCase()}</p>
             {client.company && <p className="ms-party-detail">{client.company}</p>}
             {client.email && <p className="ms-party-detail">E: {client.email}</p>}
             {client.phone && <p className="ms-party-detail">T: {client.phone}</p>}
