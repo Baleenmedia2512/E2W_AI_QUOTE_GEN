@@ -101,7 +101,7 @@ export const PremiumAgency: React.FC<TemplateProps> = ({ data, editable: _editab
           </div>
           <div className="pa-party-card pa-party-accent">
             <div className="pa-party-label">TO</div>
-            <p className="pa-party-name">{client.name}</p>
+            <p className="pa-party-name">{client.name.toUpperCase()}</p>
             {client.company && <p className="pa-party-detail">{client.company}</p>}
             {client.email && <p className="pa-party-detail">E: {client.email}</p>}
             {client.phone && <p className="pa-party-detail">T: {client.phone}</p>}

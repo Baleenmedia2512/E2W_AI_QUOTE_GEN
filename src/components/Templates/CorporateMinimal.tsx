@@ -84,7 +84,7 @@ export const CorporateMinimal: React.FC<TemplateProps> = ({ data, editable: _edi
     <div className="client-section">
       <h3>Quote Prepared For:</h3>
       <div className="client-details">
-        <p className="client-name">{client.name}</p>
+        <p className="client-name">{client.name.toUpperCase()}</p>
         {client.company && <p>{client.company}</p>}
         {client.email && <p>Email: {client.email}</p>}
         {client.phone && <p>Phone: {client.phone}</p>}
