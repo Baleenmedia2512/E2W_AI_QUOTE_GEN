@@ -23,6 +23,67 @@ const enforceRateLimit = async (): Promise<void> => {
   lastRequestTime = Date.now();
 };
 
+/**
+ * 🔴 POST-PROCESSING FIX: Validate and correct quote line item descriptions
+ * 
+ * Problem: The AI (Gemini) sometimes ignores prompt instructions and generates descriptions
+ * without the service type prefix, causing incorrect reference image filtering.
+ * 
+ * Example of AI mistake:
+ *   ❌ "Rental Price (per Bus month)"  <-- Missing "Bus Semi Branding" prefix
+ * 
+ * Expected correct format:
+ *   ✅ "Bus Semi Branding - Rental Price (per bus month)"
+ * 
+ * This function ensures ALL descriptions start with the full service type name (item title)
+ * by checking and prepending the title if missing.
+ */
+const validateAndFixQuoteDescriptions = (quoteData: any): any => {
+  if (!quoteData || !quoteData.items || !Array.isArray(quoteData.items)) {
+    return quoteData;
+  }
+
+  console.log('🔧 Validating and fixing quote descriptions...');
+  
+  const fixedItems = quoteData.items.map((item: any) => {
+    if (!item.lineItems || !Array.isArray(item.lineItems)) {
+      return item;
+    }
+
+    const serviceTypeName = item.title?.trim() || '';
+    
+    const fixedLineItems = item.lineItems.map((lineItem: any) => {
+      const description = lineItem.description || '';
+      
+      // Check if description already starts with the service type name
+      if (!description.startsWith(serviceTypeName) && serviceTypeName) {
+        // Fix: Prepend the service type name
+        const fixedDescription = `${serviceTypeName} - ${description}`;
+        console.log(`  ✅ Fixed: "${description}" → "${fixedDescription}"`);
+        
+        return {
+          ...lineItem,
+          description: fixedDescription
+        };
+      }
+      
+      // Already correct
+      return lineItem;
+    });
+
+    return {
+      ...item,
+      lineItems: fixedLineItems
+    };
+  });
+
+  return {
+    ...quoteData,
+    items: fixedItems
+  };
+};
+
+
 export interface SendMessageParams {
   userMessage: string;
   proposalText?: string; // Single document (backward compatibility)
@@ -197,12 +258,17 @@ export const sendMessageToGemini = async ({
         
         // 1️⃣ EXACT_MATCH - Quote generated
         if (parsed.quoteGenerated && parsed.items && Array.isArray(parsed.items)) {
-          quoteData = parsed;
+          // 🔴 POST-PROCESSING FIX: Validate and correct line item descriptions
+          // The AI sometimes ignores instructions and generates descriptions without the service type prefix
+          // This ensures EVERY description starts with the full service type name
+          const fixedQuoteData = validateAndFixQuoteDescriptions(parsed);
+          
+          quoteData = fixedQuoteData;
           isQuoteGeneration = true;
           return {
             message: text,
             isQuoteGeneration: true,
-            quoteData: parsed,
+            quoteData: fixedQuoteData,
             matchType: 'exact'
           };
         }
