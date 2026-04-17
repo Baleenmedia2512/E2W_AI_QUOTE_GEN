@@ -25,6 +25,13 @@ const App: React.FC = () => {
         console.error('Failed to register service worker:', err);
       });
     }
+    
+    // Preload RAG embedding model in background
+    import('./services/embeddingService').then(({ preloadEmbeddingModel }) => {
+      preloadEmbeddingModel().catch(err => {
+        console.warn('RAG model preload failed (non-critical):', err);
+      });
+    });
   }, []);
 
   return (

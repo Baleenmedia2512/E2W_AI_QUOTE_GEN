@@ -1,10 +1,12 @@
 /**
  * Supabase Proposal Service - Cloud Storage for Shared Proposals
  * Enables team-wide visibility of uploaded proposals
+ * Now with RAG (Retrieval-Augmented Generation) support
  */
 
 import { supabase } from './supabaseClient';
 import { StoredProposal } from '../types';
+import { processDocumentForRAG } from './ragService';
 
 export interface CloudProposal {
   id: string;
@@ -103,10 +105,76 @@ export async function uploadProposalToCloud(
     }
 
     console.log('✅ Proposal uploaded to cloud successfully');
+    
+    // Process document for RAG in background (don't block the upload)
+    processDocumentForRAGBackground(proposalData.id, file.name, textContent);
+    
     return { success: true, proposal: proposalData };
   } catch (error: any) {
     console.error('❌ Upload to cloud failed:', error);
     return { success: false, error: error.message || 'Unknown error' };
+  }
+}
+
+/**
+ * Process document for RAG in background (async, non-blocking)
+ */
+async function processDocumentForRAGBackground(
+  proposalId: string,
+  fileName: string,
+  textContent: string
+): Promise<void> {
+  try {
+    console.log('🤖 Starting background RAG processing for:', fileName);
+    
+    await processDocumentForRAG(proposalId, fileName, textContent, {
+      onProgress: (stage, current, total) => {
+        console.log(`📊 RAG ${stage}: ${current}/${total}`);
+      },
+    });
+    
+    console.log('✅ RAG processing complete for:', fileName);
+  } catch (error) {
+    console.error('❌ RAG processing failed (non-critical):', error);
+    // Don't throw - RAG is optional enhancement
+  }
+}
+
+/**
+ * Manually trigger RAG processing for an existing proposal
+ */
+export async function reprocessProposalForRAG(
+  proposalId: string,
+  options: {
+    onProgress?: (stage: string, current: number, total: number) => void;
+  } = {}
+): Promise<{ success: boolean; error?: string }> {
+  try {
+    // Load proposal
+    const proposal = await loadProposalFromCloud(proposalId);
+    if (!proposal) {
+      return { success: false, error: 'Proposal not found' };
+    }
+
+    if (!proposal.text_content) {
+      return { success: false, error: 'No text content to process' };
+    }
+
+    // Process for RAG
+    await processDocumentForRAG(
+      proposal.id,
+      proposal.file_name,
+      proposal.text_content,
+      {
+        onProgress: options.onProgress,
+        replaceExisting: true,
+      }
+    );
+
+    return { success: true };
+  } catch (error: any) {
+    console.error('❌ Error reprocessing proposal for RAG:', error);
+    return { success: false, error: error.message };
   }
 }
 

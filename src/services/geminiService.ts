@@ -1,6 +1,7 @@
 import { GoogleGenerativeAI } from '@google/generative-ai';
 import { Message } from '../types/chat';
 import { CHAT_SYSTEM_PROMPT } from '../utils/promptTemplates';
+import { queryRAG } from './ragService';
 
 // Rate limiting
 const RATE_LIMIT_DELAY = 1000; // 1 second between requests
@@ -28,6 +29,8 @@ export interface SendMessageParams {
   proposalText?: string; // Single document (backward compatibility)
   proposalTexts?: Array<{fileName: string, content: string}>; // Multi-document support
   chatHistory?: Message[];
+  useRAG?: boolean; // Enable RAG context retrieval (default: true)
+  proposalId?: string; // Specific proposal to search (optional - searches all if not provided)
 }
 
 export interface ServiceSuggestion {
@@ -52,8 +55,8 @@ export interface GeminiResponse {
 export const sendMessageToGemini = async ({
   userMessage,
   proposalText = '',
-  proposalTexts,
-  chatHistory = [],
+  useRAG = true,
+  proposalId,
 }: SendMessageParams): Promise<GeminiResponse> => {
   try {
     await enforceRateLimit();
@@ -66,7 +69,29 @@ export const sendMessageToGemini = async ({
     // Build context
     let contextPrompt = CHAT_SYSTEM_PROMPT + '\n\n';
     
-    // Multi-document support (NEW - takes priority if provided)
+    // PRIORITY 1: RAG Context (most relevant chunks from vector search)
+    if (useRAG) {
+      try {
+        console.log('🔍 Querying RAG system...');
+        const ragResult = await queryRAG(userMessage, {
+          matchThreshold: 0.7,
+          matchCount: 5,
+          proposalId, // Search specific proposal or all
+        });
+        
+        if (ragResult.chunks.length > 0) {
+          console.log(`✅ RAG found ${ragResult.chunks.length} relevant chunks (relevance: ${(ragResult.relevanceScore * 100).toFixed(0)}%)`);
+          contextPrompt += ragResult.context + '\n\n';
+        } else {
+          console.log('ℹ️ No RAG results, using fallback document context');
+        }
+      } catch (error) {
+        console.warn('⚠️ RAG query failed, falling back to full documents:', error);
+        // Continue with normal flow - RAG is enhancement, not requirement
+      }
+    }
+    
+    // PRIORITY 2: Multi-document support (NEW - takes priority if provided)
     if (proposalTexts && proposalTexts.length > 0) {
       contextPrompt += `AVAILABLE PROPOSAL DOCUMENTS (${proposalTexts.length} total):\n\n`;
       proposalTexts.forEach((doc, idx) => {
@@ -75,7 +100,7 @@ export const sendMessageToGemini = async ({
         contextPrompt += `--- DOCUMENT ${idx + 1}: ${doc.fileName} ---\n${preview}\n--- END OF DOCUMENT ${idx + 1} ---\n\n`;
       });
     }
-    // Single document support (backward compatibility)
+    // PRIORITY 3: Single document support (backward compatibility)
     else if (proposalText) {
       // Ensure full document is sent for term extraction
       contextPrompt += `PROPOSAL DOCUMENT:\n${proposalText.substring(0, 50000)}\n\n`;
