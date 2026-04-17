@@ -40,7 +40,7 @@ WITH (m = 16, ef_construction = 64);
 -- 5. Enable Row Level Security
 ALTER TABLE document_chunks ENABLE ROW LEVEL SECURITY;
 
--- 6. Create RLS policies
+-- 6. Create RLS policies (allow both authenticated and anonymous users)
 
 -- Policy: Authenticated users can view all chunks
 CREATE POLICY "Allow authenticated users to view all chunks"
@@ -49,11 +49,25 @@ FOR SELECT
 TO authenticated
 USING (true);
 
+-- Policy: Anonymous users can view all chunks
+CREATE POLICY "Allow anonymous users to view all chunks"
+ON document_chunks
+FOR SELECT
+TO anon
+USING (true);
+
 -- Policy: Authenticated users can insert chunks
 CREATE POLICY "Allow authenticated users to insert chunks"
 ON document_chunks
 FOR INSERT
 TO authenticated
+WITH CHECK (true);
+
+-- Policy: Anonymous users can insert chunks
+CREATE POLICY "Allow anonymous users to insert chunks"
+ON document_chunks
+FOR INSERT
+TO anon
 WITH CHECK (true);
 
 -- Policy: Authenticated users can update chunks
@@ -64,11 +78,26 @@ TO authenticated
 USING (true)
 WITH CHECK (true);
 
+-- Policy: Anonymous users can update chunks
+CREATE POLICY "Allow anonymous users to update chunks"
+ON document_chunks
+FOR UPDATE
+TO anon
+USING (true)
+WITH CHECK (true);
+
 -- Policy: Authenticated users can delete chunks
 CREATE POLICY "Allow authenticated users to delete chunks"
 ON document_chunks
 FOR DELETE
 TO authenticated
+USING (true);
+
+-- Policy: Anonymous users can delete chunks
+CREATE POLICY "Allow anonymous users to delete chunks"
+ON document_chunks
+FOR DELETE
+TO anon
 USING (true);
 
 -- 7. Create updated_at trigger

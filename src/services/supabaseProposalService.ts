@@ -126,6 +126,13 @@ async function processDocumentForRAGBackground(
 ): Promise<void> {
   try {
     console.log('🤖 Starting background RAG processing for:', fileName);
+    console.log('📊 RAG Debug - Proposal ID:', proposalId);
+    console.log('📊 RAG Debug - Text Length:', textContent?.length || 0);
+    
+    if (!textContent || textContent.length < 100) {
+      console.warn('⚠️ RAG: Text content too short, skipping processing');
+      return;
+    }
     
     await processDocumentForRAG(proposalId, fileName, textContent, {
       onProgress: (stage, current, total) => {
@@ -135,7 +142,9 @@ async function processDocumentForRAGBackground(
     
     console.log('✅ RAG processing complete for:', fileName);
   } catch (error) {
-    console.error('❌ RAG processing failed (non-critical):', error);
+    console.error('❌❌❌ RAG PROCESSING FAILED ❌❌❌');
+    console.error('Error details:', error);
+    console.error('Stack trace:', error instanceof Error ? error.stack : 'No stack trace');
     // Don't throw - RAG is optional enhancement
   }
 }

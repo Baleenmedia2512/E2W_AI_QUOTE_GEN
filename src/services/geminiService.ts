@@ -55,6 +55,8 @@ export interface GeminiResponse {
 export const sendMessageToGemini = async ({
   userMessage,
   proposalText = '',
+  proposalTexts,
+  chatHistory = [],
   useRAG = true,
   proposalId,
 }: SendMessageParams): Promise<GeminiResponse> => {
@@ -441,6 +443,12 @@ export const sendMessageToGemini = async ({
     };
   } catch (error: any) {
     console.error('Gemini API error:', error);
+    console.error('Error details:', {
+      message: error.message,
+      stack: error.stack,
+      name: error.name,
+      cause: error.cause,
+    });
     
     if (error.message?.includes('API key')) {
       throw new Error('Invalid API key. Please check your Gemini API configuration.');
@@ -458,7 +466,14 @@ export const sendMessageToGemini = async ({
       );
     }
     
-    throw new Error('Failed to communicate with AI service. Please try again.');
+    // Handle network errors
+    if (error.message?.includes('fetch') || error.message?.includes('network') || error.message?.includes('ECONNREFUSED')) {
+      throw new Error('Network error. Please check your internet connection and try again.');
+    }
+    
+    // Include actual error message for better debugging
+    const errorMsg = error.message || 'Unknown error';
+    throw new Error(`Failed to communicate with AI service: ${errorMsg}. Please try again.`);
   }
 };
 
