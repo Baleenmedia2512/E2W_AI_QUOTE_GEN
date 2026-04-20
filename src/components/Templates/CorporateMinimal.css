@@ -643,26 +643,10 @@
     font-size: 11px;
   }
 
-  .template-corporate-minimal .item-quantity::before {
-    content: 'Qty: ';
-    color: #636e72;
-    font-weight: 600;
-    font-size: 10px;
-    text-transform: uppercase;
-  }
-
   .template-corporate-minimal .item-rate {
     width: 35%;
     text-align: left;
     font-size: 11px;
-  }
-
-  .template-corporate-minimal .item-rate::before {
-    content: 'Rate: ';
-    color: #636e72;
-    font-weight: 600;
-    font-size: 10px;
-    text-transform: uppercase;
   }
 
   .template-corporate-minimal .item-total {
