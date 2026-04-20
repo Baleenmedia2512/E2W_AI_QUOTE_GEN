@@ -422,6 +422,8 @@ function filterPagesByCategory(pages: ExtractedPage[], category: string): Extrac
  * E.g., "Metro Branding – Underground Station - Display Price" → "Metro Branding – Underground Station"
  * E.g., "Apartment Lift Branding - Printing & Fixing Price" → "Apartment Lift Branding"
  */
+// @ts-ignore: utility function kept for future use
+// eslint-disable-next-line @typescript-eslint/no-unused-vars
 function extractServiceType(items: QuoteItem[]): string | null {
   // Pricing/quantity suffixes to strip — the part AFTER the real service name
   const pricingSuffixPattern = /\s*[-–—]\s*\b(display\s+price|rental\s+price|printing\s+price|fixing\s+price|printing\s*&?\s*fixing\s*price?|per\s+month|rate|price)\b.*$/i;
