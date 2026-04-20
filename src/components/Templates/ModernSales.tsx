@@ -1,6 +1,6 @@
 import React from 'react';
 import { TemplateProps } from '../../types';
-import { ReferenceImages } from './ReferenceImages';
+// import { ReferenceImages } from './ReferenceImages'; // HIDDEN - Design Spec & Reference Images
 import { isMultiServiceQuote, groupItemsByServiceType, filterTermsByServiceType, DEFAULT_GENERAL_TERMS, getServiceGroupHeading } from '../../utils/quoteGrouping';
 import './ModernSales.css';
 

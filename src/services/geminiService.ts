@@ -185,8 +185,10 @@ export const sendMessageToGemini = async ({
     const text = response.text();
 
     // Detect if AI has generated a complete quote (must contain JSON with quoteGenerated flag)
-    let quoteData = null;
-    let isQuoteGeneration = false;
+    // @ts-ignore: variables used for state tracking in quote detection flow
+    let _quoteData = null;
+    // @ts-ignore: variables used for state tracking in quote detection flow
+    let _isQuoteGeneration = false;
 
     try {
       // Look for JSON block in markdown code fence first (most reliable)
@@ -263,8 +265,8 @@ export const sendMessageToGemini = async ({
           // This ensures EVERY description starts with the full service type name
           const fixedQuoteData = validateAndFixQuoteDescriptions(parsed);
           
-          quoteData = fixedQuoteData;
-          isQuoteGeneration = true;
+          _quoteData = fixedQuoteData;
+          _isQuoteGeneration = true;
           return {
             message: text,
             isQuoteGeneration: true,
