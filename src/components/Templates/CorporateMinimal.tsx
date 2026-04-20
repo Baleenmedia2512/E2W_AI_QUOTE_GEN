@@ -206,13 +206,14 @@ export const CorporateMinimal: React.FC<TemplateProps> = ({ data, editable: _edi
           {renderCompanyFooter()}
         </div>
 
-        {/* Reference Images from Proposal */}
+        {/* Reference Images from Proposal - HIDDEN
         <div id="pdf-page-2" className="template-corporate-minimal">
           <ReferenceImages proposalPages={data.proposalPages} items={quote.items} />
           
-          {/* Company Contact Footer */}
+          {/* Company Contact Footer * /}
           {renderCompanyFooter()}
         </div>
+        */}
       </>
     );
   }
@@ -374,20 +375,19 @@ export const CorporateMinimal: React.FC<TemplateProps> = ({ data, editable: _edi
                 {renderCompanyFooter()}
               </div>
 
-              {/* Service-specific reference images */}
+              {/* Service-specific reference images - HIDDEN
               <div id={`pdf-service-ref-${groupIndex}`} className="template-corporate-minimal">
                 <ReferenceImages proposalPages={data.proposalPages} items={group.items} />
                 
-                {/* Show footer only after last reference images */}
                 {groupIndex === serviceGroups.length - 1 && (
                   <div className="system-generated-notice">
                     <p>This is a system-generated quotation and does not require a signature.</p>
                   </div>
                 )}
                 
-                {/* Company Contact Footer */}
                 {renderCompanyFooter()}
               </div>
+              */}
             </>
           </React.Fragment>
         );

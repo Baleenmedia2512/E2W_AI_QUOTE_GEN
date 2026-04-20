@@ -224,15 +224,15 @@ export const ClassicBusiness: React.FC<TemplateProps> = ({ data, editable: _edit
         )}
         </div>
 
-        {/* Reference Images from Proposal - only show for single service */}
+        {/* Reference Images from Proposal - HIDDEN
         {!isMultiService && (
           <div id="pdf-page-2" className="template-classic-business">
             <ReferenceImages proposalPages={data.proposalPages} items={quote.items} />
             
-            {/* Company Contact Footer */}
             {renderCompanyFooter()}
           </div>
         )}
+        */}
 
         {/* Company Contact Footer */}
         {renderCompanyFooter()}
@@ -328,10 +328,10 @@ export const ClassicBusiness: React.FC<TemplateProps> = ({ data, editable: _edit
                 {/* Company Contact Footer */}
                 {renderCompanyFooter()}              </div>
 
+              {/* Service-specific reference images - HIDDEN
               <div id={`pdf-service-ref-${groupIndex}`} className="template-classic-business">
                 <ReferenceImages proposalPages={data.proposalPages} items={group.items} />
                 
-                {/* Show footer only after last reference images */}
                 {groupIndex === serviceGroups.length - 1 && (
                   <>
                     <div className="system-generated-notice">
@@ -346,9 +346,9 @@ export const ClassicBusiness: React.FC<TemplateProps> = ({ data, editable: _edit
                   </>
                 )}
                 
-                {/* Company Contact Footer */}
                 {renderCompanyFooter()}
               </div>
+              */}
             </div>
           </div>
         </React.Fragment>
