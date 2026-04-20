@@ -111,8 +111,7 @@ export const ClassicBusiness: React.FC<TemplateProps> = ({ data, editable: _edit
         <div className="address-block">
           <div className="address-label">To:</div>
           <div className="address-content">
-            <p className="recipient-name">{client.name.toUpperCase()}</p>
-            {client.company && <p>{client.company}</p>}
+            <p className="recipient-name">{(client.company || client.name).toUpperCase()}</p>
             {client.address && <p>{client.address}</p>}
             {client.email && <p>Email: {client.email}</p>}
             {client.phone && <p>Phone: {client.phone}</p>}
