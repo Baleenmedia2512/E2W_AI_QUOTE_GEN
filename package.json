@@ -12,12 +12,15 @@
     "generate-icons": "node generate-icons.js"
   },
   "dependencies": {
+    "@capacitor-community/file-opener": "^6.0.1",
     "@capacitor-community/speech-recognition": "^6.0.1",
     "@capacitor/android": "^6.0.0",
     "@capacitor/app": "^6.0.0",
+    "@capacitor/browser": "^6.0.6",
     "@capacitor/core": "^6.0.0",
     "@capacitor/filesystem": "^6.0.0",
     "@capacitor/ios": "^6.0.0",
+    "@capacitor/share": "^6.0.4",
     "@chakra-ui/icons": "^2.2.4",
     "@chakra-ui/react": "^2.10.9",
     "@emotion/react": "^11.14.0",

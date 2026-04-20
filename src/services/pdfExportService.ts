@@ -3,6 +3,7 @@ import html2canvas from 'html2canvas';
 import { TemplateType } from '../types';
 import { Capacitor } from '@capacitor/core';
 import { Filesystem, Directory } from '@capacitor/filesystem';
+import { FileOpener } from '@capacitor-community/file-opener';
 import DownloadNotification from '../plugins/downloadNotification';
 
 // A4 dimensions at 96dpi (standard web resolution)
@@ -323,7 +324,7 @@ export const exportToPDF = async (
         // Extract the actual file path from the URI
         const filePath = result.uri.replace('file://', '');
         
-        // Show download notification
+        // Show download notification (optional - may not be registered yet)
         try {
           await DownloadNotification.showDownloadNotification({
             filePath: filePath,
@@ -333,28 +334,22 @@ export const exportToPDF = async (
           });
           console.log('✅ Download notification shown');
         } catch (notifError) {
-          console.error('⚠️ Failed to show notification:', notifError);
-          // Continue even if notification fails
+          console.error('⚠️ Notification plugin not available:', notifError);
+          // Continue - notification is optional
         }
         
-        // Show success message
-        alert(`PDF saved successfully!\n\nFile: ${filename}\nLocation: Documents folder\n\nTap the notification to open the file.`);
-        
-        // Try to share if available (optional)
+        // Auto-open PDF directly in default PDF viewer (no share dialog)
         try {
-          if (navigator.share) {
-            const pdfBlob = pdf.output('blob');
-            const file = new File([pdfBlob], filename, { type: 'application/pdf' });
-            await navigator.share({
-              files: [file],
-              title: `Quote ${quoteNumber}`,
-              text: `Quote document ${filename}`
-            });
-            console.log('✅ PDF shared successfully');
-          }
-        } catch (shareError) {
-          console.log('ℹ️ Share not available or cancelled:', shareError);
-          // Not a critical error - file is already saved
+          await FileOpener.open({
+            filePath: result.uri,
+            contentType: 'application/pdf',
+            openWithDefault: true
+          });
+          console.log('✅ PDF auto-opened in default viewer');
+        } catch (openError) {
+          console.error('⚠️ Failed to auto-open PDF:', openError);
+          // Show success message as fallback
+          alert(`PDF saved successfully!\n\nFile: ${filename}\nLocation: Documents folder\n\nPlease open it from your file manager.`);
         }
       } catch (error) {
         console.error('❌ Mobile save error:', error);
