@@ -49,7 +49,6 @@ export const CorporateMinimal: React.FC<TemplateProps> = ({ data, editable: _edi
         {company.logo && (
           <img src={company.logo} alt={company.name} className="company-logo" />
         )}
-        <h1 className="company-name">{company.name}</h1>
         <div className="company-details">
           <p>{company.address}</p>
           {company.phone && <p>Phone: {company.phone}</p>}
