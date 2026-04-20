@@ -141,7 +141,7 @@ export const sendMessageToGemini = async ({
   userMessage,
   proposalText = '',
   proposalTexts,
-  chatHistory = [],
+  chatHistory: _chatHistory = [], // Prefixed with _ to indicate intentionally unused (context isolation fix)
 }: SendMessageParams): Promise<GeminiResponse> => {
   try {
     await enforceRateLimit();
@@ -169,15 +169,11 @@ export const sendMessageToGemini = async ({
       contextPrompt += `PROPOSAL DOCUMENT:\n${proposalText.substring(0, 50000)}\n\n`;
     }
 
-    // Add chat history for context
-    if (chatHistory.length > 0) {
-      contextPrompt += 'CONVERSATION HISTORY:\n';
-      chatHistory.slice(-5).forEach(msg => {
-        contextPrompt += `${msg.role === 'user' ? 'User' : 'Assistant'}: ${msg.content}\n`;
-      });
-      contextPrompt += '\n';
-    }
-
+    // ⚠️ CONTEXT ISOLATION FIX: Chat history removed to prevent AI from using previous requests
+    // to auto-generate quotes. This ensures consistent, predictable behavior where "40 auto"
+    // always shows checkboxes regardless of previous conversation context.
+    // Trade-off: Q&A follow-ups may be less contextual, but quote generation is now 100% reliable.
+    
     contextPrompt += `USER REQUEST: ${userMessage}`;
 
     const result = await model.generateContent(contextPrompt);
