@@ -37,9 +37,9 @@
 }
 
 .template-corporate-minimal .company-logo {
-  max-width: 120px;
-  max-height: 50px;
-  margin-bottom: 6px;
+  max-width: 220px;
+  max-height: 100px;
+  margin: 0 auto 14px auto;
   object-fit: contain;
   display: block;
 }
@@ -450,8 +450,8 @@
   }
 
   .template-corporate-minimal .company-logo {
-    max-width: 120px;
-    max-height: 50px;
+    max-width: 220px;
+    max-height: 100px;
   }
 
   .template-corporate-minimal .company-name {
@@ -542,9 +542,9 @@
   }
 
   .template-corporate-minimal .company-logo {
-    max-width: 100px;
-    max-height: 44px;
-    margin-bottom: 8px;
+    max-width: 170px;
+    max-height: 80px;
+    margin-bottom: 10px;
   }
 
   .template-corporate-minimal .company-name {
@@ -872,8 +872,8 @@
 }
 
 .pdf-export-mobile.pdf-export-mode .company-logo {
-  max-width: 100px;
-  max-height: 42px;
+  max-width: 170px;
+  max-height: 80px;
 }
 
 .pdf-export-mobile.pdf-export-mode .company-name {
