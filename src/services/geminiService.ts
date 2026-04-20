@@ -83,6 +83,76 @@ const validateAndFixQuoteDescriptions = (quoteData: any): any => {
   };
 };
 
+/**
+ * 🔴 POST-PROCESSING FIX: Clean up Terms & Conditions formatting
+ * 
+ * Problem: AI sometimes extracts terms with broken formatting where lines without
+ * bullets (orphan lines) appear, causing alignment issues in preview/PDF.
+ * 
+ * Example of AI mistake:
+ *   ❌ "• GST 18% Extra\n• Prior notice required...\nMaximum 2 visitors allowed"
+ *      The "Maximum 2 visitors allowed" line has NO bullet, appears as orphan line
+ * 
+ * Expected correct format:
+ *   ✅ "• GST 18% Extra\n• Prior notice required...Maximum 2 visitors allowed"
+ *      All text merged into proper bullet points
+ * 
+ * This function ensures ALL terms are properly bulleted by merging orphan lines
+ * with the previous bullet point.
+ */
+const cleanupTermsAndConditions = (terms: string): string => {
+  if (!terms || typeof terms !== 'string') {
+    return terms;
+  }
+
+  console.log('🔧 Cleaning up Terms & Conditions formatting...');
+  
+  const lines = terms.split('\n');
+  const cleanedTerms: string[] = [];
+  let currentTerm = '';
+  
+  for (let line of lines) {
+    line = line.trim();
+    
+    // Skip empty lines
+    if (line.length === 0) {
+      continue;
+    }
+    
+    // Check if line starts with a bullet point (•, -, *, or number.)
+    const hasBullet = /^[•\-\*]/.test(line) || /^\d+\./.test(line);
+    
+    if (hasBullet) {
+      // This is a new bullet point
+      if (currentTerm) {
+        cleanedTerms.push(currentTerm);
+        console.log(`  ✅ Term: "${currentTerm.substring(0, 60)}..."`);
+      }
+      currentTerm = line;
+    } else {
+      // This is an orphan line without bullet - merge with current term
+      if (currentTerm) {
+        currentTerm += ' ' + line;
+        console.log(`  🔀 Merged orphan line: "${line.substring(0, 40)}..."`);
+      } else {
+        // Edge case: orphan line at the start, treat as new term with bullet
+        currentTerm = '• ' + line;
+      }
+    }
+  }
+  
+  // Don't forget the last term
+  if (currentTerm) {
+    cleanedTerms.push(currentTerm);
+    console.log(`  ✅ Term: "${currentTerm.substring(0, 60)}..."`);
+  }
+  
+  const result = cleanedTerms.join('\n');
+  console.log(`🎯 Cleaned ${cleanedTerms.length} terms total`);
+  
+  return result;
+};
+
 
 export interface SendMessageParams {
   userMessage: string;
@@ -256,10 +326,36 @@ export const sendMessageToGemini = async ({
         
         // 1️⃣ EXACT_MATCH - Quote generated
         if (parsed.quoteGenerated && parsed.items && Array.isArray(parsed.items)) {
-          // 🔴 POST-PROCESSING FIX: Validate and correct line item descriptions
+          // 🔴 POST-PROCESSING FIX #1: Validate and correct line item descriptions
           // The AI sometimes ignores instructions and generates descriptions without the service type prefix
           // This ensures EVERY description starts with the full service type name
-          const fixedQuoteData = validateAndFixQuoteDescriptions(parsed);
+          let fixedQuoteData = validateAndFixQuoteDescriptions(parsed);
+          
+          // 🔴 POST-PROCESSING FIX #2: Clean up Terms & Conditions formatting
+          // The AI sometimes extracts terms with orphan lines (no bullets), causing alignment issues
+          // This merges orphan lines into proper bullet points for consistent display
+          if (fixedQuoteData.termsAndConditions) {
+            fixedQuoteData = {
+              ...fixedQuoteData,
+              termsAndConditions: cleanupTermsAndConditions(fixedQuoteData.termsAndConditions)
+            };
+          }
+          
+          // Also cleanup item-level terms if present
+          if (fixedQuoteData.items) {
+            fixedQuoteData = {
+              ...fixedQuoteData,
+              items: fixedQuoteData.items.map((item: any) => {
+                if (item.termsAndConditions) {
+                  return {
+                    ...item,
+                    termsAndConditions: cleanupTermsAndConditions(item.termsAndConditions)
+                  };
+                }
+                return item;
+              })
+            };
+          }
           
           _quoteData = fixedQuoteData;
           _isQuoteGeneration = true;
