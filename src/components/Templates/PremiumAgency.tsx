@@ -227,15 +227,15 @@ export const PremiumAgency: React.FC<TemplateProps> = ({ data, editable: _editab
       </div>
     </div>
 
-    {/* Reference Images from Proposal - only show for single service */}
+    {/* Reference Images from Proposal - HIDDEN
     {!isMultiService && (
       <div id="pdf-page-2" className="template-premium-agency">
         <ReferenceImages proposalPages={data.proposalPages} items={quote.items} />
         
-        {/* Company Contact Footer */}
         {renderCompanyFooter()}
       </div>
     )}
+    */}
     
     {/* Multi-Service: Individual Service Pages */}
     {isMultiService && serviceGroups.map((group, groupIndex) => {
@@ -322,10 +322,10 @@ export const PremiumAgency: React.FC<TemplateProps> = ({ data, editable: _editab
             {renderCompanyFooter()}
           </div>
 
+          {/* Service-specific reference images - HIDDEN
           <div id={`pdf-service-ref-${groupIndex}`} className="template-premium-agency">
             <ReferenceImages proposalPages={data.proposalPages} items={group.items} />
             
-            {/* Show footer only after last reference images */}
             {groupIndex === serviceGroups.length - 1 && (
               <>
                 <div className="pa-notice">
@@ -338,9 +338,9 @@ export const PremiumAgency: React.FC<TemplateProps> = ({ data, editable: _editab
               </>
             )}
             
-            {/* Company Contact Footer */}
             {renderCompanyFooter()}
           </div>
+          */}
         </React.Fragment>
       );
     })}

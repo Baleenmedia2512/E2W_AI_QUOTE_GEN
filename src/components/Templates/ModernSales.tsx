@@ -227,15 +227,15 @@ export const ModernSales: React.FC<TemplateProps> = ({ data, editable: _editable
       </div>
     </div>
     
-    {/*Reference Images from Proposal - only show for single service */}
+    {/* Reference Images from Proposal - HIDDEN
     {!isMultiService && (
       <div id="pdf-page-2" className="template-modern-sales">
         <ReferenceImages proposalPages={data.proposalPages} items={quote.items} />
         
-        {/* Company Contact Footer */}
         {renderCompanyFooter()}
       </div>
     )}
+    */}
     
     {/* Multi-Service: Individual Service Pages */}
     {isMultiService && serviceGroups.map((group, groupIndex) => {
@@ -322,10 +322,10 @@ export const ModernSales: React.FC<TemplateProps> = ({ data, editable: _editable
             {renderCompanyFooter()}
           </div>
 
+          {/* Service-specific reference images - HIDDEN
           <div id={`pdf-service-ref-${groupIndex}`} className="template-modern-sales">
             <ReferenceImages proposalPages={data.proposalPages} items={group.items} />
             
-            {/* Show footer only after last reference images */}
             {groupIndex === serviceGroups.length - 1 && (
               <>
                 <div className="ms-notice">
@@ -338,9 +338,9 @@ export const ModernSales: React.FC<TemplateProps> = ({ data, editable: _editable
               </>
             )}
             
-            {/* Company Contact Footer */}
             {renderCompanyFooter()}
           </div>
+          */}
         </React.Fragment>
       );
     })}
