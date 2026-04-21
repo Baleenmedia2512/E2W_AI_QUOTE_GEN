@@ -246,9 +246,22 @@ export const sendMessageToGemini = async ({
     
     contextPrompt += `USER REQUEST: ${userMessage}`;
 
+    console.log('🔍 Sending to AI:', {
+      hasExactMatchHint: userMessage.includes('[EXACT_MATCH_HINT'),
+      requestLength: userMessage.length,
+      documentCount: proposalTexts?.length || (proposalText ? 1 : 0)
+    });
+
     const result = await model.generateContent(contextPrompt);
     const response = await result.response;
     const text = response.text();
+
+    console.log('🤖 AI Response received:', {
+      length: text.length,
+      hasJSON: text.includes('{'),
+      hasQuoteGenerated: text.includes('quoteGenerated'),
+      hasMultipleMatch: text.includes('multipleMatch')
+    });
 
     // Detect if AI has generated a complete quote (must contain JSON with quoteGenerated flag)
     // @ts-ignore: variables used for state tracking in quote detection flow
@@ -322,10 +335,11 @@ export const sendMessageToGemini = async ({
         
         const parsed = JSON.parse(jsonStr);
         
-        // Handle 4-TIER MATCHING SYSTEM responses
+        // Handle 4-tier matching system responses
         
         // 1️⃣ EXACT_MATCH - Quote generated
         if (parsed.quoteGenerated && parsed.items && Array.isArray(parsed.items)) {
+          console.log('✅ AI detected: EXACT_MATCH - Generating quote');
           // 🔴 POST-PROCESSING FIX #1: Validate and correct line item descriptions
           // The AI sometimes ignores instructions and generates descriptions without the service type prefix
           // This ensures EVERY description starts with the full service type name
@@ -369,6 +383,7 @@ export const sendMessageToGemini = async ({
         
         // 2️⃣ MULTIPLE_MATCH - Ambiguous request, ask user to clarify
         if (parsed.multipleMatch && parsed.groupedServices) {
+          console.log('🔀 AI detected: MULTIPLE_MATCH - Showing service options');
           return {
             message: text,
             isQuoteGeneration: false,
@@ -380,6 +395,7 @@ export const sendMessageToGemini = async ({
         
         // 3️⃣ PARTIAL_MATCH - Service not found, suggest closest alternatives
         if (parsed.partialMatch && parsed.closestServices) {
+          console.log('⚠️ AI detected: PARTIAL_MATCH - Suggesting alternatives');
           return {
             message: text,
             isQuoteGeneration: false,
@@ -394,6 +410,7 @@ export const sendMessageToGemini = async ({
         
         // 4️⃣ NO_MATCH - Nothing matches, show all services
         if (parsed.noMatch && parsed.allServicesGrouped) {
+          console.log('❌ AI detected: NO_MATCH - Showing all services');
           return {
             message: text,
             isQuoteGeneration: false,
