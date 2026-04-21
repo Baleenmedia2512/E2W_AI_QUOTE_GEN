@@ -3,8 +3,9 @@
  * Manages synchronization between localStorage, IndexedDB, and Supabase Cloud
  */
 
-import { CompanyInfo } from '../types/company';
-import { Quote, ClientInfo } from '../types';
+// Unused imports - kept for future use
+// import { CompanyInfo } from '../types/company';
+// import { Quote, ClientInfo } from '../types';
 
 export interface SyncStatus {
   lastSync: Date | null;
@@ -280,7 +281,7 @@ export async function clearAllCache(): Promise<void> {
 }
 
 // Placeholder functions for cloud operations (implement based on your backend)
-async function syncToCloud<T>(key: string, data: DataWithTimestamp<T>): Promise<boolean> {
+async function syncToCloud<T>(_key: string, _data: DataWithTimestamp<T>): Promise<boolean> {
   // TODO: Implement actual cloud sync with Supabase
   // For now, just simulate success
   return new Promise((resolve) => {
@@ -291,7 +292,7 @@ async function syncToCloud<T>(key: string, data: DataWithTimestamp<T>): Promise<
   });
 }
 
-async function loadFromCloud<T>(key: string): Promise<DataWithTimestamp<T> | null> {
+async function loadFromCloud<T>(_key: string): Promise<DataWithTimestamp<T> | null> {
   // TODO: Implement actual cloud load from Supabase
   return null;
 }
