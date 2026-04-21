@@ -47,6 +47,36 @@ const ChatInterface: React.FC = () => {
   // Map: messageId -> { vehicleType -> selectedServiceName }
   const [selectedServices, setSelectedServices] = useState<Record<string, Record<string, string>>>({});
 
+  // Helper function to detect if request contains full service names (prevents checkbox loops)
+  const isFullySpecifiedRequest = (userRequest: string): boolean => {
+    const request = userRequest.toLowerCase();
+    
+    // Check if request contains complete service specifications
+    // These patterns indicate the user has already specified the full service name
+    const fullServicePatterns = [
+      /bus full branding/i,
+      /bus semi branding/i,
+      /bus back panel/i,
+      /auto full branding/i,
+      /auto back stickers/i,
+      /metro interior/i,
+      /cab\s+(?:full|back|interior)/i,
+      /tempo\s+(?:full|back)/i,
+      /apartment\s+lift/i,
+      /traffic\s+(?:awareness|signal)/i,
+    ];
+    
+    // If request matches any full service pattern, it's fully specified
+    const hasFullServiceName = fullServicePatterns.some(pattern => pattern.test(request));
+    
+    if (hasFullServiceName) {
+      console.log('✅ Client-side detection: Request contains full service names, will skip MULTIPLE_MATCH');
+      return true;
+    }
+    
+    return false;
+  };
+
   // Load chat history on mount
   useEffect(() => {
     const history = loadChatHistory();
@@ -108,8 +138,18 @@ const ChatInterface: React.FC = () => {
         console.log(`📚 Multi-document search enabled: ${proposalContexts.length} documents available`);
       }
 
+      // 🔧 CLIENT-SIDE VALIDATION: Check if request is fully specified (prevents checkbox loops)
+      let enhancedUserMessage = userMessage.content;
+      const isFullySpecified = isFullySpecifiedRequest(userMessage.content);
+      
+      if (isFullySpecified) {
+        // Add instruction to AI to treat this as EXACT_MATCH
+        enhancedUserMessage = `[EXACT_MATCH_HINT: This request contains full service names] ${userMessage.content}`;
+        console.log('🔧 Added EXACT_MATCH hint to prevent re-analysis');
+      }
+
       const response = await sendMessageToGemini({
-        userMessage: userMessage.content,
+        userMessage: enhancedUserMessage,
         proposalText: proposal.textContent, // Backward compatibility fallback
         proposalTexts: proposalContexts, // NEW: Multi-document support
         chatHistory: messages,
@@ -148,6 +188,12 @@ const ChatInterface: React.FC = () => {
       
       // MULTIPLE_MATCH - Ask user to clarify
       if (response.isMultipleMatch && response.groupedServices) {
+        console.log('🔀 MULTIPLE_MATCH detected - Showing service options');
+        console.log('📋 Services by vehicle type:');
+        response.groupedServices.forEach(group => {
+          console.log(`  - ${group.vehicleType}: ${group.services.length} services found`);
+          group.services.forEach(svc => console.log(`    • ${svc.name}`));
+        });
         setMessages(prev => [...prev, assistantMessage]);
         setIsLoading(false);
         return;
@@ -402,7 +448,7 @@ const ChatInterface: React.FC = () => {
       return; // Nothing selected
     }
 
-    // Build the combined request string
+    // Build the combined request string with full service names
     const parts: string[] = [];
     groupedServices.forEach(group => {
       const serviceName = selected[group.vehicleType];
@@ -414,7 +460,10 @@ const ChatInterface: React.FC = () => {
 
     if (parts.length === 0) return;
 
-    const combinedRequest = `Generate quote for ${parts.join(' and ')}`;
+    // 🔧 IMPROVED FORMAT: Make it clear these are full service specifications
+    const combinedRequest = `Generate quote for ${parts.join(' and ')} [User has already specified complete service names from checkboxes]`;
+    console.log('🔧 Combined request with full specifications:', combinedRequest);
+    
     setInputValue(combinedRequest);
     
     // Clear selections after generating
