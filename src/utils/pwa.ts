@@ -1,4 +1,4 @@
-// Service Worker Registration
+// Service Worker Registration - Enhanced with update detection
 export const registerServiceWorker = async (): Promise<void> => {
   if ('serviceWorker' in navigator) {
     try {
@@ -6,12 +6,12 @@ export const registerServiceWorker = async (): Promise<void> => {
         scope: '/'
       });
 
-      console.log('Service Worker registered successfully:', registration);
+      console.log('✅ Service Worker registered successfully:', registration);
 
-      // Check for updates periodically
+      // Check for updates every 30 seconds (reduced from 1 minute)
       setInterval(() => {
         registration.update();
-      }, 60000); // Check every minute
+      }, 30000);
 
       // Handle updates
       registration.addEventListener('updatefound', () => {
@@ -21,23 +21,150 @@ export const registerServiceWorker = async (): Promise<void> => {
           newWorker.addEventListener('statechange', () => {
             if (newWorker.state === 'installed' && navigator.serviceWorker.controller) {
               // New service worker available
-              if (confirm('New version available! Reload to update?')) {
-                window.location.reload();
-              }
+              console.log('🔄 New version available!');
+              
+              // Show update notification
+              showUpdateNotification(() => {
+                // Tell new service worker to skip waiting
+                newWorker.postMessage({ type: 'SKIP_WAITING' });
+              });
             }
           });
         }
       });
 
+      // Listen for service worker messages
+      navigator.serviceWorker.addEventListener('message', (event) => {
+        if (event.data && event.data.type === 'SW_ACTIVATED') {
+          console.log(`✅ Service Worker activated (v${event.data.version})`);
+          
+          // Show success notification
+          const notification = document.createElement('div');
+          notification.style.cssText = `
+            position: fixed;
+            top: 20px;
+            right: 20px;
+            background: #10b981;
+            color: white;
+            padding: 16px 24px;
+            border-radius: 8px;
+            box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+            z-index: 10000;
+            font-family: system-ui;
+          `;
+          notification.textContent = `✅ Updated to v${event.data.version}`;
+          document.body.appendChild(notification);
+          
+          setTimeout(() => notification.remove(), 3000);
+        }
+      });
+
       return Promise.resolve();
     } catch (error) {
-      console.error('Service Worker registration failed:', error);
+      console.error('❌ Service Worker registration failed:', error);
       return Promise.reject(error);
     }
   } else {
-    console.warn('Service Workers are not supported in this browser');
+    console.warn('⚠️ Service Workers are not supported in this browser');
     return Promise.reject(new Error('Service Workers not supported'));
   }
+};
+
+// Show update notification to user
+const showUpdateNotification = (onUpdate: () => void): void => {
+  const notification = document.createElement('div');
+  notification.style.cssText = `
+    position: fixed;
+    top: 20px;
+    right: 20px;
+    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+    color: white;
+    padding: 20px 24px;
+    border-radius: 12px;
+    box-shadow: 0 10px 40px rgba(0,0,0,0.3);
+    z-index: 10000;
+    font-family: system-ui;
+    max-width: 350px;
+    animation: slideIn 0.3s ease-out;
+  `;
+  
+  notification.innerHTML = `
+    <div style="display: flex; align-items: center; gap: 12px;">
+      <div style="font-size: 24px;">🔄</div>
+      <div style="flex: 1;">
+        <div style="font-weight: 600; margin-bottom: 4px;">New Version Available!</div>
+        <div style="font-size: 14px; opacity: 0.9;">Update now to get the latest features</div>
+      </div>
+    </div>
+    <div style="display: flex; gap: 8px; margin-top: 12px;">
+      <button id="update-now-btn" style="
+        flex: 1;
+        background: white;
+        color: #667eea;
+        border: none;
+        padding: 8px 16px;
+        border-radius: 6px;
+        font-weight: 600;
+        cursor: pointer;
+      ">Update Now</button>
+      <button id="update-later-btn" style="
+        flex: 1;
+        background: rgba(255,255,255,0.2);
+        color: white;
+        border: none;
+        padding: 8px 16px;
+        border-radius: 6px;
+        cursor: pointer;
+      ">Later</button>
+    </div>
+  `;
+  
+  // Add animation
+  const style = document.createElement('style');
+  style.textContent = `
+    @keyframes slideIn {
+      from {
+        transform: translateX(400px);
+        opacity: 0;
+      }
+      to {
+        transform: translateX(0);
+        opacity: 1;
+      }
+    }
+  `;
+  document.head.appendChild(style);
+  
+  document.body.appendChild(notification);
+  
+  // Handle update button
+  document.getElementById('update-now-btn')?.addEventListener('click', () => {
+    onUpdate();
+    notification.remove();
+    // Show loading
+    const loading = document.createElement('div');
+    loading.style.cssText = notification.style.cssText;
+    loading.innerHTML = `
+      <div style="text-align: center;">
+        <div style="font-size: 32px; margin-bottom: 8px;">⏳</div>
+        <div style="font-weight: 600;">Updating...</div>
+      </div>
+    `;
+    document.body.appendChild(loading);
+    setTimeout(() => window.location.reload(), 500);
+  });
+  
+  // Handle later button
+  document.getElementById('update-later-btn')?.addEventListener('click', () => {
+    notification.remove();
+  });
+  
+  // Auto-dismiss after 30 seconds
+  setTimeout(() => {
+    if (document.body.contains(notification)) {
+      notification.remove();
+    }
+  }, 30000);
 };
 
 export const unregisterServiceWorker = async (): Promise<void> => {

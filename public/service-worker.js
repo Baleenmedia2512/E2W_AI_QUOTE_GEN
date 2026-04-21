@@ -1,47 +1,72 @@
-// Service Worker for Quote Buddy PWA
-const CACHE_NAME = 'ai-quote-gen-v1';
-const RUNTIME_CACHE = 'runtime-cache-v1';
+// Service Worker for Quote Buddy PWA - Enhanced with versioning
+const APP_VERSION = '1.0.0'; // Auto-updated by build process
+const BUILD_TIMESTAMP = Date.now();
+const CACHE_NAME = `ai-quote-gen-v${APP_VERSION}-${BUILD_TIMESTAMP}`;
+const RUNTIME_CACHE = `runtime-v${APP_VERSION}`;
+const CACHE_MAX_AGE = 3600000; // 1 hour in milliseconds
 
 // Resources to cache on install
 const PRECACHE_URLS = [
   '/',
   '/index.html',
-  '/manifest.json'
+  '/manifest.json',
+  '/offline.html'
 ];
 
-// Install event - cache essential resources
+// Install event - cache essential resources and skip waiting
 self.addEventListener('install', (event) => {
-  console.log('Service Worker installing...');
+  console.log(`🔧 Service Worker installing... (v${APP_VERSION})`);
   event.waitUntil(
     caches.open(CACHE_NAME)
       .then(cache => {
-        console.log('Caching app shell');
+        console.log('📦 Caching app shell');
         return cache.addAll(PRECACHE_URLS);
       })
-      .then(() => self.skipWaiting())
+      .then(() => {
+        console.log('✅ Service Worker installed, skipping waiting');
+        return self.skipWaiting(); // Activate immediately
+      })
   );
 });
 
-// Activate event - clean up old caches
+// Activate event - clean up old caches and take control
 self.addEventListener('activate', (event) => {
-  console.log('Service Worker activating...');
+  console.log(`🚀 Service Worker activating... (v${APP_VERSION})`);
   event.waitUntil(
     caches.keys().then(cacheNames => {
       return Promise.all(
         cacheNames
           .filter(cacheName => {
-            return cacheName !== CACHE_NAME && cacheName !== RUNTIME_CACHE;
+            // Delete all caches that don't match current version
+            const isCurrentCache = cacheName === CACHE_NAME || cacheName === RUNTIME_CACHE;
+            if (!isCurrentCache) {
+              console.log('🗑️ Deleting old cache:', cacheName);
+            }
+            return !isCurrentCache;
           })
-          .map(cacheName => {
-            console.log('Deleting old cache:', cacheName);
-            return caches.delete(cacheName);
-          })
+          .map(cacheName => caches.delete(cacheName))
       );
-    }).then(() => self.clients.claim())
+    })
+    .then(() => {
+      console.log('✅ Service Worker activated, claiming clients');
+      return self.clients.claim(); // Take control immediately
+    })
+    .then(() => {
+      // Notify all clients about the update
+      return self.clients.matchAll().then(clients => {
+        clients.forEach(client => {
+          client.postMessage({
+            type: 'SW_ACTIVATED',
+            version: APP_VERSION,
+            timestamp: BUILD_TIMESTAMP
+          });
+        });
+      });
+    })
   );
 });
 
-// Fetch event - serve from cache when offline, with network fallback
+// Fetch event - Network-first with cache fallback
 self.addEventListener('fetch', (event) => {
   // Skip cross-origin requests
   if (!event.request.url.startsWith(self.location.origin)) {
@@ -53,49 +78,58 @@ self.addEventListener('fetch', (event) => {
     return;
   }
 
-  event.respondWith(
-    caches.match(event.request).then(cachedResponse => {
-      if (cachedResponse) {
-        // Return cached response and update cache in background
-        fetchAndCache(event.request);
-        return cachedResponse;
-      }
+  const url = new URL(event.request.url);
+  
+  // API requests - always network-first, no caching
+  if (url.pathname.includes('/api/') || url.pathname.includes('supabase')) {
+    event.respondWith(fetch(event.request));
+    return;
+  }
 
-      // Not in cache, fetch from network
-      return fetchAndCache(event.request);
-    })
+  // For app shell (HTML, JS, CSS) - Network first with cache fallback
+  event.respondWith(
+    fetch(event.request)
+      .then(response => {
+        // Check if valid response
+        if (!response || response.status !== 200) {
+          return response;
+        }
+
+        // Clone and cache the response
+        const responseToCache = response.clone();
+        caches.open(RUNTIME_CACHE).then(cache => {
+          cache.put(event.request, responseToCache);
+        });
+
+        return response;
+      })
+      .catch(error => {
+        // Network failed, try cache
+        return caches.match(event.request).then(cachedResponse => {
+          if (cachedResponse) {
+            console.log('📦 Serving from cache (offline):', event.request.url);
+            return cachedResponse;
+          }
+
+          // No cache, return offline page for navigation requests
+          if (event.request.mode === 'navigate') {
+            return caches.match('/offline.html').then(offlineResponse => {
+              return offlineResponse || new Response('Offline', {
+                status: 503,
+                statusText: 'Service Unavailable'
+              });
+            });
+          }
+
+          // For other requests, just fail
+          return new Response('Network error', {
+            status: 408,
+            statusText: 'Network error'
+          });
+        });
+      })
   );
 });
-
-// Helper function to fetch and cache
-function fetchAndCache(request) {
-  return fetch(request).then(response => {
-    // Check if valid response
-    if (!response || response.status !== 200 || response.type === 'error') {
-      return response;
-    }
-
-    // Clone the response
-    const responseToCache = response.clone();
-
-    // Cache the fetched response
-    caches.open(RUNTIME_CACHE).then(cache => {
-      cache.put(request, responseToCache);
-    });
-
-    return response;
-  }).catch(error => {
-    console.error('Fetch failed:', error);
-    
-    // Return offline page if available
-    return caches.match('/offline.html').then(offlineResponse => {
-      return offlineResponse || new Response('Offline', {
-        status: 503,
-        statusText: 'Service Unavailable'
-      });
-    });
-  });
-}
 
 // Background sync for offline quote submissions
 self.addEventListener('sync', (event) => {
@@ -144,4 +178,33 @@ self.addEventListener('notificationclick', (event) => {
   event.waitUntil(
     clients.openWindow('/')
   );
+});
+
+// Message handler for communication with clients
+self.addEventListener('message', (event) => {
+  console.log('📨 Message received:', event.data);
+  
+  if (event.data && event.data.type === 'SKIP_WAITING') {
+    self.skipWaiting();
+  }
+  
+  if (event.data && event.data.type === 'CHECK_VERSION') {
+    event.ports[0].postMessage({
+      version: APP_VERSION,
+      timestamp: BUILD_TIMESTAMP,
+      cacheName: CACHE_NAME
+    });
+  }
+  
+  if (event.data && event.data.type === 'CLEAR_CACHE') {
+    event.waitUntil(
+      caches.keys().then(cacheNames => {
+        return Promise.all(
+          cacheNames.map(cacheName => caches.delete(cacheName))
+        );
+      }).then(() => {
+        event.ports[0].postMessage({ success: true });
+      })
+    );
+  }
 });

@@ -9,7 +9,9 @@
     "android": "npm run build && npx cap sync android && npx cap open android",
     "ios": "npm run build && npx cap sync ios && npx cap open ios",
     "sync": "npx cap sync",
-    "generate-icons": "node generate-icons.js"
+    "generate-icons": "node generate-icons.js",
+    "clear-cache": "node -e \"console.log('Use window.clearCache() in browser console or hard refresh (Ctrl+Shift+R)')\"",
+    "version": "node -e \"console.log(require('./package.json').version)\""
   },
   "dependencies": {
     "@capacitor-community/file-opener": "^6.0.1",

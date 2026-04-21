@@ -251,6 +251,17 @@ export const sendMessageToGemini = async ({
       requestLength: userMessage.length,
       documentCount: proposalTexts?.length || (proposalText ? 1 : 0)
     });
+    
+    // Debug: Log proposal content preview to see what AI is receiving
+    if (proposalTexts && proposalTexts.length > 0) {
+      console.log('📄 Proposal documents sent to AI:');
+      proposalTexts.forEach((doc, idx) => {
+        const preview = doc.content.substring(0, 500);
+        console.log(`  Document ${idx + 1} (${doc.fileName}): ${preview.substring(0, 200)}...`);
+      });
+    } else if (proposalText) {
+      console.log('📄 Single proposal sent to AI:', proposalText.substring(0, 300));
+    }
 
     const result = await model.generateContent(contextPrompt);
     const response = await result.response;
@@ -262,6 +273,9 @@ export const sendMessageToGemini = async ({
       hasQuoteGenerated: text.includes('quoteGenerated'),
       hasMultipleMatch: text.includes('multipleMatch')
     });
+    
+    // Debug: Log AI's raw response to see what it actually found
+    console.log('🤖 AI Raw Response (first 1000 chars):', text.substring(0, 1000));
 
     // Detect if AI has generated a complete quote (must contain JSON with quoteGenerated flag)
     // @ts-ignore: variables used for state tracking in quote detection flow
@@ -371,6 +385,16 @@ export const sendMessageToGemini = async ({
             };
           }
           
+          // Debug: Log T&C extraction results
+          console.log('📋 T&C Extraction Summary:');
+          console.log('  - General T&C (top-level):', fixedQuoteData.termsAndConditions ? `✅ ${fixedQuoteData.termsAndConditions.split('\n').length} lines` : '❌ MISSING');
+          if (fixedQuoteData.items && fixedQuoteData.items.length > 0) {
+            fixedQuoteData.items.forEach((item: any, idx: number) => {
+              const serviceName = item.title || `Item ${idx + 1}`;
+              console.log(`  - Service-specific T&C (${serviceName}):`, item.termsAndConditions ? `✅ ${item.termsAndConditions.split('\n').length} lines` : '⚠️ Empty');
+            });
+          }
+          
           _quoteData = fixedQuoteData;
           _isQuoteGeneration = true;
           return {
@@ -384,6 +408,7 @@ export const sendMessageToGemini = async ({
         // 2️⃣ MULTIPLE_MATCH - Ambiguous request, ask user to clarify
         if (parsed.multipleMatch && parsed.groupedServices) {
           console.log('🔀 AI detected: MULTIPLE_MATCH - Showing service options');
+          console.log('📋 Grouped services returned by AI:', JSON.stringify(parsed.groupedServices, null, 2));
           return {
             message: text,
             isQuoteGeneration: false,

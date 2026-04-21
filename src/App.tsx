@@ -10,6 +10,7 @@ import UnauthorizedPage from './pages/UnauthorizedPage';
 import { ErrorBoundary } from './components/ErrorBoundary/ErrorBoundary';
 import BottomNav from './components/BottomNav/BottomNav';
 import { Header } from './components/Header';
+import { UpdateNotification } from './components/UpdateNotification';
 import { registerServiceWorker } from './utils/pwa';
 import { PrivateRoute } from './components/PrivateRoute';
 import { useCompanySync } from './hooks/useCompanySync';
@@ -19,17 +20,18 @@ const App: React.FC = () => {
   useCompanySync(true); // true = enable real-time updates
 
   useEffect(() => {
-    // Register service worker for PWA support
-    if (process.env.NODE_ENV === 'production') {
-      registerServiceWorker().catch(err => {
-        console.error('Failed to register service worker:', err);
-      });
-    }
+    // Register service worker for PWA support (now enabled in all environments)
+    registerServiceWorker().catch(err => {
+      console.error('Failed to register service worker:', err);
+    });
   }, []);
 
   return (
     <ErrorBoundary>
       <Box minH="100vh" bg="white">
+        {/* Update Notification Component */}
+        <UpdateNotification />
+        
         <Router>
           <Route
             render={({ location }) => {
