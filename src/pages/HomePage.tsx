@@ -157,14 +157,17 @@ const HomePage: React.FC = () => {
         </Flex>
       </Box>
 
-      {/* Main Content - Fixed Height Layout */}
+      {/* Main Content - Flexible Layout */}
       <Box
-        position="fixed"
-        top={{ base: '65px', md: '85px' }}
-        bottom={{ base: '64px', md: '20px' }}
-        left={0}
-        right={0}
-        overflow="hidden"
+        mt={{ base: '65px', md: '85px' }}
+        minH={{ base: 'calc(100vh - 129px)', md: 'calc(100vh - 105px)' }}
+        maxH={{ base: 'calc(100vh - 129px)', md: 'calc(100vh - 105px)' }}
+        sx={{
+          '@supports (height: 100dvh)': {
+            minH: { base: 'calc(100dvh - 129px)', md: 'calc(100vh - 105px)' },
+            maxH: { base: 'calc(100dvh - 129px)', md: 'calc(100vh - 105px)' },
+          }
+        }}
       >
         <Box
           maxW="1400px"
@@ -209,9 +212,10 @@ const HomePage: React.FC = () => {
             flex="1"
             bg="white"
             borderRadius={{ base: '12px', md: '16px' }}
-            overflow="hidden"
             boxShadow="0 2px 12px rgba(0, 0, 0, 0.08)"
             minH={0}
+            display="flex"
+            flexDirection="column"
           >
             <ChatInterface />
           </Box>

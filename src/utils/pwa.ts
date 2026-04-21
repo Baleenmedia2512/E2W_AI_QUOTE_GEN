@@ -8,56 +8,57 @@ export const registerServiceWorker = async (): Promise<void> => {
 
       console.log('✅ Service Worker registered successfully:', registration);
 
+      // Automatic update checks - DISABLED
       // Check for updates every 30 seconds (reduced from 1 minute)
-      setInterval(() => {
-        registration.update();
-      }, 30000);
+      // setInterval(() => {
+      //   registration.update();
+      // }, 30000);
 
-      // Handle updates
-      registration.addEventListener('updatefound', () => {
-        const newWorker = registration.installing;
-        
-        if (newWorker) {
-          newWorker.addEventListener('statechange', () => {
-            if (newWorker.state === 'installed' && navigator.serviceWorker.controller) {
-              // New service worker available
-              console.log('🔄 New version available!');
-              
-              // Show update notification
-              showUpdateNotification(() => {
-                // Tell new service worker to skip waiting
-                newWorker.postMessage({ type: 'SKIP_WAITING' });
-              });
-            }
-          });
-        }
-      });
+      // Handle updates - DISABLED to prevent notifications
+      // registration.addEventListener('updatefound', () => {
+      //   const newWorker = registration.installing;
+      //   
+      //   if (newWorker) {
+      //     newWorker.addEventListener('statechange', () => {
+      //       if (newWorker.state === 'installed' && navigator.serviceWorker.controller) {
+      //         // New service worker available
+      //         console.log('🔄 New version available!');
+      //         
+      //         // Show update notification
+      //         showUpdateNotification(() => {
+      //           // Tell new service worker to skip waiting
+      //           newWorker.postMessage({ type: 'SKIP_WAITING' });
+      //         });
+      //       }
+      //     });
+      //   }
+      // });
 
-      // Listen for service worker messages
-      navigator.serviceWorker.addEventListener('message', (event) => {
-        if (event.data && event.data.type === 'SW_ACTIVATED') {
-          console.log(`✅ Service Worker activated (v${event.data.version})`);
-          
-          // Show success notification
-          const notification = document.createElement('div');
-          notification.style.cssText = `
-            position: fixed;
-            top: 20px;
-            right: 20px;
-            background: #10b981;
-            color: white;
-            padding: 16px 24px;
-            border-radius: 8px;
-            box-shadow: 0 4px 12px rgba(0,0,0,0.15);
-            z-index: 10000;
-            font-family: system-ui;
-          `;
-          notification.textContent = `✅ Updated to v${event.data.version}`;
-          document.body.appendChild(notification);
-          
-          setTimeout(() => notification.remove(), 3000);
-        }
-      });
+      // Listen for service worker messages - DISABLED
+      // navigator.serviceWorker.addEventListener('message', (event) => {
+      //   if (event.data && event.data.type === 'SW_ACTIVATED') {
+      //     console.log(`✅ Service Worker activated (v${event.data.version})`);
+      //     
+      //     // Show success notification
+      //     const notification = document.createElement('div');
+      //     notification.style.cssText = `
+      //       position: fixed;
+      //       top: 20px;
+      //       right: 20px;
+      //       background: #10b981;
+      //       color: white;
+      //       padding: 16px 24px;
+      //       border-radius: 8px;
+      //       box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+      //       z-index: 10000;
+      //       font-family: system-ui;
+      //     `;
+      //     notification.textContent = `✅ Updated to v${event.data.version}`;
+      //     document.body.appendChild(notification);
+      //     
+      //     setTimeout(() => notification.remove(), 3000);
+      //   }
+      // });
 
       return Promise.resolve();
     } catch (error) {
