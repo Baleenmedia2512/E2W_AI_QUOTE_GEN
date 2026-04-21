@@ -103,21 +103,22 @@ const ChatInterface: React.FC = () => {
   // Handle keyboard appearance on mobile - adjust viewport
   useEffect(() => {
     if (typeof window !== 'undefined' && window.visualViewport) {
+      const viewport = window.visualViewport;
       const handleViewportResize = () => {
-        const viewportHeight = window.visualViewport.height;
+        const viewportHeight = viewport.height;
         document.documentElement.style.setProperty(
           '--visual-viewport-height',
           `${viewportHeight}px`
         );
       };
 
-      window.visualViewport.addEventListener('resize', handleViewportResize);
-      window.visualViewport.addEventListener('scroll', handleViewportResize);
+      viewport.addEventListener('resize', handleViewportResize);
+      viewport.addEventListener('scroll', handleViewportResize);
       handleViewportResize(); // Initial call
 
       return () => {
-        window.visualViewport.removeEventListener('resize', handleViewportResize);
-        window.visualViewport.removeEventListener('scroll', handleViewportResize);
+        viewport.removeEventListener('resize', handleViewportResize);
+        viewport.removeEventListener('scroll', handleViewportResize);
       };
     }
   }, []);

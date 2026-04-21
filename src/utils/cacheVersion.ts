@@ -42,10 +42,14 @@ export async function getCurrentVersion(): Promise<AppVersion | null> {
         }
       };
 
-      registration.active.postMessage(
-        { type: 'CHECK_VERSION' },
-        [messageChannel.port2]
-      );
+      if (registration.active) {
+        registration.active.postMessage(
+          { type: 'CHECK_VERSION' },
+          [messageChannel.port2]
+        );
+      } else {
+        resolve(null);
+      }
 
       // Timeout after 2 seconds
       setTimeout(() => resolve(null), 2000);

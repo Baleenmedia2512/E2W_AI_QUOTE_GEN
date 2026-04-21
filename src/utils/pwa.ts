@@ -71,8 +71,9 @@ export const registerServiceWorker = async (): Promise<void> => {
   }
 };
 
-// Show update notification to user
-const showUpdateNotification = (onUpdate: () => void): void => {
+// Show update notification to user - Currently disabled
+// @ts-ignore - Function intentionally unused but kept for future use
+const _showUpdateNotification = (onUpdate: () => void): void => {
   const notification = document.createElement('div');
   notification.style.cssText = `
     position: fixed;

@@ -5,7 +5,7 @@
 
 import React, { useEffect, useState } from 'react';
 import { Box, Button, Text, useToast, VStack, HStack, Icon, Progress } from '@chakra-ui/react';
-import { FiRefreshCw, FiDownload, FiCheck, FiAlertCircle } from 'react-icons/fi';
+import { FiRefreshCw, FiDownload, FiAlertCircle } from 'react-icons/fi';
 import { checkForUpdates, clearCacheAndReload, formatVersion, AppVersion } from '../../utils/cacheVersion';
 import { getSyncStatus, syncPendingChanges } from '../../services/dataSyncService';
 
