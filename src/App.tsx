@@ -10,7 +10,7 @@ import UnauthorizedPage from './pages/UnauthorizedPage';
 import { ErrorBoundary } from './components/ErrorBoundary/ErrorBoundary';
 import BottomNav from './components/BottomNav/BottomNav';
 import { Header } from './components/Header';
-import { UpdateNotification } from './components/UpdateNotification';
+// import { UpdateNotification } from './components/UpdateNotification'; // Disabled
 import { registerServiceWorker } from './utils/pwa';
 import { PrivateRoute } from './components/PrivateRoute';
 import { useCompanySync } from './hooks/useCompanySync';
@@ -29,8 +29,8 @@ const App: React.FC = () => {
   return (
     <ErrorBoundary>
       <Box minH="100vh" bg="white">
-        {/* Update Notification Component */}
-        <UpdateNotification />
+        {/* Update Notification Component - Disabled */}
+        {/* <UpdateNotification /> */}
         
         <Router>
           <Route

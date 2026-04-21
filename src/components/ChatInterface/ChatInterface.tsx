@@ -100,6 +100,28 @@ const ChatInterface: React.FC = () => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [messages, isLoading]);
 
+  // Handle keyboard appearance on mobile - adjust viewport
+  useEffect(() => {
+    if (typeof window !== 'undefined' && window.visualViewport) {
+      const handleViewportResize = () => {
+        const viewportHeight = window.visualViewport.height;
+        document.documentElement.style.setProperty(
+          '--visual-viewport-height',
+          `${viewportHeight}px`
+        );
+      };
+
+      window.visualViewport.addEventListener('resize', handleViewportResize);
+      window.visualViewport.addEventListener('scroll', handleViewportResize);
+      handleViewportResize(); // Initial call
+
+      return () => {
+        window.visualViewport.removeEventListener('resize', handleViewportResize);
+        window.visualViewport.removeEventListener('scroll', handleViewportResize);
+      };
+    }
+  }, []);
+
   const handleSendMessage = async () => {
     if (!inputValue.trim()) return;
 
@@ -620,7 +642,6 @@ const ChatInterface: React.FC = () => {
       borderRadius="14px"
       border="1px solid"
       borderColor="gray.200"
-      overflow="hidden"
       bg="white"
     >
       {/* Header - AI Assistant with Online Status */}
@@ -630,6 +651,7 @@ const ChatInterface: React.FC = () => {
         px={5}
         py={4}
         bgGradient="linear(90deg, gray.900, #1A1A2E)"
+        flexShrink={0}
       >
         <HStack spacing={2}>
           <Box
@@ -670,8 +692,8 @@ const ChatInterface: React.FC = () => {
         </HStack>
       </HStack>
 
-      {/* Content Area */}
-      <VStack align="stretch" spacing={4} flex={1} overflow="hidden" p={4}>
+      {/* Content Area - Flexible Container */}
+      <VStack align="stretch" spacing={4} flex={1} p={4} minH={0}>
         {/* Suggestion Chips */}
         {messages.length === 0 && (
           <Box px={2}>
@@ -1281,10 +1303,14 @@ const ChatInterface: React.FC = () => {
           flexShrink={0} 
           px={{ base: 3, md: 4 }}
           py={{ base: 4, md: 4 }}
+          pb={{ base: 'calc(1rem + env(safe-area-inset-bottom, 0px))', md: 4 }}
+          mb={{ base: '64px', md: 0 }}
           borderTop="2px solid"
           borderColor="gray.300"
           bg="white"
           boxShadow="0 -4px 20px rgba(0, 0, 0, 0.08)"
+          position="relative"
+          zIndex={999}
         >
           <Box position="relative" flex={1}>
             <Input
@@ -1294,6 +1320,18 @@ const ChatInterface: React.FC = () => {
                 if (e.key === 'Enter' && !e.shiftKey) {
                   e.preventDefault();
                   handleSendMessage();
+                }
+              }}
+              onFocus={(e) => {
+                // Auto-scroll input into view when keyboard appears
+                if (Capacitor.isNativePlatform() || window.innerWidth <= 768) {
+                  setTimeout(() => {
+                    e.target.scrollIntoView({ 
+                      behavior: 'smooth', 
+                      block: 'center',
+                      inline: 'nearest'
+                    });
+                  }, 300);
                 }
               }}
               placeholder={
