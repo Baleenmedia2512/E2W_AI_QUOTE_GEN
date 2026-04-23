@@ -42,6 +42,87 @@ export const CorporateMinimal: React.FC<TemplateProps> = ({ data, editable: _edi
     });
   };
 
+  // Parse GST % from terms text e.g. "GST 18% Extra" → 18
+  const parseGSTFromTerms = (terms: string): number => {
+    if (terms) {
+      const match = terms.match(/GST\s+(\d+(?:\.\d+)?)\s*%/i) ||
+                    terms.match(/(\d+(?:\.\d+)?)\s*%\s*GST/i);
+      if (match) return parseFloat(match[1]);
+    }
+    return quote.gstPercentage;
+  };
+
+  // Group items by branding prefix (text before " - ")
+  // e.g. "Bus Full Branding - Rental" and "Bus Full Branding - Printing" → same group
+  type BrandingGroup = { key: string; items: typeof quote.items; subtotal: number };
+  const groupByBranding = (items: typeof quote.items): BrandingGroup[] => {
+    const map = new Map<string, typeof quote.items>();
+    items.forEach(item => {
+      const parts = item.description.split(' - ');
+      const key = parts.length > 1 ? parts.slice(0, -1).join(' - ') : item.description;
+      if (!map.has(key)) map.set(key, []);
+      map.get(key)!.push(item);
+    });
+    return Array.from(map.entries()).map(([key, groupItems]) => ({
+      key,
+      items: groupItems,
+      subtotal: groupItems.reduce((sum, i) => sum + i.total, 0)
+    }));
+  };
+
+  // GST % sourced from terms & conditions text
+  const gstPct = parseGSTFromTerms(quote.termsAndConditions || '');
+
+  // Reusable items table with GST + Final Amount columns (rowspan per branding group)
+  const renderItemsTable = (items: typeof quote.items) => {
+    const brandingGroups = groupByBranding(items);
+    const hasDuration = items.some(i => i.duration && i.duration > 1);
+    const formatDuration = (item: typeof quote.items[0]) => {
+      if (!item.duration || item.duration <= 1) return '1';
+      const unit = item.durationUnit === 'days' ? 'Days' : 'Months';
+      return `${item.duration} ${unit}`;
+    };
+    return (
+      <table className="items-table">
+        <thead>
+          <tr>
+            <th className="col-description">Description</th>
+            <th className="col-quantity">Quantity</th>
+            <th className="col-rate">Rate</th>
+            {hasDuration && <th className="col-duration">Duration</th>}
+            <th className="col-total">Total</th>
+            {quote.gstEnabled && <th className="col-gst">GST ({gstPct}%)</th>}
+            {quote.gstEnabled && <th className="col-final">Final Amount</th>}
+          </tr>
+        </thead>
+        <tbody>
+          {brandingGroups.map((group) => {
+            const groupGST = quote.gstEnabled ? group.subtotal * gstPct / 100 : 0;
+            const groupFinal = group.subtotal + groupGST;
+            return group.items.map((item, idx) => (
+              <tr key={item.id}>
+                <td className="item-description">
+                  <div className="item-title">{item.description}</div>
+                  {item.details && <div className="item-details">{item.details}</div>}
+                </td>
+                <td className="item-quantity">{item.quantity}</td>
+                <td className="item-rate">{formatCurrency(item.rate)}</td>
+                {hasDuration && <td className="item-duration">{formatDuration(item)}</td>}
+                <td className="item-total">{formatCurrency(item.total)}</td>
+                {quote.gstEnabled && idx === 0 && (
+                  <td className="item-gst" rowSpan={group.items.length}>{formatCurrency(groupGST)}</td>
+                )}
+                {quote.gstEnabled && idx === 0 && (
+                  <td className="item-final" rowSpan={group.items.length}>{formatCurrency(groupFinal)}</td>
+                )}
+              </tr>
+            ));
+          })}
+        </tbody>
+      </table>
+    );
+  };
+
   // Render header component (reusable)
   const renderHeader = (showMetaInfo = true) => (
     <div className="template-header">
@@ -114,53 +195,15 @@ export const CorporateMinimal: React.FC<TemplateProps> = ({ data, editable: _edi
           {renderClientDetails()}
 
           <div className="quote-items-section">
-            <table className="items-table">
-              <thead>
-                <tr>
-                  <th className="col-description">Description</th>
-                  <th className="col-quantity">Quantity</th>
-                  <th className="col-rate">Rate</th>
-                  {quote.items.some(i => i.duration && i.duration > 1) && (
-                    <th className="col-duration">Months</th>
-                  )}
-                  <th className="col-total">Total</th>
-                </tr>
-              </thead>
-              <tbody>
-                {quote.items.map((item, index) => (
-                  <tr key={index}>
-                    <td className="item-description">
-                      <div className="item-title">{item.description}</div>
-                      {item.details && <div className="item-details">{item.details}</div>}
-                    </td>
-                    <td className="item-quantity">{item.quantity}</td>
-                    <td className="item-rate">{formatCurrency(item.rate)}</td>
-                    {quote.items.some(i => i.duration && i.duration > 1) && (
-                      <td className="item-duration">{item.duration || 1}</td>
-                    )}
-                    <td className="item-total">{formatCurrency(item.total)}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
+            {renderItemsTable(quote.items)}
           </div>
 
           {/* Totals */}
           <div className="totals-section">
             <div className="totals-table">
-              <div className="total-row">
-                <span className="total-label">Subtotal:</span>
-                <span className="total-value">{formatCurrency(calculateSubtotal())}</span>
-              </div>
-              {quote.gstEnabled && (
-                <div className="total-row">
-                  <span className="total-label">GST ({quote.gstPercentage}%):</span>
-                  <span className="total-value">{formatCurrency(calculateGST())}</span>
-                </div>
-              )}
               <div className="total-row total-final">
                 <span className="total-label">Total (INR):</span>
-                <span className="total-value">{formatCurrency(calculateTotal())}</span>
+                <span className="total-value">{formatCurrency(calculateSubtotal() + (quote.gstEnabled ? calculateSubtotal() * gstPct / 100 : 0))}</span>
               </div>
             </div>
           </div>
@@ -230,53 +273,15 @@ export const CorporateMinimal: React.FC<TemplateProps> = ({ data, editable: _edi
           <h3 style={{ marginBottom: '16px', fontSize: '18px', fontWeight: '600' }}>
             Quote Summary - All Services
           </h3>
-          <table className="items-table">
-            <thead>
-              <tr>
-                <th className="col-description">Description</th>
-                <th className="col-quantity">Quantity</th>
-                <th className="col-rate">Rate</th>
-                {quote.items.some(i => i.duration && i.duration > 1) && (
-                  <th className="col-duration">Months</th>
-                )}
-                <th className="col-total">Total</th>
-              </tr>
-            </thead>
-            <tbody>
-              {quote.items.map((item, index) => (
-                <tr key={index}>
-                  <td className="item-description">
-                    <div className="item-title">{item.description}</div>
-                    {item.details && <div className="item-details">{item.details}</div>}
-                  </td>
-                  <td className="item-quantity">{item.quantity}</td>
-                  <td className="item-rate">{formatCurrency(item.rate)}</td>
-                  {quote.items.some(i => i.duration && i.duration > 1) && (
-                    <td className="item-duration">{item.duration || 1}</td>
-                  )}
-                  <td className="item-total">{formatCurrency(item.total)}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
+          {renderItemsTable(quote.items)}
         </div>
 
         {/* Totals */}
         <div className="totals-section">
           <div className="totals-table">
-            <div className="total-row">
-              <span className="total-label">Subtotal:</span>
-              <span className="total-value">{formatCurrency(calculateSubtotal())}</span>
-            </div>
-            {quote.gstEnabled && (
-              <div className="total-row">
-                <span className="total-label">GST ({quote.gstPercentage}%):</span>
-                <span className="total-value">{formatCurrency(calculateGST())}</span>
-              </div>
-            )}
             <div className="total-row total-final">
               <span className="total-label">Total (INR):</span>
-              <span className="total-value">{formatCurrency(calculateTotal())}</span>
+              <span className="total-value">{formatCurrency(calculateSubtotal() + (quote.gstEnabled ? calculateSubtotal() * gstPct / 100 : 0))}</span>
             </div>
           </div>
         </div>
@@ -295,7 +300,7 @@ export const CorporateMinimal: React.FC<TemplateProps> = ({ data, editable: _edi
       {/* Pages 2+: Individual Service Pages */}
       {serviceGroups.map((group, groupIndex) => {
         const groupSubtotal = group.subtotal;
-        const groupGST = quote.gstEnabled ? groupSubtotal * (quote.gstPercentage / 100) : 0;
+        const groupGST = quote.gstEnabled ? groupSubtotal * gstPct / 100 : 0;
         const groupTotal = groupSubtotal + groupGST;
 
         return (
@@ -307,49 +312,11 @@ export const CorporateMinimal: React.FC<TemplateProps> = ({ data, editable: _edi
                   <h3 style={{ marginBottom: '16px', fontSize: '18px', fontWeight: '600', color: '#750926' }}>
                     {getServiceGroupHeading(group)}
                   </h3>
-                  <table className="items-table">
-                    <thead>
-                      <tr>
-                        <th className="col-description">Description</th>
-                        <th className="col-quantity">Quantity</th>
-                        <th className="col-rate">Rate</th>
-                        {group.items.some(i => i.duration && i.duration > 1) && (
-                          <th className="col-duration">Months</th>
-                        )}
-                        <th className="col-total">Total</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {group.items.map((item, index) => (
-                        <tr key={index}>
-                          <td className="item-description">
-                            <div className="item-title">{item.description}</div>
-                            {item.details && <div className="item-details">{item.details}</div>}
-                          </td>
-                          <td className="item-quantity">{item.quantity}</td>
-                          <td className="item-rate">{formatCurrency(item.rate)}</td>
-                          {group.items.some(i => i.duration && i.duration > 1) && (
-                            <td className="item-duration">{item.duration || 1}</td>
-                          )}
-                          <td className="item-total">{formatCurrency(item.total)}</td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
+                  {renderItemsTable(group.items)}
                 </div>
 
                 <div className="totals-section">
                   <div className="totals-table">
-                    <div className="total-row">
-                      <span className="total-label">Subtotal:</span>
-                      <span className="total-value">{formatCurrency(groupSubtotal)}</span>
-                    </div>
-                    {quote.gstEnabled && (
-                      <div className="total-row">
-                        <span className="total-label">GST ({quote.gstPercentage}%):</span>
-                        <span className="total-value">{formatCurrency(groupGST)}</span>
-                      </div>
-                    )}
                     <div className="total-row total-final">
                       <span className="total-label">Total (INR):</span>
                       <span className="total-value">{formatCurrency(groupTotal)}</span>

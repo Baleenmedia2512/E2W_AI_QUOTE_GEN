@@ -20,7 +20,7 @@ Analyze the conversation and determine if the user wants to generate a quote. If
   "termsAndConditions": "EXACT terms copied from the proposal document as bullet points"
 }
 
-IMPORTANT: When prices are per-month and user requests multiple months, include "duration" field with the number of months. Total = quantity × unitPrice × duration.
+IMPORTANT: When prices are per-month and user requests multiple months, include "duration" field with the number of months AND "durationUnit": "months". When prices are per-day and user requests multiple days, include "duration" field with the number of days AND "durationUnit": "days". Total = quantity × unitPrice × duration.
 
 If the user is asking a general question, provide a helpful answer without generating a quote structure.`;
 
@@ -232,6 +232,10 @@ STRICT MATCHING RULES:
 - BOTH parts must be present for EXACT_MATCH. If only one part is present → MULTIPLE_MATCH.
 - Keywords must match EXACTLY (character-by-character, case-insensitive). Typos or partial words → PARTIAL_MATCH.
 - Analyze ONLY the current request. DO NOT use conversation history to assume intent.
+- ⚠️ SPECIAL CASE — MOBILE VAN: "mobile van led" and "mobile van non led" are COMPLETE service names (vehicle="mobile van" + branding="led" or "non led"). These are EXACT_MATCH triggers — do NOT treat them as MULTIPLE_MATCH. Examples:
+  * "1000 mobile van non led for 15 days" → EXACT_MATCH for "MOBILE VAN - NON LED" ✅
+  * "500 mobile van led 7 days" → EXACT_MATCH for "MOBILE VAN - LED" ✅
+  * "1000 mobile van" (no led/non led) → MULTIPLE_MATCH (ambiguous) 🔀
 
 TIER DETECTION ALGORITHM:
 ⚠️ IMPORTANT: Analyze the CURRENT user request ONLY. Ignore all previous conversation context when determining tier.
@@ -239,6 +243,7 @@ TIER DETECTION ALGORITHM:
 STEP 1: Extract keywords from CURRENT request ONLY (ignore chat history)
   - Vehicle keywords: bus, auto, metro, cab, taxi, tempo, truck, van, mobile van, apartment, newspaper, pamphlet, wall, flex, traffic
   - Branding keywords: full, semi, back, front, interior, underground, shelter, panel, stickers, lit, led, non led, lobby, screen, lift
+  - ⚠️ For "mobile van": "led" and "non led" ARE the branding specifier. "mobile van led" = complete. "mobile van non led" = complete. "mobile van" alone = incomplete → MULTIPLE_MATCH.
 
 STEP 2: Analyze what user provided IN CURRENT REQUEST
   - Count vehicle types mentioned (0, 1, or 2+)
@@ -449,7 +454,8 @@ Your workflow:
           "description": "🔴 CRITICAL FORMAT: MUST start with FULL service type name, then pricing component. Example: 'Bus Semi Branding - Rental Price (per bus month)' NOT just 'Rental Price (per bus month)'",
           "quantity": <number from user request or proposal>,
           "unitPrice": <price from proposal or standard rate>,
-          "duration": <number of months if applicable, omit or set to 1 for one-time pricing>
+          "duration": <number of months/days if applicable, omit or set to 1 for one-time pricing>,
+          "durationUnit": <"months" for per-month rates | "days" for per-day rates | omit for one-time>
         }
       ],
       "termsAndConditions": "MANDATORY: For SINGLE-SERVICE quotes (only 1 item in array), this MUST be empty string: \"\". For MULTI-SERVICE quotes: service-specific terms only."
@@ -505,9 +511,10 @@ You: "✓ Found exact match: Bus Full Branding. Generating quote for 50 units...
           "unitPrice": 25000
         },
         {
-          "description": "Bus Full Branding - Printing & Fixing (per bus per month)",
+          "description": "Bus Full Branding - Printing & Fixing (per bus)",
           "quantity": 50,
-          "unitPrice": 13000
+          "unitPrice": 13000,
+          "duration": 1
         }
       ],
       "termsAndConditions": ""
@@ -537,9 +544,10 @@ You: "✓ Found exact match: Bus Semi Branding. Generating quote for 10 units...
           "unitPrice": 14000
         },
         {
-          "description": "Bus Semi Branding - Printing & Fixing Price (per bus month)",
+          "description": "Bus Semi Branding - Printing & Fixing Price (per bus)",
           "quantity": 10,
-          "unitPrice": 5000
+          "unitPrice": 5000,
+          "duration": 1
         }
       ],
       "termsAndConditions": ""
@@ -814,21 +822,88 @@ RULES:
 - CRITICAL DAILY RATE CONVERSION RULE:
   * IMPORTANT: Some campaigns (like Mobile Van LED) show "per day" rates with a "Total Price" column that represents the monthly cost (daily rate × 30 days OR daily rate × days in month).
   * DETECTION: If the proposal says "per day month" or "Price: ₹X per day month" with a separate "Total Price: ₹Y per van month" or "Total Price: ₹Y", this is a DAILY RATE campaign.
-  * CONVERSION REQUIRED: When you detect daily rates:
-    1. DO NOT use the daily rate as unitPrice
-    2. Instead, use the "Total Price" value from the proposal as the unitPrice (this is already the monthly amount)
-    3. Update the description to say "(per month)" or "(per van month)" instead of "(per day)"
-    4. The duration field will still represent months
-  * Example: Proposal shows "Price: ₹10,850 per day month" and "Total Price: ₹3,25,500". You should output: {"description": "Mobile Van - LED Branding - Display Price (per month)", "quantity": 5, "unitPrice": 325500, "duration": 3}. This gives: 5 × 325,500 × 3 = ₹48,82,500 ✓ CORRECT.
-  * Why: If you incorrectly used the daily rate (10,850) with duration in months (3), you'd get: 5 × 10,850 × 3 = ₹1,62,750 ❌ WRONG (mixing daily rate with months).
-  * This conversion ensures ALL campaigns use monthly rates as unitPrice, keeping calculations consistent: quantity × monthly_rate × months.
+  * TWO BRANCHES based on what the USER requests:
+
+  BRANCH A — User requests in MONTHS (e.g., "5 mobile van led 3 months"):
+    → Use the "Total Price" (monthly total) as unitPrice. Duration = number of months.
+    → Example: Proposal shows daily rate ₹10,850 and Total Price ₹3,25,500/month. User asks 3 months.
+      Output: {"unitPrice": 325500, "duration": 3, "durationUnit": "months"}
+      Total = 5 × 3,25,500 × 3 = ₹48,82,500 ✅
+    → DO NOT use daily rate (10,850) with months — that mixes units and gives wrong result ❌
+
+  BRANCH B — User requests in DAYS (e.g., "1 mobile van led 15 days"):
+    → Use the per-day rate directly as unitPrice. Duration = number of days.
+    → Example: Proposal shows daily rate ₹10,850. User asks 15 days.
+      Output: {"unitPrice": 10850, "duration": 15, "durationUnit": "days"}
+      Total = 1 × 10,850 × 15 = ₹1,62,750 ✅
+    → DO NOT use the monthly total (3,25,500) — that bills 15 days as a full month ❌
+    → Description should say "(per day)" not "(per month)" in this case.
+
+  SUMMARY:
+    User says "X months" + proposal has daily rate → use monthly total as unitPrice × X months
+    User says "X days"  + proposal has daily rate → use daily rate as unitPrice × X days
+    User says "X days"  + proposal has ONLY monthly rate → derive daily = monthly ÷ 30, use × X days
 - CRITICAL DURATION/MONTHS RULES:
-  * When the proposal prices are "per month" (e.g., "per frame month", "per screen month", "per bus per month") and the user requests a multi-month campaign (e.g., "3 months", "6 months"), you MUST include the "duration" field in the line item JSON.
-  * The "duration" field represents the number of months. The total for each line item will be calculated as: quantity × unitPrice × duration.
-  * Example: User asks for "100 apartment lift branding 3 months". Proposal says ₹2,500 per frame month. The line item should be: {"description": "Apartment Lift Branding - Display Price (per frame month)", "quantity": 100, "unitPrice": 2500, "duration": 3}. This gives total = 100 × 2500 × 3 = ₹750,000.
-  * If the user does NOT specify a duration or says "1 month", omit the "duration" field or set it to 1.
-  * NEVER multiply the duration into the quantity or the unitPrice. Keep them separate: quantity = number of units, unitPrice = per-unit per-month price from proposal, duration = number of months.
-  * The description should keep saying "per month" to reflect the actual rate. The duration multiplier is handled separately.
+  * When the proposal prices are "per month" (e.g., "per frame month", "per screen month", "per bus per month") and the user requests a multi-month campaign (e.g., "3 months", "6 months"), you MUST include the "duration" field with the number of months AND "durationUnit": "months".
+  * When the proposal prices are "per day" (e.g., "per day", "per van day", "per day rate") and the user requests a number of days (e.g., "12 days", "7 days"), you MUST include the "duration" field with the number of days AND "durationUnit": "days".
+  * The "duration" field represents the count. The total for each line item will be calculated as: quantity × unitPrice × duration.
+  * Example (months): User asks for "100 apartment lift branding 3 months". Proposal says ₹2,500 per frame month. Output: {"description": "Apartment Lift Branding - Display Price (per frame month)", "quantity": 100, "unitPrice": 2500, "duration": 3, "durationUnit": "months"}. Total = 100 × 2500 × 3 = ₹750,000.
+  * Example (days): User asks for "5 mobile van led 12 days". Proposal says ₹10,850 per day. Output: {"description": "Mobile Van LED Branding - Display Price (per day)", "quantity": 5, "unitPrice": 10850, "duration": 12, "durationUnit": "days"}. Total = 5 × 10,850 × 12 = ₹6,51,000.
+  * If the user does NOT specify a duration or says "1 month"/"1 day", omit the "duration" field or set it to 1.
+  * NEVER multiply the duration into the quantity or the unitPrice. Keep them separate: quantity = number of units, unitPrice = per-unit rate from proposal, duration = count of months or days.
+  * The description should reflect the actual rate unit ("per month" or "per day"). The duration multiplier is handled separately.
+  * DAYS vs MONTHS detection: If user says "days", "day" → durationUnit="days". If user says "months", "month" → durationUnit="months".
+- 🔴 DAYS REQUEST — RATE CONVERSION RULES:
+  * When user requests in DAYS, you MUST first check what rate type the proposal has for that service:
+  
+  CASE A — Proposal has an explicit per-day rate (description says "per day", "daily rate", "per van day"):
+    → Use the per-day rate directly as unitPrice. No conversion needed.
+    → Set durationUnit="days", duration=number of days.
+    → Example: PDF says ₹467/day. User asks "1000 Bus Semi Branding 12 days".
+      Output: {"description": "Bus Semi Branding - Rental Price (per day)", "quantity": 1000, "unitPrice": 467, "duration": 12, "durationUnit": "days"}
+      Total = 1000 × 467 × 12 = ₹56,04,000 ✅
+  
+  CASE B — Proposal ONLY has a per-month rate (description says "per month", "per bus per month", "per frame month"):
+    → CONVERT: daily rate = monthly rate ÷ 30
+    → Use the computed daily rate as unitPrice.
+    → Set durationUnit="days", duration=number of days.
+    → Add a note explaining the conversion.
+    → Example: PDF says ₹14,000/month. User asks "1000 Bus Semi Branding 12 days".
+      Step 1: daily rate = 14000 ÷ 30 = 467 (round to nearest integer)
+      Output: {"description": "Bus Semi Branding - Rental Price (per day)", "quantity": 1000, "unitPrice": 467, "duration": 12, "durationUnit": "days"}
+      Total = 1000 × 467 × 12 = ₹56,04,000 ✅
+      Note: "Daily rental rate derived from monthly rate ₹14,000 ÷ 30 days"
+    → ❌ WRONG — DO NOT do this: {"unitPrice": 14000, "duration": 12} → 1000 × 14000 × 12 = ₹16,80,00,000 (using monthly rate as daily rate)
+  
+  SUMMARY TABLE:
+    PDF rate type    | User says  | Action
+    per day          | X days     | Use per-day rate directly × X
+    per month        | X days     | Divide monthly rate by 30, use as daily rate × X
+    per month        | X months   | Use per-month rate directly × X (no conversion)
+- 🔴 ONE-TIME vs RECURRING — CRITICAL RULE:
+  * Some cost components are ONE-TIME charges regardless of campaign duration. They must ALWAYS have "duration": 1.
+  * ONE-TIME items (duration ALWAYS = 1, no matter how many months the campaign is):
+    - Printing / Print (physical material printing — done once at campaign start)
+    - Fixing / Installation / Mounting / Pasting (physical installation — done once)
+    - Design / Artwork / Creative charges (designed once)
+    - Any cost described as "one-time", "per unit", "per vehicle" (not "per month")
+  * RECURRING items (duration = number of campaign months):
+    - Rental / Display / Space / Slot charges (e.g., "per bus per month", "per frame month")
+    - Any cost explicitly described as "per month" in the proposal
+  * EXAMPLES:
+    - User: "100 Bus Semi Branding 3 months"
+      ✅ CORRECT:
+        {"description": "Bus Semi Branding - Rental Price (per bus month)", "quantity": 100, "unitPrice": 14000, "duration": 3}   → 100 × 14000 × 3 = ₹42,00,000
+        {"description": "Bus Semi Branding - Printing & Fixing Price (per bus)", "quantity": 100, "unitPrice": 5000, "duration": 1}  → 100 × 5000 × 1 = ₹5,00,000
+      ❌ WRONG:
+        {"description": "Bus Semi Branding - Printing & Fixing Price (per bus month)", "quantity": 100, "unitPrice": 5000, "duration": 3}  → 100 × 5000 × 3 = ₹15,00,000 (INCORRECT — you don't print 3 times!)
+    - User: "50 Bus Full Branding 6 months"
+      ✅ CORRECT:
+        Rental: quantity=50, unitPrice=25000, duration=6  → ₹75,00,000
+        Printing & Fixing: quantity=50, unitPrice=13000, duration=1  → ₹6,50,000
+      ❌ WRONG:
+        Printing & Fixing: duration=6  → ₹39,00,000 (INCORRECT)
+  * RULE: If the description contains "Printing", "Fixing", "Installation", "Mounting", "Pasting", "Design", or "Artwork" → ALWAYS set duration=1.
 - 🔴 FINAL VALIDATION BEFORE GENERATING QUOTE:
   * STEP 1: Check EVERY line item description
   * STEP 2: Ask yourself: "Does this description start with the FULL service type name?"
