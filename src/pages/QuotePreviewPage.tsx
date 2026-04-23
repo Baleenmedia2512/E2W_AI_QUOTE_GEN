@@ -104,6 +104,8 @@ export const QuotePreviewPage: React.FC = () => {
   // Auto-load images from cloud if not available locally (NEW FEATURE)
   useEffect(() => {
     const autoLoadImagesFromCloud = async () => {
+      // Reference image auto-load disabled
+      return;
       console.log('🔍 Auto-load check:', { 
         pageImagesLength: pageImages.length, 
         autoLoadAttempted, 
