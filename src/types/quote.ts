@@ -3,7 +3,8 @@ export interface LineItem {
   description: string;
   quantity: number;
   unitPrice: number;
-  duration?: number; // Duration in months for recurring/per-month pricing
+  duration?: number; // Duration value (months or days)
+  durationUnit?: 'months' | 'days'; // Unit for duration field
   total: number;
 }
 
@@ -13,7 +14,8 @@ export interface QuoteItem {
   details?: string;
   quantity: number;
   rate: number;
-  duration?: number; // Duration in months for recurring/per-month pricing
+  duration?: number; // Duration value (months or days)
+  durationUnit?: 'months' | 'days'; // Unit for duration field
   total: number;
   // Legacy fields for backward compatibility
   title?: string;

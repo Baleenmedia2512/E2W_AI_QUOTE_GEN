@@ -188,6 +188,7 @@ const ChatInterface: React.FC = () => {
         // MULTIPLE_MATCH
         isMultipleMatch: response.isMultipleMatch,
         groupedServices: response.groupedServices,
+        originalUserInput: userMessage.content, // Preserve original input to carry forward duration/days
         
         // PARTIAL_MATCH
         isPartialMatch: response.isPartialMatch,
@@ -303,6 +304,7 @@ const ChatInterface: React.FC = () => {
               .trim();
             
             const duration = item.duration && item.duration > 1 ? item.duration : undefined;
+            const durationUnit: 'months' | 'days' | undefined = item.durationUnit || (duration ? 'months' : undefined);
             return {
               id: `${sectionIndex}-${lineIndex}`,
               title: specificTitle, // Store specific service title for T&C display
@@ -310,6 +312,7 @@ const ChatInterface: React.FC = () => {
               quantity: item.quantity || 1,
               rate: item.unitPrice || 0,
               duration: duration,
+              durationUnit: durationUnit,
               total: (item.quantity || 1) * (item.unitPrice || 0) * (duration || 1),
               // Only store terms on the first line item of each section to avoid duplicate textareas
               // For rate card images, clear per-item terms; for proposals, keep them
@@ -483,8 +486,16 @@ const ChatInterface: React.FC = () => {
 
     if (parts.length === 0) return;
 
-    // 🔧 IMPROVED FORMAT: Make it clear these are full service specifications
-    const combinedRequest = `Generate quote for ${parts.join(' and ')} [User has already specified complete service names from checkboxes]`;
+    // Extract duration info from original user message (e.g. "15 days", "3 months", "12 days")
+    // Find the assistant message to get its stored originalUserInput
+    const assistantMsg = messages.find(m => m.id === messageId);
+    const originalUserMsg = assistantMsg?.originalUserInput || '';
+    // Extract duration phrase: "15 days", "3 months", "6 months", "12 days" etc.
+    const durationMatch = originalUserMsg.match(/(\d+)\s*(days?|months?)/i);
+    const durationSuffix = durationMatch ? ` for ${durationMatch[0]}` : '';
+
+    // 🔧 IMPROVED FORMAT: Make it clear these are full service specifications, preserve duration
+    const combinedRequest = `Generate quote for ${parts.join(' and ')}${durationSuffix} [User has already specified complete service names from checkboxes]`;
     console.log('🔧 Combined request with full specifications:', combinedRequest);
     
     setInputValue(combinedRequest);

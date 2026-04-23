@@ -176,21 +176,31 @@
 }
 
 .template-corporate-minimal .items-table .col-description {
-  width: 46%;
+  width: 34%;
 }
 
 .template-corporate-minimal .items-table .col-quantity {
-  width: 14%;
+  width: 8%;
   text-align: center;
 }
 
 .template-corporate-minimal .items-table .col-rate {
-  width: 20%;
+  width: 12%;
   text-align: right;
 }
 
 .template-corporate-minimal .items-table .col-total {
-  width: 20%;
+  width: 13%;
+  text-align: right;
+}
+
+.template-corporate-minimal .items-table .col-gst {
+  width: 12%;
+  text-align: right;
+}
+
+.template-corporate-minimal .items-table .col-final {
+  width: 15%;
   text-align: right;
 }
 
@@ -247,6 +257,30 @@
 .template-corporate-minimal .item-total {
   font-weight: 600;
   color: #1a3a5c;
+}
+
+/* GST and Final Amount — rowspan merged cells, vertically centered, no inner borders */
+.template-corporate-minimal .item-gst,
+.template-corporate-minimal .item-final {
+  text-align: right;
+  vertical-align: middle;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  border-left: 1px solid #e8ecf1;
+  border-top: none;
+  border-bottom: none;
+  background: #f0f6ff;
+}
+
+.template-corporate-minimal .item-gst {
+  color: #c0392b;
+  font-size: 13px;
+}
+
+.template-corporate-minimal .item-final {
+  color: #1a3a5c;
+  font-size: 13.5px;
+  background: #e8f0fb;
 }
 
 /* ─── Totals Section ─── */

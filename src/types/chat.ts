@@ -26,6 +26,7 @@ export interface Message {
   // MULTIPLE_MATCH
   isMultipleMatch?: boolean;
   groupedServices?: GroupedServices[];
+  originalUserInput?: string; // Stores original user message to preserve duration/days info
   
   // PARTIAL_MATCH
   isPartialMatch?: boolean;
