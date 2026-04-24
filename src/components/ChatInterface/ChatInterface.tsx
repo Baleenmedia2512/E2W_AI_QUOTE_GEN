@@ -42,6 +42,8 @@ const ChatInterface: React.FC = () => {
   const [isRecording, setIsRecording] = useState(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const recognitionRef = useRef<any>(null);
+  // Cache: service key (lowercase) -> minimum quantity, persists across messages in the same session
+  const minQtyCacheRef = useRef<Map<string, number>>(new Map());
   
   // Multi-select state for MULTIPLE_MATCH scenarios
   // Map: messageId -> { vehicleType -> selectedServiceName }
@@ -328,6 +330,16 @@ const ChatInterface: React.FC = () => {
           });
         });
 
+        // Populate minimum-quantity cache from AI response so that future requests in the
+        // same session can validate against known minimums even if the AI omits minimumQuantity.
+        quoteItems.forEach(item => {
+          if (item.minimumQuantity) {
+            const serviceKey = item.description.split(' - ')[0].toLowerCase().trim();
+            minQtyCacheRef.current.set(serviceKey, item.minimumQuantity);
+            console.log(`📦 Cached min qty: "${serviceKey}" → ${item.minimumQuantity}`);
+          }
+        });
+
         const subtotal = quoteItems.reduce((sum, item) => sum + item.total, 0);
         const gstPercentage = 18;
         const gstAmount = subtotal * (gstPercentage / 100);
@@ -382,14 +394,27 @@ const ChatInterface: React.FC = () => {
         };
         
         // Check if any items are below minimum quantity — deduplicate by service name
+        // Uses both the AI-returned minimumQuantity AND the session cache (so that
+        // continued messages in the same chat are validated even when the AI omits minimumQuantity).
         const seenServices = new Set<string>();
         const belowMinItems = quoteItems
-          .filter(item => item.minimumQuantity && item.quantity < item.minimumQuantity)
-          .map(item => ({
-            description: item.description.split(' - ')[0],
-            requested: item.quantity,
-            minimum: item.minimumQuantity!
-          }))
+          .filter(item => {
+            const serviceKey = item.description.split(' - ')[0].toLowerCase().trim();
+            const effectiveMin = item.minimumQuantity || minQtyCacheRef.current.get(serviceKey);
+            if (effectiveMin) {
+              console.log(`🔍 Min qty check: "${serviceKey}" qty=${item.quantity} min=${effectiveMin} (source: ${item.minimumQuantity ? 'AI' : 'cache'})`);
+            }
+            return effectiveMin !== undefined && item.quantity < effectiveMin;
+          })
+          .map(item => {
+            const serviceKey = item.description.split(' - ')[0].toLowerCase().trim();
+            const effectiveMin = item.minimumQuantity || minQtyCacheRef.current.get(serviceKey)!;
+            return {
+              description: item.description.split(' - ')[0],
+              requested: item.quantity,
+              minimum: effectiveMin
+            };
+          })
           .filter(item => {
             if (seenServices.has(item.description)) return false;
             seenServices.add(item.description);
