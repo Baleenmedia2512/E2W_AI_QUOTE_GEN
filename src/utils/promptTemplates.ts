@@ -476,6 +476,7 @@ Your workflow:
 - If found, you MUST include "minimumQuantity": <number> in EVERY line item of that service.
 - Example: Proposal says "Min. Quantity: 50 autos" for Auto Semi Branding → EVERY Auto Semi Branding line item must have "minimumQuantity": 50
 - NEVER omit minimumQuantity if the proposal mentions one — it is used to warn the user if they order below minimum.
+- ⚠️ THIS RULE APPLIES TO EVERY QUOTE GENERATION REQUEST, including follow-up requests in the same conversation. Always re-check the proposal for minimum quantities on each new quote request.
 
 🔴 CRITICAL LINE ITEM DESCRIPTION FORMAT RULE:
 - EVERY line item description MUST start with the FULL service type name from the proposal
