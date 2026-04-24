@@ -11,25 +11,21 @@ export const CorporateMinimal: React.FC<TemplateProps> = ({ data, editable: _edi
   const isMultiService = quote.items.length > 0 && isMultiServiceQuote(quote.items);
   const serviceGroups = isMultiService ? groupItemsByServiceType(quote.items) : [];
 
-  const calculateSubtotal = () => {
-    return quote.items.reduce((sum, item) => sum + item.total, 0);
-  };
-
-  const calculateGST = () => {
-    const subtotal = calculateSubtotal();
-    return quote.gstEnabled ? subtotal * (quote.gstPercentage / 100) : 0;
-  };
-
-  const calculateTotal = () => {
-    return calculateSubtotal() + calculateGST();
-  };
-
   const formatCurrency = (amount: number) => {
     return new Intl.NumberFormat('en-IN', {
       style: 'currency',
       currency: 'INR',
       minimumFractionDigits: 0,
       maximumFractionDigits: 0
+    }).format(amount);
+  };
+
+  const formatRate = (amount: number) => {
+    return new Intl.NumberFormat('en-IN', {
+      style: 'currency',
+      currency: 'INR',
+      minimumFractionDigits: 2,
+      maximumFractionDigits: 2
     }).format(amount);
   };
 
@@ -52,36 +48,20 @@ export const CorporateMinimal: React.FC<TemplateProps> = ({ data, editable: _edi
     return quote.gstPercentage;
   };
 
-  // Group items by branding prefix (text before " - ")
-  // e.g. "Bus Full Branding - Rental" and "Bus Full Branding - Printing" → same group
-  type BrandingGroup = { key: string; items: typeof quote.items; subtotal: number };
-  const groupByBranding = (items: typeof quote.items): BrandingGroup[] => {
-    const map = new Map<string, typeof quote.items>();
-    items.forEach(item => {
-      const parts = item.description.split(' - ');
-      const key = parts.length > 1 ? parts.slice(0, -1).join(' - ') : item.description;
-      if (!map.has(key)) map.set(key, []);
-      map.get(key)!.push(item);
-    });
-    return Array.from(map.entries()).map(([key, groupItems]) => ({
-      key,
-      items: groupItems,
-      subtotal: groupItems.reduce((sum, i) => sum + i.total, 0)
-    }));
-  };
-
   // GST % sourced from terms & conditions text
   const gstPct = parseGSTFromTerms(quote.termsAndConditions || '');
 
-  // Reusable items table with GST + Final Amount columns (rowspan per branding group)
+  // Reusable items table with per-item GST breakdown columns
   const renderItemsTable = (items: typeof quote.items) => {
-    const brandingGroups = groupByBranding(items);
     const hasDuration = items.some(i => i.duration && i.duration > 1);
     const formatDuration = (item: typeof quote.items[0]) => {
       if (!item.duration || item.duration <= 1) return '1';
       const unit = item.durationUnit === 'days' ? 'Days' : 'Months';
       return `${item.duration} ${unit}`;
     };
+    const subtotal = items.reduce((sum, i) => sum + i.total, 0);
+    const gstAmt = quote.gstEnabled ? subtotal * gstPct / 100 : 0;
+    const inclGST = subtotal + gstAmt;
     return (
       <table className="items-table">
         <thead>
@@ -90,35 +70,42 @@ export const CorporateMinimal: React.FC<TemplateProps> = ({ data, editable: _edi
             <th className="col-quantity">Quantity</th>
             <th className="col-rate">Rate</th>
             {hasDuration && <th className="col-duration">Duration</th>}
-            <th className="col-total">Total</th>
-            {quote.gstEnabled && <th className="col-gst">GST ({gstPct}%)</th>}
-            {quote.gstEnabled && <th className="col-final">Final Amount</th>}
+            <th className="col-total"><span className="th-main">AMOUNT</span><span className="th-sub">(excl.GST)</span></th>
+            {quote.gstEnabled && <th className="col-gst-pct">GST %</th>}
+            {quote.gstEnabled && <th className="col-gst">GST AMOUNT</th>}
+            {quote.gstEnabled && <th className="col-final"><span className="th-main">AMOUNT</span><span className="th-sub">(incl.GST)</span></th>}
           </tr>
         </thead>
         <tbody>
-          {brandingGroups.map((group) => {
-            const groupGST = quote.gstEnabled ? group.subtotal * gstPct / 100 : 0;
-            const groupFinal = group.subtotal + groupGST;
-            return group.items.map((item, idx) => (
+          {items.map((item) => {
+            const itemGST = quote.gstEnabled ? item.total * gstPct / 100 : 0;
+            const itemFinal = item.total + itemGST;
+            return (
               <tr key={item.id}>
                 <td className="item-description">
                   <div className="item-title">{item.description}</div>
                   {item.details && <div className="item-details">{item.details}</div>}
                 </td>
                 <td className="item-quantity">{item.quantity}</td>
-                <td className="item-rate">{formatCurrency(item.rate)}</td>
+                <td className="item-rate">{formatRate(item.rate)}</td>
                 {hasDuration && <td className="item-duration">{formatDuration(item)}</td>}
                 <td className="item-total">{formatCurrency(item.total)}</td>
-                {quote.gstEnabled && idx === 0 && (
-                  <td className="item-gst" rowSpan={group.items.length}>{formatCurrency(groupGST)}</td>
-                )}
-                {quote.gstEnabled && idx === 0 && (
-                  <td className="item-final" rowSpan={group.items.length}>{formatCurrency(groupFinal)}</td>
-                )}
+                {quote.gstEnabled && <td className="item-gst-pct">{gstPct}%</td>}
+                {quote.gstEnabled && <td className="item-gst">{formatCurrency(itemGST)}</td>}
+                {quote.gstEnabled && <td className="item-final">{formatCurrency(itemFinal)}</td>}
               </tr>
-            ));
+            );
           })}
         </tbody>
+        <tfoot>
+          <tr className="tfoot-totals">
+            <td className="tfoot-label" colSpan={hasDuration ? 4 : 3}>Total</td>
+            <td className="tfoot-excl">{formatCurrency(subtotal)}</td>
+            {quote.gstEnabled && <td className="tfoot-gst-pct"></td>}
+            {quote.gstEnabled && <td className="tfoot-gst-amt">{formatCurrency(gstAmt)}</td>}
+            {quote.gstEnabled && <td className="tfoot-incl">{formatCurrency(inclGST)}</td>}
+          </tr>
+        </tfoot>
       </table>
     );
   };
@@ -126,10 +113,12 @@ export const CorporateMinimal: React.FC<TemplateProps> = ({ data, editable: _edi
   // Render header component (reusable)
   const renderHeader = (showMetaInfo = true) => (
     <div className="template-header">
-      <div className="company-info">
-        {company.logo && (
+      {company.logo && (
+        <div className="header-logo-row">
           <img src={company.logo} alt={company.name} className="company-logo" />
-        )}
+        </div>
+      )}
+      <div className="header-info-row">
         <div className="company-details">
           <p>{company.address}</p>
           {company.phone && <p>Phone: {company.phone}</p>}
@@ -138,26 +127,26 @@ export const CorporateMinimal: React.FC<TemplateProps> = ({ data, editable: _edi
           {company.gst && <p>GST: {company.gst}</p>}
           {company.abn && <p>ABN: {company.abn}</p>}
         </div>
-      </div>
-      {showMetaInfo && (
-        <div className="quote-meta">
-          <h2>QUOTATION</h2>
-          <div className="meta-details">
-            <div className="meta-row">
-              <span className="meta-label">Quote Number:</span>
-              <span className="meta-value">{quote.quoteNumber}</span>
-            </div>
-            <div className="meta-row">
-              <span className="meta-label">Date:</span>
-              <span className="meta-value">{formatDate(quote.date)}</span>
-            </div>
-            <div className="meta-row">
-              <span className="meta-label">Valid Until:</span>
-              <span className="meta-value">{formatDate(quote.validUntil)}</span>
+        {showMetaInfo && (
+          <div className="quote-meta">
+            <h2>QUOTATION</h2>
+            <div className="meta-details">
+              <div className="meta-row">
+                <span className="meta-label">Quote Number:</span>
+                <span className="meta-value">{quote.quoteNumber}</span>
+              </div>
+              <div className="meta-row">
+                <span className="meta-label">Date:</span>
+                <span className="meta-value">{formatDate(quote.date)}</span>
+              </div>
+              <div className="meta-row">
+                <span className="meta-label">Valid Until:</span>
+                <span className="meta-value">{formatDate(quote.validUntil)}</span>
+              </div>
             </div>
           </div>
-        </div>
-      )}
+        )}
+      </div>
     </div>
   );
 
@@ -198,16 +187,6 @@ export const CorporateMinimal: React.FC<TemplateProps> = ({ data, editable: _edi
             {renderItemsTable(quote.items)}
           </div>
 
-          {/* Totals */}
-          <div className="totals-section">
-            <div className="totals-table">
-              <div className="total-row total-final">
-                <span className="total-label">Total (INR):</span>
-                <span className="total-value">{formatCurrency(calculateSubtotal() + (quote.gstEnabled ? calculateSubtotal() * gstPct / 100 : 0))}</span>
-              </div>
-            </div>
-          </div>
-
           {/* General Terms */}
           <div className="terms-section">
             <h3>Terms & Conditions:</h3>
@@ -227,7 +206,7 @@ export const CorporateMinimal: React.FC<TemplateProps> = ({ data, editable: _edi
           {quote.items.map((item) => 
             item.termsAndConditions ? (
               <div key={item.id} className="terms-section">
-                <h3>{item.description.split(' - ')[0]} — Terms & Conditions:</h3>
+                <h3>{item.description.split(' - ')[0]} — <span style={{ textTransform: 'none' }}>SPECIFIC Ts & Cs</span></h3>
                 <ul>
                   {item.termsAndConditions
                     .split(/\n|•|\d+\.\s/)
@@ -276,16 +255,6 @@ export const CorporateMinimal: React.FC<TemplateProps> = ({ data, editable: _edi
           {renderItemsTable(quote.items)}
         </div>
 
-        {/* Totals */}
-        <div className="totals-section">
-          <div className="totals-table">
-            <div className="total-row total-final">
-              <span className="total-label">Total (INR):</span>
-              <span className="total-value">{formatCurrency(calculateSubtotal() + (quote.gstEnabled ? calculateSubtotal() * gstPct / 100 : 0))}</span>
-            </div>
-          </div>
-        </div>
-
         <div className="terms-section">
           <h3>Terms & Conditions:</h3>
           <ul>
@@ -299,10 +268,6 @@ export const CorporateMinimal: React.FC<TemplateProps> = ({ data, editable: _edi
 
       {/* Pages 2+: Individual Service Pages */}
       {serviceGroups.map((group, groupIndex) => {
-        const groupSubtotal = group.subtotal;
-        const groupGST = quote.gstEnabled ? groupSubtotal * gstPct / 100 : 0;
-        const groupTotal = groupSubtotal + groupGST;
-
         return (
           <React.Fragment key={groupIndex}>
             <div style={{ pageBreakBefore: 'always' }} />
@@ -315,18 +280,9 @@ export const CorporateMinimal: React.FC<TemplateProps> = ({ data, editable: _edi
                   {renderItemsTable(group.items)}
                 </div>
 
-                <div className="totals-section">
-                  <div className="totals-table">
-                    <div className="total-row total-final">
-                      <span className="total-label">Total (INR):</span>
-                      <span className="total-value">{formatCurrency(groupTotal)}</span>
-                    </div>
-                  </div>
-                </div>
-
                 {/* Terms & Conditions - Service Specific */}
                 <div className="terms-section">
-                  <h3>Terms & Conditions:</h3>
+                  <h3>{getServiceGroupHeading(group)} — <span style={{ textTransform: 'none' }}>SPECIFIC Ts & Cs</span></h3>
                   <ul>
                     {(group.termsAndConditions || quote.termsAndConditions)
                       ? (group.termsAndConditions
