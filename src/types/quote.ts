@@ -17,6 +17,7 @@ export interface QuoteItem {
   duration?: number; // Duration value (months or days)
   durationUnit?: 'months' | 'days'; // Unit for duration field
   total: number;
+  minimumQuantity?: number; // Minimum order quantity from proposal
   // Legacy fields for backward compatibility
   title?: string;
   lineItems?: LineItem[];

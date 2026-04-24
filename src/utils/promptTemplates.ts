@@ -11,7 +11,8 @@ Analyze the conversation and determine if the user wants to generate a quote. If
           "description": "Item description",
           "quantity": 1,
           "unitPrice": 0,
-          "duration": 1
+          "duration": 1,
+          "minimumQuantity": 10
         }
       ]
     }
@@ -21,6 +22,7 @@ Analyze the conversation and determine if the user wants to generate a quote. If
 }
 
 IMPORTANT: When prices are per-month and user requests multiple months, include "duration" field with the number of months AND "durationUnit": "months". When prices are per-day and user requests multiple days, include "duration" field with the number of days AND "durationUnit": "days". Total = quantity × unitPrice × duration.
+If the proposal mentions a minimum quantity for a service (e.g., "Min. Quantity: 10 buses"), include it as "minimumQuantity" in the line item JSON. If no minimum is mentioned, omit the field.
 
 If the user is asking a general question, provide a helpful answer without generating a quote structure.`;
 
@@ -455,7 +457,8 @@ Your workflow:
           "quantity": <number from user request or proposal>,
           "unitPrice": <price from proposal or standard rate>,
           "duration": <number of months/days if applicable, omit or set to 1 for one-time pricing>,
-          "durationUnit": <"months" for per-month rates | "days" for per-day rates | omit for one-time>
+          "durationUnit": <"months" for per-month rates | "days" for per-day rates | omit for one-time>,
+          "minimumQuantity": <minimum order quantity from proposal if stated, e.g. 10, 50 — omit if not mentioned>
         }
       ],
       "termsAndConditions": "MANDATORY: For SINGLE-SERVICE quotes (only 1 item in array), this MUST be empty string: \"\". For MULTI-SERVICE quotes: service-specific terms only."
@@ -466,6 +469,13 @@ Your workflow:
   "notes": "Any assumptions made based on proposal analysis"
 }
 \`\`\`
+
+🔴 CRITICAL MINIMUM QUANTITY RULE:
+- When generating a quote, ALWAYS scan the proposal for minimum quantity requirements for the requested service.
+- Minimum quantity may appear as: "Min. Quantity: 10 buses", "Minimum 50 autos", "Min. 10", "minimum quantity of 50", a table column named "Min Qty", or similar.
+- If found, you MUST include "minimumQuantity": <number> in EVERY line item of that service.
+- Example: Proposal says "Min. Quantity: 50 autos" for Auto Semi Branding → EVERY Auto Semi Branding line item must have "minimumQuantity": 50
+- NEVER omit minimumQuantity if the proposal mentions one — it is used to warn the user if they order below minimum.
 
 🔴 CRITICAL LINE ITEM DESCRIPTION FORMAT RULE:
 - EVERY line item description MUST start with the FULL service type name from the proposal
@@ -815,7 +825,7 @@ RULES:
   * ALWAYS preserve the EXACT pricing period from the proposal. If the proposal says "per bus month" or "per auto per month", the description MUST include "per month" or "per bus per month". If it says "per Bus" (one-time), keep it as "per Bus". NEVER change the pricing period.
   * If the proposal has separate categories like "Display Price (Rental)" and "Printing & Fixing Price", keep them as separate line items with their EXACT names from the proposal.
   * Include the pricing unit exactly as stated: "per bus per month", "per auto", "per sq ft", "per Bus" etc.
-  * If there is a minimum quantity mentioned in the proposal (e.g., "Min. Quantity: 10 buses"), include that in the notes.
+  * If there is a minimum quantity mentioned in the proposal (e.g., "Min. Quantity: 10 buses"), include it as "minimumQuantity" field in the line item JSON (NOT in notes). This will be used to warn the user if they order below minimum.
   * For monthly/recurring prices, the description must clearly state it is a monthly rate. For one-time prices, keep as-is.
   * Double-check: Before outputting, verify each unitPrice matches the EXACT number in the specific proposal section for the requested service type.
   * COMMON MISTAKE TO AVOID: The proposal often shows prices in a table with columns like "DISPLAY PRICE" and "PRINTING & FIXING PRICE" and "GRAND TOTAL". The GRAND TOTAL is the sum of both columns for the minimum quantity - do NOT use the grand total or any derived/calculated number as a unit price. Use ONLY the individual per-unit prices from each column. For example, if Display is ₹14,000 per Bus and Printing is ₹5,000 per Bus, the unitPrices should be 14000 and 5000 respectively - NOT 19000 (which is their sum).
