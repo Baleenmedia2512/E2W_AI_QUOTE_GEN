@@ -124,47 +124,46 @@ export const PremiumAgency: React.FC<TemplateProps> = ({ data, editable: _editab
                 {quote.items.some(i => i.duration && i.duration > 1) && (
                   <th className="pa-col-dur">Months</th>
                 )}
-                <th className="pa-col-amt">Amount</th>
+                <th className="pa-col-amt"><span className="th-main">AMOUNT</span><span className="th-sub">(excl GST)</span></th>
+                {quote.gstEnabled && <th className="pa-col-gst-pct">GST %</th>}
+                {quote.gstEnabled && <th className="pa-col-gst-amt">GST AMOUNT</th>}
+                {quote.gstEnabled && <th className="pa-col-incl"><span className="th-main">AMOUNT</span><span className="th-sub">(incl GST)</span></th>}
               </tr>
             </thead>
             <tbody>
-              {quote.items.map((item, index) => (
-                <tr key={index}>
-                  <td className="pa-cell-num">{String(index + 1).padStart(2, '0')}</td>
-                  <td className="pa-cell-desc">
-                    <strong>{item.description}</strong>
-                    {item.details && <div className="pa-item-details">{item.details}</div>}
-                  </td>
-                  <td className="pa-cell-qty">{item.quantity}</td>
-                  <td className="pa-cell-rate">{formatCurrency(item.rate)}</td>
-                  {quote.items.some(i => i.duration && i.duration > 1) && (
-                    <td className="pa-cell-dur">{item.duration || 1}</td>
-                  )}
-                  <td className="pa-cell-amt">{formatCurrency(item.total)}</td>
-                </tr>
-              ))}
+              {quote.items.map((item, index) => {
+                const itemGST = quote.gstEnabled ? item.total * (quote.gstPercentage / 100) : 0;
+                const itemFinal = item.total + itemGST;
+                return (
+                  <tr key={index}>
+                    <td className="pa-cell-num">{String(index + 1).padStart(2, '0')}</td>
+                    <td className="pa-cell-desc">
+                      <strong>{item.description}</strong>
+                      {item.details && <div className="pa-item-details">{item.details}</div>}
+                    </td>
+                    <td className="pa-cell-qty">{item.quantity}</td>
+                    <td className="pa-cell-rate">{formatCurrency(item.rate)}</td>
+                    {quote.items.some(i => i.duration && i.duration > 1) && (
+                      <td className="pa-cell-dur">{item.duration || 1}</td>
+                    )}
+                    <td className="pa-cell-amt">{formatCurrency(item.total)}</td>
+                    {quote.gstEnabled && <td className="pa-cell-gst-pct">{quote.gstPercentage}%</td>}
+                    {quote.gstEnabled && <td className="pa-cell-gst-amt">{formatCurrency(itemGST)}</td>}
+                    {quote.gstEnabled && <td className="pa-cell-incl">{formatCurrency(itemFinal)}</td>}
+                  </tr>
+                );
+              })}
             </tbody>
+            <tfoot>
+              <tr className="tfoot-totals">
+                <td className="tfoot-label" colSpan={quote.items.some(i => i.duration && i.duration > 1) ? 5 : 4}>Total</td>
+                <td className="tfoot-excl">{formatCurrency(calculateSubtotal())}</td>
+                {quote.gstEnabled && <td className="tfoot-gst-pct"></td>}
+                {quote.gstEnabled && <td className="tfoot-gst-amt">{formatCurrency(calculateGST())}</td>}
+                {quote.gstEnabled && <td className="tfoot-incl">{formatCurrency(calculateTotal())}</td>}
+              </tr>
+            </tfoot>
           </table>
-        </div>
-
-        {/* Summary */}
-        <div className="pa-summary">
-          <div className="pa-summary-card">
-            <div className="pa-summary-row">
-              <span>Subtotal</span>
-              <span>{formatCurrency(calculateSubtotal())}</span>
-            </div>
-            {quote.gstEnabled && (
-              <div className="pa-summary-row">
-                <span>GST ({quote.gstPercentage}%)</span>
-                <span>{formatCurrency(calculateGST())}</span>
-              </div>
-            )}
-            <div className="pa-summary-row pa-summary-total">
-              <span>Total Investment</span>
-              <span>{formatCurrency(calculateTotal())}</span>
-            </div>
-          </div>
         </div>
 
         {/* General Terms */}
@@ -259,44 +258,43 @@ export const PremiumAgency: React.FC<TemplateProps> = ({ data, editable: _editab
                       <th className="pa-col-desc">Description</th>
                       <th className="pa-col-qty">Qty</th>
                       <th className="pa-col-rate">Rate</th>
-                      <th className="pa-col-amt">Amount</th>
+                      <th className="pa-col-amt"><span className="th-main">AMOUNT</span><span className="th-sub">(excl GST)</span></th>
+                      {quote.gstEnabled && <th className="pa-col-gst-pct">GST %</th>}
+                      {quote.gstEnabled && <th className="pa-col-gst-amt">GST AMOUNT</th>}
+                      {quote.gstEnabled && <th className="pa-col-incl"><span className="th-main">AMOUNT</span><span className="th-sub">(incl GST)</span></th>}
                     </tr>
                   </thead>
                   <tbody>
-                    {group.items.map((item, index) => (
-                      <tr key={index}>
-                        <td className="pa-cell-num">{String(index + 1).padStart(2, '0')}</td>
-                        <td className="pa-cell-desc">
-                          <strong>{item.description}</strong>
-                          {item.details && <div className="pa-item-details">{item.details}</div>}
-                        </td>
-                        <td className="pa-cell-qty">{item.quantity}</td>
-                        <td className="pa-cell-rate">{formatCurrency(item.rate)}</td>
-                        <td className="pa-cell-amt">{formatCurrency(item.total)}</td>
-                      </tr>
-                    ))}
+                    {group.items.map((item, index) => {
+                      const itemGST = quote.gstEnabled ? item.total * (quote.gstPercentage / 100) : 0;
+                      const itemFinal = item.total + itemGST;
+                      return (
+                        <tr key={index}>
+                          <td className="pa-cell-num">{String(index + 1).padStart(2, '0')}</td>
+                          <td className="pa-cell-desc">
+                            <strong>{item.description}</strong>
+                            {item.details && <div className="pa-item-details">{item.details}</div>}
+                          </td>
+                          <td className="pa-cell-qty">{item.quantity}</td>
+                          <td className="pa-cell-rate">{formatCurrency(item.rate)}</td>
+                          <td className="pa-cell-amt">{formatCurrency(item.total)}</td>
+                          {quote.gstEnabled && <td className="pa-cell-gst-pct">{quote.gstPercentage}%</td>}
+                          {quote.gstEnabled && <td className="pa-cell-gst-amt">{formatCurrency(itemGST)}</td>}
+                          {quote.gstEnabled && <td className="pa-cell-incl">{formatCurrency(itemFinal)}</td>}
+                        </tr>
+                      );
+                    })}
                   </tbody>
+                  <tfoot>
+                    <tr className="tfoot-totals">
+                      <td className="tfoot-label" colSpan={4}>Total</td>
+                      <td className="tfoot-excl">{formatCurrency(groupSubtotal)}</td>
+                      {quote.gstEnabled && <td className="tfoot-gst-pct"></td>}
+                      {quote.gstEnabled && <td className="tfoot-gst-amt">{formatCurrency(groupGST)}</td>}
+                      {quote.gstEnabled && <td className="tfoot-incl">{formatCurrency(groupTotal)}</td>}
+                    </tr>
+                  </tfoot>
                 </table>
-              </div>
-
-              {/* Summary */}
-              <div className="pa-summary">
-                <div className="pa-summary-card">
-                  <div className="pa-summary-row">
-                    <span>Subtotal</span>
-                    <span>{formatCurrency(groupSubtotal)}</span>
-                  </div>
-                  {quote.gstEnabled && (
-                    <div className="pa-summary-row">
-                      <span>GST ({quote.gstPercentage}%)</span>
-                      <span>{formatCurrency(groupGST)}</span>
-                    </div>
-                  )}
-                  <div className="pa-summary-row pa-summary-total">
-                    <span>Total</span>
-                    <span>{formatCurrency(groupTotal)}</span>
-                  </div>
-                </div>
               </div>
 
               {/* Terms */}

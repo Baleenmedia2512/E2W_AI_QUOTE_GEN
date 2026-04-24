@@ -253,6 +253,23 @@
   letter-spacing: 0.8px;
 }
 
+.template-premium-agency .pa-table thead th .th-main {
+  display: block;
+  font-size: 9px;
+  font-weight: 700;
+  letter-spacing: 0.8px;
+}
+
+.template-premium-agency .pa-table thead th .th-sub {
+  display: block;
+  font-size: 8px;
+  font-weight: 500;
+  opacity: 0.8;
+  letter-spacing: 0.3px;
+  margin-top: 2px;
+  text-transform: none;
+}
+
 .template-premium-agency .pa-col-num { width: 36px; text-align: center; }
 .template-premium-agency .pa-col-desc { width: auto; }
 .template-premium-agency .pa-col-qty { width: 48px; text-align: center; }
@@ -270,6 +287,41 @@
 
 .template-premium-agency .pa-table tbody tr:hover {
   background: #f5f0e8;
+}
+
+/* ─── Totals Footer Row ─── */
+.template-premium-agency .pa-table tfoot .tfoot-totals {
+  background: linear-gradient(135deg, #2c1810 0%, #4a2c1a 100%);
+  color: #ffffff;
+}
+.template-premium-agency .pa-table tfoot .tfoot-label {
+  padding: 10px 12px;
+  font-weight: 700;
+  font-size: 11px;
+  color: rgba(255,255,255,0.85);
+  text-transform: uppercase;
+  letter-spacing: 0.4px;
+  border-top: 2px solid #c8874e;
+}
+.template-premium-agency .pa-table tfoot .tfoot-excl,
+.template-premium-agency .pa-table tfoot .tfoot-gst-pct,
+.template-premium-agency .pa-table tfoot .tfoot-gst-amt {
+  padding: 10px 12px;
+  font-weight: 700;
+  font-size: 12px;
+  color: #ffffff;
+  text-align: right;
+  border-top: 2px solid #c8874e;
+}
+.template-premium-agency .pa-table tfoot .tfoot-incl {
+  padding: 8px 12px;
+  font-weight: 800;
+  font-size: 19px;
+  color: #f9c784;
+  text-align: right;
+  border-top: 2px solid #c8874e;
+  white-space: nowrap;
+  letter-spacing: 0.3px;
 }
 
 .template-premium-agency .pa-table td {

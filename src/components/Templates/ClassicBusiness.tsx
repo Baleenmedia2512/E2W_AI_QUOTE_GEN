@@ -142,50 +142,47 @@ export const ClassicBusiness: React.FC<TemplateProps> = ({ data, editable: _edit
                 {quote.items.some(i => i.duration && i.duration > 1) && (
                   <th className="col-duration">Months</th>
                 )}
-                <th className="col-amount">Amount</th>
+                <th className="col-amount"><span className="th-main">AMOUNT</span><span className="th-sub">(excl GST)</span></th>
+                {quote.gstEnabled && <th className="col-gst-pct">GST %</th>}
+                {quote.gstEnabled && <th className="col-gst-amt">GST AMOUNT</th>}
+                {quote.gstEnabled && <th className="col-incl"><span className="th-main">AMOUNT</span><span className="th-sub">(incl GST)</span></th>}
               </tr>
             </thead>
             <tbody>
-              {quote.items.map((item, index) => (
-                <tr key={index}>
-                  <td className="cell-num">{index + 1}</td>
-                  <td className="cell-description">
-                    <strong>{item.description}</strong>
-                    {item.details && (
-                      <div className="description-details">{item.details}</div>
+              {quote.items.map((item, index) => {
+                const itemGST = quote.gstEnabled ? item.total * (quote.gstPercentage / 100) : 0;
+                const itemFinal = item.total + itemGST;
+                return (
+                  <tr key={index}>
+                    <td className="cell-num">{index + 1}</td>
+                    <td className="cell-description">
+                      <strong>{item.description}</strong>
+                      {item.details && (
+                        <div className="description-details">{item.details}</div>
+                      )}
+                    </td>
+                    <td className="cell-qty">{item.quantity}</td>
+                    <td className="cell-rate">{formatCurrency(item.rate)}</td>
+                    {quote.items.some(i => i.duration && i.duration > 1) && (
+                      <td className="cell-duration">{item.duration || 1}</td>
                     )}
-                  </td>
-                  <td className="cell-qty">{item.quantity}</td>
-                  <td className="cell-rate">{formatCurrency(item.rate)}</td>
-                  {quote.items.some(i => i.duration && i.duration > 1) && (
-                    <td className="cell-duration">{item.duration || 1}</td>
-                  )}
-                  <td className="cell-amount">{formatCurrency(item.total)}</td>
-                </tr>
-              ))}
+                    <td className="cell-amount">{formatCurrency(item.total)}</td>
+                    {quote.gstEnabled && <td className="cell-gst-pct">{quote.gstPercentage}%</td>}
+                    {quote.gstEnabled && <td className="cell-gst-amt">{formatCurrency(itemGST)}</td>}
+                    {quote.gstEnabled && <td className="cell-incl">{formatCurrency(itemFinal)}</td>}
+                  </tr>
+                );
+              })}
             </tbody>
-          </table>
-        </div>
-
-        {/* Calculation Summary */}
-        <div className="calculation-section">
-          <table className="calculation-table">
-            <tbody>
-              <tr>
-                <td className="calc-label">Subtotal:</td>
-                <td className="calc-value">{formatCurrency(calculateSubtotal())}</td>
+            <tfoot>
+              <tr className="tfoot-totals">
+                <td className="tfoot-label" colSpan={quote.items.some(i => i.duration && i.duration > 1) ? 5 : 4}>Total</td>
+                <td className="tfoot-excl">{formatCurrency(calculateSubtotal())}</td>
+                {quote.gstEnabled && <td className="tfoot-gst-pct"></td>}
+                {quote.gstEnabled && <td className="tfoot-gst-amt">{formatCurrency(calculateGST())}</td>}
+                {quote.gstEnabled && <td className="tfoot-incl">{formatCurrency(calculateTotal())}</td>}
               </tr>
-              {quote.gstEnabled && (
-                <tr>
-                  <td className="calc-label">GST ({quote.gstPercentage}%):</td>
-                  <td className="calc-value">{formatCurrency(calculateGST())}</td>
-                </tr>
-              )}
-              <tr className="calc-total-row">
-                <td className="calc-label-total">TOTAL (INR):</td>
-                <td className="calc-value-total">{formatCurrency(calculateTotal())}</td>
-              </tr>
-            </tbody>
+            </tfoot>
           </table>
         </div>
 
@@ -270,46 +267,44 @@ export const ClassicBusiness: React.FC<TemplateProps> = ({ data, editable: _edit
                       <th className="col-description">Description</th>
                       <th className="col-qty">Qty</th>
                       <th className="col-rate">Unit Price</th>
-                      <th className="col-amount">Amount</th>
+                      <th className="col-amount"><span className="th-main">AMOUNT</span><span className="th-sub">(excl GST)</span></th>
+                      {quote.gstEnabled && <th className="col-gst-pct">GST %</th>}
+                      {quote.gstEnabled && <th className="col-gst-amt">GST AMOUNT</th>}
+                      {quote.gstEnabled && <th className="col-incl"><span className="th-main">AMOUNT</span><span className="th-sub">(incl GST)</span></th>}
                     </tr>
                   </thead>
                   <tbody>
-                    {group.items.map((item, index) => (
-                      <tr key={index}>
-                        <td className="cell-num">{index + 1}</td>
-                        <td className="cell-description">
-                          <strong>{item.description}</strong>
-                          {item.details && (
-                            <div className="description-details">{item.details}</div>
-                          )}
-                        </td>
-                        <td className="cell-qty">{item.quantity}</td>
-                        <td className="cell-rate">{formatCurrency(item.rate)}</td>
-                        <td className="cell-amount">{formatCurrency(item.total)}</td>
-                      </tr>
-                    ))}
+                    {group.items.map((item, index) => {
+                      const itemGST = quote.gstEnabled ? item.total * (quote.gstPercentage / 100) : 0;
+                      const itemFinal = item.total + itemGST;
+                      return (
+                        <tr key={index}>
+                          <td className="cell-num">{index + 1}</td>
+                          <td className="cell-description">
+                            <strong>{item.description}</strong>
+                            {item.details && (
+                              <div className="description-details">{item.details}</div>
+                            )}
+                          </td>
+                          <td className="cell-qty">{item.quantity}</td>
+                          <td className="cell-rate">{formatCurrency(item.rate)}</td>
+                          <td className="cell-amount">{formatCurrency(item.total)}</td>
+                          {quote.gstEnabled && <td className="cell-gst-pct">{quote.gstPercentage}%</td>}
+                          {quote.gstEnabled && <td className="cell-gst-amt">{formatCurrency(itemGST)}</td>}
+                          {quote.gstEnabled && <td className="cell-incl">{formatCurrency(itemFinal)}</td>}
+                        </tr>
+                      );
+                    })}
                   </tbody>
-                </table>
-              </div>
-
-              <div className="calculation-section">
-                <table className="calculation-table">
-                  <tbody>
-                    <tr>
-                      <td className="calc-label">Subtotal:</td>
-                      <td className="calc-value">{formatCurrency(groupSubtotal)}</td>
+                  <tfoot>
+                    <tr className="tfoot-totals">
+                      <td className="tfoot-label" colSpan={4}>Total</td>
+                      <td className="tfoot-excl">{formatCurrency(groupSubtotal)}</td>
+                      {quote.gstEnabled && <td className="tfoot-gst-pct"></td>}
+                      {quote.gstEnabled && <td className="tfoot-gst-amt">{formatCurrency(groupGST)}</td>}
+                      {quote.gstEnabled && <td className="tfoot-incl">{formatCurrency(groupTotal)}</td>}
                     </tr>
-                    {quote.gstEnabled && (
-                      <tr>
-                        <td className="calc-label">GST ({quote.gstPercentage}%):</td>
-                        <td className="calc-value">{formatCurrency(groupGST)}</td>
-                      </tr>
-                    )}
-                    <tr className="calc-total-row">
-                      <td className="calc-label-total">TOTAL (INR):</td>
-                      <td className="calc-value-total">{formatCurrency(groupTotal)}</td>
-                    </tr>
-                  </tbody>
+                  </tfoot>
                 </table>
               </div>
 
