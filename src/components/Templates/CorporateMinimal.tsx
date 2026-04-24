@@ -51,6 +51,10 @@ export const CorporateMinimal: React.FC<TemplateProps> = ({ data, editable: _edi
   // GST % sourced from terms & conditions text
   const gstPct = parseGSTFromTerms(quote.termsAndConditions || '');
 
+  // Filter out GST-related terms since GST is already shown in the table columns
+  const filterGSTTerms = (terms: string[]) =>
+    terms.filter(t => !/gst|tax\s*%|inclusive\s*of\s*(gst|tax)|exclusive\s*of\s*(gst|tax)|\+\s*gst|\d+\s*%\s*(gst|tax)/i.test(t));
+
   // Reusable items table with per-item GST breakdown columns
   const renderItemsTable = (items: typeof quote.items) => {
     const hasDuration = items.some(i => i.duration && i.duration > 1);
@@ -194,10 +198,10 @@ export const CorporateMinimal: React.FC<TemplateProps> = ({ data, editable: _edi
             <h3>Terms & Conditions:</h3>
             <ul>
               {quote.termsAndConditions
-                ? quote.termsAndConditions
+                ? filterGSTTerms(quote.termsAndConditions
                     .split(/\n|•|\d+\.\s/)
                     .map(t => t.trim())
-                    .filter(Boolean)
+                    .filter(Boolean))
                     .map((term, i) => <li key={i}>{term}</li>)
                 : <li>Standard terms and conditions apply</li>
               }
@@ -210,10 +214,10 @@ export const CorporateMinimal: React.FC<TemplateProps> = ({ data, editable: _edi
               <div key={item.id} className="terms-section">
                 <h3>{item.description.split(' - ')[0]} — <span style={{ textTransform: 'none' }}>SPECIFIC Ts & Cs</span></h3>
                 <ul>
-                  {item.termsAndConditions
+                  {filterGSTTerms(item.termsAndConditions
                     .split(/\n|•|\d+\.\s/)
                     .map(t => t.trim())
-                    .filter(Boolean)
+                    .filter(Boolean))
                     .map((term, i) => <li key={i}>{term}</li>)
                   }
                 </ul>
@@ -287,7 +291,7 @@ export const CorporateMinimal: React.FC<TemplateProps> = ({ data, editable: _edi
                   <h3>{getServiceGroupHeading(group)} — <span style={{ textTransform: 'none' }}>SPECIFIC Ts & Cs</span></h3>
                   <ul>
                     {(group.termsAndConditions || quote.termsAndConditions)
-                      ? (group.termsAndConditions
+                      ? filterGSTTerms(group.termsAndConditions
                           ? group.termsAndConditions.split('\n').map((t: string) => t.trim().replace(/^[•\-\*]\s*/, '').trim()).filter(Boolean)
                           : filterTermsByServiceType(quote.termsAndConditions, group.serviceType)
                         ).map((term, i) => <li key={i}>{term}</li>)
