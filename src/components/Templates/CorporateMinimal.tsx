@@ -63,6 +63,7 @@ export const CorporateMinimal: React.FC<TemplateProps> = ({ data, editable: _edi
     const gstAmt = quote.gstEnabled ? subtotal * gstPct / 100 : 0;
     const inclGST = subtotal + gstAmt;
     return (
+      <div className="table-scroll-wrap">
       <table className="items-table">
         <thead>
           <tr>
@@ -107,6 +108,7 @@ export const CorporateMinimal: React.FC<TemplateProps> = ({ data, editable: _edi
           </tr>
         </tfoot>
       </table>
+      </div>
     );
   };
 
