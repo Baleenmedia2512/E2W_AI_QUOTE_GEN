@@ -47,6 +47,12 @@ const ChatInterface: React.FC = () => {
   // Map: messageId -> { vehicleType -> selectedServiceName }
   const [selectedServices, setSelectedServices] = useState<Record<string, Record<string, string>>>({});
 
+  // Minimum quantity warning dialog state
+  const [minQtyWarning, setMinQtyWarning] = useState<{
+    items: Array<{ description: string; requested: number; minimum: number }>;
+    pendingQuote: Quote;
+  } | null>(null);
+
   // Helper function to detect if request contains full service names (prevents checkbox loops)
   const isFullySpecifiedRequest = (userRequest: string): boolean => {
     const request = userRequest.toLowerCase();
@@ -314,6 +320,7 @@ const ChatInterface: React.FC = () => {
               duration: duration,
               durationUnit: durationUnit,
               total: (item.quantity || 1) * (item.unitPrice || 0) * (duration || 1),
+              minimumQuantity: item.minimumQuantity || undefined,
               // Only store terms on the first line item of each section to avoid duplicate textareas
               // For rate card images, clear per-item terms; for proposals, keep them
               termsAndConditions: lineIndex === 0 ? (isRateCardImage ? undefined : (section.termsAndConditions || undefined)) : undefined
@@ -374,6 +381,28 @@ const ChatInterface: React.FC = () => {
           updatedAt: new Date()
         };
         
+        // Check if any items are below minimum quantity — deduplicate by service name
+        const seenServices = new Set<string>();
+        const belowMinItems = quoteItems
+          .filter(item => item.minimumQuantity && item.quantity < item.minimumQuantity)
+          .map(item => ({
+            description: item.description.split(' - ')[0],
+            requested: item.quantity,
+            minimum: item.minimumQuantity!
+          }))
+          .filter(item => {
+            if (seenServices.has(item.description)) return false;
+            seenServices.add(item.description);
+            return true;
+          });
+        
+        if (belowMinItems.length > 0) {
+          // Set quote but pause navigation — show warning dialog
+          setCurrentQuote(quote);
+          setMinQtyWarning({ items: belowMinItems, pendingQuote: quote });
+          return;
+        }
+
         setCurrentQuote(quote);
         
         // Show success message before navigating
@@ -408,6 +437,49 @@ const ChatInterface: React.FC = () => {
 
   const handleSuggestionClick = (suggestion: string) => {
     setInputValue(suggestion);
+  };
+
+  // Handle min qty warning: user chooses to continue with requested qty
+  const handleMinQtyContinue = () => {
+    if (!minQtyWarning) return;
+    setMinQtyWarning(null);
+    const quoteReadyMessage: Message = {
+      id: (Date.now() + 2).toString(),
+      role: 'assistant',
+      content: '✓ Quote generated successfully! Redirecting to quote preview...',
+      timestamp: new Date(),
+    };
+    setMessages(prev => [...prev, quoteReadyMessage]);
+    setTimeout(() => { history.push('/quote'); }, 1500);
+  };
+
+  // Handle min qty warning: user chooses to use minimum quantities
+  const handleMinQtyUseMinimum = () => {
+    if (!minQtyWarning) return;
+    const updatedQuote = { ...minQtyWarning.pendingQuote };
+    updatedQuote.items = updatedQuote.items.map(item => {
+      if (item.minimumQuantity && item.quantity < item.minimumQuantity) {
+        const newQty = item.minimumQuantity;
+        const duration = item.duration || 1;
+        return { ...item, quantity: newQty, total: newQty * item.rate * duration };
+      }
+      return item;
+    });
+    const newSubtotal = updatedQuote.items.reduce((sum, i) => sum + i.total, 0);
+    const newGst = newSubtotal * (updatedQuote.gstPercentage / 100);
+    updatedQuote.subtotal = newSubtotal;
+    updatedQuote.gstAmount = newGst;
+    updatedQuote.total = newSubtotal + newGst;
+    setCurrentQuote(updatedQuote);
+    setMinQtyWarning(null);
+    const quoteReadyMessage: Message = {
+      id: (Date.now() + 2).toString(),
+      role: 'assistant',
+      content: '✓ Quote generated with minimum quantities! Redirecting to quote preview...',
+      timestamp: new Date(),
+    };
+    setMessages(prev => [...prev, quoteReadyMessage]);
+    setTimeout(() => { history.push('/quote'); }, 1500);
   };
 
   // Handle clicking a service suggestion button (auto-sends as new message)
@@ -1577,6 +1649,65 @@ const ChatInterface: React.FC = () => {
           />
         </HStack>
       </VStack>
+
+      {/* Minimum Quantity Warning Dialog */}
+      {minQtyWarning && (
+        <Box
+          position="fixed"
+          top="0" left="0" right="0" bottom="0"
+          bg="rgba(0,0,0,0.55)"
+          zIndex={9999}
+          display="flex"
+          alignItems="center"
+          justifyContent="center"
+          px={4}
+        >
+          <Box
+            bg="white"
+            borderRadius="14px"
+            p={6}
+            maxW="420px"
+            w="100%"
+            boxShadow="0 8px 32px rgba(0,0,0,0.18)"
+          >
+            <Text fontSize="16px" fontWeight="700" color="#c0392b" mb={3}>
+              ⚠️ Below Minimum Quantity
+            </Text>
+            {minQtyWarning.items.map((item, i) => (
+              <Box key={i} mb={3} p={3} bg="#fff5f5" borderRadius="8px" borderLeft="3px solid #c0392b">
+                <Text fontSize="13px" fontWeight="600" color="#2d3436">{item.description}</Text>
+                <Text fontSize="12px" color="#636e72" mt={1}>
+                  Minimum: <b>{item.minimum}</b> units &nbsp;|&nbsp; You requested: <b>{item.requested}</b> units
+                </Text>
+              </Box>
+            ))}
+            <Text fontSize="12.5px" color="#636e72" mb={5}>
+              Would you like to continue with your requested quantity, or update to the minimum?
+            </Text>
+            <HStack spacing={3} justify="flex-end">
+              <Button
+                size="sm"
+                variant="outline"
+                borderColor="#c0392b"
+                color="#c0392b"
+                onClick={handleMinQtyContinue}
+                _hover={{ bg: '#fff5f5' }}
+              >
+                Continue with {minQtyWarning.items[0].requested}
+              </Button>
+              <Button
+                size="sm"
+                bg="#1a3a5c"
+                color="white"
+                onClick={handleMinQtyUseMinimum}
+                _hover={{ bg: '#1e4d78' }}
+              >
+                Use Minimum ({minQtyWarning.items[0].minimum})
+              </Button>
+            </HStack>
+          </Box>
+        </Box>
+      )}
     </Box>
   );
 };
