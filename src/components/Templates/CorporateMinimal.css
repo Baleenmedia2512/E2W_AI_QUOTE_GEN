@@ -880,6 +880,14 @@
   .template-corporate-minimal .item-rate {
     font-size: 10.5px;
   }
+}
+
+/* Clickable links — blue + underlined */
+.template-corporate-minimal a[href] {
+  color: #0066cc !important;
+  text-decoration: underline !important;
+  cursor: pointer;
+}
 
   .template-corporate-minimal .item-total {
     font-size: 11.5px;

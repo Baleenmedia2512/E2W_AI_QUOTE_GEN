@@ -498,6 +498,13 @@
   letter-spacing: 0.5px;
 }
 
+/* Clickable links — blue + underlined */
+.template-premium-agency a[href] {
+  color: #0066cc !important;
+  text-decoration: underline !important;
+  cursor: pointer;
+}
+
 /* ===== FOOTER ===== */
 .template-premium-agency .pa-footer {
   background: #ffffff;

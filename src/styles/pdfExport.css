@@ -3,6 +3,16 @@
  * Ensures consistent A4 rendering on all devices (mobile & desktop)
  */
 
+/* Clickable links in PDF templates — blue + underlined */
+#pdf-page-1 a[href],
+#pdf-page-2 a[href],
+#pdf-page-summary a[href],
+[id^="pdf-service-"] a[href] {
+  color: #0066cc !important;
+  text-decoration: underline !important;
+  cursor: pointer;
+}
+
 /* Force A4 dimensions for PDF sections */
 #pdf-page-1,
 #pdf-page-2,

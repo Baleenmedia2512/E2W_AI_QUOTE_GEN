@@ -568,6 +568,13 @@
   position: relative;
 }
 
+/* Clickable links — blue + underlined */
+.template-classic-business a[href] {
+  color: #0066cc !important;
+  text-decoration: underline !important;
+  cursor: pointer;
+}
+
 .template-classic-business .classic-footer::before {
   content: '';
   position: absolute;
