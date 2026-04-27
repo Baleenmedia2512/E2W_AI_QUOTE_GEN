@@ -6,7 +6,26 @@ import './PremiumAgency.css';
 
 export const PremiumAgency: React.FC<TemplateProps> = ({ data, editable: _editable = false, onDataChange: _onDataChange }) => {
   const { company, client, quote } = data;
-  
+
+  // Ensure website URL has a protocol
+  const ensureHttps = (url: string) => url.startsWith('http') ? url : `https://${url}`;
+
+  // Render a term string with any embedded URLs as clickable links
+  const renderTermWithLinks = (term: string): React.ReactNode => {
+    const urlPattern = /https?:\/\/[^\s]+/g;
+    const parts: React.ReactNode[] = [];
+    let lastIndex = 0;
+    let match;
+    urlPattern.lastIndex = 0;
+    while ((match = urlPattern.exec(term)) !== null) {
+      if (match.index > lastIndex) parts.push(term.slice(lastIndex, match.index));
+      parts.push(<a key={match.index} href={match[0]} style={{ color: 'inherit', textDecoration: 'none' }}>{match[0]}</a>);
+      lastIndex = urlPattern.lastIndex;
+    }
+    if (lastIndex < term.length) parts.push(term.slice(lastIndex));
+    return parts.length > 1 ? parts : term;
+  };
+
   // Check if this is a multi-service quote
   const isMultiService = quote.items.length > 0 && isMultiServiceQuote(quote.items);
   const serviceGroups = isMultiService ? groupItemsByServiceType(quote.items) : [];
@@ -47,7 +66,7 @@ export const PremiumAgency: React.FC<TemplateProps> = ({ data, editable: _editab
     <div className="company-contact-footer">
       <div className="footer-divider"></div>
       <div className="footer-content">
-        {company.website && <span className="footer-item">🌐 {company.website}</span>}
+        {company.website && <span className="footer-item">🌐 <a href={ensureHttps(company.website)} style={{ color: 'inherit', textDecoration: 'none' }}>{company.website}</a></span>}
         {company.address && <span className="footer-item">📍 {company.address}</span>}
       </div>
     </div>
@@ -95,17 +114,17 @@ export const PremiumAgency: React.FC<TemplateProps> = ({ data, editable: _editab
             <div className="pa-party-label">FROM</div>
             <p className="pa-party-name">{company.name}</p>
             <p className="pa-party-detail">{company.address}</p>
-            {company.phone && <p className="pa-party-detail">T: {company.phone}</p>}
-            {company.email && <p className="pa-party-detail">E: {company.email}</p>}
-            {company.website && <p className="pa-party-detail">W: {company.website}</p>}
+            {company.phone && <p className="pa-party-detail">T: <a href={`tel:${company.phone}`} style={{ color: 'inherit', textDecoration: 'none' }}>{company.phone}</a></p>}
+            {company.email && <p className="pa-party-detail">E: <a href={`mailto:${company.email}`} style={{ color: 'inherit', textDecoration: 'none' }}>{company.email}</a></p>}
+            {company.website && <p className="pa-party-detail">W: <a href={ensureHttps(company.website)} style={{ color: 'inherit', textDecoration: 'none' }}>{company.website}</a></p>}
             {company.gst && <p className="pa-party-detail">GST: {company.gst}</p>}
             {company.abn && <p className="pa-party-detail pa-abn">ABN: {company.abn}</p>}
           </div>
           <div className="pa-party-card pa-party-accent">
             <div className="pa-party-label">TO</div>
             <p className="pa-party-name">{(client.company || client.name).toUpperCase()}</p>
-            {client.email && <p className="pa-party-detail">E: {client.email}</p>}
-            {client.phone && <p className="pa-party-detail">T: {client.phone}</p>}
+            {client.email && <p className="pa-party-detail">E: <a href={`mailto:${client.email}`} style={{ color: 'inherit', textDecoration: 'none' }}>{client.email}</a></p>}
+            {client.phone && <p className="pa-party-detail">T: <a href={`tel:${client.phone}`} style={{ color: 'inherit', textDecoration: 'none' }}>{client.phone}</a></p>}
             {client.address && <p className="pa-party-detail">{client.address}</p>}
             {client.gst && <p className="pa-party-detail">GST: {client.gst}</p>}
           </div>
@@ -185,7 +204,7 @@ export const PremiumAgency: React.FC<TemplateProps> = ({ data, editable: _editab
                       .map((term, i) => (
                         <div className="pa-term-item" key={i}>
                           <span className="pa-term-check">&#10003;</span>
-                          <span>{term}</span>
+                          <span>{renderTermWithLinks(term)}</span>
                         </div>
                       ))
                   : <div className="pa-term-item"><span className="pa-term-check">&#10003;</span><span>Standard terms and conditions apply</span></div>
@@ -207,7 +226,7 @@ export const PremiumAgency: React.FC<TemplateProps> = ({ data, editable: _editab
                   .map((term, i) => (
                     <div className="pa-term-item" key={i}>
                       <span className="pa-term-check">&#10003;</span>
-                      <span>{term}</span>
+                      <span>{renderTermWithLinks(term)}</span>
                     </div>
                   ))
                 }

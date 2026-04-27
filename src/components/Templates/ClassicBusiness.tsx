@@ -6,7 +6,26 @@ import './ClassicBusiness.css';
 
 export const ClassicBusiness: React.FC<TemplateProps> = ({ data, editable: _editable = false, onDataChange: _onDataChange }) => {
   const { company, client, quote } = data;
-  
+
+  // Ensure website URL has a protocol
+  const ensureHttps = (url: string) => url.startsWith('http') ? url : `https://${url}`;
+
+  // Render a term string with any embedded URLs as clickable links
+  const renderTermWithLinks = (term: string): React.ReactNode => {
+    const urlPattern = /https?:\/\/[^\s]+/g;
+    const parts: React.ReactNode[] = [];
+    let lastIndex = 0;
+    let match;
+    urlPattern.lastIndex = 0;
+    while ((match = urlPattern.exec(term)) !== null) {
+      if (match.index > lastIndex) parts.push(term.slice(lastIndex, match.index));
+      parts.push(<a key={match.index} href={match[0]} style={{ color: 'inherit', textDecoration: 'none' }}>{match[0]}</a>);
+      lastIndex = urlPattern.lastIndex;
+    }
+    if (lastIndex < term.length) parts.push(term.slice(lastIndex));
+    return parts.length > 1 ? parts : term;
+  };
+
   // Check if this is a multi-service quote
   const isMultiService = quote.items.length > 0 && isMultiServiceQuote(quote.items);
   const serviceGroups = isMultiService ? groupItemsByServiceType(quote.items) : [];
@@ -47,7 +66,7 @@ export const ClassicBusiness: React.FC<TemplateProps> = ({ data, editable: _edit
     <div className="company-contact-footer">
       <div className="footer-divider"></div>
       <div className="footer-content">
-        {company.website && <span className="footer-item">🌐 {company.website}</span>}
+        {company.website && <span className="footer-item">🌐 <a href={ensureHttps(company.website)} style={{ color: 'inherit', textDecoration: 'none' }}>{company.website}</a></span>}
         {company.address && <span className="footer-item">📍 {company.address}</span>}
       </div>
     </div>
@@ -79,9 +98,9 @@ export const ClassicBusiness: React.FC<TemplateProps> = ({ data, editable: _edit
         <div className="company-contact-section">
           <div className="company-contact-details">
             {company.address && <p>{company.address}</p>}
-            {company.phone && <p>Phone: {company.phone}</p>}
-            {company.email && <p>Email: {company.email}</p>}
-            {company.website && <p>Website: {company.website}</p>}
+            {company.phone && <p>Phone: <a href={`tel:${company.phone}`} style={{ color: 'inherit', textDecoration: 'none' }}>{company.phone}</a></p>}
+            {company.email && <p>Email: <a href={`mailto:${company.email}`} style={{ color: 'inherit', textDecoration: 'none' }}>{company.email}</a></p>}
+            {company.website && <p>Website: <a href={ensureHttps(company.website)} style={{ color: 'inherit', textDecoration: 'none' }}>{company.website}</a></p>}
             {company.gst && <p>GST: {company.gst}</p>}
             {company.abn && <p>ABN: {company.abn}</p>}
           </div>
@@ -113,8 +132,8 @@ export const ClassicBusiness: React.FC<TemplateProps> = ({ data, editable: _edit
           <div className="address-content">
             <p className="recipient-name">{(client.company || client.name).toUpperCase()}</p>
             {client.address && <p>{client.address}</p>}
-            {client.email && <p>Email: {client.email}</p>}
-            {client.phone && <p>Phone: {client.phone}</p>}
+            {client.email && <p>Email: <a href={`mailto:${client.email}`} style={{ color: 'inherit', textDecoration: 'none' }}>{client.email}</a></p>}
+            {client.phone && <p>Phone: <a href={`tel:${client.phone}`} style={{ color: 'inherit', textDecoration: 'none' }}>{client.phone}</a></p>}
             {client.gst && <p>GST: {client.gst}</p>}
           </div>
         </div>
@@ -197,7 +216,7 @@ export const ClassicBusiness: React.FC<TemplateProps> = ({ data, editable: _edit
                       .split(/\n|•|\d+\.\s/)
                       .map(t => t.trim())
                       .filter(Boolean)
-                      .map((term, i) => <li key={i}>{term}</li>)
+                      .map((term, i) => <li key={i}>{renderTermWithLinks(term)}</li>)
                   : <li>Standard terms and conditions apply</li>
                 )
             }
@@ -214,7 +233,7 @@ export const ClassicBusiness: React.FC<TemplateProps> = ({ data, editable: _edit
                   .split(/\n|•|\d+\.\s/)
                   .map(t => t.trim())
                   .filter(Boolean)
-                  .map((term, i) => <li key={i}>{term}</li>)
+                  .map((term, i) => <li key={i}>{renderTermWithLinks(term)}</li>)
                 }
               </ol>
             </div>
