@@ -20,13 +20,32 @@ export const DEFAULT_GENERAL_TERMS = [
 ];
 
 /**
- * Extract service type from item description
- * Examples: "Bus Full Branding" -> "Bus", "Auto Back Branding" -> "Auto"
+ * Extract service type from item description.
+ * Returns the specific service name by stripping price/rate suffixes first.
+ * Examples:
+ *   "Bus Semi Branding - Rental Price (per Bus month)"    → "Bus Semi Branding"
+ *   "Bus Shelter Panel - Lit - Display Price (for 30 days)" → "Bus Shelter Panel - Lit"
+ *   "Auto Full Branding - Printing & Fixing Price"        → "Auto Full Branding"
+ * Falls back to vehicle keyword for simple single-word descriptions.
  */
 export function extractServiceType(description: string): string {
+  // Step 1: Strip price/rate type suffixes to get the specific service name.
+  // The pattern matches " - <PriceKeyword>..." anywhere in the description.
+  const priceSuffixPattern = /\s*-\s*(Display|Rental|Printing|Fixing|Installation|Mounting|Labour|Creative|Design|Rate|Price|Cost)\b.*/i;
+  const stripped = description
+    .replace(priceSuffixPattern, '')
+    .trim()
+    .replace(/\s*-\s*$/, '') // remove any trailing " -"
+    .trim();
+
+  // If stripping produced a multi-word result it is a meaningful specific service name.
+  // Single-word results (e.g. "Bus") fall through to keyword matching below.
+  if (stripped && stripped.includes(' ')) {
+    return stripped;
+  }
+
+  // Step 2: Fallback — vehicle/service keyword matching (backward compatibility).
   const desc = description.toLowerCase();
-  
-  // Priority order: check for specific vehicle/service types
   if (desc.includes('bus')) return 'Bus';
   if (desc.includes('auto')) return 'Auto';
   if (desc.includes('tempo')) return 'Tempo';
@@ -38,7 +57,7 @@ export function extractServiceType(description: string): string {
   if (desc.includes('hoarding')) return 'Hoarding';
   if (desc.includes('flex') || desc.includes('vinyl')) return 'Printing';
   if (desc.includes('brochure') || desc.includes('pamphlet')) return 'Print Materials';
-  
+
   // Default: use first word if no match
   const firstWord = description.split(/[\s\-,]+/)[0];
   return firstWord.charAt(0).toUpperCase() + firstWord.slice(1);
@@ -84,29 +103,32 @@ export function isMultiServiceQuote(items: QuoteItem[]): boolean {
  */
 export function filterTermsByServiceType(termsAndConditions: string, serviceType: string): string[] {
   if (!termsAndConditions) return [];
-  
+
   const serviceTypeLower = serviceType.toLowerCase();
-  
+
+  // serviceType may now be a full specific name like "Bus Semi Branding" instead of just "Bus".
+  // Extract the base vehicle keyword for matching against T&C section headers which use
+  // single vehicle keywords (bus, auto, etc.).
+  const serviceKeywords = ['bus', 'auto', 'tempo', 'cab', 'truck', 'van', 'vehicle'];
+  const vehicleKeyword = serviceKeywords.find(k => serviceTypeLower.includes(k)) || serviceTypeLower;
+
   // Split by newlines and bullets to get individual lines
   const lines = termsAndConditions
     .split(/\n/)
     .map(t => t.trim().replace(/^[•\-\*]\s*/, '').trim())
     .filter(Boolean);
-  
+
   const filteredTerms: string[] = [];
   let currentServiceSection = '';
-  
-  // List of all service type keywords
-  const serviceKeywords = ['bus', 'auto', 'tempo', 'cab', 'truck', 'van', 'vehicle'];
-  
+
   for (const line of lines) {
     const lineLower = line.toLowerCase();
-    
+
     // Check if this line is a service section header (e.g., "Bus Full Branding:")
-    const isServiceHeader = serviceKeywords.some(keyword => 
+    const isServiceHeader = serviceKeywords.some(keyword =>
       lineLower.includes(keyword) && lineLower.includes(':')
     );
-    
+
     if (isServiceHeader) {
       // This is a section header - determine which service it belongs to
       currentServiceSection = '';
@@ -116,24 +138,24 @@ export function filterTermsByServiceType(termsAndConditions: string, serviceType
           break;
         }
       }
-      
-      // If this header matches our target service, include it
-      if (currentServiceSection === serviceTypeLower) {
+
+      // If this header matches our target vehicle keyword, include it
+      if (currentServiceSection === vehicleKeyword) {
         filteredTerms.push(line);
       }
     } else {
       // This is a regular term - include it if we're in the right service section
-      if (currentServiceSection === serviceTypeLower) {
+      if (currentServiceSection === vehicleKeyword) {
         filteredTerms.push(line);
       } else if (currentServiceSection === '') {
-        // No section detected yet, check if term explicitly mentions the service
-        if (lineLower.includes(serviceTypeLower)) {
+        // No section detected yet, check if term explicitly mentions the vehicle keyword
+        if (lineLower.includes(vehicleKeyword)) {
           filteredTerms.push(line);
         }
       }
     }
   }
-  
+
   return filteredTerms;
 }
 
@@ -229,26 +251,27 @@ export function getGeneralTerms(termsAndConditions: string): string[] {
  */
 export function filterNotesByServiceType(notes: string | undefined, serviceType: string): string {
   if (!notes) return '';
-  
+
   const serviceTypeLower = serviceType.toLowerCase();
-  
+
+  // serviceType may now be a full specific name like "Bus Semi Branding" — extract vehicle keyword.
+  const serviceKeywords = ['bus', 'auto', 'tempo', 'cab', 'truck', 'van', 'vehicle'];
+  const vehicleKeyword = serviceKeywords.find(k => serviceTypeLower.includes(k)) || serviceTypeLower;
+
   // Split notes by newlines to handle structured notes
   const lines = notes.split(/\n/).map(s => s.trim()).filter(Boolean);
-  
+
   const filteredLines: string[] = [];
   let currentServiceSection = '';
-  
-  // List of all service type keywords
-  const serviceKeywords = ['bus', 'auto', 'tempo', 'cab', 'truck', 'van', 'vehicle'];
-  
+
   for (const line of lines) {
     const lineLower = line.toLowerCase();
-    
+
     // Check if this line is a service section header
-    const isServiceHeader = serviceKeywords.some(keyword => 
+    const isServiceHeader = serviceKeywords.some(keyword =>
       lineLower.includes(keyword) && (lineLower.includes(':') || lineLower.endsWith(keyword))
     );
-    
+
     if (isServiceHeader) {
       // Determine which service this header belongs to
       currentServiceSection = '';
@@ -258,40 +281,32 @@ export function filterNotesByServiceType(notes: string | undefined, serviceType:
           break;
         }
       }
-      
-      // Include header if it matches our target service
-      if (currentServiceSection === serviceTypeLower) {
+
+      // Include header if it matches our target vehicle keyword
+      if (currentServiceSection === vehicleKeyword) {
         filteredLines.push(line);
       }
     } else {
       // Regular note line
-      if (currentServiceSection === serviceTypeLower) {
+      if (currentServiceSection === vehicleKeyword) {
         filteredLines.push(line);
       } else if (currentServiceSection === '') {
-        // No section detected, check if line mentions the service
-        if (lineLower.includes(serviceTypeLower)) {
+        // No section detected, check if line mentions the vehicle keyword
+        if (lineLower.includes(vehicleKeyword)) {
           filteredLines.push(line);
         }
       }
     }
   }
-  
+
   return filteredLines.join(' ');
 }
 
 /**
- * Get a clean heading for a service group
- * For single items, use the full description. For multiple items, use the first item's description.
+ * Get a clean heading for a service group.
+ * group.serviceType is now the specific service name (e.g. "Bus Semi Branding",
+ * "Bus Shelter Panel - Lit") so we return it directly.
  */
 export function getServiceGroupHeading(group: ServiceGroup): string {
-  if (group.items.length === 1) {
-    // Single item: use full description, removing unnecessary parts
-    const description = group.items[0].description;
-    // Remove "- Display Price (per board)" type suffixes
-    return description.split(' - ')[0];
-  } else {
-    // Multiple items: extract common heading or use first item
-    const firstDescription = group.items[0].description.split(' - ')[0];
-    return firstDescription;
-  }
+  return group.serviceType;
 }
