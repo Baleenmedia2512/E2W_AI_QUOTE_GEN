@@ -126,9 +126,10 @@ export const QuotePreviewPage: React.FC = () => {
           // SMART MATCHING: Find document that matches quote items
           let targetDoc = null;
           
-          if (currentQuote && currentQuote.items && currentQuote.items.length > 0) {
+          const quoteItems = currentQuote?.items ?? [];
+          if (quoteItems.length > 0) {
             // Extract keywords from quote items
-            const quoteKeywords = currentQuote.items
+            const quoteKeywords = quoteItems
               .map(item => item.description.toLowerCase())
               .join(' ')
               .replace(/[()]/g, ' ')
@@ -194,7 +195,7 @@ export const QuotePreviewPage: React.FC = () => {
             
             if (blob) {
               // Convert blob to File object for extraction
-              const file = new File([blob], targetDoc.file_name, { 
+              const file = new File([blob!], targetDoc.file_name, { 
                 type: targetDoc.file_type || 'application/pdf' 
               });
               
