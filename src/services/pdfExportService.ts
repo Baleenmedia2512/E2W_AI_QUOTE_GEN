@@ -10,10 +10,19 @@ import DownloadNotification from '../plugins/downloadNotification';
 const A4_WIDTH_PX = 794;   // 210mm at 96dpi
 const A4_HEIGHT_PX = 1123;  // 297mm at 96dpi
 
+/** Represents a clickable link annotation to be overlaid on the PDF image */
+interface LinkAnnotation {
+  url: string;
+  x: number; // CSS px from clone left edge
+  y: number; // CSS px from clone top edge
+  w: number; // CSS px
+  h: number; // CSS px
+}
+
 /**
  * Captures a specific section at fixed A4 dimensions for consistent PDF output
  */
-const captureSectionAtA4 = async (containerId: string): Promise<HTMLCanvasElement | null> => {
+const captureSectionAtA4 = async (containerId: string): Promise<{ canvas: HTMLCanvasElement; links: LinkAnnotation[] } | null> => {
   const source = document.getElementById(containerId);
   if (!source) {
     console.warn(`⚠️ Section ${containerId} not found`);
@@ -79,7 +88,27 @@ const captureSectionAtA4 = async (containerId: string): Promise<HTMLCanvasElemen
     });
 
     console.log(`✅ Section captured: ${canvas.width}x${canvas.height}px`);
-    return canvas;
+
+    // Collect link annotations WHILE clone is still in DOM
+    const cloneRect = clone.getBoundingClientRect();
+    const links: LinkAnnotation[] = [];
+    clone.querySelectorAll('a[href]').forEach((el) => {
+      const href = el.getAttribute('href');
+      if (!href) return;
+      const rect = el.getBoundingClientRect();
+      if (rect.width > 0 && rect.height > 0) {
+        links.push({
+          url: href,
+          x: rect.left - cloneRect.left,
+          y: rect.top - cloneRect.top,
+          w: rect.width,
+          h: rect.height,
+        });
+      }
+    });
+    console.log(`🔗 Collected ${links.length} link annotations from ${containerId}`);
+
+    return { canvas, links };
   } catch (error) {
     console.error(`❌ Failed to capture ${containerId}:`, error);
     throw error;
@@ -181,10 +210,28 @@ export const exportToPDF = async (
     const pdfHeight = 297; // mm
     let pageCount = 0;
 
+    // Helper to overlay link annotations on the current PDF page
+    const addLinkAnnotations = (
+      links: LinkAnnotation[],
+      xBase: number,       // mm x offset (for centered scaled images)
+      cssToPdf: number,    // CSS px → PDF mm conversion factor
+      pageYOffset: number  // mm offset for current page (multi-page splits)
+    ) => {
+      links.forEach(({ url, x, y, w, h }) => {
+        const pdfX = xBase + x * cssToPdf;
+        const pdfY = y * cssToPdf - pageYOffset;
+        const pdfW = w * cssToPdf;
+        const pdfH = h * cssToPdf;
+        if (pdfW > 0 && pdfH > 0 && pdfY + pdfH > 0 && pdfY < pdfHeight) {
+          pdf.link(pdfX, Math.max(0, pdfY), pdfW, pdfH, { url });
+        }
+      });
+    };
+
     // Helper to add a captured canvas to the PDF
     // Each section (summary, service detail, reference images) is designed as ONE page.
     // Always scale to fit on a single A4 page unless content is more than 2x A4 height.
-    const addCanvasToPDF = (canvas: HTMLCanvasElement, label: string, isFirstPage: boolean) => {
+    const addCanvasToPDF = (canvas: HTMLCanvasElement, links: LinkAnnotation[], label: string, isFirstPage: boolean) => {
       if (!isFirstPage) {
         pdf.addPage();
       }
@@ -192,10 +239,12 @@ export const exportToPDF = async (
       const imgData = canvas.toDataURL('image/png');
       const aspectRatio = canvas.height / canvas.width;
       const imgHeight = pdfWidth * aspectRatio;
-      
+      const cssToPdf = pdfWidth / A4_WIDTH_PX; // CSS px → PDF mm
+
       if (imgHeight <= pdfHeight) {
         // Content fits within A4 — render at full page
         pdf.addImage(imgData, 'PNG', 0, 0, pdfWidth, imgHeight);
+        addLinkAnnotations(links, 0, cssToPdf, 0);
         console.log(`✅ Page ${pageCount} added (${label}): ${pdfWidth}×${Math.round(imgHeight)}mm`);
       } else if (imgHeight <= pdfHeight * 1.5) {
         // Content overflows but is less than 1.5x A4 — scale to fit on one page
@@ -203,19 +252,24 @@ export const exportToPDF = async (
         const scaledWidth = pdfWidth * scale;
         const xOffset = (pdfWidth - scaledWidth) / 2; // Center horizontally
         pdf.addImage(imgData, 'PNG', xOffset, 0, scaledWidth, pdfHeight);
+        addLinkAnnotations(links, xOffset, scaledWidth / A4_WIDTH_PX, 0);
         console.log(`✅ Page ${pageCount} added (${label}): scaled to fit (${Math.round(imgHeight - pdfHeight)}mm overflow)`);
       } else {
         // Content is very tall (>1.5x A4) — split across multiple pages
         pdf.addImage(imgData, 'PNG', 0, 0, pdfWidth, imgHeight);
+        addLinkAnnotations(links, 0, cssToPdf, 0);
         console.log(`✅ Page ${pageCount} added (${label}): ${pdfWidth}×${Math.round(imgHeight)}mm`);
         
         let remainingHeight = imgHeight - pdfHeight;
         let yOffset = -pdfHeight;
+        let pageYStart = pdfHeight;
         while (remainingHeight > 0) {
           pdf.addPage();
           pageCount++;
           pdf.addImage(imgData, 'PNG', 0, yOffset, pdfWidth, imgHeight);
+          addLinkAnnotations(links, 0, cssToPdf, pageYStart);
           yOffset -= pdfHeight;
+          pageYStart += pdfHeight;
           remainingHeight -= pdfHeight;
           console.log(`✅ Additional page ${pageCount} added for overflow`);
         }
@@ -230,23 +284,23 @@ export const exportToPDF = async (
       console.log('📄 Multi-service quote detected');
 
       // Capture summary page
-      const summaryCanvas = await captureSectionAtA4('pdf-page-summary');
-      if (summaryCanvas) {
-        addCanvasToPDF(summaryCanvas, 'summary', true);
+      const summaryResult = await captureSectionAtA4('pdf-page-summary');
+      if (summaryResult) {
+        addCanvasToPDF(summaryResult.canvas, summaryResult.links, 'summary', true);
       }
 
       // Capture each service group page + its reference images
       let serviceIndex = 0;
       while (true) {
-        const serviceCanvas = await captureSectionAtA4(`pdf-service-${serviceIndex}`);
-        if (!serviceCanvas) break; // No more service pages
+        const serviceResult = await captureSectionAtA4(`pdf-service-${serviceIndex}`);
+        if (!serviceResult) break; // No more service pages
 
-        addCanvasToPDF(serviceCanvas, `service-${serviceIndex}`, pageCount === 0);
+        addCanvasToPDF(serviceResult.canvas, serviceResult.links, `service-${serviceIndex}`, pageCount === 0);
 
         // Capture reference images for this service
-        const refCanvas = await captureSectionAtA4(`pdf-service-ref-${serviceIndex}`);
-        if (refCanvas && refCanvas.height > 10) {
-          addCanvasToPDF(refCanvas, `service-ref-${serviceIndex}`, false);
+        const refResult = await captureSectionAtA4(`pdf-service-ref-${serviceIndex}`);
+        if (refResult && refResult.canvas.height > 10) {
+          addCanvasToPDF(refResult.canvas, refResult.links, `service-ref-${serviceIndex}`, false);
         }
 
         serviceIndex++;
@@ -260,10 +314,10 @@ export const exportToPDF = async (
     } else {
       // --- SINGLE-SERVICE QUOTE (original behavior) ---
       console.log('📄 Capturing quotation content...');
-      const quotationCanvas = await captureSectionAtA4('pdf-page-1');
+      const quotationResult = await captureSectionAtA4('pdf-page-1');
       
-      if (quotationCanvas) {
-        addCanvasToPDF(quotationCanvas, 'quotation', true);
+      if (quotationResult) {
+        addCanvasToPDF(quotationResult.canvas, quotationResult.links, 'quotation', true);
       } else {
         console.warn('⚠️ Quotation section not found, using fallback full capture');
         await legacyFullCapture(element, pdf, pdfWidth, pdfHeight);
@@ -272,10 +326,10 @@ export const exportToPDF = async (
 
       // Reference Images (Page 2+)
       console.log('📄 Checking for reference images...');
-      const referenceCanvas = await captureSectionAtA4('pdf-page-2');
+      const referenceResult = await captureSectionAtA4('pdf-page-2');
       
-      if (referenceCanvas && referenceCanvas.height > 10) {
-        addCanvasToPDF(referenceCanvas, 'references', false);
+      if (referenceResult && referenceResult.canvas.height > 10) {
+        addCanvasToPDF(referenceResult.canvas, referenceResult.links, 'references', false);
       } else {
         console.log('ℹ️ No reference images section found or section is empty');
       }

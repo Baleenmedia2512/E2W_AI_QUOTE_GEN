@@ -6,7 +6,26 @@ import './CorporateMinimal.css';
 
 export const CorporateMinimal: React.FC<TemplateProps> = ({ data, editable: _editable = false, onDataChange: _onDataChange }) => {
   const { company, client, quote } = data;
-  
+
+  // Ensure website URL has a protocol
+  const ensureHttps = (url: string) => url.startsWith('http') ? url : `https://${url}`;
+
+  // Render a term string with any embedded URLs as clickable links
+  const renderTermWithLinks = (term: string): React.ReactNode => {
+    const urlPattern = /https?:\/\/[^\s]+/g;
+    const parts: React.ReactNode[] = [];
+    let lastIndex = 0;
+    let match;
+    urlPattern.lastIndex = 0;
+    while ((match = urlPattern.exec(term)) !== null) {
+      if (match.index > lastIndex) parts.push(term.slice(lastIndex, match.index));
+      parts.push(<a key={match.index} href={match[0]} style={{ color: 'inherit', textDecoration: 'none' }}>{match[0]}</a>);
+      lastIndex = urlPattern.lastIndex;
+    }
+    if (lastIndex < term.length) parts.push(term.slice(lastIndex));
+    return parts.length > 1 ? parts : term;
+  };
+
   // Check if this is a multi-service quote
   const isMultiService = quote.items.length > 0 && isMultiServiceQuote(quote.items);
   const serviceGroups = isMultiService ? groupItemsByServiceType(quote.items) : [];
@@ -127,9 +146,9 @@ export const CorporateMinimal: React.FC<TemplateProps> = ({ data, editable: _edi
       <div className="header-info-row">
         <div className="company-details">
           <p>{company.address}</p>
-          {company.phone && <p>Phone: {company.phone}</p>}
-          {company.email && <p>Email: {company.email}</p>}
-          {company.website && <p>Website: {company.website}</p>}
+          {company.phone && <p>Phone: <a href={`tel:${company.phone}`} style={{ color: 'inherit', textDecoration: 'none' }}>{company.phone}</a></p>}
+          {company.email && <p>Email: <a href={`mailto:${company.email}`} style={{ color: 'inherit', textDecoration: 'none' }}>{company.email}</a></p>}
+          {company.website && <p>Website: <a href={ensureHttps(company.website)} style={{ color: 'inherit', textDecoration: 'none' }}>{company.website}</a></p>}
           {company.gst && <p>GST: {company.gst}</p>}
           {company.abn && <p>ABN: {company.abn}</p>}
         </div>
@@ -162,8 +181,8 @@ export const CorporateMinimal: React.FC<TemplateProps> = ({ data, editable: _edi
       <h3>Quote Prepared For:</h3>
       <div className="client-details">
         <p className="client-name">{(client.company || client.name).toUpperCase()}</p>
-        {client.email && <p>Email: {client.email}</p>}
-        {client.phone && <p>Phone: {client.phone}</p>}
+        {client.email && <p>Email: <a href={`mailto:${client.email}`} style={{ color: 'inherit', textDecoration: 'none' }}>{client.email}</a></p>}
+        {client.phone && <p>Phone: <a href={`tel:${client.phone}`} style={{ color: 'inherit', textDecoration: 'none' }}>{client.phone}</a></p>}
         {client.address && <p>Address: {client.address}</p>}
         {client.gst && <p>GST: {client.gst}</p>}
       </div>
@@ -175,7 +194,7 @@ export const CorporateMinimal: React.FC<TemplateProps> = ({ data, editable: _edi
     <div className="company-contact-footer">
       <div className="footer-divider"></div>
       <div className="footer-content">
-        {company.website && <span className="footer-item">🌐 {company.website}</span>}
+        {company.website && <span className="footer-item">🌐 <a href={ensureHttps(company.website)} style={{ color: 'inherit', textDecoration: 'none' }}>{company.website}</a></span>}
         {company.address && <span className="footer-item">📍 {company.address}</span>}
       </div>
     </div>
@@ -202,7 +221,7 @@ export const CorporateMinimal: React.FC<TemplateProps> = ({ data, editable: _edi
                     .split(/\n|•|\d+\.\s/)
                     .map(t => t.trim())
                     .filter(Boolean))
-                    .map((term, i) => <li key={i}>{term}</li>)
+                    .map((term, i) => <li key={i}>{renderTermWithLinks(term)}</li>)
                 : <li>Standard terms and conditions apply</li>
               }
             </ul>
@@ -218,7 +237,7 @@ export const CorporateMinimal: React.FC<TemplateProps> = ({ data, editable: _edi
                     .split(/\n|•|\d+\.\s/)
                     .map(t => t.trim())
                     .filter(Boolean))
-                    .map((term, i) => <li key={i}>{term}</li>)
+                    .map((term, i) => <li key={i}>{renderTermWithLinks(term)}</li>)
                   }
                 </ul>
               </div>
