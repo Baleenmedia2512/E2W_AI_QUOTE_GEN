@@ -385,6 +385,13 @@
   opacity: 0.8;
 }
 
+/* Clickable links — blue + underlined */
+.template-modern-sales a[href] {
+  color: #0066cc !important;
+  text-decoration: underline !important;
+  cursor: pointer;
+}
+
 .template-modern-sales .ms-notice p {
   margin: 0;
   font-size: 12px;
