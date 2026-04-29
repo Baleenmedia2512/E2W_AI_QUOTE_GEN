@@ -14,44 +14,23 @@ interface QuoteItem {
   [key: string]: any;
 }
 
-interface DisplayImage {
-  key: string;
-  imageUrl: string;
-  alt: string;
-  isCropped: boolean;
-  pageNumber: number;
-}
-
 interface ReferenceImagesProps {
   proposalPages?: ExtractedPage[];
   items?: QuoteItem[];
 }
 
-function flattenToDisplayImages(pages: ExtractedPage[], prefix: string): DisplayImage[] {
-  const images: DisplayImage[] = [];
-  for (const page of pages) {
-    if (page.croppedImages && page.croppedImages.length > 0) {
-      page.croppedImages.forEach((url, idx) => {
-        images.push({
-          key: `${prefix}-crop-${page.pageNumber}-${idx}`,
-          imageUrl: url,
-          alt: `${prefix === 'ref' ? 'Reference image' : 'Design specification'} - Page ${page.pageNumber}`,
-          isCropped: true,
-          pageNumber: page.pageNumber,
-        });
-      });
-    } else {
-      images.push({
-        key: `${prefix}-page-${page.pageNumber}`,
-        imageUrl: page.imageDataUrl,
-        alt: `${prefix === 'ref' ? 'Proposal page' : 'Design specification - Page'} ${page.pageNumber}`,
-        isCropped: false,
-        pageNumber: page.pageNumber,
-      });
-    }
-  }
-  return images;
+interface CustomerReviewData {
+  reviewerName: string;
+  starCount: number;
+  reviewText: string;
+  reviewUrl: string | null;
 }
+
+interface SpecGroup {
+  heading: string | null;
+  fields: Array<{ label: string; value: string }>;
+}
+
 
 /**
  * Returns pages whose text contains the exact heading match.
@@ -717,6 +696,196 @@ function filterPagesByQuoteItems(pages: ExtractedPage[], items: QuoteItem[]): Ex
   return result;
 }
 
+// --- Smart Content Extraction Helpers ---
+
+function extractDesignSpecFields(pages: ExtractedPage[]): SpecGroup[] {
+  for (const page of pages) {
+    const text = page.text;
+    const specMatch = text.match(/display area[^\n]*design spec[^\n]*/i) || text.match(/design spec[^\n]*/i);
+    if (!specMatch || specMatch.index === undefined) continue;
+    const afterSpec = text.substring(specMatch.index + specMatch[0].length);
+    const endMatch = afterSpec.match(/\n(reference image|customer review|click here)/i);
+    const specSection = endMatch && endMatch.index !== undefined ? afterSpec.substring(0, endMatch.index) : afterSpec;
+
+    const dimensionFields: Array<{ label: string; value: string }> = [];
+    const materialFields: Array<{ label: string; value: string }> = [];
+
+    /**
+     * Is this pipe-column a continuation of the previous dimension value?
+     * e.g. "wxh ) inches", "( wxh ) inches" — these appear as separate columns
+     * in the PDF because the PDF renderer splits on the opening parenthesis.
+     */
+    const isDimContinuation = (part: string): boolean => {
+      if (!part) return false;
+      // Starts with open-paren, lowercase, or known dimension residual words
+      if (/^\(/.test(part)) return true;
+      if (/^(wxh|wdh|wxd|w\s*x\s*h|inches|cms?|mm\b)/i.test(part)) return true;
+      // Starts with lowercase and no colon label pattern
+      if (/^[a-z]/.test(part) && !/^[a-z][a-z\s]{1,25}:\s*\S/i.test(part)) return true;
+      // Contains only closing paren + unit
+      if (/^\)\s*(inches|cms?|mm|feet|ft)?$/i.test(part)) return true;
+      return false;
+    };
+
+    const lines = specSection.split('\n').map(l => l.trim()).filter(Boolean);
+    for (const line of lines) {
+      // Split line on pipe separators (tab-pipe-tab, space-pipe-space, or bare pipe)
+      const parts = line.split(/\t\|\t|\s\|\s|\|/).map(p => p.trim()).filter(p => p.length > 0);
+
+      if (parts.length === 1) {
+        // Single column — classify by content
+        const part = parts[0];
+        if (/^materials?\s*:?\s*$/i.test(part)) continue;
+        const colonMatch = part.match(/^([^:]{1,50}):\s*(.+)$/);
+        if (colonMatch) {
+          const label = colonMatch[1].trim();
+          const value = colonMatch[2].trim();
+          const isDim = /\d["'x×(]/i.test(value) || /side|front|back|top|bottom|left|right|dimension|size/i.test(label);
+          if (isDim) dimensionFields.push({ label, value });
+          else materialFields.push({ label, value });
+        }
+        continue;
+      }
+
+      // Multi-column line — first collect the full dimension string by consuming
+      // any continuation parts that belong to the dimension value.
+      let dimEnd = 1; // exclusive index where dimension columns end
+      while (dimEnd < parts.length && isDimContinuation(parts[dimEnd])) {
+        dimEnd++;
+      }
+
+      // Build and parse the dimension entry from parts[0..dimEnd-1]
+      const fullDimStr = parts.slice(0, dimEnd).join(' ').trim();
+      const dimColon = fullDimStr.match(/^([^:]{1,60}):\s*(.+)$/);
+      if (dimColon) {
+        dimensionFields.push({ label: dimColon[1].trim(), value: dimColon[2].trim() });
+      }
+
+      // Remaining parts are the material columns
+      const remaining = parts.slice(dimEnd);
+      if (remaining.length === 0) continue;
+
+      // Skip if all remaining is just a bare "Material:" heading
+      const remainingJoined = remaining.join(' ').trim();
+      if (/^materials?\s*:?\s*$/i.test(remainingJoined)) continue;
+
+      if (remaining.length >= 2) {
+        // Pattern: ["3 sides:", "Rexine"] or ["Top:", "Vinyl sticker"]
+        const matLabel = remaining[0].replace(/:$/, '').trim();
+        const matValue = remaining.slice(1).join(' ').trim();
+        if (matLabel && matValue && !/^materials?$/i.test(matLabel)) {
+          materialFields.push({ label: matLabel, value: matValue });
+        }
+      } else {
+        // Pattern: ["Top: Vinyl sticker"] — single colon entry
+        const rc = remaining[0].match(/^([^:]{1,50}):\s*(.+)$/);
+        if (rc && !/^materials?$/i.test(rc[1])) {
+          materialFields.push({ label: rc[1].trim(), value: rc[2].trim() });
+        }
+      }
+    }
+
+    const groups: SpecGroup[] = [];
+    if (dimensionFields.length > 0) groups.push({ heading: null, fields: dimensionFields });
+    if (materialFields.length > 0) groups.push({ heading: 'Material', fields: materialFields });
+    if (groups.length > 0) return groups;
+  }
+  return [];
+}
+
+function extractCustomerReview(pages: ExtractedPage[]): CustomerReviewData | null {
+  for (const page of pages) {
+    const text = page.text;
+    if (!/customer review/i.test(text)) continue;
+    const reviewMatch = text.match(/customer review[^\n]*/i);
+    if (!reviewMatch || reviewMatch.index === undefined) continue;
+    const afterReview = text.substring(reviewMatch.index + reviewMatch[0].length);
+    const lines = afterReview.split('\n').map(l => l.trim()).filter(Boolean);
+    let reviewerName = '';
+    let starCount = 4;
+    const reviewLines: string[] = [];
+    let reviewUrl: string | null = null;
+    for (const line of lines) {
+      const urlMatch = line.match(/https?:\/\/[^\s]+/);
+      if (urlMatch) { reviewUrl = urlMatch[0]; continue; }
+      if (/^click here|^see the review|^view review/i.test(line)) continue;
+      const starSymbols = line.match(/^[★☆✩]+/);
+      if (starSymbols) { starCount = (line.match(/★/g) || []).length || 4; continue; }
+      if (/edited\s+\d+|^\d+\s*(week|month|day|hour)/i.test(line)) continue;
+      if (line.length === 1) continue;
+      if (!reviewerName && line.length <= 40 && line.split(' ').length <= 4 && !/^\d/.test(line)) {
+        reviewerName = line;
+        continue;
+      }
+      if (line.length > 15) reviewLines.push(line);
+    }
+    if (reviewerName || reviewLines.length > 0 || reviewUrl) {
+      return {
+        reviewerName: reviewerName || 'Customer',
+        starCount: Math.min(5, Math.max(1, starCount)),
+        reviewText: reviewLines.join(' '),
+        reviewUrl,
+      };
+    }
+  }
+  return null;
+}
+
+/** Pages that belong to the Design Specification section (not Reference Image pages) */
+function getSpecPages(pages: ExtractedPage[]): ExtractedPage[] {
+  return pages.filter(page => {
+    const text = page.text.toLowerCase().replace(/\s*\|\s*/g, ' ');
+    const hasSpec = text.includes('design specification') ||
+                    text.includes('design specifications') ||
+                    text.includes('display area');
+    const hasRefImg = text.includes('reference image') || text.includes('reference images');
+    // A page is a spec page if it has spec keywords AND is not purely a reference image page
+    return hasSpec && !hasRefImg;
+  });
+}
+
+/** Pages that belong strictly under the Reference Image heading */
+function getRefImagePages(pages: ExtractedPage[]): ExtractedPage[] {
+  return pages.filter(page => {
+    const text = page.text.toLowerCase().replace(/\s*\|\s*/g, ' ');
+    return text.includes('reference image') || text.includes('reference images');
+  });
+}
+
+/**
+ * Extract best image for Design Specification section.
+ * Only picks from spec pages — never from reference image pages.
+ */
+function extractSpecSectionImage(pages: ExtractedPage[]): string | null {
+  const specPages = getSpecPages(pages);
+  // Prefer cropped image from spec page
+  for (const page of specPages) {
+    if (page.croppedImages && page.croppedImages.length > 0) return page.croppedImages[0];
+  }
+  // Fallback: full page image of spec page (only if it has very little text — likely image-heavy)
+  for (const page of specPages) {
+    const textLen = page.text.replace(/[^a-z]/gi, '').length;
+    if (textLen < 300) return page.imageDataUrl;
+  }
+  return null;
+}
+
+/**
+ * Extract best image for Reference Image section.
+ * ONLY picks from pages that have "Reference Image" heading.
+ * Never falls back to spec page images.
+ */
+function extractRefSectionImage(pages: ExtractedPage[]): string | null {
+  const refPages = getRefImagePages(pages);
+  if (refPages.length === 0) return null;
+  // Prefer cropped image
+  for (const page of refPages) {
+    if (page.croppedImages && page.croppedImages.length > 0) return page.croppedImages[0];
+  }
+  // Fallback: full page image of reference page
+  return refPages[0].imageDataUrl;
+}
+
 export const ReferenceImages: React.FC<ReferenceImagesProps> = ({ proposalPages, items }) => {
   // Automatically filter pages by quote items
   const filteredPages = useMemo(() => {
@@ -740,97 +909,14 @@ export const ReferenceImages: React.FC<ReferenceImagesProps> = ({ proposalPages,
     return filtered;
   }, [proposalPages, items]);
 
-  // Separate filtered pages into design specification pages and reference image pages
-  const { designSpecPages, referenceImagePages } = useMemo(() => {
-    const designSpec: ExtractedPage[] = [];
-    const reference: ExtractedPage[] = [];
-    
-    // Filter out direct JPEG uploads (single-page JPEG files)
-    // This excludes JPEG images uploaded directly, but keeps PDF-rendered images
-    const isDirectJPEGUpload = proposalPages && 
-                               proposalPages.length === 1 && 
-                               proposalPages[0].imageDataUrl?.startsWith('data:image/jpeg');
-    
-    if (isDirectJPEGUpload) {
-      console.log('🚫 ReferenceImages: Direct JPEG upload detected - skipping visual display');
-      return { designSpecPages: [], referenceImagePages: [] };
-    }
-    
-    for (const page of filteredPages) {
-      const text = page.text
-        .toLowerCase()
-        .replace(/\s*\|\s*/g, '')
-        .replace(/\s+/g, ' ');
-      
-      // Detect if page is actually a pricing table (should be excluded entirely)
-      const currencyMatches = (text.match(/₹|rs\.?\s*[\d,]+|[\d,]+\.00/g) || []).length;
-      const isPricingTable = currencyMatches >= 3 && 
-                            (text.includes('unit price') || text.includes('unit of measure') || 
-                             text.includes('price per') || text.includes('quantity') ||
-                             text.includes('campaign') || text.includes('min.'));
-      
-      if (isPricingTable) {
-        console.log(`🚫 Page ${page.pageNumber} - Excluded from sections (pricing table with ${currencyMatches} currency references)`);
-        continue; // Skip pricing tables entirely — they are NOT reference images or design specs
-      }
-      
-      const hasDesignSpec = text.includes('design specification') ||
-                           text.includes('design specifications') ||
-                           text.includes('display area');
-      const hasReferenceImage = text.includes('reference image') ||
-                                text.includes('reference images');
-      
-      // Check for (X/Y) page numbering pattern
-      const pagePattern = text.match(/\((\d+)\/(\d+)\)/);
-      const pageNum = pagePattern ? parseInt(pagePattern[1]) : 0;
-      const totalPages = pagePattern ? parseInt(pagePattern[2]) : 0;
-      // Last page of a section (e.g., 2/2, 3/3) is always reference images
-      const isLastPage = pagePattern ? pageNum === totalPages && pageNum >= 2 : false;
-      
-      // Detect if page is image-heavy (has cropped images or very little text)
-      // Pages with "Design Specification" heading but mostly photos should go to reference images
-      const hasCroppedImages = page.croppedImages && page.croppedImages.length > 0;
-      const isTextLight = text.replace(/[^a-z]/g, '').length < 200; // Very little actual text content
-      const isImageHeavyPage = hasCroppedImages || isTextLight;
-      // Page numbered 2+ in a multi-page section is always a visual/reference page
-      const isLaterPage = pagePattern ? pageNum >= 2 : false;
-      
-      // Classify as Design Spec ONLY if:
-      // 1. Has design spec keywords AND
-      // 2. Does NOT have "reference image" text AND
-      // 3. Is NOT the last page of a multi-page section AND
-      // 4. Is NOT an image-heavy page (photos with "Design Spec" title = reference, not spec)
-      // 5. Is NOT a later page (2/3, 3/3 etc.) in a multi-page section
-      if (hasDesignSpec && !hasReferenceImage && !isLastPage && !isImageHeavyPage && !isLaterPage) {
-        designSpec.push(page);
-        console.log(`📐 Page ${page.pageNumber} → Design Specification (text-heavy spec page)`);
-      } else {
-        reference.push(page);
-        console.log(`🖼️ Page ${page.pageNumber} → Reference Images (${isImageHeavyPage ? 'image-heavy' : isLaterPage ? 'later page in section' : isLastPage ? 'last page' : hasReferenceImage ? 'has reference keyword' : 'default'})`);
-      }
-    }
-    
-    return { designSpecPages: designSpec, referenceImagePages: reference };
-  }, [filteredPages, proposalPages]);
-
-  // Group images into pairs (max 2 per page) — flatten cropped images
-  const groupedDesignSpec = useMemo(() => {
-    const displayImages = flattenToDisplayImages(designSpecPages, 'design-spec');
-    const groups: DisplayImage[][] = [];
-    for (let i = 0; i < displayImages.length; i += 2) {
-      groups.push(displayImages.slice(i, i + 2));
-    }
-    return groups;
-  }, [designSpecPages]);
-
-  const groupedReferenceImages = useMemo(() => {
-    const displayImages = flattenToDisplayImages(referenceImagePages, 'ref');
-    const groups: DisplayImage[][] = [];
-    for (let i = 0; i < displayImages.length; i += 2) {
-      groups.push(displayImages.slice(i, i + 2));
-    }
-    return groups;
-  }, [referenceImagePages]);
+  // Smart content extraction from parsed text — section-aware
+  const specGroups = useMemo(() => extractDesignSpecFields(filteredPages), [filteredPages]);
+  const hasSpecContent = specGroups.some(g => g.fields.length > 0);
+  const customerReview = useMemo(() => extractCustomerReview(filteredPages), [filteredPages]);
+  // Spec image: only from Design Specification pages
+  const specImageUrl = useMemo(() => extractSpecSectionImage(filteredPages), [filteredPages]);
+  // Reference image: only from Reference Image pages — never falls back to spec pages
+  const refImageUrl = useMemo(() => extractRefSectionImage(filteredPages), [filteredPages]);
 
   if (!proposalPages || proposalPages.length === 0) {
     console.log('❌ ReferenceImages: No proposal pages, returning null');
@@ -838,63 +924,107 @@ export const ReferenceImages: React.FC<ReferenceImagesProps> = ({ proposalPages,
   }
   if (filteredPages.length === 0) {
     console.log('⚠️ ReferenceImages: No filtered pages found');
-    console.log('💡 Available pages:', proposalPages.length);
-    console.log('💡 Quote items:', items?.map(i => i.description) || []);
-    console.log('💡 Tip: Check if page text contains keywords from quote items');
-    
-    // No matches found - return null to show clean quote without reference images
     return null;
   }
 
-  console.log('✅ ReferenceImages: Rendering', filteredPages.length, 'pages');
+  console.log('✅ ReferenceImages: Rendering smart layout for', filteredPages.length, 'pages');
 
   return (
-    <div className="reference-images-section">
-      {/* Structural spacer to force top spacing in PDF */}
-      <div className="pdf-top-spacer" style={{ height: '80px', width: '100%', display: 'block' }}></div>
-      
-      {groupedDesignSpec.length > 0 && (
-        <>
-          <h3 className="reference-images-title">Design Specification</h3>
-          <div className="reference-images-grid">
-            {groupedDesignSpec.map((group, groupIndex) => (
-              <div key={`design-spec-group-${groupIndex}`} className="reference-image-row">
-                {group.map((img) => (
-                  <div key={img.key} className={`reference-image-item${img.isCropped ? ' cropped' : ''}`}>
-                    <img
-                      src={img.imageUrl}
-                      alt={img.alt}
-                      className={`reference-image${img.isCropped ? ' cropped-image' : ''}`}
-                    />
-                    {!img.isCropped && <span className="reference-image-caption">Page {img.pageNumber}</span>}
-                  </div>
-                ))}
-              </div>
-            ))}
-          </div>
-        </>
+    <div className="smart-reference-page">
+      <div className="pdf-top-spacer" />
+
+      {/* Design Specification */}
+      {(hasSpecContent || specImageUrl) && (
+        <div className="smart-section">
+          <h3 className="smart-section-heading">
+            <span className="smart-heading-bar" />
+            Display Area / Design Specification
+          </h3>
+          {hasSpecContent && (
+            <div className="spec-table">
+              {specGroups.map((group, gi) => (
+                <React.Fragment key={gi}>
+                  {group.heading && (
+                    <div className="spec-group-heading">{group.heading}</div>
+                  )}
+                  {group.fields.map((f, fi) => (
+                    <div key={fi} className="spec-row">
+                      <span className="spec-label">{f.label}</span>
+                      <span className="spec-value">{f.value}</span>
+                    </div>
+                  ))}
+                </React.Fragment>
+              ))}
+            </div>
+          )}
+          {specImageUrl && (
+            <div className="ref-img-container spec-img-container">
+              <img src={specImageUrl} alt="Design specification diagram" className="ref-img" />
+            </div>
+          )}
+        </div>
       )}
 
-      {groupedReferenceImages.length > 0 && (
-        <>
-          <h3 className="reference-images-title">Reference Images from Proposal</h3>
-          <div className="reference-images-grid">
-            {groupedReferenceImages.map((group, groupIndex) => (
-              <div key={`ref-group-${groupIndex}`} className="reference-image-row">
-                {group.map((img) => (
-                  <div key={img.key} className={`reference-image-item${img.isCropped ? ' cropped' : ''}`}>
-                    <img
-                      src={img.imageUrl}
-                      alt={img.alt}
-                      className={`reference-image${img.isCropped ? ' cropped-image' : ''}`}
-                    />
-                    {!img.isCropped && <span className="reference-image-caption">Page {img.pageNumber}</span>}
-                  </div>
-                ))}
+      {/* Reference Image */}
+      {refImageUrl && (
+        <div className="smart-section">
+          <h3 className="smart-section-heading">
+            <span className="smart-heading-bar" />
+            Reference Image
+          </h3>
+          <div className="ref-img-container">
+            <img src={refImageUrl} alt="Reference" className="ref-img" />
+          </div>
+        </div>
+      )}
+
+      {/* Customer Review */}
+      {customerReview && (
+        <div className="smart-section">
+          <h3 className="smart-section-heading">
+            <span className="smart-heading-bar" />
+            Customer Review
+          </h3>
+          <div className="review-card">
+            <div className="review-header">
+              <span className="review-avatar">{customerReview.reviewerName.charAt(0).toUpperCase()}</span>
+              <div className="review-meta">
+                <span className="review-name">{customerReview.reviewerName}</span>
+                <span className="review-stars">
+                  {'★'.repeat(customerReview.starCount)}{'☆'.repeat(Math.max(0, 5 - customerReview.starCount))}
+                </span>
               </div>
+            </div>
+            {customerReview.reviewText && (
+              <p className="review-body">{customerReview.reviewText}</p>
+            )}
+            {customerReview.reviewUrl && (
+              <a
+                href={customerReview.reviewUrl}
+                className="review-link"
+                target="_blank"
+                rel="noopener noreferrer"
+              >
+                Click here to see the review
+              </a>
+            )}
+          </div>
+        </div>
+      )}
+
+      {/* Fallback: show full-page images when text extraction yields nothing */}
+      {!hasSpecContent && !customerReview && filteredPages.length > 0 && (
+        <div className="smart-section">
+          <h3 className="smart-section-heading">
+            <span className="smart-heading-bar" />
+            Reference Images from Proposal
+          </h3>
+          <div className="ref-img-container">
+            {filteredPages.map(page => (
+              <img key={page.pageNumber} src={page.imageDataUrl} alt={`Page ${page.pageNumber}`} className="ref-img fallback-img" style={{ marginBottom: '20px' }} />
             ))}
           </div>
-        </>
+        </div>
       )}
     </div>
   );

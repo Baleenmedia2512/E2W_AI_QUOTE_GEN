@@ -1,6 +1,6 @@
 import React from 'react';
 import { TemplateProps } from '../../types';
-// import { ReferenceImages } from './ReferenceImages'; // HIDDEN - Design Spec & Reference Images
+import { ReferenceImages } from './ReferenceImages';
 import { isMultiServiceQuote, groupItemsByServiceType, filterTermsByServiceType, DEFAULT_GENERAL_TERMS, getServiceGroupHeading } from '../../utils/quoteGrouping';
 import './ClassicBusiness.css';
 
@@ -241,15 +241,13 @@ export const ClassicBusiness: React.FC<TemplateProps> = ({ data, editable: _edit
         )}
         </div>
 
-        {/* Reference Images from Proposal - HIDDEN
         {!isMultiService && (
           <div id="pdf-page-2" className="template-classic-business">
             <ReferenceImages proposalPages={data.proposalPages} items={quote.items} />
-            
+
             {renderCompanyFooter()}
           </div>
         )}
-        */}
 
         {/* Company Contact Footer */}
         {renderCompanyFooter()}
@@ -343,10 +341,9 @@ export const ClassicBusiness: React.FC<TemplateProps> = ({ data, editable: _edit
                 {/* Company Contact Footer */}
                 {renderCompanyFooter()}              </div>
 
-              {/* Service-specific reference images - HIDDEN
               <div id={`pdf-service-ref-${groupIndex}`} className="template-classic-business">
                 <ReferenceImages proposalPages={data.proposalPages} items={group.items} />
-                
+
                 {groupIndex === serviceGroups.length - 1 && (
                   <>
                     <div className="system-generated-notice">
@@ -360,10 +357,9 @@ export const ClassicBusiness: React.FC<TemplateProps> = ({ data, editable: _edit
                     </div>
                   </>
                 )}
-                
+
                 {renderCompanyFooter()}
               </div>
-              */}
             </div>
           </div>
         </React.Fragment>
