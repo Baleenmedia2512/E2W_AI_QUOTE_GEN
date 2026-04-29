@@ -29,14 +29,34 @@ export const DEFAULT_GENERAL_TERMS = [
  * Falls back to vehicle keyword for simple single-word descriptions.
  */
 export function extractServiceType(description: string): string {
-  // Step 1: Strip price/rate type suffixes to get the specific service name.
-  // The pattern matches " - <PriceKeyword>..." anywhere in the description.
-  const priceSuffixPattern = /\s*-\s*(Display|Rental|Printing|Fixing|Installation|Mounting|Labour|Creative|Design|Rate|Price|Cost)\b.*/i;
-  const stripped = description
+  // Step 1: Strip ALL price/rate/cost type suffixes to get the base service name.
+  // Pattern covers:
+  //   "- Distribution Price (per copy)"  → strip
+  //   "- Design Price (Extra)"           → strip
+  //   "- Display Price"                  → strip
+  //   "- Printing & Fixing Price"        → strip
+  //   "- Rental Price"                   → strip
+  //   "- Installation Price"             → strip
+  //   "- Rate (per month)"               → strip
+  // The broad fallback catches any "- <Word(s)> Price/Rate/Cost/Charge" pattern.
+  const priceSuffixPattern = /\s*[-–—]\s*(Display|Rental|Printing|Fixing|Installation|Mounting|Labour|Creative|Design|Distribution|Delivery|Insertion|Rate|Price|Cost|Charge|Extra)\b.*/i;
+  // Broad fallback: "- Anything Price/Rate/Cost/Charge..."
+  const broadSuffixPattern = /\s*[-–—]\s*[\w\s&]+?\s+(Price|Rate|Cost|Charge|Pricing)\b.*/i;
+
+  let stripped = description
     .replace(priceSuffixPattern, '')
     .trim()
-    .replace(/\s*-\s*$/, '') // remove any trailing " -"
+    .replace(/\s*[-–—]\s*$/, '')
     .trim();
+
+  // Apply broad pattern if specific one didn't change anything
+  if (stripped === description.trim()) {
+    stripped = description
+      .replace(broadSuffixPattern, '')
+      .trim()
+      .replace(/\s*[-–—]\s*$/, '')
+      .trim();
+  }
 
   // If stripping produced a multi-word result it is a meaningful specific service name.
   // Single-word results (e.g. "Bus") fall through to keyword matching below.

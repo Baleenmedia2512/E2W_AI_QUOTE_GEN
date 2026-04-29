@@ -1,6 +1,6 @@
 import React from 'react';
 import { TemplateProps } from '../../types';
-// import { ReferenceImages } from './ReferenceImages'; // HIDDEN - Design Spec & Reference Images
+import { ReferenceImages } from './ReferenceImages';
 import { isMultiServiceQuote, groupItemsByServiceType, filterTermsByServiceType, DEFAULT_GENERAL_TERMS, getServiceGroupHeading } from '../../utils/quoteGrouping';
 import './ModernSales.css';
 
@@ -246,15 +246,13 @@ export const ModernSales: React.FC<TemplateProps> = ({ data, editable: _editable
       </div>
     </div>
     
-    {/* Reference Images from Proposal - HIDDEN
     {!isMultiService && (
       <div id="pdf-page-2" className="template-modern-sales">
         <ReferenceImages proposalPages={data.proposalPages} items={quote.items} />
-        
+
         {renderCompanyFooter()}
       </div>
     )}
-    */}
     
     {/* Multi-Service: Individual Service Pages */}
     {isMultiService && serviceGroups.map((group, groupIndex) => {
@@ -340,10 +338,9 @@ export const ModernSales: React.FC<TemplateProps> = ({ data, editable: _editable
             {renderCompanyFooter()}
           </div>
 
-          {/* Service-specific reference images - HIDDEN
           <div id={`pdf-service-ref-${groupIndex}`} className="template-modern-sales">
             <ReferenceImages proposalPages={data.proposalPages} items={group.items} />
-            
+
             {groupIndex === serviceGroups.length - 1 && (
               <>
                 <div className="ms-notice">
@@ -355,10 +352,9 @@ export const ModernSales: React.FC<TemplateProps> = ({ data, editable: _editable
                 </div>
               </>
             )}
-            
+
             {renderCompanyFooter()}
           </div>
-          */}
         </React.Fragment>
       );
     })}
