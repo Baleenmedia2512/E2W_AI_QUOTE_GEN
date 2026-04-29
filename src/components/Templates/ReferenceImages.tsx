@@ -1,5 +1,6 @@
-import React, { useMemo } from 'react';
+import React, { useMemo, useState, useEffect } from 'react';
 import './ReferenceImages.css';
+import { extractReviewViaGemini } from '../../utils/pdfUtils';
 
 interface ExtractedPage {
   pageNumber: number;
@@ -793,36 +794,71 @@ function extractDesignSpecFields(pages: ExtractedPage[]): SpecGroup[] {
   return [];
 }
 
+// Matches any heading that indicates a customer/google review section
+const REVIEW_HEADING_PATTERN = /customer\s+review|google\s+review\s+feedback|google\s+review|review\s+feedback\s+for/i;
+
 function extractCustomerReview(pages: ExtractedPage[]): CustomerReviewData | null {
   for (const page of pages) {
     const text = page.text;
-    if (!/customer review/i.test(text)) continue;
-    const reviewMatch = text.match(/customer review[^\n]*/i);
+    if (!REVIEW_HEADING_PATTERN.test(text)) continue;
+    const reviewMatch = text.match(/(?:customer review|google review[^\n]*|review feedback[^\n]*)/i);
     if (!reviewMatch || reviewMatch.index === undefined) continue;
     const afterReview = text.substring(reviewMatch.index + reviewMatch[0].length);
     const lines = afterReview.split('\n').map(l => l.trim()).filter(Boolean);
+
     let reviewerName = '';
-    let starCount = 4;
+    let starCount = 0;
     const reviewLines: string[] = [];
     let reviewUrl: string | null = null;
+
+    // Lines that are UI/navigation/metadata — never treat as name or review text
+    const isSkippable = (line: string): boolean => {
+      if (/^back\s+to\s+summary/i.test(line)) return true;
+      if (/^click here|^see the review|^view review|^click here to view/i.test(line)) return true;
+      if (/edited\s+\d+|\d+\s*(week|month|day|hour|year)s?\s+ago/i.test(line)) return true;
+      if (/^page\s*\d+$/i.test(line)) return true;
+      if (/^\d+$/.test(line)) return true; // bare page number
+      if (line.length <= 1) return true;
+      return false;
+    };
+
     for (const line of lines) {
+      // 1. Extract URL first
       const urlMatch = line.match(/https?:\/\/[^\s]+/);
       if (urlMatch) { reviewUrl = urlMatch[0]; continue; }
-      if (/^click here|^see the review|^view review/i.test(line)) continue;
-      const starSymbols = line.match(/^[★☆✩]+/);
-      if (starSymbols) { starCount = (line.match(/★/g) || []).length || 4; continue; }
-      if (/edited\s+\d+|^\d+\s*(week|month|day|hour)/i.test(line)) continue;
-      if (line.length === 1) continue;
-      if (!reviewerName && line.length <= 40 && line.split(' ').length <= 4 && !/^\d/.test(line)) {
+
+      // 2. Skip navigation / metadata
+      if (isSkippable(line)) continue;
+
+      // 3. Extract star count — supports ★, ☆, ⭐ emoji
+      if (starCount === 0) {
+        const filledStars = (line.match(/[★⭐]/g) || []).length;
+        if (filledStars > 0) {
+          starCount = filledStars;
+          // If line has real text after the stars (not just timestamp), add it as review text
+          const afterStars = line
+            .replace(/^[★☆⭐✩\s]+/, '')
+            .replace(/edited\s+\d+.*/i, '')
+            .trim();
+          if (afterStars.length > 15) reviewLines.push(afterStars);
+          continue;
+        }
+      }
+
+      // 4. Extract reviewer name — first short capitalised line that looks like a person name
+      if (!reviewerName && line.length <= 50 && line.split(' ').length <= 5 && !/^\d/.test(line) && /[A-Z]/.test(line)) {
         reviewerName = line;
         continue;
       }
+
+      // 5. Collect review body text
       if (line.length > 15) reviewLines.push(line);
     }
+
     if (reviewerName || reviewLines.length > 0 || reviewUrl) {
       return {
         reviewerName: reviewerName || 'Customer',
-        starCount: Math.min(5, Math.max(1, starCount)),
+        starCount: Math.min(5, Math.max(1, starCount || 5)),
         reviewText: reviewLines.join(' '),
         reviewUrl,
       };
@@ -909,14 +945,64 @@ export const ReferenceImages: React.FC<ReferenceImagesProps> = ({ proposalPages,
     return filtered;
   }, [proposalPages, items]);
 
+  // Customer review pages: sweep ALL proposalPages unconditionally.
+  // This is separate from filteredPages so spec/ref image logic is completely unaffected.
+  const reviewPages = useMemo(() => {
+    if (!proposalPages) return [];
+    const filteredPageNums = new Set(filteredPages.map(p => p.pageNumber));
+    const extra = proposalPages.filter(p =>
+      !filteredPageNums.has(p.pageNumber) &&
+      REVIEW_HEADING_PATTERN.test(p.text)
+    );
+    if (extra.length > 0) {
+      console.log('📝 ReferenceImages: Found', extra.length, 'customer review page(s) outside filtered set');
+    }
+    return [...filteredPages, ...extra];
+  }, [proposalPages, filteredPages]);
+
   // Smart content extraction from parsed text — section-aware
+  // specGroups and image extraction use filteredPages ONLY (unchanged behaviour)
   const specGroups = useMemo(() => extractDesignSpecFields(filteredPages), [filteredPages]);
   const hasSpecContent = specGroups.some(g => g.fields.length > 0);
-  const customerReview = useMemo(() => extractCustomerReview(filteredPages), [filteredPages]);
   // Spec image: only from Design Specification pages
   const specImageUrl = useMemo(() => extractSpecSectionImage(filteredPages), [filteredPages]);
   // Reference image: only from Reference Image pages — never falls back to spec pages
   const refImageUrl = useMemo(() => extractRefSectionImage(filteredPages), [filteredPages]);
+  // Customer review uses reviewPages (filteredPages + any customer review pages from full proposal)
+  const customerReview = useMemo(() => extractCustomerReview(reviewPages), [reviewPages]);
+
+  // Gemini OCR fallback: fires only when pdfjs text extraction couldn't get name or review body.
+  // Does NOT affect filteredPages, specGroups, specImageUrl, or refImageUrl.
+  const [geminiReview, setGeminiReview] = useState<{ reviewerName: string; starCount: number; reviewText: string } | null>(null);
+  useEffect(() => {
+    // Only run if review card data is incomplete (name fell back to "Customer" or text is empty)
+    const needsOCR = customerReview && (
+      customerReview.reviewerName === 'Customer' || customerReview.reviewText === ''
+    );
+    if (!needsOCR) { setGeminiReview(null); return; }
+
+    // Find the review page image to send to Gemini
+    const reviewPage = reviewPages.find(p => REVIEW_HEADING_PATTERN.test(p.text));
+    if (!reviewPage) return;
+
+    let cancelled = false;
+    console.log('🔍 Triggering Gemini OCR for review page', reviewPage.pageNumber);
+    extractReviewViaGemini(reviewPage.imageDataUrl).then(data => {
+      if (!cancelled && data) {
+        console.log('✅ Gemini review OCR result:', data);
+        setGeminiReview(data);
+      }
+    });
+    return () => { cancelled = true; };
+  }, [customerReview, reviewPages]);
+
+  // Merge: Gemini OCR fills in missing name/text; URL always comes from pdfjs text layer
+  const finalReview = customerReview ? {
+    ...customerReview,
+    reviewerName: geminiReview?.reviewerName || customerReview.reviewerName,
+    starCount:    geminiReview?.starCount    ?? customerReview.starCount,
+    reviewText:   geminiReview?.reviewText   || customerReview.reviewText,
+  } : null;
 
   if (!proposalPages || proposalPages.length === 0) {
     console.log('❌ ReferenceImages: No proposal pages, returning null');
@@ -979,7 +1065,7 @@ export const ReferenceImages: React.FC<ReferenceImagesProps> = ({ proposalPages,
       )}
 
       {/* Customer Review */}
-      {customerReview && (
+      {finalReview && (
         <div className="smart-section">
           <h3 className="smart-section-heading">
             <span className="smart-heading-bar" />
@@ -987,20 +1073,20 @@ export const ReferenceImages: React.FC<ReferenceImagesProps> = ({ proposalPages,
           </h3>
           <div className="review-card">
             <div className="review-header">
-              <span className="review-avatar">{customerReview.reviewerName.charAt(0).toUpperCase()}</span>
+              <span className="review-avatar">{finalReview.reviewerName.charAt(0).toUpperCase()}</span>
               <div className="review-meta">
-                <span className="review-name">{customerReview.reviewerName}</span>
+                <span className="review-name">{finalReview.reviewerName}</span>
                 <span className="review-stars">
-                  {'★'.repeat(customerReview.starCount)}{'☆'.repeat(Math.max(0, 5 - customerReview.starCount))}
+                  {'★'.repeat(finalReview.starCount)}{'☆'.repeat(Math.max(0, 5 - finalReview.starCount))}
                 </span>
               </div>
             </div>
-            {customerReview.reviewText && (
-              <p className="review-body">{customerReview.reviewText}</p>
+            {finalReview.reviewText && (
+              <p className="review-body">{finalReview.reviewText}</p>
             )}
-            {customerReview.reviewUrl && (
+            {finalReview.reviewUrl && (
               <a
-                href={customerReview.reviewUrl}
+                href={finalReview.reviewUrl}
                 className="review-link"
                 target="_blank"
                 rel="noopener noreferrer"

@@ -151,6 +151,74 @@ function cropImageRegions(imageDataUrl: string, boxes: ImageBoundingBox[]): Prom
 
 // --- End Auto-Crop Helpers ---
 
+// --- Customer Review OCR via Gemini Vision ---
+
+export interface GeminiReviewData {
+  reviewerName: string;
+  starCount: number;
+  reviewText: string;
+}
+
+/**
+ * Uses Gemini Vision to OCR the customer review card embedded as an image inside a PDF page.
+ * Only called when pdfjs text extraction could not find reviewer name / review body.
+ */
+export async function extractReviewViaGemini(imageDataUrl: string): Promise<GeminiReviewData | null> {
+  try {
+    const apiKey = import.meta.env.VITE_GEMINI_API_KEY;
+    if (!apiKey || apiKey.trim() === '') return null;
+
+    const genAI = new GoogleGenerativeAI(apiKey.trim());
+    const model = genAI.getGenerativeModel({ model: 'gemini-2.5-flash-lite' });
+
+    const base64Data = imageDataUrl.split(',')[1];
+
+    const prompt = `This is a page from an advertising proposal PDF. It contains a Google Review / customer review card embedded as an image.
+
+Extract the following from the review card:
+1. Reviewer name (the person who wrote the review)
+2. Star rating (count the filled stars, a number from 1 to 5)
+3. Review text (the full review paragraph written by the customer)
+
+Return ONLY valid JSON, no markdown, no extra text:
+{"reviewerName": "...", "starCount": 5, "reviewText": "..."}
+
+If you cannot find any review content, return exactly: null`;
+
+    const result = await model.generateContent([
+      prompt,
+      { inlineData: { mimeType: 'image/jpeg', data: base64Data } }
+    ]);
+
+    const response = await result.response;
+    const text = response.text().trim();
+
+    console.log('🔍 Gemini review OCR response:', text.substring(0, 300));
+
+    if (text === 'null' || text === '') return null;
+
+    let jsonStr = text;
+    const codeBlockMatch = text.match(/```(?:json)?\s*([\s\S]*?)\s*```/);
+    if (codeBlockMatch) jsonStr = codeBlockMatch[1];
+    const objMatch = jsonStr.match(/\{[\s\S]*\}/);
+    if (!objMatch) return null;
+
+    const parsed = JSON.parse(objMatch[0]);
+    if (!parsed || typeof parsed !== 'object') return null;
+
+    return {
+      reviewerName: String(parsed.reviewerName || '').trim() || 'Customer',
+      starCount: Math.min(5, Math.max(1, Number(parsed.starCount) || 5)),
+      reviewText: String(parsed.reviewText || '').trim(),
+    };
+  } catch (error) {
+    console.warn('⚠️ Gemini review OCR failed:', error);
+    return null;
+  }
+}
+
+// --- End Customer Review OCR ---
+
 export interface PDFExtractionResult {
   textContent: string;
   pageCount: number;
