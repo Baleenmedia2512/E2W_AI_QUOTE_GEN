@@ -1,6 +1,6 @@
 import React, { useMemo, useState, useEffect } from 'react';
 import './ReferenceImages.css';
-import { extractReviewViaGemini } from '../../utils/pdfUtils';
+import { extractReviewViaGemini, cropReferencePageImage, cropPageStrippingHeaderFooter, cropPageHalf } from '../../utils/pdfUtils';
 
 interface ExtractedPage {
   pageNumber: number;
@@ -199,6 +199,27 @@ function filterPagesByCategory(pages: ExtractedPage[], category: string): Extrac
             }
             if (commonChars / kw.length >= 0.85) return true;
           }
+          // Compound word check: PDF sometimes glues words together (e.g. "awarnessdirectio")
+          // Try matching keyword against the first (kw.length+2) characters of longer words
+          if (word.length > kw.length + 2 && kw.length >= 5) {
+            const prefix = word.substring(0, kw.length + 2);
+            if (kw.substring(0, 4) === prefix.substring(0, 4)) {
+              let commonChars = 0;
+              const kwChars = kw.split('');
+              const prefChars = prefix.split('');
+              const usedIdx = new Set();
+              for (const kwChar of kwChars) {
+                for (let i = 0; i < prefChars.length; i++) {
+                  if (!usedIdx.has(i) && kwChar === prefChars[i]) {
+                    commonChars++;
+                    usedIdx.add(i);
+                    break;
+                  }
+                }
+              }
+              if (commonChars / kw.length >= 0.85) return true;
+            }
+          }
         }
       }
       
@@ -274,6 +295,30 @@ function filterPagesByCategory(pages: ExtractedPage[], category: string): Extrac
               return true;
             }
           }
+          // Compound word check: PDF sometimes glues words together (e.g. "awarnessdirectio")
+          // Try matching keyword against the first (kw.length+2) characters of longer words
+          if (word.length > kw.length + 2 && kw.length >= 5) {
+            const prefix = word.substring(0, kw.length + 2);
+            if (kw.substring(0, 4) === prefix.substring(0, 4)) {
+              let commonChars = 0;
+              const kwChars = kw.split('');
+              const prefChars = prefix.split('');
+              const usedIdx = new Set();
+              for (const kwChar of kwChars) {
+                for (let i = 0; i < prefChars.length; i++) {
+                  if (!usedIdx.has(i) && kwChar === prefChars[i]) {
+                    commonChars++;
+                    usedIdx.add(i);
+                    break;
+                  }
+                }
+              }
+              if (commonChars / kw.length >= 0.85) {
+                console.log(`  ✓ Found compound-word match: "${kw}" matched as prefix of "${word}"`);
+                return true;
+              }
+            }
+          }
         }
       }
       
@@ -339,6 +384,14 @@ function filterPagesByCategory(pages: ExtractedPage[], category: string): Extrac
         return true;
       }
     }
+
+    // All keywords confirmed present via fuzzy/synonym matching — accept the page.
+    // This handles PDFs with typos (e.g. "awarnessdirectio") where exact heading
+    // reconstruction fails but keywords are definitively present.
+    if (hasAllKeywords) {
+      console.log(`✅ Page ${page.pageNumber} - Accepted (all keywords confirmed via fuzzy match)`);
+      return true;
+    }
     
     return false;
   });
@@ -361,7 +414,18 @@ function filterPagesByCategory(pages: ExtractedPage[], category: string): Extrac
     
     // Check if this is a reference image page
     const isRefPage = pageText.includes('reference image') || 
+                     pageText.includes('reference images') ||
+                     pageText.includes('referenceimage') ||
+                     pageText.includes('reference photo') ||
+                     pageText.includes('reference photos') ||
+                     pageText.includes('example image') ||
+                     pageText.includes('sample photo') ||
                      pageText.includes('design specification') ||
+                     pageText.includes('design specifications') ||
+                     pageText.includes('design specs') ||
+                     pageText.includes('specification') ||
+                     pageText.includes('customer review') ||
+                     pageText.includes('client review') ||
                      pageText.match(/\(([2-9]\d*)\/\d+\)/);
     
     if (isRefPage) {
@@ -375,7 +439,18 @@ function filterPagesByCategory(pages: ExtractedPage[], category: string): Extrac
     if (nextPage) {
       const nextText = nextPage.text.toLowerCase().replace(/\s*\|\s*/g, '').replace(/\s+/g, ' ');
       const nextIsRefPage = nextText.includes('reference image') || 
+                           nextText.includes('reference images') ||
+                           nextText.includes('referenceimage') ||
+                           nextText.includes('reference photo') ||
+                           nextText.includes('reference photos') ||
+                           nextText.includes('example image') ||
+                           nextText.includes('sample photo') ||
                            nextText.includes('design specification') ||
+                           nextText.includes('design specifications') ||
+                           nextText.includes('design specs') ||
+                           nextText.includes('specification') ||
+                           nextText.includes('customer review') ||
+                           nextText.includes('client review') ||
                            nextText.match(/\(([2-9]\d*)\/\d+\)/);
       
       if (nextIsRefPage) {
@@ -702,10 +777,13 @@ function filterPagesByQuoteItems(pages: ExtractedPage[], items: QuoteItem[]): Ex
 function extractDesignSpecFields(pages: ExtractedPage[]): SpecGroup[] {
   for (const page of pages) {
     const text = page.text;
-    const specMatch = text.match(/display area[^\n]*design spec[^\n]*/i) || text.match(/design spec[^\n]*/i);
+    const specMatch = text.match(/display area[^\n]*design spec[^\n]*/i)
+                   || text.match(/design\s*spec[^\n]*/i)
+                   || text.match(/display\s*area[^\n]*/i)
+                   || text.match(/specification[^\n]*/i);
     if (!specMatch || specMatch.index === undefined) continue;
     const afterSpec = text.substring(specMatch.index + specMatch[0].length);
-    const endMatch = afterSpec.match(/\n(reference image|customer review|click here)/i);
+    const endMatch = afterSpec.match(/\n(reference\s*image|customer review|click here)/i);
     const specSection = endMatch && endMatch.index !== undefined ? afterSpec.substring(0, endMatch.index) : afterSpec;
 
     const dimensionFields: Array<{ label: string; value: string }> = [];
@@ -762,6 +840,20 @@ function extractDesignSpecFields(pages: ExtractedPage[]): SpecGroup[] {
         dimensionFields.push({ label: dimColon[1].trim(), value: dimColon[2].trim() });
       }
 
+      // Handle PDF format where label and value are in separate pipe-columns:
+      // e.g. "Material:\t|\tSun Pack" → parts[0]="Material:" parts[1]="Sun Pack"
+      // dimColon fails because fullDimStr="Material:" has no inline value.
+      if (!dimColon && dimEnd === 1 && /:\s*$/.test(parts[0]) && parts.length >= 2) {
+        const label = parts[0].replace(/:\s*$/, '').trim();
+        const value = parts.slice(1).join(' ').trim();
+        if (label && value) {
+          const isDim = /\d["'x×(]/i.test(value) || /side|front|back|top|bottom|left|right|dimension|size/i.test(label);
+          if (isDim) dimensionFields.push({ label, value });
+          else materialFields.push({ label, value });
+        }
+        continue;
+      }
+
       // Remaining parts are the material columns
       const remaining = parts.slice(dimEnd);
       if (remaining.length === 0) continue;
@@ -795,13 +887,13 @@ function extractDesignSpecFields(pages: ExtractedPage[]): SpecGroup[] {
 }
 
 // Matches any heading that indicates a customer/google review section
-const REVIEW_HEADING_PATTERN = /customer\s+review|google\s+review\s+feedback|google\s+review|review\s+feedback\s+for/i;
+const REVIEW_HEADING_PATTERN = /customer\s+review|client\s+review|google\s+review\s+feedback|google\s+review|review\s+feedback\s+for|testimonials?|client\s+feedback|customer\s+feedback/i;
 
 function extractCustomerReview(pages: ExtractedPage[]): CustomerReviewData | null {
   for (const page of pages) {
     const text = page.text;
     if (!REVIEW_HEADING_PATTERN.test(text)) continue;
-    const reviewMatch = text.match(/(?:customer review|google review[^\n]*|review feedback[^\n]*)/i);
+    const reviewMatch = text.match(/(?:customer review|client review|google review[^\n]*|review feedback[^\n]*|testimonials?|client feedback|customer feedback)/i);
     if (!reviewMatch || reviewMatch.index === undefined) continue;
     const afterReview = text.substring(reviewMatch.index + reviewMatch[0].length);
     const lines = afterReview.split('\n').map(l => l.trim()).filter(Boolean);
@@ -873,10 +965,33 @@ function getSpecPages(pages: ExtractedPage[]): ExtractedPage[] {
     const text = page.text.toLowerCase().replace(/\s*\|\s*/g, ' ');
     const hasSpec = text.includes('design specification') ||
                     text.includes('design specifications') ||
+                    text.includes('design specs') ||
+                    text.includes('specification') ||
                     text.includes('display area');
+    if (!hasSpec) return false;
     const hasRefImg = text.includes('reference image') || text.includes('reference images');
-    // A page is a spec page if it has spec keywords AND is not purely a reference image page
-    return hasSpec && !hasRefImg;
+    // If BOTH headings appear on the same page, qualify as spec page only when
+    // the spec heading comes BEFORE the reference image heading in the text.
+    // This handles PDFs where Design Spec and Reference Image share a single page.
+    if (hasRefImg) {
+      const specPos = Math.min(
+        text.includes('design specification') ? text.indexOf('design specification') : Infinity,
+        text.includes('design specifications') ? text.indexOf('design specifications') : Infinity,
+        text.includes('design specs') ? text.indexOf('design specs') : Infinity,
+        text.includes('specification') ? text.indexOf('specification') : Infinity,
+        text.includes('display area') ? text.indexOf('display area') : Infinity
+      );
+      const refPos = Math.min(
+        text.includes('reference image') ? text.indexOf('reference image') : Infinity,
+        text.includes('reference images') ? text.indexOf('reference images') : Infinity,
+        text.includes('reference photo') ? text.indexOf('reference photo') : Infinity,
+        text.includes('reference photos') ? text.indexOf('reference photos') : Infinity,
+        text.includes('example image') ? text.indexOf('example image') : Infinity,
+        text.includes('sample photo') ? text.indexOf('sample photo') : Infinity
+      );
+      return specPos < refPos;
+    }
+    return true;
   });
 }
 
@@ -884,7 +999,10 @@ function getSpecPages(pages: ExtractedPage[]): ExtractedPage[] {
 function getRefImagePages(pages: ExtractedPage[]): ExtractedPage[] {
   return pages.filter(page => {
     const text = page.text.toLowerCase().replace(/\s*\|\s*/g, ' ');
-    return text.includes('reference image') || text.includes('reference images');
+    return text.includes('reference image') || text.includes('reference images') ||
+           text.includes('referenceimage') ||
+           text.includes('reference photo') || text.includes('reference photos') ||
+           text.includes('example image') || text.includes('sample photo');
   });
 }
 
@@ -1004,6 +1122,71 @@ export const ReferenceImages: React.FC<ReferenceImagesProps> = ({ proposalPages,
     reviewText:   geminiReview?.reviewText   || customerReview.reviewText,
   } : null;
 
+  // Lazy Gemini Vision crop for Reference Image section.
+  // Fires only when the ref page has no croppedImages (upload-time crop was skipped or returned empty).
+  // Does NOT affect spec image, customer review, or filteredPages logic.
+  const [lazyCroppedRefImage, setLazyCroppedRefImage] = useState<string | null>(null);
+  useEffect(() => {
+    // Find the reference image page inside filteredPages (including new heading variants)
+    const refPage = filteredPages.find(p => {
+      const t = p.text.toLowerCase().replace(/\s*\|\s*/g, ' ');
+      return t.includes('reference image') || t.includes('reference images') ||
+             t.includes('reference photo') || t.includes('reference photos') ||
+             t.includes('example image') || t.includes('sample photo');
+    });
+    // Only fire if ref page exists AND has no cropped images (so full-page fallback is active)
+    if (!refPage || (refPage.croppedImages && refPage.croppedImages.length > 0)) {
+      setLazyCroppedRefImage(null);
+      return;
+    }
+    let cancelled = false;
+    console.log('🔍 Triggering lazy Gemini Vision crop for reference page', refPage.pageNumber);
+    cropReferencePageImage(refPage.imageDataUrl, refPage.pageNumber).then(async cropped => {
+      if (cancelled) return;
+      if (cropped.length > 0) {
+        console.log('✅ Lazy crop: got', cropped.length, 'image(s) from reference page', refPage.pageNumber);
+        setLazyCroppedRefImage(cropped[0]);
+      } else {
+        // Gemini Vision returned nothing — use geometric header/footer strip as fallback
+        console.log('⚠️ Gemini Vision empty, using geometric strip for reference page', refPage.pageNumber);
+        const stripped = await cropPageStrippingHeaderFooter(refPage.imageDataUrl);
+        if (!cancelled) setLazyCroppedRefImage(stripped);
+      }
+    });
+    return () => { cancelled = true; };
+  }, [filteredPages]);
+
+  // Lazy spec section image crop for shared-page case (Lamp Post Die Cutting etc).
+  // Fires only when the spec page is ALSO a reference image page (both headings on same page).
+  // Uses top-half geometric crop so spec diagram (top) is separated from reference photo (bottom).
+  // Does NOT affect pages where spec and ref image are on separate pages.
+  const [lazyCroppedSpecImage, setLazyCroppedSpecImage] = useState<string | null>(null);
+  useEffect(() => {
+    const specPage = filteredPages.find(p => {
+      const t = p.text.toLowerCase().replace(/\s*\|\s*/g, ' ');
+      const hasSpec = t.includes('design specification') || t.includes('design specifications') ||
+                      t.includes('design specs') || t.includes('specification') || t.includes('display area');
+      const hasRef  = t.includes('reference image') || t.includes('reference images') ||
+                      t.includes('reference photo') || t.includes('reference photos') ||
+                      t.includes('example image') || t.includes('sample photo');
+      // Only trigger for SHARED pages (both headings present) — separate pages use normal flow
+      return hasSpec && hasRef;
+    });
+    if (!specPage) {
+      setLazyCroppedSpecImage(null);
+      return;
+    }
+    let cancelled = false;
+    console.log('🔍 Triggering lazy top-half crop for shared spec/ref page', specPage.pageNumber);
+    cropPageHalf(specPage.imageDataUrl, 'top').then(cropped => {
+      if (!cancelled) {
+        console.log('✅ Lazy spec top-half crop done for page', specPage.pageNumber);
+        setLazyCroppedSpecImage(cropped);
+      }
+    });
+    return () => { cancelled = true; };
+  }, [filteredPages]);
+
   if (!proposalPages || proposalPages.length === 0) {
     console.log('❌ ReferenceImages: No proposal pages, returning null');
     return null;
@@ -1043,9 +1226,9 @@ export const ReferenceImages: React.FC<ReferenceImagesProps> = ({ proposalPages,
               ))}
             </div>
           )}
-          {specImageUrl && (
+          {specImageUrl && !hasSpecContent && (
             <div className="ref-img-container spec-img-container">
-              <img src={specImageUrl} alt="Design specification diagram" className="ref-img" />
+              <img src={lazyCroppedSpecImage ?? specImageUrl} alt="Design specification diagram" className="ref-img" />
             </div>
           )}
         </div>
@@ -1059,7 +1242,7 @@ export const ReferenceImages: React.FC<ReferenceImagesProps> = ({ proposalPages,
             Reference Image
           </h3>
           <div className="ref-img-container">
-            <img src={refImageUrl} alt="Reference" className="ref-img" />
+            <img src={lazyCroppedRefImage ?? refImageUrl} alt="Reference" className="ref-img" />
           </div>
         </div>
       )}

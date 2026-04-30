@@ -25,7 +25,12 @@ interface ImageBoundingBox {
 function shouldAttemptCropping(pageText: string): boolean {
   const text = pageText.toLowerCase().replace(/\s*\|\s*/g, '').replace(/\s+/g, ' ');
 
-  if (text.includes('reference image') || text.includes('design specification') ||
+  if (text.includes('reference image') || text.includes('reference images') ||
+      text.includes('design specification') || text.includes('design specifications') ||
+      text.includes('design specs') || text.includes('specification') ||
+      text.includes('customer review') || text.includes('client review') ||
+      text.includes('reference photo') || text.includes('example image') ||
+      text.includes('sample photo') ||
       text.includes('sample image') || text.includes('display area')) {
     return true;
   }
@@ -52,12 +57,12 @@ async function detectImageRegions(imageDataUrl: string, pageNumber: number): Pro
 
     const base64Data = imageDataUrl.split(',')[1];
 
-    const prompt = `Analyze this advertising/media proposal PDF page image. Detect all product photographs, reference photos, vehicle branding mockups, bus/auto/van/car wrapped images, signage photos, billboard images, hoarding images, and design example images.
+    const prompt = `Analyze this advertising/media proposal PDF page image. Detect all product photographs, reference photos, vehicle branding mockups, bus/auto/van/car wrapped images, signage photos, billboard images, hoarding images, LED hoarding panels, flex hoarding prints, lamp post displays, traffic awareness boards, outdoor advertising boards, die-cut standees, branding boards, awareness signage, street furniture displays, and design example images.
 
 Rules:
 - ONLY detect actual photographs, mockup images, and product images
-- IGNORE: text-only areas, pricing tables, rate cards, headers, footers, page numbers, small logos (under 5% of page), decorative lines/shapes/swooshes, watermarks, background patterns
-- Each detected region must be at least 8% of the total page area
+- IGNORE: text-only areas, pricing tables, rate cards, headers, footers, page numbers, small logos (under 4% of page), decorative lines/shapes/swooshes, watermarks, background patterns, heading text like "Reference Image" or "Design Specification"
+- Each detected region must be at least 4% of the total page area
 - If an image has a visible border or frame, include it within the bounding box
 - Detect images even if they overlap or are stacked vertically
 
@@ -95,7 +100,7 @@ If no product images or photos are found on this page, return exactly: []`;
       if (yMin >= yMax || xMin >= xMax) return false;
       if (yMin < 0 || xMin < 0 || yMax > 1000 || xMax > 1000) return false;
       const area = ((yMax - yMin) * (xMax - xMin)) / (1000 * 1000);
-      return area >= 0.05;
+      return area >= 0.04;
     });
   } catch (error) {
     console.warn(`⚠️ Gemini Vision detection failed for page ${pageNumber}:`, error);
@@ -145,6 +150,73 @@ function cropImageRegions(imageDataUrl: string, boxes: ImageBoundingBox[]): Prom
       resolve(croppedImages);
     };
     img.onerror = () => resolve([]);
+    img.src = imageDataUrl;
+  });
+}
+
+/**
+ * Exported wrapper: Detect and crop reference image regions from a single page.
+ * Called lazily at render time when upload-time cropping was skipped or returned empty.
+ * Does NOT affect the main extractPDFContent upload flow.
+ */
+export async function cropReferencePageImage(imageDataUrl: string, pageNumber: number): Promise<string[]> {
+  const boxes = await detectImageRegions(imageDataUrl, pageNumber);
+  if (boxes.length === 0) return [];
+  return cropImageRegions(imageDataUrl, boxes);
+}
+
+/**
+ * Geometric fallback: strip header (~18%) and footer (~8%) from a page image.
+ * Used when Gemini Vision returns no bounding boxes but full-page fallback would show
+ * heading text / whitespace / nav buttons.
+ * Pure canvas math — no API call.
+ */
+export function cropPageStrippingHeaderFooter(imageDataUrl: string): Promise<string> {
+  return new Promise((resolve) => {
+    const img = new Image();
+    img.onload = () => {
+      const w = img.naturalWidth;
+      const h = img.naturalHeight;
+      const topCut = Math.round(h * 0.18);   // strip top 18% (heading + whitespace)
+      const bottomCut = Math.round(h * 0.08); // strip bottom 8% (footer/nav buttons)
+      const newH = h - topCut - bottomCut;
+      if (newH < 50) { resolve(imageDataUrl); return; }
+      const canvas = document.createElement('canvas');
+      canvas.width = w;
+      canvas.height = newH;
+      const ctx = canvas.getContext('2d');
+      if (!ctx) { resolve(imageDataUrl); return; }
+      ctx.drawImage(img, 0, topCut, w, newH, 0, 0, w, newH);
+      resolve(canvas.toDataURL('image/jpeg', 0.85));
+    };
+    img.onerror = () => resolve(imageDataUrl);
+    img.src = imageDataUrl;
+  });
+}
+
+/**
+ * Geometric crop: return only the top half or bottom half of a page image.
+ * Used to separate Design Specification (top) from Reference Image (bottom)
+ * when both sections share the same PDF page.
+ * Pure canvas math — no API call.
+ */
+export function cropPageHalf(imageDataUrl: string, half: 'top' | 'bottom'): Promise<string> {
+  return new Promise((resolve) => {
+    const img = new Image();
+    img.onload = () => {
+      const w = img.naturalWidth;
+      const h = img.naturalHeight;
+      const halfH = Math.round(h * 0.5);
+      const sy = half === 'top' ? 0 : halfH;
+      const canvas = document.createElement('canvas');
+      canvas.width = w;
+      canvas.height = halfH;
+      const ctx = canvas.getContext('2d');
+      if (!ctx) { resolve(imageDataUrl); return; }
+      ctx.drawImage(img, 0, sy, w, halfH, 0, 0, w, halfH);
+      resolve(canvas.toDataURL('image/jpeg', 0.85));
+    };
+    img.onerror = () => resolve(imageDataUrl);
     img.src = imageDataUrl;
   });
 }
