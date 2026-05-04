@@ -62,12 +62,13 @@ export const ClassicBusiness: React.FC<TemplateProps> = ({ data, editable: _edit
   };
 
   // Render company contact footer (appears on every page)
-  const renderCompanyFooter = () => (
+  const renderCompanyFooter = (pageNum: number) => (
     <div className="company-contact-footer">
       <div className="footer-divider"></div>
       <div className="footer-content">
         {company.website && <span className="footer-item">🌐 <a href={ensureHttps(company.website)} style={{ color: 'inherit', textDecoration: 'none' }}>{company.website}</a></span>}
         {company.address && <span className="footer-item">📍 {company.address}</span>}
+        <span className="footer-page-number">{pageNum}</span>
       </div>
     </div>
   );
@@ -97,10 +98,8 @@ export const ClassicBusiness: React.FC<TemplateProps> = ({ data, editable: _edit
         {/* Company Contact Details */}
         <div className="company-contact-section">
           <div className="company-contact-details">
-            {company.address && <p>{company.address}</p>}
             {company.phone && <p>Phone: <a href={`tel:${company.phone}`} style={{ color: 'inherit', textDecoration: 'none' }}>{company.phone}</a></p>}
             {company.email && <p>Email: <a href={`mailto:${company.email}`} style={{ color: 'inherit', textDecoration: 'none' }}>{company.email}</a></p>}
-            {company.website && <p>Website: <a href={ensureHttps(company.website)} style={{ color: 'inherit', textDecoration: 'none' }}>{company.website}</a></p>}
             {company.gst && <p>GST: {company.gst}</p>}
             {company.abn && <p>ABN: {company.abn}</p>}
           </div>
@@ -205,52 +204,58 @@ export const ClassicBusiness: React.FC<TemplateProps> = ({ data, editable: _edit
           </table>
         </div>
 
-        {/* General Terms & Conditions */}
-        <div className="terms-section">
-          <h3 className="section-heading">Terms & Conditions</h3>
-          <ol className="terms-list">
-            {isMultiService
-              ? DEFAULT_GENERAL_TERMS.map((term, i) => <li key={i}>{term}</li>)
-              : (quote.termsAndConditions
-                  ? quote.termsAndConditions
-                      .split(/\n|•|\d+\.\s/)
-                      .map(t => t.trim())
-                      .filter(Boolean)
-                      .map((term, i) => <li key={i}>{renderTermWithLinks(term)}</li>)
-                  : <li>Standard terms and conditions apply</li>
-                )
-            }
-          </ol>
-        </div>
-
-        {/* Item-specific Terms (for single-service quotes) */}
-        {!isMultiService && quote.items.map((item) => 
-          item.termsAndConditions ? (
-            <div key={item.id} className="terms-section">
-              <h3 className="section-heading">{item.description.split(' - ')[0]} — Terms & Conditions</h3>
-              <ol className="terms-list">
-                {item.termsAndConditions
-                  .split(/\n|•|\d+\.\s/)
-                  .map(t => t.trim())
-                  .filter(Boolean)
-                  .map((term, i) => <li key={i}>{renderTermWithLinks(term)}</li>)
-                }
-              </ol>
-            </div>
-          ) : null
-        )}
         </div>
 
         {!isMultiService && (
           <div id="pdf-page-2" className="template-classic-business">
             <ReferenceImages proposalPages={data.proposalPages} items={quote.items} />
 
-            {renderCompanyFooter()}
+            {renderCompanyFooter(2)}
+          </div>
+        )}
+
+        {!isMultiService && (
+          <div id="pdf-page-3" className="template-classic-business">
+            <div className="terms-section">
+              <h3 className="section-heading">Terms & Conditions</h3>
+              <ol className="terms-list">
+                {quote.termsAndConditions
+                  ? quote.termsAndConditions
+                      .split(/\n|•|\d+\.\s/)
+                      .map(t => t.trim())
+                      .filter(Boolean)
+                      .map((term, i) => <li key={i}>{renderTermWithLinks(term)}</li>)
+                  : <li>Standard terms and conditions apply</li>
+                }
+              </ol>
+            </div>
+
+            {quote.items.map((item) => 
+              item.termsAndConditions ? (
+                <div key={item.id} className="terms-section">
+                  <h3 className="section-heading">{item.description.split(' - ')[0]} — Terms & Conditions</h3>
+                  <ol className="terms-list">
+                    {item.termsAndConditions
+                      .split(/\n|•|\d+\.\s/)
+                      .map(t => t.trim())
+                      .filter(Boolean)
+                      .map((term, i) => <li key={i}>{renderTermWithLinks(term)}</li>)
+                    }
+                  </ol>
+                </div>
+              ) : null
+            )}
+
+            <div className="system-generated-notice">
+              <p>This is a system-generated quotation and does not require a signature.</p>
+            </div>
+
+            {renderCompanyFooter(3)}
           </div>
         )}
 
         {/* Company Contact Footer */}
-        {renderCompanyFooter()}
+        {renderCompanyFooter(1)}
 
         {/* Footer */}
         <div className="classic-footer">
@@ -325,46 +330,51 @@ export const ClassicBusiness: React.FC<TemplateProps> = ({ data, editable: _edit
                 </table>
               </div>
 
-              {/* Terms & Conditions - Service Specific */}
-              <div className="terms-section">
-                <h3 className="section-heading">Terms & Conditions</h3>
-                <ol className="terms-list">
-                  {(group.termsAndConditions || quote.termsAndConditions)
-                    ? (group.termsAndConditions
-                        ? group.termsAndConditions.split('\n').map((t: string) => t.trim().replace(/^[•\-\*]\s*/, '').trim()).filter(Boolean)
-                        : filterTermsByServiceType(quote.termsAndConditions, group.serviceType)
-                      ).map((term, i) => <li key={i}>{term}</li>)
-                    : <li>Standard terms and conditions apply</li>
-                  }
-                </ol>
-              </div>                
                 {/* Company Contact Footer */}
-                {renderCompanyFooter()}              </div>
+                {renderCompanyFooter(groupIndex * 2 + 2)}              </div>
 
               <div id={`pdf-service-ref-${groupIndex}`} className="template-classic-business">
                 <ReferenceImages proposalPages={data.proposalPages} items={group.items} />
 
-                {groupIndex === serviceGroups.length - 1 && (
-                  <>
-                    <div className="system-generated-notice">
-                      <p>This is a system-generated quotation and does not require a signature.</p>
-                    </div>
-                    <div className="classic-footer">
-                      <div className="ornamental-line"></div>
-                      <p className="footer-text">
-                        {company.name.toUpperCase()} - Professional Branding Services
-                      </p>
-                    </div>
-                  </>
-                )}
-
-                {renderCompanyFooter()}
+                {renderCompanyFooter(groupIndex * 2 + 3)}
               </div>
             </div>
           </div>
         </React.Fragment>
       );
     })}
+
+    {/* Last Page: Terms & Conditions (multi-service) */}
+    {isMultiService && (
+      <div id="pdf-page-terms" className="template-classic-business">
+        <div className="terms-section">
+          <h3 className="section-heading">Terms & Conditions</h3>
+          <ol className="terms-list">
+            {DEFAULT_GENERAL_TERMS.map((term, i) => <li key={i}>{term}</li>)}
+          </ol>
+        </div>
+
+        {serviceGroups.map((group, i) => (
+          (group.termsAndConditions || quote.termsAndConditions) ? (
+            <div key={i} className="terms-section">
+              <h3 className="section-heading">{getServiceGroupHeading(group)} — <span style={{ textTransform: 'none' }}>SPECIFIC Ts & Cs</span></h3>
+              <ol className="terms-list">
+                {(group.termsAndConditions
+                  ? group.termsAndConditions.split('\n').map((t: string) => t.trim().replace(/^[•\-\*]\s*/, '').trim()).filter(Boolean)
+                  : filterTermsByServiceType(quote.termsAndConditions, group.serviceType)
+                ).map((term, j) => <li key={j}>{term}</li>)}
+              </ol>
+            </div>
+          ) : null
+        ))}
+
+        <div className="system-generated-notice">
+          <p>This is a system-generated quotation and does not require a signature.</p>
+        </div>
+
+        {renderCompanyFooter(serviceGroups.length * 2 + 2)}
+      </div>
+    )}
     </>
   );
 };

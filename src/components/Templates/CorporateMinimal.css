@@ -38,7 +38,7 @@
 .template-corporate-minimal .header-info-row {
   display: flex;
   justify-content: space-between;
-  align-items: flex-start;
+  align-items: center;
   gap: 24px;
 }
 
@@ -64,6 +64,7 @@
 }
 
 .template-corporate-minimal .company-details {
+  flex: 1;
   font-size: 11px;
   color: #636e72;
   line-height: 1.5;
@@ -534,6 +535,15 @@
 .template-corporate-minimal .company-contact-footer {
   margin-top: 20px;
   padding-top: 12px;
+  position: relative;
+}
+
+.template-corporate-minimal .company-contact-footer .footer-page-number {
+  flex: 0 0 100%;
+  text-align: center;
+  font-size: 11px;
+  font-weight: 600;
+  color: #636e72;
 }
 
 .template-corporate-minimal .company-contact-footer .footer-divider {
