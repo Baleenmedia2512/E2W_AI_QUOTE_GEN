@@ -62,12 +62,13 @@ export const ModernSales: React.FC<TemplateProps> = ({ data, editable: _editable
   };
 
   // Render company contact footer (appears on every page)
-  const renderCompanyFooter = () => (
+  const renderCompanyFooter = (pageNum: number) => (
     <div className="company-contact-footer">
       <div className="footer-divider"></div>
       <div className="footer-content">
         {company.website && <span className="footer-item">🌐 <a href={ensureHttps(company.website)} style={{ color: 'inherit', textDecoration: 'none' }}>{company.website}</a></span>}
         {company.address && <span className="footer-item">📍 {company.address}</span>}
+        <span className="footer-page-number">{pageNum}</span>
       </div>
     </div>
   );
@@ -112,10 +113,8 @@ export const ModernSales: React.FC<TemplateProps> = ({ data, editable: _editable
           <div className="ms-party-card">
             <div className="ms-party-label">FROM</div>
             <p className="ms-party-name">{company.name}</p>
-            <p className="ms-party-detail">{company.address}</p>
             {company.phone && <p className="ms-party-detail">T: <a href={`tel:${company.phone}`} style={{ color: 'inherit', textDecoration: 'none' }}>{company.phone}</a></p>}
             {company.email && <p className="ms-party-detail">E: <a href={`mailto:${company.email}`} style={{ color: 'inherit', textDecoration: 'none' }}>{company.email}</a></p>}
-            {company.website && <p className="ms-party-detail">W: <a href={ensureHttps(company.website)} style={{ color: 'inherit', textDecoration: 'none' }}>{company.website}</a></p>}
             {company.gst && <p className="ms-party-detail">GST: {company.gst}</p>}
             {company.abn && <p className="ms-party-detail ms-abn">ABN: {company.abn}</p>}
           </div>
@@ -184,36 +183,50 @@ export const ModernSales: React.FC<TemplateProps> = ({ data, editable: _editable
           </table>
         </div>
 
-        {/* General Terms */}
+      </div>
+
+      {/* Company Contact Footer */}
+      {renderCompanyFooter(1)}
+
+      {/* Footer */}
+      <div className="ms-footer">
+        <p>Thank you for your business | {company.name.toUpperCase()}</p>
+        {company.website && <p><a href={ensureHttps(company.website)} style={{ color: 'inherit', textDecoration: 'none' }}>{company.website}</a></p>}
+        <p className="ms-footer-company">{company.name}</p>
+      </div>
+    </div>
+    
+    {!isMultiService && (
+      <div id="pdf-page-2" className="template-modern-sales">
+        <ReferenceImages proposalPages={data.proposalPages} items={quote.items} />
+
+        {renderCompanyFooter(2)}
+      </div>
+    )}
+
+    {/* Terms & Conditions Page (single-service) */}
+    {!isMultiService && (
+      <div id="pdf-page-3" className="template-modern-sales">
         <div className="ms-terms">
           <h3 className="ms-section-title">Terms & Conditions</h3>
           <div className="ms-terms-grid">
-            {isMultiService 
-              ? DEFAULT_GENERAL_TERMS.map((term, i) => (
-                  <div className="ms-term-item" key={i}>
-                    <span className="ms-term-check">&#10003;</span>
-                    <span>{term}</span>
-                  </div>
-                ))
-              : (quote.termsAndConditions
-                  ? quote.termsAndConditions
-                      .split(/\n|•|\d+\.\s/)
-                      .map(t => t.trim())
-                      .filter(Boolean)
-                      .map((term, i) => (
-                        <div className="ms-term-item" key={i}>
-                          <span className="ms-term-check">&#10003;</span>
-                          <span>{renderTermWithLinks(term)}</span>
-                        </div>
-                      ))
-                  : <div className="ms-term-item"><span className="ms-term-check">&#10003;</span><span>Standard terms and conditions apply</span></div>
-                )
+            {quote.termsAndConditions
+              ? quote.termsAndConditions
+                  .split(/\n|•|\d+\.\s/)
+                  .map(t => t.trim())
+                  .filter(Boolean)
+                  .map((term, i) => (
+                    <div className="ms-term-item" key={i}>
+                      <span className="ms-term-check">&#10003;</span>
+                      <span>{renderTermWithLinks(term)}</span>
+                    </div>
+                  ))
+              : <div className="ms-term-item"><span className="ms-term-check">&#10003;</span><span>Standard terms and conditions apply</span></div>
             }
           </div>
         </div>
 
-        {/* Item-specific Terms (for single-service quotes) */}
-        {!isMultiService && quote.items.map((item) => 
+        {quote.items.map((item) => 
           item.termsAndConditions ? (
             <div key={item.id} className="ms-terms">
               <h3 className="ms-section-title">{item.description.split(' - ')[0]} — Terms & Conditions</h3>
@@ -233,24 +246,12 @@ export const ModernSales: React.FC<TemplateProps> = ({ data, editable: _editable
             </div>
           ) : null
         )}
-      </div>
 
-      {/* Company Contact Footer */}
-      {renderCompanyFooter()}
+        <div className="ms-notice">
+          <p>This is a system-generated quotation and does not require a signature.</p>
+        </div>
 
-      {/* Footer */}
-      <div className="ms-footer">
-        <p>Thank you for your business | {company.name.toUpperCase()}</p>
-        {company.website && <p><a href={ensureHttps(company.website)} style={{ color: 'inherit', textDecoration: 'none' }}>{company.website}</a></p>}
-        <p className="ms-footer-company">{company.name}</p>
-      </div>
-    </div>
-    
-    {!isMultiService && (
-      <div id="pdf-page-2" className="template-modern-sales">
-        <ReferenceImages proposalPages={data.proposalPages} items={quote.items} />
-
-        {renderCompanyFooter()}
+        {renderCompanyFooter(3)}
       </div>
     )}
     
@@ -314,50 +315,67 @@ export const ModernSales: React.FC<TemplateProps> = ({ data, editable: _editable
                 </table>
               </div>
 
-              {/* Terms */}
-              <div className="ms-terms">
-                <h3 className="ms-section-title">Terms & Conditions</h3>
-                <div className="ms-terms-grid">
-                  {(group.termsAndConditions || quote.termsAndConditions)
-                    ? (group.termsAndConditions
-                        ? group.termsAndConditions.split('\n').map((t: string) => t.trim().replace(/^[•\-\*]\s*/, '').trim()).filter(Boolean)
-                        : filterTermsByServiceType(quote.termsAndConditions, group.serviceType)
-                      ).map((term, i) => (
-                        <div className="ms-term-item" key={i}>
-                          <span className="ms-term-check">&#10003;</span>
-                          <span>{term}</span>
-                        </div>
-                      ))
-                    : <div className="ms-term-item"><span className="ms-term-check">&#10003;</span><span>Standard terms and conditions apply</span></div>
-                  }
-                </div>
-              </div>
             </div>
             
             {/* Company Contact Footer */}
-            {renderCompanyFooter()}
+            {renderCompanyFooter(groupIndex * 2 + 2)}
           </div>
 
           <div id={`pdf-service-ref-${groupIndex}`} className="template-modern-sales">
             <ReferenceImages proposalPages={data.proposalPages} items={group.items} />
 
-            {groupIndex === serviceGroups.length - 1 && (
-              <>
-                <div className="ms-notice">
-                  <p>This is a system-generated quotation and does not require a signature.</p>
-                </div>
-                <div className="ms-footer">
-                  <p>{company.name.toUpperCase()} - Professional Branding Services</p>
-                  <p className="ms-footer-company">{company.name}</p>
-                </div>
-              </>
-            )}
-
-            {renderCompanyFooter()}
+            {renderCompanyFooter(groupIndex * 2 + 3)}
           </div>
         </React.Fragment>
       );
     })}
+
+    {/* Last Page: Terms & Conditions (multi-service) */}
+    {isMultiService && (
+      <div id="pdf-page-terms" className="template-modern-sales">
+        <div className="ms-terms">
+          <h3 className="ms-section-title">Terms & Conditions</h3>
+          <div className="ms-terms-grid">
+            {DEFAULT_GENERAL_TERMS.map((term, i) => (
+              <div className="ms-term-item" key={i}>
+                <span className="ms-term-check">&#10003;</span>
+                <span>{term}</span>
+              </div>
+            ))}
+          </div>
+        </div>
+
+        {serviceGroups.map((group, i) => (
+          (group.termsAndConditions || quote.termsAndConditions) ? (
+            <div key={i} className="ms-terms">
+              <h3 className="ms-section-title">{getServiceGroupHeading(group)} — Terms & Conditions</h3>
+              <div className="ms-terms-grid">
+                {(group.termsAndConditions
+                  ? group.termsAndConditions.split('\n').map((t: string) => t.trim().replace(/^[•\-\*]\s*/, '').trim()).filter(Boolean)
+                  : filterTermsByServiceType(quote.termsAndConditions, group.serviceType)
+                ).map((term, j) => (
+                  <div className="ms-term-item" key={j}>
+                    <span className="ms-term-check">&#10003;</span>
+                    <span>{term}</span>
+                  </div>
+                ))}
+              </div>
+            </div>
+          ) : null
+        ))}
+
+        <div className="ms-notice">
+          <p>This is a system-generated quotation and does not require a signature.</p>
+        </div>
+
+        <div className="ms-footer">
+          <p>{company.name.toUpperCase()} - Professional Branding Services</p>
+          <p className="ms-footer-company">{company.name}</p>
+        </div>
+
+        {renderCompanyFooter(serviceGroups.length * 2 + 2)}
+      </div>
+    )}
     </>
   );
 };

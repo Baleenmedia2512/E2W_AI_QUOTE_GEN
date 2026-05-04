@@ -433,6 +433,43 @@
   text-transform: uppercase;
 }
 
+/* ─── Company Contact Footer ─── */
+.template-modern-sales .company-contact-footer {
+  margin-top: 20px;
+  padding-top: 12px;
+  position: relative;
+}
+
+.template-modern-sales .company-contact-footer .footer-divider {
+  height: 1px;
+  background: linear-gradient(90deg, transparent, #94a3b8, transparent);
+  margin-bottom: 10px;
+}
+
+.template-modern-sales .company-contact-footer .footer-content {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 20px;
+  font-size: 11px;
+  color: #636e72;
+}
+
+.template-modern-sales .company-contact-footer .footer-item {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.template-modern-sales .company-contact-footer .footer-page-number {
+  flex: 0 0 100%;
+  text-align: center;
+  font-size: 11px;
+  font-weight: 600;
+  color: #636e72;
+}
+
 /* ===== RESPONSIVE ===== */
 @media screen and (max-width: 768px) {
   .template-modern-sales {

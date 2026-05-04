@@ -607,6 +607,16 @@
   padding-top: 10px;
   border-top: 2px solid transparent;
   border-image: linear-gradient(90deg, #d4af37, #f4d03f, #d4af37) 1;
+  position: relative;
+}
+
+.template-classic-business .company-contact-footer .footer-page-number {
+  flex: 0 0 100%;
+  text-align: center;
+  font-size: 11px;
+  font-weight: 600;
+  color: #5c0f1e;
+  font-family: Georgia, 'Times New Roman', Times, serif;
 }
 
 .template-classic-business .company-contact-footer .footer-divider {
