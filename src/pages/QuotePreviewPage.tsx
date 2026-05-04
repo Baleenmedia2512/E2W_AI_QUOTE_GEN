@@ -359,7 +359,8 @@ export const QuotePreviewPage: React.FC = () => {
       await exportToPDF(
         previewRef.current,
         currentQuote.quoteNumber,
-        selectedTemplate
+        selectedTemplate,
+        clientInfo?.name
       );
       console.log('✅ PDF exported successfully');
       // Success message is shown by the service itself (different for mobile vs web)
