@@ -184,6 +184,7 @@
   width: 100%;
   border-collapse: collapse;
   font-size: 10.5px;
+  border: 1px solid #cbd5e1;
 }
 
 .template-modern-sales .ms-table thead tr {
@@ -193,11 +194,15 @@
 
 .template-modern-sales .ms-table thead th {
   padding: 10px 12px;
-  text-align: left;
+  text-align: right;
   font-weight: 600;
   font-size: 9px;
   text-transform: uppercase;
   letter-spacing: 0.5px;
+  border-right: 1px solid rgba(255,255,255,0.2);
+}
+.template-modern-sales .ms-table thead th:last-child {
+  border-right: none;
 }
 
 .template-modern-sales .ms-table thead th .th-main {
@@ -217,16 +222,26 @@
   text-transform: none;
 }
 
-.template-modern-sales .ms-col-num { width: 36px; text-align: center; }
-.template-modern-sales .ms-col-desc { width: auto; }
-.template-modern-sales .ms-col-qty { width: 48px; text-align: center; }
+.template-modern-sales .ms-col-num { width: 36px; text-align: right; }
+.template-modern-sales .ms-col-desc { width: auto; text-align: left; }
+.template-modern-sales .ms-col-qty { width: 48px; text-align: right; }
 .template-modern-sales .ms-col-rate { width: 80px; text-align: right; }
-.template-modern-sales .ms-col-dur { width: 56px; text-align: center; }
+.template-modern-sales .ms-col-dur { width: 56px; text-align: right; }
 .template-modern-sales .ms-col-amt { width: 90px; text-align: right; }
 
 .template-modern-sales .ms-table tbody tr {
-  border-bottom: 1px solid #e2e8f0;
+  border-bottom: none;
   transition: background 0.15s;
+}
+.template-modern-sales .ms-table tbody td {
+  border-right: 1px solid #e2e8f0;
+  border-bottom: 1.5px solid #94a3b8;
+}
+.template-modern-sales .ms-table tbody td:last-child {
+  border-right: none;
+}
+.template-modern-sales .ms-table tbody tr:last-child td {
+  border-bottom: none;
 }
 
 .template-modern-sales .ms-table tbody tr:nth-child(even) {
@@ -431,6 +446,43 @@
   color: #1e293b;
   font-size: 11px;
   text-transform: uppercase;
+}
+
+/* ─── Company Contact Footer ─── */
+.template-modern-sales .company-contact-footer {
+  margin-top: 20px;
+  padding-top: 12px;
+  position: relative;
+}
+
+.template-modern-sales .company-contact-footer .footer-divider {
+  height: 1px;
+  background: linear-gradient(90deg, transparent, #94a3b8, transparent);
+  margin-bottom: 10px;
+}
+
+.template-modern-sales .company-contact-footer .footer-content {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 20px;
+  font-size: 11px;
+  color: #636e72;
+}
+
+.template-modern-sales .company-contact-footer .footer-item {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.template-modern-sales .company-contact-footer .footer-page-number {
+  flex: 0 0 100%;
+  text-align: center;
+  font-size: 11px;
+  font-weight: 600;
+  color: #636e72;
 }
 
 /* ===== RESPONSIVE ===== */
