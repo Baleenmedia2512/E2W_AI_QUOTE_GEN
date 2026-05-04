@@ -212,6 +212,14 @@ export const CorporateMinimal: React.FC<TemplateProps> = ({ data, editable: _edi
             {renderItemsTable(quote.items)}
           </div>
 
+          {/* Remark */}
+          {quote.remark && (
+            <div className="remark-section" style={{ margin: '12px 0 8px 0', padding: '8px 14px', background: '#fff8f9', border: '1px solid #f5c0c8', borderRadius: '6px' }}>
+              <span style={{ fontWeight: 700, color: '#7A1030', marginRight: 8 }}>Remark:</span>
+              <span style={{ color: '#333', whiteSpace: 'pre-wrap' }}>{quote.remark}</span>
+            </div>
+          )}
+
           {/* General Terms */}
           <div className="terms-section">
             <h3>Terms & Conditions:</h3>
@@ -284,6 +292,14 @@ export const CorporateMinimal: React.FC<TemplateProps> = ({ data, editable: _edi
             {DEFAULT_GENERAL_TERMS.map((term, i) => <li key={i}>{term}</li>)}
           </ul>
         </div>
+
+        {/* Remark */}
+        {quote.remark && (
+          <div className="remark-section" style={{ margin: '12px 0 8px 0', padding: '8px 14px', background: '#fff8f9', border: '1px solid #f5c0c8', borderRadius: '6px' }}>
+            <span style={{ fontWeight: 700, color: '#7A1030', marginRight: 8 }}>Remark:</span>
+            <span style={{ color: '#333', whiteSpace: 'pre-wrap' }}>{quote.remark}</span>
+          </div>
+        )}
         
         {/* Company Contact Footer */}
         {renderCompanyFooter()}
