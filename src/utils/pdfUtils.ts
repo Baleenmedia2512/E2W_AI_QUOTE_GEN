@@ -352,14 +352,14 @@ export const extractPDFContent = async (file: File): Promise<PDFExtractionResult
 
       // Render page as image for reference
       try {
-        const viewport = page.getViewport({ scale: 1.0 });
+        const viewport = page.getViewport({ scale: 2.0 });
         const canvas = document.createElement('canvas');
         canvas.width = viewport.width;
         canvas.height = viewport.height;
         const ctx = canvas.getContext('2d');
         if (ctx) {
           await page.render({ canvasContext: ctx, viewport }).promise;
-          const imageDataUrl = canvas.toDataURL('image/jpeg', 0.7);
+          const imageDataUrl = canvas.toDataURL('image/jpeg', 0.92);
           pageImages.push({
             pageNumber: i,
             text: pageText,
