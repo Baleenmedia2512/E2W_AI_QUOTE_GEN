@@ -275,15 +275,6 @@ const QuotePreview: React.FC<QuotePreviewProps> = ({ quote, onUpdate, onSave }) 
     onUpdate(updatedQuote);
   };
 
-  const updateRemark = (value: string) => {
-    if (!localQuote) return;
-    const updatedQuote = { ...localQuote };
-    updatedQuote.remark = value;
-    updatedQuote.updatedAt = new Date();
-    setLocalQuote(updatedQuote);
-    onUpdate(updatedQuote);
-  };
-
   const updateItemTerms = (itemIndex: number, value: string) => {
     if (!localQuote) return;
     const updatedQuote = { ...localQuote };
@@ -802,32 +793,6 @@ const QuotePreview: React.FC<QuotePreviewProps> = ({ quote, onUpdate, onSave }) 
             <Text fontWeight="800" color="gray.900">Total:</Text>
             <Text fontWeight="800" color="red.600">{formatCurrency(total)}</Text>
           </Flex>
-
-          {/* Remark */}
-          <Box pt={2}>
-            <Text fontSize="sm" fontWeight="700" color="gray.700" mb={2}>
-              📝 Remark
-            </Text>
-            <Textarea
-              value={localQuote.remark || ''}
-              onChange={(e) => updateRemark(e.target.value)}
-              placeholder="Type your remark here (will appear in the printed quote)..."
-              size="sm"
-              bg="white"
-              borderWidth="2px"
-              borderColor="gray.300"
-              borderRadius="10px"
-              fontWeight="500"
-              rows={2}
-              resize="vertical"
-              _hover={{ borderColor: 'red.300' }}
-              _focus={{
-                borderColor: 'red.500',
-                boxShadow: '0 0 0 3px rgba(201, 31, 61, 0.15)',
-                bg: 'white'
-              }}
-            />
-          </Box>
         </VStack>
       </Box>
 

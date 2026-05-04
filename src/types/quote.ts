@@ -38,7 +38,6 @@ export interface Quote {
   gstAmount: number;
   total: number;
   notes?: string;
-  remark?: string;
   deliveryTimeline: string;
   termsAndConditions: string;
   createdAt: Date;
