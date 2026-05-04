@@ -16,6 +16,8 @@
 /* Force A4 dimensions for PDF sections */
 #pdf-page-1,
 #pdf-page-2,
+#pdf-page-3,
+#pdf-page-terms,
 #pdf-page-summary,
 [id^="pdf-service-"] {
   width: 794px !important;           /* A4 width at 96dpi */
@@ -87,6 +89,8 @@ html body [id^="pdf-service-"]:not([id^="pdf-service-ref-"]) .classic-container 
 
 /* Page 2 - Reference Images Section - starts fresh */
 html body #pdf-page-2,
+html body #pdf-page-3,
+html body #pdf-page-terms,
 html body [id^="pdf-service-ref-"] {
   page-break-before: always !important;
   break-before: page !important;
@@ -104,6 +108,8 @@ html body [id^="pdf-service-ref-"] {
 /* Prevent responsive CSS from affecting PDF sections during capture */
 #pdf-page-1 *,
 #pdf-page-2 *,
+#pdf-page-3 *,
+#pdf-page-terms *,
 #pdf-page-summary *,
 [id^="pdf-service-"] * {
   max-width: 100% !important;
@@ -122,7 +128,7 @@ html body [id^="pdf-service-ref-"] {
   max-width: 100% !important;
   table-layout: auto;                 /* Allow auto layout for better fitting */
   border-collapse: collapse;
-  font-size: 9px !important;          /* Even smaller font for tables with large margins */
+  font-size: 13px !important;          /* Fixed font size for tables */
 }
 
 #pdf-page-1 th,
@@ -134,7 +140,7 @@ html body [id^="pdf-service-ref-"] {
 [id^="pdf-service-"] th,
 [id^="pdf-service-"] td {
   padding: 4px 5px !important;        /* Minimal cell padding for large margins */
-  font-size: 9px !important;
+  font-size: 13px !important;
   word-break: break-word !important;
   line-height: 1.2 !important;
 }

@@ -1,7 +1,8 @@
 .template-corporate-minimal {
   background: #ffffff;
-  padding: 36px 44px;
+  padding: 36px 44px 80px 44px;
   max-width: 210mm; /* A4 width */
+  min-height: 297mm; /* A4 height — gives footer room to sit at bottom */
   margin: 0 auto;
   font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
   color: #2d3436;
@@ -170,6 +171,7 @@
   border-radius: 6px;
   overflow: hidden;
   box-shadow: 0 1px 4px rgba(0, 0, 0, 0.06);
+  border: 1px solid #d0dce8;
 }
 
 .template-corporate-minimal .items-table thead {
@@ -183,19 +185,23 @@
   font-weight: 600;
   text-transform: uppercase;
   letter-spacing: 0.8px;
-  font-size: 10px;
+  font-size: 13px;
+  border-right: 1px solid rgba(255,255,255,0.2);
+}
+.template-corporate-minimal .items-table th:last-child {
+  border-right: none;
 }
 
 .template-corporate-minimal .items-table th .th-main {
   display: block;
-  font-size: 10px;
+  font-size: 13px;
   font-weight: 700;
   letter-spacing: 0.8px;
 }
 
 .template-corporate-minimal .items-table th .th-sub {
   display: block;
-  font-size: 8.5px;
+  font-size: 11px;
   font-weight: 500;
   opacity: 0.8;
   letter-spacing: 0.3px;
@@ -255,16 +261,15 @@
 }
 
 .template-corporate-minimal .items-table tbody tr {
-  border-bottom: 1px solid #e8ecf1;
   transition: background 0.15s ease;
 }
 
-.template-corporate-minimal .items-table tbody tr:nth-child(even) {
-  background: #fafbfc;
+.template-corporate-minimal .items-table tbody td {
+  border-right: 1px solid #e8ecf1;
+  border-bottom: 1.5px solid #b8c8d8;
 }
-
-.template-corporate-minimal .items-table tbody tr:last-child {
-  border-bottom: none;
+.template-corporate-minimal .items-table tbody td:last-child {
+  border-right: none;
 }
 
 /* ─── Totals Footer Row ─── */
@@ -300,6 +305,14 @@
   border-top: 2px solid #1a3a5c;
   white-space: nowrap;
   letter-spacing: 0.3px;
+}
+
+.template-corporate-minimal .items-table tbody tr:nth-child(even) {
+  background: #fafbfc;
+}
+
+.template-corporate-minimal .items-table tbody tr:last-child td {
+  border-bottom: none;
 }
 
 .template-corporate-minimal .items-table td {
@@ -533,9 +546,11 @@
 
 /* ─── Company Contact Footer ─── */
 .template-corporate-minimal .company-contact-footer {
-  margin-top: 20px;
+  position: absolute;
+  bottom: 20px;
+  left: 44px;
+  right: 44px;
   padding-top: 12px;
-  position: relative;
 }
 
 .template-corporate-minimal .company-contact-footer .footer-page-number {
@@ -573,7 +588,7 @@
   .template-corporate-minimal {
     padding: 32px 24px;
     max-width: 100%;
-    overflow-x: hidden;
+    overflow-x: auto;
   }
 
   .template-corporate-minimal .template-header {
@@ -626,7 +641,7 @@
 
   .template-corporate-minimal .items-table th {
     padding: 12px 10px;
-    font-size: 9.5px;
+    font-size: 13px;
     letter-spacing: 0.5px;
   }
 
@@ -662,7 +677,7 @@
   .template-corporate-minimal {
     padding: 20px 16px;
     line-height: 1.45;
-    overflow-x: hidden;
+    overflow-x: auto;
   }
 
   .template-corporate-minimal::before {

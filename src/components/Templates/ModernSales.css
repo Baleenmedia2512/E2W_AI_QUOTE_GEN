@@ -184,6 +184,7 @@
   width: 100%;
   border-collapse: collapse;
   font-size: 10.5px;
+  border: 1px solid #cbd5e1;
 }
 
 .template-modern-sales .ms-table thead tr {
@@ -198,6 +199,10 @@
   font-size: 9px;
   text-transform: uppercase;
   letter-spacing: 0.5px;
+  border-right: 1px solid rgba(255,255,255,0.2);
+}
+.template-modern-sales .ms-table thead th:last-child {
+  border-right: none;
 }
 
 .template-modern-sales .ms-table thead th .th-main {
@@ -225,8 +230,18 @@
 .template-modern-sales .ms-col-amt { width: 90px; text-align: right; }
 
 .template-modern-sales .ms-table tbody tr {
-  border-bottom: 1px solid #e2e8f0;
+  border-bottom: none;
   transition: background 0.15s;
+}
+.template-modern-sales .ms-table tbody td {
+  border-right: 1px solid #e2e8f0;
+  border-bottom: 1.5px solid #94a3b8;
+}
+.template-modern-sales .ms-table tbody td:last-child {
+  border-right: none;
+}
+.template-modern-sales .ms-table tbody tr:last-child td {
+  border-bottom: none;
 }
 
 .template-modern-sales .ms-table tbody tr:nth-child(even) {
