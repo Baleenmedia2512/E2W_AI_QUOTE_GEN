@@ -184,7 +184,8 @@ const isMobile = () => Capacitor.isNativePlatform();
 export const exportToPDF = async (
   element: HTMLElement,
   quoteNumber: string,
-  _templateType: TemplateType
+  _templateType: TemplateType,
+  clientName?: string
 ): Promise<void> => {
   try {
     console.log('📸 Starting PDF export process...');
@@ -353,8 +354,9 @@ export const exportToPDF = async (
     }
 
     // Generate filename
-    const timestamp = new Date().toISOString().split('T')[0];
-    const filename = `Quote_${quoteNumber}_${timestamp}.pdf`;
+    const dateStr = new Date().toISOString().slice(0, 10).replace(/-/g, '');
+    const clientStr = (clientName || '').replace(/\s+/g, '');
+    const filename = `${dateStr}_${clientStr}_${quoteNumber}.pdf`;
 
     console.log('💾 Saving PDF as:', filename);
     
@@ -503,8 +505,8 @@ export const exportToPDFWithOptions = async (
       heightLeft -= pageHeight;
     }
 
-    const timestamp = new Date().toISOString().split('T')[0];
-    const finalFilename = filename || `Quote_${quoteNumber}_${timestamp}.pdf`;
+    const timestamp = new Date().toISOString().slice(0, 10).replace(/-/g, '');
+    const finalFilename = filename || `${timestamp}__${quoteNumber}.pdf`;
 
     // Handle mobile vs web differently
     if (isMobile()) {
