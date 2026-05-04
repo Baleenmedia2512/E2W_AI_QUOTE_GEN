@@ -181,7 +181,7 @@
 
 .template-corporate-minimal .items-table th {
   padding: 10px 8px;
-  text-align: center;
+  text-align: right;
   font-weight: 600;
   text-transform: uppercase;
   letter-spacing: 0.8px;
@@ -211,11 +211,12 @@
 
 .template-corporate-minimal .items-table .col-description {
   width: 26%;
+  text-align: left;
 }
 
 .template-corporate-minimal .items-table .col-quantity {
   width: 7%;
-  text-align: center;
+  text-align: right;
 }
 
 .template-corporate-minimal .items-table .col-rate {
@@ -225,12 +226,17 @@
 
 .template-corporate-minimal .items-table .col-duration {
   width: 8%;
-  text-align: center;
+  text-align: right;
 }
 
 .template-corporate-minimal .items-table .col-gst-pct {
   width: 6%;
-  text-align: center;
+  text-align: right;
+  white-space: nowrap;
+}
+
+.template-corporate-minimal .item-gst-pct {
+  text-align: right;
 }
 
 .template-corporate-minimal .items-table .col-total {
@@ -238,26 +244,14 @@
   text-align: right;
 }
 
-.template-corporate-minimal .items-table thead .col-total {
-  text-align: center;
-}
-
 .template-corporate-minimal .items-table .col-gst {
   width: 12%;
   text-align: right;
 }
 
-.template-corporate-minimal .items-table thead .col-gst {
-  text-align: center;
-}
-
 .template-corporate-minimal .items-table .col-final {
   width: 14%;
   text-align: right;
-}
-
-.template-corporate-minimal .items-table thead .col-final {
-  text-align: center;
 }
 
 .template-corporate-minimal .items-table tbody tr {
@@ -339,7 +333,7 @@
 }
 
 .template-corporate-minimal .item-quantity {
-  text-align: center;
+  text-align: right;
   color: #2d3436;
   font-weight: 500;
   white-space: nowrap;

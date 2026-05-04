@@ -194,7 +194,7 @@
 
 .template-modern-sales .ms-table thead th {
   padding: 10px 12px;
-  text-align: left;
+  text-align: right;
   font-weight: 600;
   font-size: 9px;
   text-transform: uppercase;
@@ -222,11 +222,11 @@
   text-transform: none;
 }
 
-.template-modern-sales .ms-col-num { width: 36px; text-align: center; }
-.template-modern-sales .ms-col-desc { width: auto; }
-.template-modern-sales .ms-col-qty { width: 48px; text-align: center; }
+.template-modern-sales .ms-col-num { width: 36px; text-align: right; }
+.template-modern-sales .ms-col-desc { width: auto; text-align: left; }
+.template-modern-sales .ms-col-qty { width: 48px; text-align: right; }
 .template-modern-sales .ms-col-rate { width: 80px; text-align: right; }
-.template-modern-sales .ms-col-dur { width: 56px; text-align: center; }
+.template-modern-sales .ms-col-dur { width: 56px; text-align: right; }
 .template-modern-sales .ms-col-amt { width: 90px; text-align: right; }
 
 .template-modern-sales .ms-table tbody tr {
