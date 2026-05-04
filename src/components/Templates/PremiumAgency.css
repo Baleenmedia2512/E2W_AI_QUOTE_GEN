@@ -237,6 +237,7 @@
   width: 100%;
   border-collapse: collapse;
   font-size: 10.5px;
+  border: 1px solid #d4c9b8;
 }
 
 .template-premium-agency .pa-table thead tr {
@@ -251,6 +252,10 @@
   font-size: 9px;
   text-transform: uppercase;
   letter-spacing: 0.8px;
+  border-right: 1px solid rgba(255,255,255,0.2);
+}
+.template-premium-agency .pa-table thead th:last-child {
+  border-right: none;
 }
 
 .template-premium-agency .pa-table thead th .th-main {
@@ -278,7 +283,17 @@
 .template-premium-agency .pa-col-amt { width: 90px; text-align: right; }
 
 .template-premium-agency .pa-table tbody tr {
-  border-bottom: 1px solid #ece6dc;
+  border-bottom: none;
+}
+.template-premium-agency .pa-table tbody td {
+  border-right: 1px solid #ece6dc;
+  border-bottom: 1.5px solid #c8bfb0;
+}
+.template-premium-agency .pa-table tbody td:last-child {
+  border-right: none;
+}
+.template-premium-agency .pa-table tbody tr:last-child td {
+  border-bottom: none;
 }
 
 .template-premium-agency .pa-table tbody tr:nth-child(even) {

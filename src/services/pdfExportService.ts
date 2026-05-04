@@ -306,6 +306,15 @@ export const exportToPDF = async (
         serviceIndex++;
       }
 
+      // Terms & Conditions (Last page - multi-service)
+      console.log('📄 Checking for T&C page (multi-service)...');
+      const termsMultiResult = await captureSectionAtA4('pdf-page-terms');
+      if (termsMultiResult && termsMultiResult.canvas.height > 10) {
+        addCanvasToPDF(termsMultiResult.canvas, termsMultiResult.links, 'terms', false);
+      } else {
+        console.log('ℹ️ No multi-service T&C section found or section is empty');
+      }
+
       if (pageCount === 0) {
         console.warn('⚠️ No multi-service sections captured, using fallback');
         await legacyFullCapture(element, pdf, pdfWidth, pdfHeight);
@@ -332,6 +341,15 @@ export const exportToPDF = async (
         addCanvasToPDF(referenceResult.canvas, referenceResult.links, 'references', false);
       } else {
         console.log('ℹ️ No reference images section found or section is empty');
+      }
+
+      // Terms & Conditions (Last page)
+      console.log('📄 Checking for T&C page...');
+      const termsResult = await captureSectionAtA4('pdf-page-3');
+      if (termsResult && termsResult.canvas.height > 10) {
+        addCanvasToPDF(termsResult.canvas, termsResult.links, 'terms', false);
+      } else {
+        console.log('ℹ️ No T&C section found or section is empty');
       }
     }
 
