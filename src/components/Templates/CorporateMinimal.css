@@ -165,6 +165,7 @@
 
 .template-corporate-minimal .items-table {
   width: 100%;
+  table-layout: fixed;
   border-collapse: separate;
   border-spacing: 0;
   font-size: 13px;
@@ -210,7 +211,7 @@
 }
 
 .template-corporate-minimal .items-table .col-description {
-  width: 26%;
+  width: 18%;
   text-align: left;
 }
 
@@ -250,12 +251,12 @@
 }
 
 .template-corporate-minimal .items-table .col-final {
-  width: 14%;
+  width: 17%;
   text-align: right;
 }
 
 .template-corporate-minimal .items-table .col-remark {
-  width: 100px;
+  width: 12%;
   text-align: right;
 }
 .template-corporate-minimal .item-remark {
@@ -264,11 +265,16 @@
   font-size: 11px;
   vertical-align: top;
   padding-right: 8px;
+  word-wrap: break-word;
+  overflow-wrap: break-word;
+  word-break: break-word;
+  white-space: normal;
+  overflow: hidden;
 }
 
 /* ─── Wide table variant: GST columns present — fits all 7-8 cols inside A4 width ─── */
 .template-corporate-minimal .items-table--gst {
-  table-layout: auto;   /* auto distributes width — tfoot colSpan cells always render correctly */
+  table-layout: fixed;
   font-size: 11.5px;
 }
 .template-corporate-minimal .items-table--gst th {
@@ -287,8 +293,8 @@
   font-size: 11.5px;
 }
 .template-corporate-minimal .items-table--gst .col-description {
-  width: 22%;
-  max-width: 22%;
+  width: 16%;
+  max-width: 16%;
 }
 .template-corporate-minimal .items-table--gst .col-quantity {
   width: 6%;
@@ -299,8 +305,8 @@
   max-width: 10%;
 }
 .template-corporate-minimal .items-table--gst .col-duration {
-  width: 7%;
-  max-width: 7%;
+  width: 5%;
+  max-width: 5%;
 }
 .template-corporate-minimal .items-table--gst .col-total {
   width: 11%;
@@ -315,6 +321,10 @@
   max-width: 11%;
 }
 .template-corporate-minimal .items-table--gst .col-final {
+  width: 13%;
+  max-width: 13%;
+}
+.template-corporate-minimal .items-table--gst .col-remark {
   width: 14%;
   max-width: 14%;
 }

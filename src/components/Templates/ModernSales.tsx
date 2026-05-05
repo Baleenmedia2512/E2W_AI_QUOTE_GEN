@@ -144,7 +144,6 @@ export const ModernSales: React.FC<TemplateProps> = ({ data, editable: _editable
                 )}
                 <th className="ms-col-amt"><span className="th-main">AMOUNT</span><span className="th-sub">(excl GST)</span></th>
                 {quote.gstEnabled && <th className="ms-col-gst-pct">GST %</th>}
-                {quote.gstEnabled && <th className="ms-col-gst-amt">GST AMOUNT</th>}
                 {quote.gstEnabled && <th className="ms-col-incl"><span className="th-main">AMOUNT</span><span className="th-sub">(incl GST)</span></th>}
                 {hasRemark && <th className="ms-col-remark">Remark</th>}
               </tr>
@@ -167,7 +166,6 @@ export const ModernSales: React.FC<TemplateProps> = ({ data, editable: _editable
                     )}
                     <td className="ms-cell-amt">{formatCurrency(item.total)}</td>
                     {quote.gstEnabled && <td className="ms-cell-gst-pct">{quote.gstPercentage}%</td>}
-                    {quote.gstEnabled && <td className="ms-cell-gst-amt">{formatCurrency(itemGST)}</td>}
                     {quote.gstEnabled && <td className="ms-cell-incl">{formatCurrency(itemFinal)}</td>}
                     {hasRemark && <td className="ms-cell-remark">{item.remark || ''}</td>}
                   </tr>
@@ -176,11 +174,11 @@ export const ModernSales: React.FC<TemplateProps> = ({ data, editable: _editable
             </tbody>
             <tfoot>
               <tr className="tfoot-totals">
-                <td className="tfoot-label" colSpan={(quote.items.some(i => i.duration && i.duration > 1) ? 5 : 4) + (hasRemark ? 1 : 0)}>Total</td>
+                <td className="tfoot-label" colSpan={quote.items.some(i => i.duration && i.duration > 1) ? 5 : 4}>Total</td>
                 <td className="tfoot-excl">{formatCurrency(calculateSubtotal())}</td>
                 {quote.gstEnabled && <td className="tfoot-gst-pct"></td>}
-                {quote.gstEnabled && <td className="tfoot-gst-amt">{formatCurrency(calculateGST())}</td>}
                 {quote.gstEnabled && <td className="tfoot-incl">{formatCurrency(calculateTotal())}</td>}
+                {hasRemark && <td></td>}
               </tr>
             </tfoot>
           </table>
@@ -282,7 +280,6 @@ export const ModernSales: React.FC<TemplateProps> = ({ data, editable: _editable
                       <th className="ms-col-rate">Rate</th>
                       <th className="ms-col-amt"><span className="th-main">AMOUNT</span><span className="th-sub">(excl GST)</span></th>
                       {quote.gstEnabled && <th className="ms-col-gst-pct">GST %</th>}
-                      {quote.gstEnabled && <th className="ms-col-gst-amt">GST AMOUNT</th>}
                       {quote.gstEnabled && <th className="ms-col-incl"><span className="th-main">AMOUNT</span><span className="th-sub">(incl GST)</span></th>}
                       {hasRemarkGroup && <th className="ms-col-remark">Remark</th>}
                     </tr>
@@ -302,7 +299,6 @@ export const ModernSales: React.FC<TemplateProps> = ({ data, editable: _editable
                           <td className="ms-cell-rate">{formatCurrency(item.rate)}</td>
                           <td className="ms-cell-amt">{formatCurrency(item.total)}</td>
                           {quote.gstEnabled && <td className="ms-cell-gst-pct">{quote.gstPercentage}%</td>}
-                          {quote.gstEnabled && <td className="ms-cell-gst-amt">{formatCurrency(itemGST)}</td>}
                           {quote.gstEnabled && <td className="ms-cell-incl">{formatCurrency(itemFinal)}</td>}
                           {hasRemarkGroup && <td className="ms-cell-remark">{item.remark || ''}</td>}
                         </tr>
@@ -311,11 +307,11 @@ export const ModernSales: React.FC<TemplateProps> = ({ data, editable: _editable
                   </tbody>
                   <tfoot>
                     <tr className="tfoot-totals">
-                      <td className="tfoot-label" colSpan={4 + (hasRemarkGroup ? 1 : 0)}>Total</td>
+                      <td className="tfoot-label" colSpan={4}>Total</td>
                       <td className="tfoot-excl">{formatCurrency(groupSubtotal)}</td>
                       {quote.gstEnabled && <td className="tfoot-gst-pct"></td>}
-                      {quote.gstEnabled && <td className="tfoot-gst-amt">{formatCurrency(groupGST)}</td>}
                       {quote.gstEnabled && <td className="tfoot-incl">{formatCurrency(groupTotal)}</td>}
+                      {hasRemarkGroup && <td></td>}
                     </tr>
                   </tfoot>
                 </table>
