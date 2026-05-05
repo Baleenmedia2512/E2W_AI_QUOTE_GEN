@@ -6,6 +6,7 @@ export interface LineItem {
   duration?: number; // Duration value (months or days)
   durationUnit?: 'months' | 'days'; // Unit for duration field
   total: number;
+  remark?: string; // Optional per-row remark/note
 }
 
 export interface QuoteItem {
@@ -18,6 +19,7 @@ export interface QuoteItem {
   durationUnit?: 'months' | 'days'; // Unit for duration field
   total: number;
   minimumQuantity?: number; // Minimum order quantity from proposal
+  remark?: string; // Optional per-row remark/note
   // Legacy fields for backward compatibility
   title?: string;
   lineItems?: LineItem[];

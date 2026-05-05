@@ -92,7 +92,8 @@ const QuotePreview: React.FC<QuotePreviewProps> = ({ quote, onUpdate, onSave }) 
       quantity: item.quantity,
       unitPrice: item.rate,
       duration: item.duration,
-      total: item.total
+      total: item.total,
+      remark: item.remark
     }];
   };
 
@@ -118,8 +119,13 @@ const QuotePreview: React.FC<QuotePreviewProps> = ({ quote, onUpdate, onSave }) 
     if (item.lineItems && item.lineItems.length > 0) {
       const lineItem = item.lineItems[lineItemIndex];
       (lineItem as any)[field] = value;
-      lineItem.total = calculateLineItemTotal(lineItem);
-      
+      if (field !== 'remark') {
+        lineItem.total = calculateLineItemTotal(lineItem);
+      }
+      // Sync remark to parent item so templates can read it
+      if (field === 'remark') {
+        item.remark = value;
+      }
       if (item.subtotal !== undefined) {
         item.subtotal = calculateItemSubtotal(item);
       }
@@ -136,6 +142,8 @@ const QuotePreview: React.FC<QuotePreviewProps> = ({ quote, onUpdate, onSave }) 
       } else if (field === 'duration') {
         item.duration = value;
         item.total = item.quantity * item.rate * (value || 1);
+      } else if (field === 'remark') {
+        item.remark = value;
       }
     }
     
@@ -512,11 +520,33 @@ const QuotePreview: React.FC<QuotePreviewProps> = ({ quote, onUpdate, onSave }) 
                           )}
                         </Flex>
 
+                        {/* Remark */}
+                        <Box mt={2}>
+                          <Text fontSize="11px" fontWeight="600" color="gray.500" textTransform="uppercase" letterSpacing="0.5px" mb={1}>
+                            Remark (Optional)
+                          </Text>
+                          <Input
+                            value={lineItem.remark || ''}
+                            onChange={(e) =>
+                              updateLineItem(itemIndex, lineItemIndex, 'remark' as keyof LineItem, e.target.value)
+                            }
+                            onFocus={(e) => e.target.select()}
+                            placeholder="e.g. Per cab/month, One time fee..."
+                            size="sm"
+                            bg="white"
+                            borderColor="gray.200"
+                            borderRadius="6px"
+                            _hover={{ borderColor: 'red.300' }}
+                            _focus={{ borderColor: 'red.500', boxShadow: '0 0 0 3px rgba(201, 31, 61, 0.15)' }}
+                          />
+                        </Box>
+
                         {/* Amount */}
                         <Flex
                           justify="flex-end"
                           align="center"
                           pt={2}
+                          mt={2}
                           borderTop="1px dashed"
                           borderColor="gray.200"
                         >
@@ -550,6 +580,9 @@ const QuotePreview: React.FC<QuotePreviewProps> = ({ quote, onUpdate, onSave }) 
                           )}
                           <Th color="gray.600" fontWeight="600" fontSize="xs" textTransform="uppercase" isNumeric width="18%">
                             Amount
+                          </Th>
+                          <Th color="gray.600" fontWeight="600" fontSize="xs" textTransform="uppercase" width="18%">
+                            Remark
                           </Th>
                           <Th width="5%"></Th>
                         </Tr>
@@ -630,6 +663,23 @@ const QuotePreview: React.FC<QuotePreviewProps> = ({ quote, onUpdate, onSave }) 
                             )}
                             <Td isNumeric fontWeight="500">
                               {formatCurrency(calculateLineItemTotal(lineItem))}
+                            </Td>
+                            <Td verticalAlign="top">
+                              <Input
+                                value={lineItem.remark || ''}
+                                onChange={(e) =>
+                                  updateLineItem(itemIndex, lineItemIndex, 'remark' as keyof LineItem, e.target.value)
+                                }
+                                onFocus={(e) => e.target.select()}
+                                placeholder="Optional"
+                                size="sm"
+                                bg="transparent"
+                                border="1px solid transparent"
+                                borderRadius="6px"
+                                _hover={{ bg: 'gray.50', borderColor: 'gray.200' }}
+                                _focus={{ bg: 'white', border: '1px solid', borderColor: '#750926', boxShadow: '0 0 0 1px #750926' }}
+                                px={2}
+                              />
                             </Td>
                             <Td>
                               {item.lineItems && item.lineItems.length > 0 && (

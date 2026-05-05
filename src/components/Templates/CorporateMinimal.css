@@ -254,6 +254,18 @@
   text-align: right;
 }
 
+.template-corporate-minimal .items-table .col-remark {
+  width: 100px;
+  text-align: right;
+}
+.template-corporate-minimal .item-remark {
+  text-align: right;
+  color: #555;
+  font-size: 11px;
+  vertical-align: top;
+  padding-right: 8px;
+}
+
 .template-corporate-minimal .items-table tbody tr {
   transition: background 0.15s ease;
 }
