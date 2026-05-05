@@ -254,7 +254,7 @@
 
 .template-classic-business .classic-table th {
   padding: 6px 8px;
-  text-align: left;
+  text-align: right;
   font-weight: 600;
   border: 1px solid #5c0f1e;
   font-size: 9px;
@@ -281,16 +281,17 @@
 
 .template-classic-business .col-num {
   width: 5%;
-  text-align: center;
+  text-align: right;
 }
 
 .template-classic-business .col-description {
   width: 45%;
+  text-align: left;
 }
 
 .template-classic-business .col-qty {
   width: 10%;
-  text-align: center;
+  text-align: right;
 }
 
 .template-classic-business .col-rate {
@@ -304,7 +305,17 @@
 }
 
 .template-classic-business .classic-table tbody tr {
-  border-bottom: 1px solid #e8e8e8;
+  border-bottom: none;
+}
+.template-classic-business .classic-table tbody td {
+  border-right: 1px solid #e8e8e8;
+  border-bottom: 1.5px solid #b8b8b8;
+}
+.template-classic-business .classic-table tbody td:last-child {
+  border-right: none;
+}
+.template-classic-business .classic-table tbody tr:last-child td {
+  border-bottom: none;
 }
 
 .template-classic-business .classic-table tbody tr:nth-child(even) {
@@ -391,6 +402,18 @@
   text-align: right;
   color: #333;
   font-weight: 500;
+}
+
+.template-classic-business .col-remark {
+  width: 100px;
+  text-align: right;
+}
+.template-classic-business .cell-remark {
+  text-align: right;
+  color: #555;
+  font-size: 10px;
+  vertical-align: top;
+  padding-right: 8px;
 }
 
 /* Calculation Section */
@@ -607,6 +630,16 @@
   padding-top: 10px;
   border-top: 2px solid transparent;
   border-image: linear-gradient(90deg, #d4af37, #f4d03f, #d4af37) 1;
+  position: relative;
+}
+
+.template-classic-business .company-contact-footer .footer-page-number {
+  flex: 0 0 100%;
+  text-align: center;
+  font-size: 11px;
+  font-weight: 600;
+  color: #5c0f1e;
+  font-family: Georgia, 'Times New Roman', Times, serif;
 }
 
 .template-classic-business .company-contact-footer .footer-divider {

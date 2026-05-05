@@ -77,6 +77,7 @@ export const CorporateMinimal: React.FC<TemplateProps> = ({ data, editable: _edi
   // Reusable items table with per-item GST breakdown columns
   const renderItemsTable = (items: typeof quote.items) => {
     const hasDuration = items.some(i => i.duration && i.duration > 1);
+    const hasRemark = items.some(i => i.remark);
     const formatDuration = (item: typeof quote.items[0]) => {
       if (!item.duration || item.duration <= 1) return '1';
       const unit = item.durationUnit === 'days' ? 'Days' : 'Months';
@@ -98,6 +99,7 @@ export const CorporateMinimal: React.FC<TemplateProps> = ({ data, editable: _edi
             {quote.gstEnabled && <th className="col-gst-pct">GST %</th>}
             {quote.gstEnabled && <th className="col-gst">GST AMOUNT</th>}
             {quote.gstEnabled && <th className="col-final"><span className="th-main">AMOUNT</span><span className="th-sub">(incl.GST)</span></th>}
+            {hasRemark && <th className="col-remark">Remark</th>}
           </tr>
         </thead>
         <tbody>
@@ -117,13 +119,14 @@ export const CorporateMinimal: React.FC<TemplateProps> = ({ data, editable: _edi
                 {quote.gstEnabled && <td className="item-gst-pct">{gstPct}%</td>}
                 {quote.gstEnabled && <td className="item-gst">{formatCurrency(itemGST)}</td>}
                 {quote.gstEnabled && <td className="item-final">{formatCurrency(itemFinal)}</td>}
+                {hasRemark && <td className="item-remark">{item.remark || ''}</td>}
               </tr>
             );
           })}
         </tbody>
         <tfoot>
           <tr className="tfoot-totals">
-            <td className="tfoot-label" colSpan={hasDuration ? 4 : 3}>Total</td>
+            <td className="tfoot-label" colSpan={(hasDuration ? 4 : 3) + (hasRemark ? 1 : 0)}>Total</td>
             <td className="tfoot-excl">{formatCurrency(subtotal)}</td>
             {quote.gstEnabled && <td className="tfoot-gst-pct"></td>}
             {quote.gstEnabled && <td className="tfoot-gst-amt">{formatCurrency(gstAmt)}</td>}
@@ -145,10 +148,8 @@ export const CorporateMinimal: React.FC<TemplateProps> = ({ data, editable: _edi
       )}
       <div className="header-info-row">
         <div className="company-details">
-          <p>{company.address}</p>
           {company.phone && <p>Phone: <a href={`tel:${company.phone}`} style={{ color: 'inherit', textDecoration: 'none' }}>{company.phone}</a></p>}
           {company.email && <p>Email: <a href={`mailto:${company.email}`} style={{ color: 'inherit', textDecoration: 'none' }}>{company.email}</a></p>}
-          {company.website && <p>Website: <a href={ensureHttps(company.website)} style={{ color: 'inherit', textDecoration: 'none' }}>{company.website}</a></p>}
           {company.gst && <p>GST: {company.gst}</p>}
           {company.abn && <p>ABN: {company.abn}</p>}
         </div>
@@ -190,12 +191,13 @@ export const CorporateMinimal: React.FC<TemplateProps> = ({ data, editable: _edi
   );
 
   // Render company contact footer (appears on every page)
-  const renderCompanyFooter = () => (
+  const renderCompanyFooter = (pageNum: number) => (
     <div className="company-contact-footer">
       <div className="footer-divider"></div>
       <div className="footer-content">
         {company.website && <span className="footer-item">🌐 <a href={ensureHttps(company.website)} style={{ color: 'inherit', textDecoration: 'none' }}>{company.website}</a></span>}
         {company.address && <span className="footer-item">📍 {company.address}</span>}
+        <span className="footer-page-number">{pageNum}</span>
       </div>
     </div>
   );
@@ -212,6 +214,19 @@ export const CorporateMinimal: React.FC<TemplateProps> = ({ data, editable: _edi
             {renderItemsTable(quote.items)}
           </div>
 
+          {/* Company Contact Footer */}
+          {renderCompanyFooter(1)}
+        </div>
+
+        <div id="pdf-page-2" className="template-corporate-minimal">
+          <ReferenceImages proposalPages={data.proposalPages} items={quote.items} />
+
+          {/* Company Contact Footer */}
+          {renderCompanyFooter(2)}
+        </div>
+
+        {/* Terms & Conditions Page */}
+        <div id="pdf-page-3" className="template-corporate-minimal">
           {/* General Terms */}
           <div className="terms-section">
             <h3>Terms & Conditions:</h3>
@@ -248,16 +263,9 @@ export const CorporateMinimal: React.FC<TemplateProps> = ({ data, editable: _edi
           <div className="system-generated-notice">
             <p>This is a system-generated quotation and does not require a signature.</p>
           </div>
-          
-          {/* Company Contact Footer */}
-          {renderCompanyFooter()}
-        </div>
-
-        <div id="pdf-page-2" className="template-corporate-minimal">
-          <ReferenceImages proposalPages={data.proposalPages} items={quote.items} />
 
           {/* Company Contact Footer */}
-          {renderCompanyFooter()}
+          {renderCompanyFooter(3)}
         </div>
       </>
     );
@@ -278,15 +286,8 @@ export const CorporateMinimal: React.FC<TemplateProps> = ({ data, editable: _edi
           {renderItemsTable(quote.items)}
         </div>
 
-        <div className="terms-section">
-          <h3>Terms & Conditions:</h3>
-          <ul>
-            {DEFAULT_GENERAL_TERMS.map((term, i) => <li key={i}>{term}</li>)}
-          </ul>
-        </div>
-        
         {/* Company Contact Footer */}
-        {renderCompanyFooter()}
+        {renderCompanyFooter(1)}
       </div>
 
       {/* Pages 2+: Individual Service Pages */}
@@ -303,39 +304,53 @@ export const CorporateMinimal: React.FC<TemplateProps> = ({ data, editable: _edi
                   {renderItemsTable(group.items)}
                 </div>
 
-                {/* Terms & Conditions - Service Specific */}
-                <div className="terms-section">
-                  <h3>{getServiceGroupHeading(group)} — <span style={{ textTransform: 'none' }}>SPECIFIC Ts & Cs</span></h3>
-                  <ul>
-                    {(group.termsAndConditions || quote.termsAndConditions)
-                      ? filterGSTTerms(group.termsAndConditions
-                          ? group.termsAndConditions.split('\n').map((t: string) => t.trim().replace(/^[•\-\*]\s*/, '').trim()).filter(Boolean)
-                          : filterTermsByServiceType(quote.termsAndConditions, group.serviceType)
-                        ).map((term, i) => <li key={i}>{term}</li>)
-                      : <li>Standard terms and conditions apply</li>
-                    }
-                  </ul>
-                </div>
-                
                 {/* Company Contact Footer */}
-                {renderCompanyFooter()}
+                {renderCompanyFooter(groupIndex * 2 + 2)}
               </div>
 
               <div id={`pdf-service-ref-${groupIndex}`} className="template-corporate-minimal">
                 <ReferenceImages proposalPages={data.proposalPages} items={group.items} />
 
-                {groupIndex === serviceGroups.length - 1 && (
-                  <div className="system-generated-notice">
-                    <p>This is a system-generated quotation and does not require a signature.</p>
-                  </div>
-                )}
-
-                {renderCompanyFooter()}
+                {renderCompanyFooter(groupIndex * 2 + 3)}
               </div>
             </>
           </React.Fragment>
         );
       })}
+
+      {/* Last Page: Terms & Conditions */}
+      <div id="pdf-page-terms" className="template-corporate-minimal">
+        {/* General Terms */}
+        <div className="terms-section">
+          <h3>Terms & Conditions:</h3>
+          <ul>
+            {DEFAULT_GENERAL_TERMS.map((term, i) => <li key={i}>{term}</li>)}
+          </ul>
+        </div>
+
+        {/* Service-Specific Terms */}
+        {serviceGroups.map((group, i) => (
+          (group.termsAndConditions || quote.termsAndConditions) ? (
+            <div key={i} className="terms-section">
+              <h3>{getServiceGroupHeading(group)} — <span style={{ textTransform: 'none' }}>SPECIFIC Ts & Cs</span></h3>
+              <ul>
+                {filterGSTTerms(group.termsAndConditions
+                  ? group.termsAndConditions.split('\n').map((t: string) => t.trim().replace(/^[•\-\*]\s*/, '').trim()).filter(Boolean)
+                  : filterTermsByServiceType(quote.termsAndConditions, group.serviceType)
+                ).map((term, j) => <li key={j}>{term}</li>)}
+              </ul>
+            </div>
+          ) : null
+        ))}
+
+        {/* System Generated Notice */}
+        <div className="system-generated-notice">
+          <p>This is a system-generated quotation and does not require a signature.</p>
+        </div>
+
+        {/* Company Contact Footer */}
+        {renderCompanyFooter(serviceGroups.length * 2 + 2)}
+      </div>
     </>
   );
 };
