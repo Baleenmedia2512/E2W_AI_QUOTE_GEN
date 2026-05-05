@@ -29,6 +29,7 @@ export const ClassicBusiness: React.FC<TemplateProps> = ({ data, editable: _edit
   // Check if this is a multi-service quote
   const isMultiService = quote.items.length > 0 && isMultiServiceQuote(quote.items);
   const serviceGroups = isMultiService ? groupItemsByServiceType(quote.items) : [];
+  const hasRemark = quote.items.some(i => i.remark);
 
   const calculateSubtotal = () => {
     return quote.items.reduce((sum, item) => sum + item.total, 0);
@@ -164,6 +165,7 @@ export const ClassicBusiness: React.FC<TemplateProps> = ({ data, editable: _edit
                 {quote.gstEnabled && <th className="col-gst-pct">GST %</th>}
                 {quote.gstEnabled && <th className="col-gst-amt">GST AMOUNT</th>}
                 {quote.gstEnabled && <th className="col-incl"><span className="th-main">AMOUNT</span><span className="th-sub">(incl GST)</span></th>}
+                {hasRemark && <th className="col-remark">Remark</th>}
               </tr>
             </thead>
             <tbody>
@@ -188,13 +190,14 @@ export const ClassicBusiness: React.FC<TemplateProps> = ({ data, editable: _edit
                     {quote.gstEnabled && <td className="cell-gst-pct">{quote.gstPercentage}%</td>}
                     {quote.gstEnabled && <td className="cell-gst-amt">{formatCurrency(itemGST)}</td>}
                     {quote.gstEnabled && <td className="cell-incl">{formatCurrency(itemFinal)}</td>}
+                    {hasRemark && <td className="cell-remark">{item.remark || ''}</td>}
                   </tr>
                 );
               })}
             </tbody>
             <tfoot>
               <tr className="tfoot-totals">
-                <td className="tfoot-label" colSpan={quote.items.some(i => i.duration && i.duration > 1) ? 5 : 4}>Total</td>
+                <td className="tfoot-label" colSpan={(quote.items.some(i => i.duration && i.duration > 1) ? 5 : 4) + (hasRemark ? 1 : 0)}>Total</td>
                 <td className="tfoot-excl">{formatCurrency(calculateSubtotal())}</td>
                 {quote.gstEnabled && <td className="tfoot-gst-pct"></td>}
                 {quote.gstEnabled && <td className="tfoot-gst-amt">{formatCurrency(calculateGST())}</td>}
@@ -273,6 +276,7 @@ export const ClassicBusiness: React.FC<TemplateProps> = ({ data, editable: _edit
       const groupSubtotal = group.subtotal;
       const groupGST = quote.gstEnabled ? groupSubtotal * (quote.gstPercentage / 100) : 0;
       const groupTotal = groupSubtotal + groupGST;
+      const hasRemarkGroup = group.items.some((i: any) => i.remark);
       
       return (
         <React.Fragment key={groupIndex}>
@@ -293,6 +297,7 @@ export const ClassicBusiness: React.FC<TemplateProps> = ({ data, editable: _edit
                       {quote.gstEnabled && <th className="col-gst-pct">GST %</th>}
                       {quote.gstEnabled && <th className="col-gst-amt">GST AMOUNT</th>}
                       {quote.gstEnabled && <th className="col-incl"><span className="th-main">AMOUNT</span><span className="th-sub">(incl GST)</span></th>}
+                      {hasRemarkGroup && <th className="col-remark">Remark</th>}
                     </tr>
                   </thead>
                   <tbody>
@@ -314,13 +319,14 @@ export const ClassicBusiness: React.FC<TemplateProps> = ({ data, editable: _edit
                           {quote.gstEnabled && <td className="cell-gst-pct">{quote.gstPercentage}%</td>}
                           {quote.gstEnabled && <td className="cell-gst-amt">{formatCurrency(itemGST)}</td>}
                           {quote.gstEnabled && <td className="cell-incl">{formatCurrency(itemFinal)}</td>}
+                          {hasRemarkGroup && <td className="cell-remark">{item.remark || ''}</td>}
                         </tr>
                       );
                     })}
                   </tbody>
                   <tfoot>
                     <tr className="tfoot-totals">
-                      <td className="tfoot-label" colSpan={4}>Total</td>
+                      <td className="tfoot-label" colSpan={4 + (hasRemarkGroup ? 1 : 0)}>Total</td>
                       <td className="tfoot-excl">{formatCurrency(groupSubtotal)}</td>
                       {quote.gstEnabled && <td className="tfoot-gst-pct"></td>}
                       {quote.gstEnabled && <td className="tfoot-gst-amt">{formatCurrency(groupGST)}</td>}

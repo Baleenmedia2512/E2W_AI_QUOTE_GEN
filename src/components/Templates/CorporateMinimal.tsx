@@ -77,6 +77,7 @@ export const CorporateMinimal: React.FC<TemplateProps> = ({ data, editable: _edi
   // Reusable items table with per-item GST breakdown columns
   const renderItemsTable = (items: typeof quote.items) => {
     const hasDuration = items.some(i => i.duration && i.duration > 1);
+    const hasRemark = items.some(i => i.remark);
     const formatDuration = (item: typeof quote.items[0]) => {
       if (!item.duration || item.duration <= 1) return '1';
       const unit = item.durationUnit === 'days' ? 'Days' : 'Months';
@@ -98,6 +99,7 @@ export const CorporateMinimal: React.FC<TemplateProps> = ({ data, editable: _edi
             {quote.gstEnabled && <th className="col-gst-pct">GST %</th>}
             {quote.gstEnabled && <th className="col-gst">GST AMOUNT</th>}
             {quote.gstEnabled && <th className="col-final"><span className="th-main">AMOUNT</span><span className="th-sub">(incl.GST)</span></th>}
+            {hasRemark && <th className="col-remark">Remark</th>}
           </tr>
         </thead>
         <tbody>
@@ -117,13 +119,14 @@ export const CorporateMinimal: React.FC<TemplateProps> = ({ data, editable: _edi
                 {quote.gstEnabled && <td className="item-gst-pct">{gstPct}%</td>}
                 {quote.gstEnabled && <td className="item-gst">{formatCurrency(itemGST)}</td>}
                 {quote.gstEnabled && <td className="item-final">{formatCurrency(itemFinal)}</td>}
+                {hasRemark && <td className="item-remark">{item.remark || ''}</td>}
               </tr>
             );
           })}
         </tbody>
         <tfoot>
           <tr className="tfoot-totals">
-            <td className="tfoot-label" colSpan={hasDuration ? 4 : 3}>Total</td>
+            <td className="tfoot-label" colSpan={(hasDuration ? 4 : 3) + (hasRemark ? 1 : 0)}>Total</td>
             <td className="tfoot-excl">{formatCurrency(subtotal)}</td>
             {quote.gstEnabled && <td className="tfoot-gst-pct"></td>}
             {quote.gstEnabled && <td className="tfoot-gst-amt">{formatCurrency(gstAmt)}</td>}
