@@ -35,15 +35,14 @@ const captureSectionAtA4 = async (containerId: string): Promise<{ canvas: HTMLCa
   const clone = source.cloneNode(true) as HTMLElement;
   
   Object.assign(clone.style, {
-    position: 'fixed',
-    top: '-99999px',
-    left: '-99999px',
+    position: 'absolute',
+    top: '0',
+    left: `-${A4_WIDTH_PX + 50}px`,  // off-screen LEFT only — vertical at 0 ensures full Chrome paint
     width: `${A4_WIDTH_PX}px`,
     minWidth: `${A4_WIDTH_PX}px`,
     maxWidth: `${A4_WIDTH_PX}px`,
-    overflow: 'hidden',
+    overflow: 'visible',
     margin: '0',
-    // NO padding here - let CSS handle it via template classes
     boxSizing: 'border-box',
     backgroundColor: '#ffffff',
     display: 'block'
@@ -69,16 +68,17 @@ const captureSectionAtA4 = async (containerId: string): Promise<{ canvas: HTMLCa
     );
     console.log(`✅ ${images.length} images loaded`);
 
-    // Small delay for final reflow
-    await new Promise(r => setTimeout(r, 150));
+    // Wait for full reflow — longer delay ensures tfoot and all rows are painted
+    await new Promise(r => setTimeout(r, 300));
 
-    // Capture with html2canvas at fixed A4 dimensions
-    const captureHeight = Math.max(clone.scrollHeight, A4_HEIGHT_PX);
+    // Do NOT pass height — let html2canvas measure the element itself.
+    // Passing an explicit height that is even 1px short clips the tfoot (TOTAL row).
+    // windowHeight: large value ensures the simulated viewport covers the full table.
     const canvas = await html2canvas(clone, {
       scale: 2,
       width: A4_WIDTH_PX,
-      height: captureHeight,
       windowWidth: A4_WIDTH_PX,
+      windowHeight: 10000,  // large simulated viewport — never clips tall tables
       scrollX: 0,
       scrollY: 0,
       useCORS: true,
