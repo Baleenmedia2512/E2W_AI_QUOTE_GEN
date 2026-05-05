@@ -526,6 +526,12 @@ You: "✓ Found exact match: Bus Full Branding. Generating quote for 50 units...
           "quantity": 50,
           "unitPrice": 13000,
           "duration": 1
+        },
+        {
+          "description": "Bus Full Branding - Design Price (per bus)",
+          "quantity": 50,
+          "unitPrice": 2000,
+          "duration": 1
         }
       ],
       "termsAndConditions": ""
@@ -558,6 +564,12 @@ You: "✓ Found exact match: Bus Semi Branding. Generating quote for 10 units...
           "description": "Bus Semi Branding - Printing & Fixing Price (per bus)",
           "quantity": 10,
           "unitPrice": 5000,
+          "duration": 1
+        },
+        {
+          "description": "Bus Semi Branding - Design Price (per bus)",
+          "quantity": 10,
+          "unitPrice": 1500,
           "duration": 1
         }
       ],
@@ -685,7 +697,7 @@ RULES:
 - For EXACT_MATCH only: Extract prices from proposal or use industry-standard rates
 - Use ₹ for Indian Rupees
 - Include GST as separate calculation (18% in India)
-- Be thorough - include design, materials, printing, installation as separate line items
+- Be thorough - include ALL pricing components from the proposal as SEPARATE line items (e.g., Design Price, Display/Rental Price, Printing & Fixing Price, Installation Price). NEVER omit any price component — if the proposal lists a "Design Price" or "Design Charges" for the service, it MUST appear as its own line item in the quote.
 - If proposal has pricing info, use it. If not, use reasonable market rates
 - For MULTIPLE_MATCH: Ask user to clarify - 🔴 CRITICAL: List EVERY SINGLE matching service from the proposal (do NOT skip or filter any services)
 - For PARTIAL_MATCH: Suggest 1-3 closest alternatives with explanation
