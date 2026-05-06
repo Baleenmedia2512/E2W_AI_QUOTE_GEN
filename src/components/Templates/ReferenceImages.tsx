@@ -1009,18 +1009,35 @@ function getRefImagePages(pages: ExtractedPage[]): ExtractedPage[] {
 /**
  * Extract best image for Design Specification section.
  * Only picks from spec pages — never from reference image pages.
+ * Skips cropped images from pages that ALSO have a reference image heading,
+ * because those cropped images are real-world photos (not design diagrams).
  */
 function extractSpecSectionImage(pages: ExtractedPage[]): string | null {
   const specPages = getSpecPages(pages);
-  // Prefer cropped image from spec page
+
+  // Helper: does this page also contain a reference image heading?
+  const pageHasRefHeading = (page: ExtractedPage): boolean => {
+    const t = page.text.toLowerCase().replace(/\s*\|\s*/g, ' ');
+    return t.includes('reference image') || t.includes('reference images') ||
+           t.includes('reference photo') || t.includes('reference photos') ||
+           t.includes('example image') || t.includes('sample photo');
+  };
+
+  // First pass: prefer cropped image ONLY from pages that are pure spec pages
+  // (no reference image heading on the same page — so the cropped image is a diagram, not a photo)
   for (const page of specPages) {
+    if (pageHasRefHeading(page)) continue; // skip shared pages — their cropped image is a reference photo
     if (page.croppedImages && page.croppedImages.length > 0) return page.croppedImages[0];
   }
-  // Fallback: full page image of spec page (only if it has very little text — likely image-heavy)
+
+  // Second pass: fallback to full page image only when page is diagram-heavy
+  // (very little text AND no reference image heading — means it's a layout/measurement slide)
   for (const page of specPages) {
+    if (pageHasRefHeading(page)) continue; // skip shared pages
     const textLen = page.text.replace(/[^a-z]/gi, '').length;
     if (textLen < 300) return page.imageDataUrl;
   }
+
   return null;
 }
 
@@ -1226,7 +1243,7 @@ export const ReferenceImages: React.FC<ReferenceImagesProps> = ({ proposalPages,
               ))}
             </div>
           )}
-          {specImageUrl && !hasSpecContent && (
+          {specImageUrl && (
             <div className="ref-img-container spec-img-container">
               <img src={lazyCroppedSpecImage ?? specImageUrl} alt="Design specification diagram" className="ref-img" />
             </div>

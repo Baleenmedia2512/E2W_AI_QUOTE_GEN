@@ -88,7 +88,7 @@ export const CorporateMinimal: React.FC<TemplateProps> = ({ data, editable: _edi
     const inclGST = subtotal + gstAmt;
     return (
       <div className="table-scroll-wrap">
-      <table className="items-table">
+      <table className={`items-table${quote.gstEnabled ? ' items-table--gst' : ''}`}>
         <thead>
           <tr>
             <th className="col-description">Description</th>
@@ -97,7 +97,6 @@ export const CorporateMinimal: React.FC<TemplateProps> = ({ data, editable: _edi
             {hasDuration && <th className="col-duration">Duration</th>}
             <th className="col-total"><span className="th-main">AMOUNT</span><span className="th-sub">(excl.GST)</span></th>
             {quote.gstEnabled && <th className="col-gst-pct">GST %</th>}
-            {quote.gstEnabled && <th className="col-gst">GST AMOUNT</th>}
             {quote.gstEnabled && <th className="col-final"><span className="th-main">AMOUNT</span><span className="th-sub">(incl.GST)</span></th>}
             {hasRemark && <th className="col-remark">Remark</th>}
           </tr>
@@ -117,7 +116,6 @@ export const CorporateMinimal: React.FC<TemplateProps> = ({ data, editable: _edi
                 {hasDuration && <td className="item-duration">{formatDuration(item)}</td>}
                 <td className="item-total">{formatCurrency(item.total)}</td>
                 {quote.gstEnabled && <td className="item-gst-pct">{gstPct}%</td>}
-                {quote.gstEnabled && <td className="item-gst">{formatCurrency(itemGST)}</td>}
                 {quote.gstEnabled && <td className="item-final">{formatCurrency(itemFinal)}</td>}
                 {hasRemark && <td className="item-remark">{item.remark || ''}</td>}
               </tr>
@@ -126,11 +124,11 @@ export const CorporateMinimal: React.FC<TemplateProps> = ({ data, editable: _edi
         </tbody>
         <tfoot>
           <tr className="tfoot-totals">
-            <td className="tfoot-label" colSpan={(hasDuration ? 4 : 3) + (hasRemark ? 1 : 0)}>Total</td>
+            <td className="tfoot-label" colSpan={hasDuration ? 4 : 3}>Total</td>
             <td className="tfoot-excl">{formatCurrency(subtotal)}</td>
             {quote.gstEnabled && <td className="tfoot-gst-pct"></td>}
-            {quote.gstEnabled && <td className="tfoot-gst-amt">{formatCurrency(gstAmt)}</td>}
             {quote.gstEnabled && <td className="tfoot-incl">{formatCurrency(inclGST)}</td>}
+            {hasRemark && <td></td>}
           </tr>
         </tfoot>
       </table>
