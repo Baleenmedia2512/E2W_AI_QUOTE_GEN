@@ -1224,7 +1224,7 @@ export const ReferenceImages: React.FC<ReferenceImagesProps> = ({ proposalPages,
         <div className="smart-section">
           <h3 className="smart-section-heading">
             <span className="smart-heading-bar" />
-            2. Display Area / Design Specification
+            2. Display Specification
           </h3>
           {hasSpecContent && (
             <div className="spec-table">
@@ -1256,7 +1256,7 @@ export const ReferenceImages: React.FC<ReferenceImagesProps> = ({ proposalPages,
         <div className="smart-section">
           <h3 className="smart-section-heading">
             <span className="smart-heading-bar" />
-            3. Reference Image
+            3. Reference Images
           </h3>
           <div className="ref-img-container">
             <img src={lazyCroppedRefImage ?? refImageUrl} alt="Reference" className="ref-img" />
