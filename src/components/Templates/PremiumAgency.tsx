@@ -328,6 +328,26 @@ export const PremiumAgency: React.FC<TemplateProps> = ({ data, editable: _editab
 
             {renderCompanyFooter(groupIndex * 2 + 3)}
           </div>
+
+          {(group.termsAndConditions || quote.termsAndConditions) && (
+            <div id={`pdf-service-specific-terms-${groupIndex}`} className="template-premium-agency">
+              <div className="pa-terms">
+                <h3 className="pa-section-title">{getServiceGroupHeading(group)} — SPECIFIC Ts & Cs</h3>
+                <div className="pa-terms-grid">
+                  {(group.termsAndConditions
+                    ? group.termsAndConditions.split('\n').map((t: string) => t.trim().replace(/^[•\-\*]\s*/, '').trim()).filter(Boolean)
+                    : filterTermsByServiceType(quote.termsAndConditions, group.serviceType)
+                  ).map((term, j) => (
+                    <div className="pa-term-item" key={j}>
+                      <span className="pa-term-check">&#10003;</span>
+                      <span>{renderTermWithLinks(term)}</span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+              {renderCompanyFooter(groupIndex * 2 + 4)}
+            </div>
+          )}
         </React.Fragment>
       );
     })}
@@ -346,25 +366,6 @@ export const PremiumAgency: React.FC<TemplateProps> = ({ data, editable: _editab
             ))}
           </div>
         </div>
-
-        {serviceGroups.map((group, i) => (
-          (group.termsAndConditions || quote.termsAndConditions) ? (
-            <div key={i} className="pa-terms">
-              <h3 className="pa-section-title">{getServiceGroupHeading(group)} — Terms & Conditions</h3>
-              <div className="pa-terms-grid">
-                {(group.termsAndConditions
-                  ? group.termsAndConditions.split('\n').map((t: string) => t.trim().replace(/^[•\-\*]\s*/, '').trim()).filter(Boolean)
-                  : filterTermsByServiceType(quote.termsAndConditions, group.serviceType)
-                ).map((term, j) => (
-                  <div className="pa-term-item" key={j}>
-                    <span className="pa-term-check">&#10003;</span>
-                    <span>{term}</span>
-                  </div>
-                ))}
-              </div>
-            </div>
-          ) : null
-        ))}
 
         <div className="pa-notice">
           <p>This is a system-generated quotation and does not require a signature.</p>

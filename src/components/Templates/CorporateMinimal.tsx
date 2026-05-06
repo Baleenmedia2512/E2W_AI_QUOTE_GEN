@@ -311,6 +311,21 @@ export const CorporateMinimal: React.FC<TemplateProps> = ({ data, editable: _edi
 
                 {renderCompanyFooter(groupIndex * 2 + 3)}
               </div>
+
+              {(group.termsAndConditions || quote.termsAndConditions) && (
+                <div id={`pdf-service-specific-terms-${groupIndex}`} className="template-corporate-minimal">
+                  <div className="terms-section">
+                    <h3>{getServiceGroupHeading(group)} — <span style={{ textTransform: 'none' }}>SPECIFIC Ts & Cs</span></h3>
+                    <ul>
+                      {filterGSTTerms(group.termsAndConditions
+                        ? group.termsAndConditions.split('\n').map((t: string) => t.trim().replace(/^[•\-\*]\s*/, '').trim()).filter(Boolean)
+                        : filterTermsByServiceType(quote.termsAndConditions, group.serviceType)
+                      ).map((term, j) => <li key={j}>{renderTermWithLinks(term)}</li>)}
+                    </ul>
+                  </div>
+                  {renderCompanyFooter(groupIndex * 2 + 4)}
+                </div>
+              )}
             </>
           </React.Fragment>
         );
@@ -325,21 +340,6 @@ export const CorporateMinimal: React.FC<TemplateProps> = ({ data, editable: _edi
             {DEFAULT_GENERAL_TERMS.map((term, i) => <li key={i}>{term}</li>)}
           </ul>
         </div>
-
-        {/* Service-Specific Terms */}
-        {serviceGroups.map((group, i) => (
-          (group.termsAndConditions || quote.termsAndConditions) ? (
-            <div key={i} className="terms-section">
-              <h3>{getServiceGroupHeading(group)} — <span style={{ textTransform: 'none' }}>SPECIFIC Ts & Cs</span></h3>
-              <ul>
-                {filterGSTTerms(group.termsAndConditions
-                  ? group.termsAndConditions.split('\n').map((t: string) => t.trim().replace(/^[•\-\*]\s*/, '').trim()).filter(Boolean)
-                  : filterTermsByServiceType(quote.termsAndConditions, group.serviceType)
-                ).map((term, j) => <li key={j}>{term}</li>)}
-              </ul>
-            </div>
-          ) : null
-        ))}
 
         {/* System Generated Notice */}
         <div className="system-generated-notice">

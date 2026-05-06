@@ -340,6 +340,21 @@ export const ClassicBusiness: React.FC<TemplateProps> = ({ data, editable: _edit
 
                 {renderCompanyFooter(groupIndex * 2 + 3)}
               </div>
+
+              {(group.termsAndConditions || quote.termsAndConditions) && (
+                <div id={`pdf-service-specific-terms-${groupIndex}`} className="template-classic-business">
+                  <div className="terms-section">
+                    <h3 className="section-heading">{getServiceGroupHeading(group)} — <span style={{ textTransform: 'none' }}>SPECIFIC Ts & Cs</span></h3>
+                    <ol className="terms-list">
+                      {(group.termsAndConditions
+                        ? group.termsAndConditions.split('\n').map((t: string) => t.trim().replace(/^[•\-\*]\s*/, '').trim()).filter(Boolean)
+                        : filterTermsByServiceType(quote.termsAndConditions, group.serviceType)
+                      ).map((term, j) => <li key={j}>{renderTermWithLinks(term)}</li>)}
+                    </ol>
+                  </div>
+                  {renderCompanyFooter(groupIndex * 2 + 4)}
+                </div>
+              )}
             </div>
           </div>
         </React.Fragment>
@@ -355,20 +370,6 @@ export const ClassicBusiness: React.FC<TemplateProps> = ({ data, editable: _edit
             {DEFAULT_GENERAL_TERMS.map((term, i) => <li key={i}>{term}</li>)}
           </ol>
         </div>
-
-        {serviceGroups.map((group, i) => (
-          (group.termsAndConditions || quote.termsAndConditions) ? (
-            <div key={i} className="terms-section">
-              <h3 className="section-heading">{getServiceGroupHeading(group)} — <span style={{ textTransform: 'none' }}>SPECIFIC Ts & Cs</span></h3>
-              <ol className="terms-list">
-                {(group.termsAndConditions
-                  ? group.termsAndConditions.split('\n').map((t: string) => t.trim().replace(/^[•\-\*]\s*/, '').trim()).filter(Boolean)
-                  : filterTermsByServiceType(quote.termsAndConditions, group.serviceType)
-                ).map((term, j) => <li key={j}>{term}</li>)}
-              </ol>
-            </div>
-          ) : null
-        ))}
 
         <div className="system-generated-notice">
           <p>This is a system-generated quotation and does not require a signature.</p>
