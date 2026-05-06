@@ -304,6 +304,12 @@ export const exportToPDF = async (
           addCanvasToPDF(refResult.canvas, refResult.links, `service-ref-${serviceIndex}`, false);
         }
 
+        // Capture specific Terms & Conditions for this service (appears right after customer review)
+        const specificTermsResult = await captureSectionAtA4(`pdf-service-specific-terms-${serviceIndex}`);
+        if (specificTermsResult && specificTermsResult.canvas.height > 10) {
+          addCanvasToPDF(specificTermsResult.canvas, specificTermsResult.links, `service-specific-terms-${serviceIndex}`, false);
+        }
+
         serviceIndex++;
       }
 

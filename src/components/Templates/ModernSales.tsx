@@ -328,6 +328,26 @@ export const ModernSales: React.FC<TemplateProps> = ({ data, editable: _editable
 
             {renderCompanyFooter(groupIndex * 2 + 3)}
           </div>
+
+          {(group.termsAndConditions || quote.termsAndConditions) && (
+            <div id={`pdf-service-specific-terms-${groupIndex}`} className="template-modern-sales">
+              <div className="ms-terms">
+                <h3 className="ms-section-title">{getServiceGroupHeading(group)} — SPECIFIC Ts & Cs</h3>
+                <div className="ms-terms-grid">
+                  {(group.termsAndConditions
+                    ? group.termsAndConditions.split('\n').map((t: string) => t.trim().replace(/^[•\-\*]\s*/, '').trim()).filter(Boolean)
+                    : filterTermsByServiceType(quote.termsAndConditions, group.serviceType)
+                  ).map((term, j) => (
+                    <div className="ms-term-item" key={j}>
+                      <span className="ms-term-check">&#10003;</span>
+                      <span>{renderTermWithLinks(term)}</span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+              {renderCompanyFooter(groupIndex * 2 + 4)}
+            </div>
+          )}
         </React.Fragment>
       );
     })}
@@ -346,25 +366,6 @@ export const ModernSales: React.FC<TemplateProps> = ({ data, editable: _editable
             ))}
           </div>
         </div>
-
-        {serviceGroups.map((group, i) => (
-          (group.termsAndConditions || quote.termsAndConditions) ? (
-            <div key={i} className="ms-terms">
-              <h3 className="ms-section-title">{getServiceGroupHeading(group)} — Terms & Conditions</h3>
-              <div className="ms-terms-grid">
-                {(group.termsAndConditions
-                  ? group.termsAndConditions.split('\n').map((t: string) => t.trim().replace(/^[•\-\*]\s*/, '').trim()).filter(Boolean)
-                  : filterTermsByServiceType(quote.termsAndConditions, group.serviceType)
-                ).map((term, j) => (
-                  <div className="ms-term-item" key={j}>
-                    <span className="ms-term-check">&#10003;</span>
-                    <span>{term}</span>
-                  </div>
-                ))}
-              </div>
-            </div>
-          ) : null
-        ))}
 
         <div className="ms-notice">
           <p>This is a system-generated quotation and does not require a signature.</p>
