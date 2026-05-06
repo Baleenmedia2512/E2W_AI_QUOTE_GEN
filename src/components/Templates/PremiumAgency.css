@@ -625,4 +625,8 @@
   .template-premium-agency .pa-terms-grid {
     grid-template-columns: 1fr;
   }
+  .template-premium-agency .pa-table-scroll {
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+  }
 }

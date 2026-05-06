@@ -136,6 +136,7 @@ export const PremiumAgency: React.FC<TemplateProps> = ({ data, editable: _editab
             ? <h3 style={{ textAlign: 'center', fontSize: '20px', fontWeight: '700', textTransform: 'uppercase', letterSpacing: '0.08em', color: '#3b0a14', margin: '0 0 18px 0', paddingBottom: '10px', borderBottom: '2px solid #2980b9' }}>Executive Pricing Summary</h3>
             : <h3 className="pa-section-title">Investment Breakdown</h3>
           }
+          <div className="pa-table-scroll">
           <table className="pa-table">
             <thead>
               <tr>
@@ -186,6 +187,7 @@ export const PremiumAgency: React.FC<TemplateProps> = ({ data, editable: _editab
               </tr>
             </tfoot>
           </table>
+          </div>
         </div>
 
       </div>
@@ -278,6 +280,7 @@ export const PremiumAgency: React.FC<TemplateProps> = ({ data, editable: _editab
                   <span style={{ display: 'inline-block', width: '4px', height: '18px', background: '#2980b9', borderRadius: '2px', flexShrink: 0 }} />
                   1. Pricing Summary
                 </h3>
+                <div className="pa-table-scroll">
                 <table className="pa-table">
                   <thead>
                     <tr>
@@ -322,6 +325,7 @@ export const PremiumAgency: React.FC<TemplateProps> = ({ data, editable: _editab
                     </tr>
                   </tfoot>
                 </table>
+                </div>
               </div>
 
             </div>
