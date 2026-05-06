@@ -132,14 +132,17 @@ export const PremiumAgency: React.FC<TemplateProps> = ({ data, editable: _editab
 
         {/* Items Table */}
         <div className="pa-section">
-          <h3 className="pa-section-title">Investment Breakdown</h3>
+          {isMultiService
+            ? <h3 className="smart-section-heading" style={{ display: 'flex', alignItems: 'center', gap: '10px', fontSize: '15px', fontWeight: '700', textTransform: 'uppercase', letterSpacing: '0.06em', color: '#1a1a2e', margin: '0 0 14px 0', paddingBottom: '8px', borderBottom: '2px solid #2980b9' }}><span style={{ display: 'inline-block', width: '4px', height: '18px', background: '#2980b9', borderRadius: '2px', flexShrink: 0 }} />Executive Pricing Summary</h3>
+            : <h3 className="pa-section-title">Investment Breakdown</h3>
+          }
           <table className="pa-table">
             <thead>
               <tr>
                 <th className="pa-col-num">#</th>
                 <th className="pa-col-desc">Description</th>
-                <th className="pa-col-qty">Qty</th>
-                <th className="pa-col-rate">Rate</th>
+                <th className="pa-col-qty">QTY</th>
+                <th className="pa-col-rate">UNIT RATE</th>
                 {quote.items.some(i => i.duration && i.duration > 1) && (
                   <th className="pa-col-dur">Months</th>
                 )}
@@ -270,14 +273,18 @@ export const PremiumAgency: React.FC<TemplateProps> = ({ data, editable: _editab
             <div className="pa-body">
               {/* Items Table */}
               <div className="pa-section">
-                <h3 className="pa-section-title">{getServiceGroupHeading(group)}</h3>
+                <h3 className="pa-section-title" style={{ textAlign: 'center', fontSize: '22px', fontWeight: '700', marginBottom: '8px' }}>{getServiceGroupHeading(group)}</h3>
+                <h3 className="smart-section-heading" style={{ display: 'flex', alignItems: 'center', gap: '10px', fontSize: '15px', fontWeight: '700', textTransform: 'uppercase', letterSpacing: '0.06em', color: '#1a1a2e', margin: '24px 0 14px 0', paddingBottom: '8px', borderBottom: '2px solid #2980b9' }}>
+                  <span style={{ display: 'inline-block', width: '4px', height: '18px', background: '#2980b9', borderRadius: '2px', flexShrink: 0 }} />
+                  1. Pricing Summary
+                </h3>
                 <table className="pa-table">
                   <thead>
                     <tr>
                       <th className="pa-col-num">#</th>
                       <th className="pa-col-desc">Description</th>
-                      <th className="pa-col-qty">Qty</th>
-                      <th className="pa-col-rate">Rate</th>
+                      <th className="pa-col-qty">QTY</th>
+                      <th className="pa-col-rate">UNIT RATE</th>
                       <th className="pa-col-amt"><span className="th-main">AMOUNT</span><span className="th-sub">(excl GST)</span></th>
                       {quote.gstEnabled && <th className="pa-col-gst-pct">GST %</th>}
                       {quote.gstEnabled && <th className="pa-col-incl"><span className="th-main">AMOUNT</span><span className="th-sub">(incl GST)</span></th>}
@@ -332,7 +339,10 @@ export const PremiumAgency: React.FC<TemplateProps> = ({ data, editable: _editab
           {(group.termsAndConditions || quote.termsAndConditions) && (
             <div id={`pdf-service-specific-terms-${groupIndex}`} className="template-premium-agency">
               <div className="pa-terms">
-                <h3 className="pa-section-title">{getServiceGroupHeading(group)} — SPECIFIC Ts & Cs</h3>
+                <h3 className="smart-section-heading" style={{ display: 'flex', alignItems: 'center', gap: '10px', fontSize: '15px', fontWeight: '700', textTransform: 'uppercase', letterSpacing: '0.06em', color: '#1a1a2e', margin: '0 0 14px 0', paddingBottom: '8px', borderBottom: '2px solid #2980b9' }}>
+                  <span style={{ display: 'inline-block', width: '4px', height: '18px', background: '#2980b9', borderRadius: '2px', flexShrink: 0 }} />
+                  5. Terms &amp; Conditions
+                </h3>
                 <div className="pa-terms-grid">
                   {(group.termsAndConditions
                     ? group.termsAndConditions.split('\n').map((t: string) => t.trim().replace(/^[•\-\*]\s*/, '').trim()).filter(Boolean)
@@ -356,7 +366,10 @@ export const PremiumAgency: React.FC<TemplateProps> = ({ data, editable: _editab
     {isMultiService && (
       <div id="pdf-page-terms" className="template-premium-agency">
         <div className="pa-terms">
-          <h3 className="pa-section-title">Terms & Conditions</h3>
+          <h3 className="smart-section-heading" style={{ display: 'flex', alignItems: 'center', gap: '10px', fontSize: '15px', fontWeight: '700', textTransform: 'uppercase', letterSpacing: '0.06em', color: '#1a1a2e', margin: '0 0 14px 0', paddingBottom: '8px', borderBottom: '2px solid #2980b9' }}>
+            <span style={{ display: 'inline-block', width: '4px', height: '18px', background: '#2980b9', borderRadius: '2px', flexShrink: 0 }} />
+            6. Terms &amp; Conditions
+          </h3>
           <div className="pa-terms-grid">
             {DEFAULT_GENERAL_TERMS.map((term, i) => (
               <div className="pa-term-item" key={i}>

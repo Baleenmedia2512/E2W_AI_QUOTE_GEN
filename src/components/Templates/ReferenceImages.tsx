@@ -1224,7 +1224,7 @@ export const ReferenceImages: React.FC<ReferenceImagesProps> = ({ proposalPages,
         <div className="smart-section">
           <h3 className="smart-section-heading">
             <span className="smart-heading-bar" />
-            Display Area / Design Specification
+            2. Display Area / Design Specification
           </h3>
           {hasSpecContent && (
             <div className="spec-table">
@@ -1256,7 +1256,7 @@ export const ReferenceImages: React.FC<ReferenceImagesProps> = ({ proposalPages,
         <div className="smart-section">
           <h3 className="smart-section-heading">
             <span className="smart-heading-bar" />
-            Reference Image
+            3. Reference Image
           </h3>
           <div className="ref-img-container">
             <img src={lazyCroppedRefImage ?? refImageUrl} alt="Reference" className="ref-img" />
@@ -1269,7 +1269,7 @@ export const ReferenceImages: React.FC<ReferenceImagesProps> = ({ proposalPages,
         <div className="smart-section">
           <h3 className="smart-section-heading">
             <span className="smart-heading-bar" />
-            Customer Review
+            4. Customer Review
           </h3>
           <div className="review-card">
             <div className="review-header">
@@ -1303,7 +1303,7 @@ export const ReferenceImages: React.FC<ReferenceImagesProps> = ({ proposalPages,
         <div className="smart-section">
           <h3 className="smart-section-heading">
             <span className="smart-heading-bar" />
-            Reference Images from Proposal
+            3. Reference Images from Proposal
           </h3>
           <div className="ref-img-container">
             {filteredPages.map(page => (

@@ -257,10 +257,10 @@
 
 .template-corporate-minimal .items-table .col-remark {
   width: 12%;
-  text-align: right;
+  text-align: center;
 }
 .template-corporate-minimal .item-remark {
-  text-align: right;
+  text-align: left;
   color: #555;
   font-size: 11px;
   vertical-align: top;

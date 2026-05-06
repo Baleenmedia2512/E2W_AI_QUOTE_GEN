@@ -229,7 +229,7 @@
 .template-modern-sales .ms-col-rate { width: 80px; text-align: right; }
 .template-modern-sales .ms-col-dur { width: 56px; text-align: right; }
 .template-modern-sales .ms-col-amt { width: 110px; text-align: right; }
-.template-modern-sales .ms-col-remark { width: 12%; text-align: right; }
+.template-modern-sales .ms-col-remark { width: 12%; text-align: center; }
 
 .template-modern-sales .ms-table tbody tr {
   border-bottom: none;
@@ -302,7 +302,7 @@
 .template-modern-sales .ms-cell-rate { text-align: right; }
 .template-modern-sales .ms-cell-dur { text-align: center; }
 .template-modern-sales .ms-cell-amt { text-align: right; font-weight: 700; color: #0f172a; }
-.template-modern-sales .ms-cell-remark { text-align: right; color: #475569; font-size: 10px; vertical-align: top; padding-right: 6px; word-wrap: break-word; overflow-wrap: break-word; word-break: break-word; white-space: normal; overflow: hidden; }
+.template-modern-sales .ms-cell-remark { text-align: left; color: #475569; font-size: 10px; vertical-align: top; padding-right: 6px; word-wrap: break-word; overflow-wrap: break-word; word-break: break-word; white-space: normal; overflow: hidden; }
 
 /* ===== SUMMARY ===== */
 .template-modern-sales .ms-summary {
