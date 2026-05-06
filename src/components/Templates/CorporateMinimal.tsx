@@ -278,8 +278,7 @@ export const CorporateMinimal: React.FC<TemplateProps> = ({ data, editable: _edi
         {renderClientDetails()}
 
         <div className="quote-items-section">
-          <h3 className="smart-section-heading" style={{ display: 'flex', alignItems: 'center', gap: '10px', fontSize: '15px', fontWeight: '700', textTransform: 'uppercase', letterSpacing: '0.06em', color: '#1a1a2e', margin: '0 0 14px 0', paddingBottom: '8px', borderBottom: '2px solid #2980b9' }}>
-            <span style={{ display: 'inline-block', width: '4px', height: '18px', background: '#2980b9', borderRadius: '2px', flexShrink: 0 }} />
+          <h3 style={{ textAlign: 'center', fontSize: '20px', fontWeight: '700', textTransform: 'uppercase', letterSpacing: '0.08em', color: '#3b0a14', margin: '0 0 18px 0', paddingBottom: '10px', borderBottom: '2px solid #2980b9' }}>
             Executive Pricing Summary
           </h3>
           {renderItemsTable(quote.items)}
