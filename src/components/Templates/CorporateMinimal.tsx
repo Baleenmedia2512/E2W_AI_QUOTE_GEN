@@ -189,13 +189,13 @@ export const CorporateMinimal: React.FC<TemplateProps> = ({ data, editable: _edi
   );
 
   // Render company contact footer (appears on every page)
-  const renderCompanyFooter = (pageNum: number) => (
+  const renderCompanyFooter = (pageNum: number, totalPages: number) => (
     <div className="company-contact-footer">
       <div className="footer-divider"></div>
       <div className="footer-content">
         {company.website && <span className="footer-item">🌐 <a href={ensureHttps(company.website)} style={{ color: 'inherit', textDecoration: 'none' }}>{company.website}</a></span>}
         {company.address && <span className="footer-item">📍 {company.address}</span>}
-        <span className="footer-page-number">{pageNum}</span>
+        <span className="footer-page-number">{pageNum} / {totalPages}</span>
       </div>
     </div>
   );
@@ -213,21 +213,23 @@ export const CorporateMinimal: React.FC<TemplateProps> = ({ data, editable: _edi
           </div>
 
           {/* Company Contact Footer */}
-          {renderCompanyFooter(1)}
+          {renderCompanyFooter(1, 3)}
         </div>
 
         <div id="pdf-page-2" className="template-corporate-minimal">
           <ReferenceImages proposalPages={data.proposalPages} items={quote.items} />
 
           {/* Company Contact Footer */}
-          {renderCompanyFooter(2)}
+          {renderCompanyFooter(2, 3)}
         </div>
 
         {/* Terms & Conditions Page */}
         <div id="pdf-page-3" className="template-corporate-minimal">
           {/* General Terms */}
           <div className="terms-section">
-            <h3>Terms & Conditions:</h3>
+            <h3 style={{ textAlign: 'center', fontSize: '20px', fontWeight: '700', textTransform: 'uppercase', letterSpacing: '0.08em', color: '#3b0a14', margin: '0 0 18px 0', paddingBottom: '10px', borderBottom: '2px solid #2980b9' }}>
+              General Terms &amp; Conditions
+            </h3>
             <ul>
               {quote.termsAndConditions
                 ? filterGSTTerms(quote.termsAndConditions
@@ -263,13 +265,21 @@ export const CorporateMinimal: React.FC<TemplateProps> = ({ data, editable: _edi
           </div>
 
           {/* Company Contact Footer */}
-          {renderCompanyFooter(3)}
+          {renderCompanyFooter(3, 3)}
         </div>
       </>
     );
   }
 
   // Multi-service quote - render summary + individual service pages
+  // Count actual pages: 1 summary + per group (service + ref + optional terms) + 1 final terms
+  const multiTotal = 1
+    + serviceGroups.reduce((sum, g) => sum + ((g.termsAndConditions || quote.termsAndConditions) ? 3 : 2), 0)
+    + 1;
+
+  // Running page counter — incremented as each page is rendered
+  let pageCounter = 0;
+
   return (
     <>
       {/* Page 1: Summary Page */}
@@ -285,11 +295,15 @@ export const CorporateMinimal: React.FC<TemplateProps> = ({ data, editable: _edi
         </div>
 
         {/* Company Contact Footer */}
-        {renderCompanyFooter(1)}
+        {renderCompanyFooter(++pageCounter, multiTotal)}
       </div>
 
       {/* Pages 2+: Individual Service Pages */}
       {serviceGroups.map((group, groupIndex) => {
+        const servicePage = ++pageCounter;
+        const refPage = ++pageCounter;
+        const hasGroupTerms = !!(group.termsAndConditions || quote.termsAndConditions);
+        const termsPage = hasGroupTerms ? ++pageCounter : null;
         return (
           <React.Fragment key={groupIndex}>
             <div style={{ pageBreakBefore: 'always' }} />
@@ -307,16 +321,16 @@ export const CorporateMinimal: React.FC<TemplateProps> = ({ data, editable: _edi
                 </div>
 
                 {/* Company Contact Footer */}
-                {renderCompanyFooter(groupIndex * 2 + 2)}
+                {renderCompanyFooter(servicePage, multiTotal)}
               </div>
 
               <div id={`pdf-service-ref-${groupIndex}`} className="template-corporate-minimal">
                 <ReferenceImages proposalPages={data.proposalPages} items={group.items} />
 
-                {renderCompanyFooter(groupIndex * 2 + 3)}
+                {renderCompanyFooter(refPage, multiTotal)}
               </div>
 
-              {(group.termsAndConditions || quote.termsAndConditions) && (
+              {hasGroupTerms && (
                 <div id={`pdf-service-specific-terms-${groupIndex}`} className="template-corporate-minimal">
                   <div className="terms-section">
                     <h3 className="smart-section-heading" style={{ display: 'flex', alignItems: 'center', gap: '10px', fontSize: '15px', fontWeight: '700', textTransform: 'uppercase', letterSpacing: '0.06em', color: '#1a1a2e', margin: '0 0 14px 0', paddingBottom: '8px', borderBottom: '2px solid #2980b9' }}>
@@ -330,7 +344,7 @@ export const CorporateMinimal: React.FC<TemplateProps> = ({ data, editable: _edi
                       ).map((term, j) => <li key={j}>{renderTermWithLinks(term)}</li>)}
                     </ul>
                   </div>
-                  {renderCompanyFooter(groupIndex * 2 + 4)}
+                  {renderCompanyFooter(termsPage!, multiTotal)}
                 </div>
               )}
             </>
@@ -342,9 +356,8 @@ export const CorporateMinimal: React.FC<TemplateProps> = ({ data, editable: _edi
       <div id="pdf-page-terms" className="template-corporate-minimal">
         {/* General Terms */}
         <div className="terms-section">
-          <h3 className="smart-section-heading" style={{ display: 'flex', alignItems: 'center', gap: '10px', fontSize: '15px', fontWeight: '700', textTransform: 'uppercase', letterSpacing: '0.06em', color: '#1a1a2e', margin: '0 0 14px 0', paddingBottom: '8px', borderBottom: '2px solid #2980b9' }}>
-            <span style={{ display: 'inline-block', width: '4px', height: '18px', background: '#2980b9', borderRadius: '2px', flexShrink: 0 }} />
-            6. Terms &amp; Conditions
+          <h3 style={{ textAlign: 'center', fontSize: '20px', fontWeight: '700', textTransform: 'uppercase', letterSpacing: '0.08em', color: '#3b0a14', margin: '0 0 18px 0', paddingBottom: '10px', borderBottom: '2px solid #2980b9' }}>
+            General Terms &amp; Conditions
           </h3>
           <ul>
             {DEFAULT_GENERAL_TERMS.map((term, i) => <li key={i}>{term}</li>)}
@@ -357,7 +370,7 @@ export const CorporateMinimal: React.FC<TemplateProps> = ({ data, editable: _edi
         </div>
 
         {/* Company Contact Footer */}
-        {renderCompanyFooter(serviceGroups.length * 2 + 2)}
+        {renderCompanyFooter(multiTotal, multiTotal)}
       </div>
     </>
   );

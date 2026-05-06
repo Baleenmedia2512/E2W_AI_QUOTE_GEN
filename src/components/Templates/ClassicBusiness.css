@@ -698,6 +698,10 @@
   .template-classic-business .terms-list {
     grid-template-columns: 1fr;
   }
+  .template-classic-business .classic-table-scroll {
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+  }
 }
 
 /* Print Styles */
