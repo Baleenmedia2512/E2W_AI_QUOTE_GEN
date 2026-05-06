@@ -41,9 +41,8 @@ const captureSectionAtA4 = async (containerId: string): Promise<{ canvas: HTMLCa
     width: `${A4_WIDTH_PX}px`,
     minWidth: `${A4_WIDTH_PX}px`,
     maxWidth: `${A4_WIDTH_PX}px`,
-    overflow: 'hidden',
+    overflow: 'visible',
     margin: '0',
-    // NO padding here - let CSS handle it via template classes
     boxSizing: 'border-box',
     backgroundColor: '#ffffff',
     display: 'block'
@@ -69,8 +68,8 @@ const captureSectionAtA4 = async (containerId: string): Promise<{ canvas: HTMLCa
     );
     console.log(`✅ ${images.length} images loaded`);
 
-    // Small delay for final reflow
-    await new Promise(r => setTimeout(r, 150));
+    // Wait for full reflow — longer delay ensures tfoot and all rows are painted
+    await new Promise(r => setTimeout(r, 300));
 
     // Collect link annotations BEFORE html2canvas to avoid DOM mutation side effects
     const LINK_Y_PAD = 3; // px — compensates for line-height overhang on inline <a> inside <p>
@@ -97,8 +96,8 @@ const captureSectionAtA4 = async (containerId: string): Promise<{ canvas: HTMLCa
     const canvas = await html2canvas(clone, {
       scale: 2,
       width: A4_WIDTH_PX,
-      height: captureHeight,
       windowWidth: A4_WIDTH_PX,
+      windowHeight: 10000,  // large simulated viewport — never clips tall tables
       scrollX: 0,
       scrollY: 0,
       useCORS: true,
@@ -185,7 +184,8 @@ const isMobile = () => Capacitor.isNativePlatform();
 export const exportToPDF = async (
   element: HTMLElement,
   quoteNumber: string,
-  _templateType: TemplateType
+  _templateType: TemplateType,
+  clientName?: string
 ): Promise<void> => {
   try {
     console.log('📸 Starting PDF export process...');
@@ -372,8 +372,9 @@ export const exportToPDF = async (
     }
 
     // Generate filename
-    const timestamp = new Date().toISOString().split('T')[0];
-    const filename = `Quote_${quoteNumber}_${timestamp}.pdf`;
+    const dateStr = new Date().toISOString().slice(0, 10).replace(/-/g, '');
+    const clientStr = (clientName || '').replace(/\s+/g, '');
+    const filename = `${dateStr}_${clientStr}_${quoteNumber}.pdf`;
 
     console.log('💾 Saving PDF as:', filename);
     
@@ -522,8 +523,8 @@ export const exportToPDFWithOptions = async (
       heightLeft -= pageHeight;
     }
 
-    const timestamp = new Date().toISOString().split('T')[0];
-    const finalFilename = filename || `Quote_${quoteNumber}_${timestamp}.pdf`;
+    const timestamp = new Date().toISOString().slice(0, 10).replace(/-/g, '');
+    const finalFilename = filename || `${timestamp}__${quoteNumber}.pdf`;
 
     // Handle mobile vs web differently
     if (isMobile()) {

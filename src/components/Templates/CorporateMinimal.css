@@ -165,11 +165,12 @@
 
 .template-corporate-minimal .items-table {
   width: 100%;
+  table-layout: fixed;
   border-collapse: separate;
   border-spacing: 0;
   font-size: 13px;
   border-radius: 6px;
-  overflow: hidden;
+  overflow: visible;   /* Must not clip rows during PDF canvas capture */
   box-shadow: 0 1px 4px rgba(0, 0, 0, 0.06);
   border: 1px solid #d0dce8;
 }
@@ -210,7 +211,7 @@
 }
 
 .template-corporate-minimal .items-table .col-description {
-  width: 26%;
+  width: 18%;
   text-align: left;
 }
 
@@ -250,12 +251,12 @@
 }
 
 .template-corporate-minimal .items-table .col-final {
-  width: 14%;
+  width: 17%;
   text-align: right;
 }
 
 .template-corporate-minimal .items-table .col-remark {
-  width: 100px;
+  width: 12%;
   text-align: right;
 }
 .template-corporate-minimal .item-remark {
@@ -264,6 +265,102 @@
   font-size: 11px;
   vertical-align: top;
   padding-right: 8px;
+  word-wrap: break-word;
+  overflow-wrap: break-word;
+  word-break: break-word;
+  white-space: normal;
+  overflow: hidden;
+}
+
+/* ─── Wide table variant: GST columns present — fits all 7-8 cols inside A4 width ─── */
+.template-corporate-minimal .items-table--gst {
+  table-layout: fixed;
+  font-size: 11.5px;
+}
+.template-corporate-minimal .items-table--gst th {
+  padding: 7px 4px;
+  font-size: 11px;
+  letter-spacing: 0.3px;
+}
+.template-corporate-minimal .items-table--gst th .th-main {
+  font-size: 11px;
+}
+.template-corporate-minimal .items-table--gst th .th-sub {
+  font-size: 10px;
+}
+.template-corporate-minimal .items-table--gst td {
+  padding: 7px 4px;
+  font-size: 11.5px;
+}
+.template-corporate-minimal .items-table--gst .col-description {
+  width: 16%;
+  max-width: 16%;
+}
+.template-corporate-minimal .items-table--gst .col-quantity {
+  width: 6%;
+  max-width: 6%;
+}
+.template-corporate-minimal .items-table--gst .col-rate {
+  width: 10%;
+  max-width: 10%;
+}
+.template-corporate-minimal .items-table--gst .col-duration {
+  width: 5%;
+  max-width: 5%;
+}
+.template-corporate-minimal .items-table--gst .col-total {
+  width: 11%;
+  max-width: 11%;
+}
+.template-corporate-minimal .items-table--gst .col-gst-pct {
+  width: 5%;
+  max-width: 5%;
+}
+.template-corporate-minimal .items-table--gst .col-gst {
+  width: 11%;
+  max-width: 11%;
+}
+.template-corporate-minimal .items-table--gst .col-final {
+  width: 13%;
+  max-width: 13%;
+}
+.template-corporate-minimal .items-table--gst .col-remark {
+  width: 14%;
+  max-width: 14%;
+}
+.template-corporate-minimal .items-table--gst .item-title {
+  font-size: 12px;
+}
+.template-corporate-minimal .items-table--gst .item-details {
+  font-size: 10.5px;
+}
+/* Remove nowrap so numbers can wrap within tight columns */
+.template-corporate-minimal .items-table--gst .item-quantity,
+.template-corporate-minimal .items-table--gst .item-rate,
+.template-corporate-minimal .items-table--gst .item-total,
+.template-corporate-minimal .items-table--gst .item-gst,
+.template-corporate-minimal .items-table--gst .item-final {
+  white-space: normal;
+}
+/* Keep total row numbers on one line — never break mid-digit */
+.template-corporate-minimal .items-table--gst .tfoot-label,
+.template-corporate-minimal .items-table--gst .tfoot-excl,
+.template-corporate-minimal .items-table--gst .tfoot-gst-pct,
+.template-corporate-minimal .items-table--gst .tfoot-gst-amt,
+.template-corporate-minimal .items-table--gst .tfoot-incl {
+  white-space: nowrap;
+}
+.template-corporate-minimal .items-table--gst .tfoot-label {
+  padding: 8px 6px;
+}
+.template-corporate-minimal .items-table--gst .tfoot-excl,
+.template-corporate-minimal .items-table--gst .tfoot-gst-amt {
+  padding: 8px 6px;
+  font-size: 13px;
+}
+.template-corporate-minimal .items-table--gst .tfoot-incl {
+  padding: 8px 6px;
+  font-size: 15px;
 }
 
 .template-corporate-minimal .items-table tbody tr {

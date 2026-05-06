@@ -344,7 +344,10 @@ export const sendMessageToGemini = async ({
           return match
             .replace(/\n/g, '\\n')
             .replace(/\r/g, '')
-            .replace(/\t/g, '\\t');
+            .replace(/\t/g, '\\t')
+            // Fix invalid escape sequences: backslash followed by any char
+            // that is NOT a valid JSON escape character
+            .replace(/\\(?!["\\/bfnrtu])/g, '\\\\');
         });
         
         const parsed = JSON.parse(jsonStr);
