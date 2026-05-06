@@ -92,8 +92,8 @@ export const CorporateMinimal: React.FC<TemplateProps> = ({ data, editable: _edi
         <thead>
           <tr>
             <th className="col-description">Description</th>
-            <th className="col-quantity">Quantity</th>
-            <th className="col-rate">Rate</th>
+            <th className="col-quantity">QTY</th>
+            <th className="col-rate">UNIT RATE</th>
             {hasDuration && <th className="col-duration">Duration</th>}
             <th className="col-total"><span className="th-main">AMOUNT</span><span className="th-sub">(excl.GST)</span></th>
             {quote.gstEnabled && <th className="col-gst-pct">GST %</th>}
@@ -278,8 +278,9 @@ export const CorporateMinimal: React.FC<TemplateProps> = ({ data, editable: _edi
         {renderClientDetails()}
 
         <div className="quote-items-section">
-          <h3 style={{ marginBottom: '16px', fontSize: '18px', fontWeight: '600' }}>
-            Quote Summary - All Services
+          <h3 className="smart-section-heading" style={{ display: 'flex', alignItems: 'center', gap: '10px', fontSize: '15px', fontWeight: '700', textTransform: 'uppercase', letterSpacing: '0.06em', color: '#1a1a2e', margin: '0 0 14px 0', paddingBottom: '8px', borderBottom: '2px solid #2980b9' }}>
+            <span style={{ display: 'inline-block', width: '4px', height: '18px', background: '#2980b9', borderRadius: '2px', flexShrink: 0 }} />
+            Executive Pricing Summary
           </h3>
           {renderItemsTable(quote.items)}
         </div>
@@ -296,8 +297,12 @@ export const CorporateMinimal: React.FC<TemplateProps> = ({ data, editable: _edi
             <>
               <div id={`pdf-service-${groupIndex}`} className="template-corporate-minimal">
                 <div className="quote-items-section">
-                  <h3 style={{ marginBottom: '16px', fontSize: '18px', fontWeight: '600', color: '#750926' }}>
+                  <h3 style={{ marginBottom: '8px', fontSize: '22px', fontWeight: '700', color: '#750926', textAlign: 'center' }}>
                     {getServiceGroupHeading(group)}
+                  </h3>
+                  <h3 className="smart-section-heading" style={{ display: 'flex', alignItems: 'center', gap: '10px', fontSize: '15px', fontWeight: '700', textTransform: 'uppercase', letterSpacing: '0.06em', color: '#1a1a2e', margin: '24px 0 14px 0', paddingBottom: '8px', borderBottom: '2px solid #2980b9' }}>
+                    <span style={{ display: 'inline-block', width: '4px', height: '18px', background: '#2980b9', borderRadius: '2px', flexShrink: 0 }} />
+                    1. Pricing Summary
                   </h3>
                   {renderItemsTable(group.items)}
                 </div>
@@ -315,7 +320,10 @@ export const CorporateMinimal: React.FC<TemplateProps> = ({ data, editable: _edi
               {(group.termsAndConditions || quote.termsAndConditions) && (
                 <div id={`pdf-service-specific-terms-${groupIndex}`} className="template-corporate-minimal">
                   <div className="terms-section">
-                    <h3>{getServiceGroupHeading(group)} — <span style={{ textTransform: 'none' }}>SPECIFIC Ts & Cs</span></h3>
+                    <h3 className="smart-section-heading" style={{ display: 'flex', alignItems: 'center', gap: '10px', fontSize: '15px', fontWeight: '700', textTransform: 'uppercase', letterSpacing: '0.06em', color: '#1a1a2e', margin: '0 0 14px 0', paddingBottom: '8px', borderBottom: '2px solid #2980b9' }}>
+                      <span style={{ display: 'inline-block', width: '4px', height: '18px', background: '#2980b9', borderRadius: '2px', flexShrink: 0 }} />
+                      5. Terms &amp; Conditions
+                    </h3>
                     <ul>
                       {filterGSTTerms(group.termsAndConditions
                         ? group.termsAndConditions.split('\n').map((t: string) => t.trim().replace(/^[•\-\*]\s*/, '').trim()).filter(Boolean)
@@ -335,7 +343,10 @@ export const CorporateMinimal: React.FC<TemplateProps> = ({ data, editable: _edi
       <div id="pdf-page-terms" className="template-corporate-minimal">
         {/* General Terms */}
         <div className="terms-section">
-          <h3>Terms & Conditions:</h3>
+          <h3 className="smart-section-heading" style={{ display: 'flex', alignItems: 'center', gap: '10px', fontSize: '15px', fontWeight: '700', textTransform: 'uppercase', letterSpacing: '0.06em', color: '#1a1a2e', margin: '0 0 14px 0', paddingBottom: '8px', borderBottom: '2px solid #2980b9' }}>
+            <span style={{ display: 'inline-block', width: '4px', height: '18px', background: '#2980b9', borderRadius: '2px', flexShrink: 0 }} />
+            6. Terms &amp; Conditions
+          </h3>
           <ul>
             {DEFAULT_GENERAL_TERMS.map((term, i) => <li key={i}>{term}</li>)}
           </ul>

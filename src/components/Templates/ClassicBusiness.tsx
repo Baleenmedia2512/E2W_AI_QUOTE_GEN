@@ -150,14 +150,17 @@ export const ClassicBusiness: React.FC<TemplateProps> = ({ data, editable: _edit
 
         {/* Items Table */}
         <div className="items-section">
-          <h3 className="section-heading">Scope of Work & Pricing</h3>
+          {isMultiService
+            ? <h3 className="smart-section-heading" style={{ display: 'flex', alignItems: 'center', gap: '10px', fontSize: '15px', fontWeight: '700', textTransform: 'uppercase', letterSpacing: '0.06em', color: '#1a1a2e', margin: '0 0 14px 0', paddingBottom: '8px', borderBottom: '2px solid #2980b9' }}><span style={{ display: 'inline-block', width: '4px', height: '18px', background: '#2980b9', borderRadius: '2px', flexShrink: 0 }} />Executive Pricing Summary</h3>
+            : <h3 className="section-heading">Scope of Work &amp; Pricing</h3>
+          }
           <table className="classic-table">
             <thead>
               <tr>
                 <th className="col-num">#</th>
                 <th className="col-description">Description</th>
-                <th className="col-qty">Qty</th>
-                <th className="col-rate">Unit Price</th>
+                <th className="col-qty">QTY</th>
+                <th className="col-rate">UNIT RATE</th>
                 {quote.items.some(i => i.duration && i.duration > 1) && (
                   <th className="col-duration">Months</th>
                 )}
@@ -283,14 +286,18 @@ export const ClassicBusiness: React.FC<TemplateProps> = ({ data, editable: _edit
             <div className="classic-container">
               <div id={`pdf-service-${groupIndex}`} className="template-classic-business">
               <div className="items-section">
-                <h3 className="section-heading">{getServiceGroupHeading(group)}</h3>
+                <h3 className="section-heading" style={{ textAlign: 'center', fontSize: '22px', fontWeight: '700', marginBottom: '20px' }}>{getServiceGroupHeading(group)}</h3>
+                <h3 className="smart-section-heading" style={{ display: 'flex', alignItems: 'center', gap: '10px', fontSize: '15px', fontWeight: '700', textTransform: 'uppercase', letterSpacing: '0.06em', color: '#1a1a2e', margin: '24px 0 14px 0', paddingBottom: '8px', borderBottom: '2px solid #2980b9' }}>
+                  <span style={{ display: 'inline-block', width: '4px', height: '18px', background: '#2980b9', borderRadius: '2px', flexShrink: 0 }} />
+                  1. Pricing Summary
+                </h3>
                 <table className="classic-table">
                   <thead>
                     <tr>
                       <th className="col-num">#</th>
                       <th className="col-description">Description</th>
-                      <th className="col-qty">Qty</th>
-                      <th className="col-rate">Unit Price</th>
+                      <th className="col-qty">QTY</th>
+                      <th className="col-rate">UNIT RATE</th>
                       <th className="col-amount"><span className="th-main">AMOUNT</span><span className="th-sub">(excl GST)</span></th>
                       {quote.gstEnabled && <th className="col-gst-pct">GST %</th>}
                       {quote.gstEnabled && <th className="col-incl"><span className="th-main">AMOUNT</span><span className="th-sub">(incl GST)</span></th>}
@@ -344,7 +351,10 @@ export const ClassicBusiness: React.FC<TemplateProps> = ({ data, editable: _edit
               {(group.termsAndConditions || quote.termsAndConditions) && (
                 <div id={`pdf-service-specific-terms-${groupIndex}`} className="template-classic-business">
                   <div className="terms-section">
-                    <h3 className="section-heading">{getServiceGroupHeading(group)} — <span style={{ textTransform: 'none' }}>SPECIFIC Ts & Cs</span></h3>
+                    <h3 className="smart-section-heading" style={{ display: 'flex', alignItems: 'center', gap: '10px', fontSize: '15px', fontWeight: '700', textTransform: 'uppercase', letterSpacing: '0.06em', color: '#1a1a2e', margin: '0 0 14px 0', paddingBottom: '8px', borderBottom: '2px solid #2980b9' }}>
+                      <span style={{ display: 'inline-block', width: '4px', height: '18px', background: '#2980b9', borderRadius: '2px', flexShrink: 0 }} />
+                      5. Terms &amp; Conditions
+                    </h3>
                     <ol className="terms-list">
                       {(group.termsAndConditions
                         ? group.termsAndConditions.split('\n').map((t: string) => t.trim().replace(/^[•\-\*]\s*/, '').trim()).filter(Boolean)
@@ -365,7 +375,10 @@ export const ClassicBusiness: React.FC<TemplateProps> = ({ data, editable: _edit
     {isMultiService && (
       <div id="pdf-page-terms" className="template-classic-business">
         <div className="terms-section">
-          <h3 className="section-heading">Terms & Conditions</h3>
+          <h3 className="smart-section-heading" style={{ display: 'flex', alignItems: 'center', gap: '10px', fontSize: '15px', fontWeight: '700', textTransform: 'uppercase', letterSpacing: '0.06em', color: '#1a1a2e', margin: '0 0 14px 0', paddingBottom: '8px', borderBottom: '2px solid #2980b9' }}>
+            <span style={{ display: 'inline-block', width: '4px', height: '18px', background: '#2980b9', borderRadius: '2px', flexShrink: 0 }} />
+            6. Terms &amp; Conditions
+          </h3>
           <ol className="terms-list">
             {DEFAULT_GENERAL_TERMS.map((term, i) => <li key={i}>{term}</li>)}
           </ol>
