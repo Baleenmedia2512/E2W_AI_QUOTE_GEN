@@ -788,7 +788,7 @@
 
   .template-corporate-minimal .item-quantity {
     width: auto;
-    text-align: center;
+    text-align: right;
   }
 
   .template-corporate-minimal .item-rate {

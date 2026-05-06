@@ -36,8 +36,8 @@ const captureSectionAtA4 = async (containerId: string): Promise<{ canvas: HTMLCa
   
   Object.assign(clone.style, {
     position: 'fixed',
-    top: '-99999px',
-    left: '-99999px',
+    top: '0px',
+    left: `-${A4_WIDTH_PX + 100}px`,
     width: `${A4_WIDTH_PX}px`,
     minWidth: `${A4_WIDTH_PX}px`,
     maxWidth: `${A4_WIDTH_PX}px`,
@@ -72,6 +72,26 @@ const captureSectionAtA4 = async (containerId: string): Promise<{ canvas: HTMLCa
     // Small delay for final reflow
     await new Promise(r => setTimeout(r, 150));
 
+    // Collect link annotations BEFORE html2canvas to avoid DOM mutation side effects
+    const LINK_Y_PAD = 3; // px — compensates for line-height overhang on inline <a> inside <p>
+    const cloneRect = clone.getBoundingClientRect();
+    const links: LinkAnnotation[] = [];
+    clone.querySelectorAll('a[href]').forEach((el) => {
+      const href = el.getAttribute('href');
+      if (!href) return;
+      const rect = el.getBoundingClientRect();
+      if (rect.width > 0 && rect.height > 0) {
+        links.push({
+          url: href,
+          x: rect.left - cloneRect.left,
+          y: (rect.top - cloneRect.top) - LINK_Y_PAD,
+          w: rect.width,
+          h: rect.height + LINK_Y_PAD * 2,
+        });
+      }
+    });
+    console.log(`🔗 Collected ${links.length} link annotations from ${containerId}`);
+
     // Capture with html2canvas at fixed A4 dimensions
     const captureHeight = Math.max(clone.scrollHeight, A4_HEIGHT_PX);
     const canvas = await html2canvas(clone, {
@@ -88,25 +108,6 @@ const captureSectionAtA4 = async (containerId: string): Promise<{ canvas: HTMLCa
     });
 
     console.log(`✅ Section captured: ${canvas.width}x${canvas.height}px`);
-
-    // Collect link annotations WHILE clone is still in DOM
-    const cloneRect = clone.getBoundingClientRect();
-    const links: LinkAnnotation[] = [];
-    clone.querySelectorAll('a[href]').forEach((el) => {
-      const href = el.getAttribute('href');
-      if (!href) return;
-      const rect = el.getBoundingClientRect();
-      if (rect.width > 0 && rect.height > 0) {
-        links.push({
-          url: href,
-          x: rect.left - cloneRect.left,
-          y: rect.top - cloneRect.top,
-          w: rect.width,
-          h: rect.height,
-        });
-      }
-    });
-    console.log(`🔗 Collected ${links.length} link annotations from ${containerId}`);
 
     return { canvas, links };
   } catch (error) {
