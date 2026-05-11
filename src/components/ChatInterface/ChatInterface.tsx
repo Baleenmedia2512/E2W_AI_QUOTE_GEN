@@ -46,9 +46,8 @@ const ChatInterface: React.FC = () => {
   const minQtyCacheRef = useRef<Map<string, number>>(new Map());
   
   // Multi-select state for MULTIPLE_MATCH scenarios
-  // Map: messageId -> { vehicleType -> selectedServiceName }
-  const [selectedServices, setSelectedServices] = useState<Record<string, Record<string, string>>>({});
-
+  // Map: messageId -> { vehicleType -> selectedServiceNames[] }
+  const [selectedServices, setSelectedServices] = useState<Record<string, Record<string, string[]>>>({});
   // Minimum quantity warning dialog state
   const [minQtyWarning, setMinQtyWarning] = useState<{
     items: Array<{ description: string; requested: number; minimum: number }>;
@@ -549,10 +548,16 @@ const ChatInterface: React.FC = () => {
         newState[messageId] = {};
       }
       
+      const current = newState[messageId][vehicleType] || [];
       if (isChecked) {
-        newState[messageId][vehicleType] = serviceName;
+        newState[messageId][vehicleType] = [...current, serviceName];
       } else {
-        delete newState[messageId][vehicleType];
+        const updated = current.filter(s => s !== serviceName);
+        if (updated.length === 0) {
+          delete newState[messageId][vehicleType];
+        } else {
+          newState[messageId][vehicleType] = updated;
+        }
       }
       
       // Clean up empty message entries
@@ -574,10 +579,12 @@ const ChatInterface: React.FC = () => {
     // Build the combined request string with full service names
     const parts: string[] = [];
     groupedServices.forEach(group => {
-      const serviceName = selected[group.vehicleType];
-      if (serviceName) {
+      const serviceNames = selected[group.vehicleType];
+      if (serviceNames && serviceNames.length > 0) {
         const qty = group.requestedQuantity || '';
-        parts.push(`${qty} ${serviceName}`.trim());
+        serviceNames.forEach(serviceName => {
+          parts.push(`${qty} ${serviceName}`.trim());
+        });
       }
     });
 
@@ -1057,7 +1064,7 @@ const ChatInterface: React.FC = () => {
                                   </Text>
                                   <VStack align="stretch" spacing={2}>
                                     {group.services.map((svc, sIdx) => {
-                                      const isChecked = selectedServices[message.id]?.[group.vehicleType] === svc.name;
+                                      const isChecked = (selectedServices[message.id]?.[group.vehicleType] || []).includes(svc.name);
                                       return (
                                         <Box
                                           key={sIdx}
@@ -1120,7 +1127,7 @@ const ChatInterface: React.FC = () => {
                                 transition="all 0.2s ease"
                                 leftIcon={<Icon as={FiCheck} boxSize="18px" />}
                               >
-                                Generate Quote for {Object.keys(selectedServices[message.id]).length} Selected Service{Object.keys(selectedServices[message.id]).length > 1 ? 's' : ''}
+                                Generate Quote for {Object.values(selectedServices[message.id]).reduce((sum, arr) => sum + arr.length, 0)} Selected Service{Object.values(selectedServices[message.id]).reduce((sum, arr) => sum + arr.length, 0) > 1 ? 's' : ''}
                               </Button>
                             )}
                           </Box>
