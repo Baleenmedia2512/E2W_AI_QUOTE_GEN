@@ -152,7 +152,7 @@ export const ClassicBusiness: React.FC<TemplateProps> = ({ data, editable: _edit
         <div className="items-section">
           {isMultiService
             ? <h3 style={{ textAlign: 'center', fontSize: '20px', fontWeight: '700', textTransform: 'uppercase', letterSpacing: '0.08em', color: '#3b0a14', margin: '0 0 18px 0', paddingBottom: '10px', borderBottom: '2px solid #2980b9' }}>Executive Pricing Summary</h3>
-            : <h3 className="section-heading">Scope of Work &amp; Pricing</h3>
+            : <h3 className="section-heading">{extractServiceType(quote.items[0]?.description || '').toUpperCase()}</h3>
           }
           <div className="classic-table-scroll">
           <table className="classic-table">
