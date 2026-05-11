@@ -319,7 +319,7 @@ const QuotePreview: React.FC<QuotePreviewProps> = ({ quote, onUpdate, onSave }) 
             Review and customize your quote
           </Text>
         </Box>
-        {onSave && (
+        {false && onSave && (
           <Button
             size="md"
             variant="outline"
@@ -721,42 +721,9 @@ const QuotePreview: React.FC<QuotePreviewProps> = ({ quote, onUpdate, onSave }) 
                 )}
               </Box>
 
-              {/* Add Line Item Button */}
-              <Button
-                variant="outline"
-                size="sm"
-                borderWidth="2px"
-                borderColor="red.300"
-                color="red.600"
-                fontWeight="600"
-                borderRadius="10px"
-                onClick={() => addLineItem(itemIndex)}
-                _hover={{ 
-                  bg: 'red.50',
-                  borderColor: 'red.400',
-                  transform: 'translateY(-1px)'
-                }}
-                mb={4}
-              >
-                ⚡ Add Line Item
-              </Button>
+              {/* Add Line Item Button - hidden */}
 
-              {/* Section Subtotal */}
-              <Flex 
-                justify="flex-end" 
-                pt={3} 
-                borderTop="2px solid" 
-                borderColor="red.100"
-                bg="red.50"
-                px={3}
-                py={2}
-                borderRadius="8px"
-                mt={2}
-              >
-                <Text fontSize="md" fontWeight="700" color="gray.800">
-                  Section Subtotal: <Text as="span" ml={3} color="red.600">{formatCurrency(calculateItemSubtotal(item))}</Text>
-                </Text>
-              </Flex>
+              {/* Section Subtotal - hidden */}
             </CardBody>
           </Card>
         ))}
