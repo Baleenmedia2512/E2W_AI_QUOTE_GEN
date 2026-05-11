@@ -1,7 +1,7 @@
 import React from 'react';
 import { TemplateProps } from '../../types';
 import { ReferenceImages } from './ReferenceImages';
-import { isMultiServiceQuote, groupItemsByServiceType, filterTermsByServiceType, DEFAULT_GENERAL_TERMS, getServiceGroupHeading } from '../../utils/quoteGrouping';
+import { isMultiServiceQuote, groupItemsByServiceType, filterTermsByServiceType, DEFAULT_GENERAL_TERMS, getServiceGroupHeading, extractServiceType } from '../../utils/quoteGrouping';
 import './CorporateMinimal.css';
 
 export const CorporateMinimal: React.FC<TemplateProps> = ({ data, editable: _editable = false, onDataChange: _onDataChange }) => {
@@ -209,6 +209,9 @@ export const CorporateMinimal: React.FC<TemplateProps> = ({ data, editable: _edi
           {renderClientDetails()}
 
           <div className="quote-items-section">
+            <h3 style={{ textAlign: 'center', fontSize: '20px', fontWeight: '700', textTransform: 'uppercase', letterSpacing: '0.08em', color: '#3b0a14', margin: '0 0 18px 0', paddingBottom: '10px', borderBottom: '2px solid #2980b9' }}>
+              {extractServiceType(quote.items[0]?.description || '').toUpperCase()}
+            </h3>
             {renderItemsTable(quote.items)}
           </div>
 

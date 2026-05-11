@@ -133,7 +133,7 @@ export const ModernSales: React.FC<TemplateProps> = ({ data, editable: _editable
         <div className="ms-section">
           {isMultiService
             ? <h3 style={{ textAlign: 'center', fontSize: '20px', fontWeight: '700', textTransform: 'uppercase', letterSpacing: '0.08em', color: '#3b0a14', margin: '0 0 18px 0', paddingBottom: '10px', borderBottom: '2px solid #2980b9' }}>Executive Pricing Summary</h3>
-            : <h3 className="ms-section-title">Scope of Work &amp; Pricing</h3>
+            : <h3 className="ms-section-title">{extractServiceType(quote.items[0]?.description || '').toUpperCase()}</h3>
           }
           <div className="ms-table-scroll">
           <table className="ms-table">
