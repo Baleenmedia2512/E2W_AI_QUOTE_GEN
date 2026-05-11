@@ -1042,19 +1042,24 @@ function extractSpecSectionImage(pages: ExtractedPage[]): string | null {
 }
 
 /**
- * Extract best image for Reference Image section.
+ * Extract ALL reference images from Reference Image section pages.
  * ONLY picks from pages that have "Reference Image" heading.
  * Never falls back to spec page images.
+ * Returns an array so all cropped images (not just index 0) are shown.
  */
-function extractRefSectionImage(pages: ExtractedPage[]): string | null {
+function extractRefSectionImages(pages: ExtractedPage[]): string[] {
   const refPages = getRefImagePages(pages);
-  if (refPages.length === 0) return null;
-  // Prefer cropped image
+  if (refPages.length === 0) return [];
+  // Collect ALL cropped images from ALL ref pages
+  const allCropped: string[] = [];
   for (const page of refPages) {
-    if (page.croppedImages && page.croppedImages.length > 0) return page.croppedImages[0];
+    if (page.croppedImages && page.croppedImages.length > 0) {
+      allCropped.push(...page.croppedImages);
+    }
   }
-  // Fallback: full page image of reference page
-  return refPages[0].imageDataUrl;
+  if (allCropped.length > 0) return allCropped;
+  // Fallback: full page image of first reference page (contains all photos as one tall image)
+  return [refPages[0].imageDataUrl];
 }
 
 export const ReferenceImages: React.FC<ReferenceImagesProps> = ({ proposalPages, items }) => {
@@ -1101,8 +1106,8 @@ export const ReferenceImages: React.FC<ReferenceImagesProps> = ({ proposalPages,
   const hasSpecContent = specGroups.some(g => g.fields.length > 0);
   // Spec image: only from Design Specification pages
   const specImageUrl = useMemo(() => extractSpecSectionImage(filteredPages), [filteredPages]);
-  // Reference image: only from Reference Image pages — never falls back to spec pages
-  const refImageUrl = useMemo(() => extractRefSectionImage(filteredPages), [filteredPages]);
+  // Reference images: ALL images from Reference Image pages — never falls back to spec pages
+  const refImageUrls = useMemo(() => extractRefSectionImages(filteredPages), [filteredPages]);
   // Customer review uses reviewPages (filteredPages + any customer review pages from full proposal)
   const customerReview = useMemo(() => extractCustomerReview(reviewPages), [reviewPages]);
 
@@ -1142,7 +1147,7 @@ export const ReferenceImages: React.FC<ReferenceImagesProps> = ({ proposalPages,
   // Lazy Gemini Vision crop for Reference Image section.
   // Fires only when the ref page has no croppedImages (upload-time crop was skipped or returned empty).
   // Does NOT affect spec image, customer review, or filteredPages logic.
-  const [lazyCroppedRefImage, setLazyCroppedRefImage] = useState<string | null>(null);
+  const [lazyCroppedRefImages, setLazyCroppedRefImages] = useState<string[]>([]);
   useEffect(() => {
     // Find the reference image page inside filteredPages (including new heading variants)
     const refPage = filteredPages.find(p => {
@@ -1151,9 +1156,12 @@ export const ReferenceImages: React.FC<ReferenceImagesProps> = ({ proposalPages,
              t.includes('reference photo') || t.includes('reference photos') ||
              t.includes('example image') || t.includes('sample photo');
     });
-    // Only fire if ref page exists AND has no cropped images (so full-page fallback is active)
-    if (!refPage || (refPage.croppedImages && refPage.croppedImages.length > 0)) {
-      setLazyCroppedRefImage(null);
+    // Fire lazy re-crop if:
+    // - ref page has 0 cropped images (upload-time crop was skipped/empty), OR
+    // - ref page has only 1 cropped image (upload-time Gemini may have missed others on the same page)
+    // Skip only when upload already found 2+ images (confident it got all of them)
+    if (!refPage || (refPage.croppedImages && refPage.croppedImages.length > 1)) {
+      setLazyCroppedRefImages([]);
       return;
     }
     let cancelled = false;
@@ -1162,12 +1170,12 @@ export const ReferenceImages: React.FC<ReferenceImagesProps> = ({ proposalPages,
       if (cancelled) return;
       if (cropped.length > 0) {
         console.log('✅ Lazy crop: got', cropped.length, 'image(s) from reference page', refPage.pageNumber);
-        setLazyCroppedRefImage(cropped[0]);
+        setLazyCroppedRefImages(cropped);
       } else {
         // Gemini Vision returned nothing — use geometric header/footer strip as fallback
         console.log('⚠️ Gemini Vision empty, using geometric strip for reference page', refPage.pageNumber);
         const stripped = await cropPageStrippingHeaderFooter(refPage.imageDataUrl);
-        if (!cancelled) setLazyCroppedRefImage(stripped);
+        if (!cancelled) setLazyCroppedRefImages([stripped]);
       }
     });
     return () => { cancelled = true; };
@@ -1251,15 +1259,17 @@ export const ReferenceImages: React.FC<ReferenceImagesProps> = ({ proposalPages,
         </div>
       )}
 
-      {/* Reference Image */}
-      {refImageUrl && (
+      {/* Reference Images — all cropped images rendered vertically */}
+      {refImageUrls.length > 0 && (
         <div className="smart-section">
           <h3 className="smart-section-heading">
             <span className="smart-heading-bar" />
             3. Reference Images
           </h3>
-          <div className="ref-img-container">
-            <img src={lazyCroppedRefImage ?? refImageUrl} alt="Reference" className="ref-img" />
+          <div className="ref-img-container ref-img-multi">
+            {(lazyCroppedRefImages.length > 0 ? lazyCroppedRefImages : refImageUrls).map((src, idx) => (
+              <img key={idx} src={src} alt={`Reference ${idx + 1}`} className="ref-img" />
+            ))}
           </div>
         </div>
       )}
