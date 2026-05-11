@@ -329,6 +329,26 @@ const ChatInterface: React.FC = () => {
           });
         });
 
+        // Deduplicate: Gemini sometimes extracts the same service section twice when the
+        // PDF mentions it in both a pricing summary table AND a detailed section.
+        // Keep only the first occurrence of each unique description (case-insensitive).
+        const _seenDescriptions = new Set<string>();
+        const uniqueQuoteItems = quoteItems.filter(item => {
+          const key = item.description.toLowerCase().trim();
+          if (_seenDescriptions.has(key)) {
+            console.log(`⚠️ Duplicate item removed: "${item.description}"`);
+            return false;
+          }
+          _seenDescriptions.add(key);
+          return true;
+        });
+        if (uniqueQuoteItems.length < quoteItems.length) {
+          console.log(`🧹 Deduplication: ${quoteItems.length} → ${uniqueQuoteItems.length} items`);
+          // Replace reference so all downstream code uses deduplicated list
+          quoteItems.length = 0;
+          quoteItems.push(...uniqueQuoteItems);
+        }
+
         // Populate minimum-quantity cache from AI response so that future requests in the
         // same session can validate against known minimums even if the AI omits minimumQuantity.
         quoteItems.forEach(item => {

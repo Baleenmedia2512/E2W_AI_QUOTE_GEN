@@ -90,7 +90,14 @@ If no product images or photos are found on this page, return exactly: []`;
     const arrayMatch = jsonStr.match(/\[[\s\S]*\]/);
     if (!arrayMatch) return [];
 
-    const boxes: ImageBoundingBox[] = JSON.parse(arrayMatch[0]);
+    const rawBoxes: any[] = JSON.parse(arrayMatch[0]);
+
+    // Normalize: Gemini Vision sometimes returns "box" and sometimes "box_2d" as the key.
+    // Coerce every item so b.box always holds the coords array before filtering/cropping.
+    const boxes: ImageBoundingBox[] = rawBoxes.map((b: any) => ({
+      ...b,
+      box: (b.box_2d || b.box) as [number, number, number, number],
+    }));
 
     return boxes.filter(b => {
       if (!b.box || !Array.isArray(b.box) || b.box.length !== 4) return false;
@@ -123,6 +130,7 @@ function cropImageRegions(imageDataUrl: string, boxes: ImageBoundingBox[]): Prom
 
       for (const item of boxes) {
         try {
+          // item.box is already normalized (box_2d || box) from detectImageRegions
           const [yMin, xMin, yMax, xMax] = item.box;
           const padding = 15; // 1.5% padding
           const sx = Math.max(0, Math.round(((xMin - padding) / 1000) * width));
