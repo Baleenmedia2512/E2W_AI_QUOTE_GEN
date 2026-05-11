@@ -433,6 +433,7 @@ const QuotePreview: React.FC<QuotePreviewProps> = ({ quote, onUpdate, onSave }) 
                             onChange={(e) =>
                               updateLineItem(itemIndex, lineItemIndex, 'description', e.target.value)
                             }
+                            onFocus={(e) => { const t = e.target; setTimeout(() => t.select(), 300); }}
                             placeholder="Enter description"
                             size="sm"
                             bg="white"
@@ -469,6 +470,9 @@ const QuotePreview: React.FC<QuotePreviewProps> = ({ quote, onUpdate, onSave }) 
                                 bg="white"
                                 borderColor="gray.200"
                                 borderRadius="6px"
+                                inputMode="numeric"
+                                pattern="[0-9]*"
+                                onFocus={(e) => { const t = e.target; setTimeout(() => t.select(), 300); }}
                                 _focus={{ borderColor: '#750926', boxShadow: '0 0 0 1px #750926' }}
                               />
                             </NumberInput>
@@ -491,6 +495,9 @@ const QuotePreview: React.FC<QuotePreviewProps> = ({ quote, onUpdate, onSave }) 
                                 bg="white"
                                 borderColor="gray.200"
                                 borderRadius="6px"
+                                inputMode="decimal"
+                                pattern="[0-9.]*"
+                                onFocus={(e) => { const t = e.target; setTimeout(() => t.select(), 300); }}
                                 _focus={{ borderColor: '#750926', boxShadow: '0 0 0 1px #750926' }}
                               />
                             </NumberInput>
@@ -513,6 +520,9 @@ const QuotePreview: React.FC<QuotePreviewProps> = ({ quote, onUpdate, onSave }) 
                                   bg="white"
                                   borderColor="gray.200"
                                   borderRadius="6px"
+                                  inputMode="numeric"
+                                  pattern="[0-9]*"
+                                  onFocus={(e) => { const t = e.target; setTimeout(() => t.select(), 300); }}
                                   _focus={{ borderColor: '#750926', boxShadow: '0 0 0 1px #750926' }}
                                 />
                               </NumberInput>
@@ -530,7 +540,7 @@ const QuotePreview: React.FC<QuotePreviewProps> = ({ quote, onUpdate, onSave }) 
                             onChange={(e) =>
                               updateLineItem(itemIndex, lineItemIndex, 'remark' as keyof LineItem, e.target.value)
                             }
-                            onFocus={(e) => e.target.select()}
+                            onFocus={(e) => { const t = e.target; setTimeout(() => t.select(), 300); }}
                             placeholder="e.g. Per cab/month, One time fee..."
                             size="sm"
                             bg="white"
@@ -596,6 +606,7 @@ const QuotePreview: React.FC<QuotePreviewProps> = ({ quote, onUpdate, onSave }) 
                                 onChange={(e) =>
                                   updateLineItem(itemIndex, lineItemIndex, 'description', e.target.value)
                                 }
+                                onFocus={(e) => { const t = e.target; setTimeout(() => t.select(), 300); }}
                                 placeholder="Enter description"
                                 size="sm"
                                 minH="40px"
@@ -621,6 +632,9 @@ const QuotePreview: React.FC<QuotePreviewProps> = ({ quote, onUpdate, onSave }) 
                               >
                                 <NumberInputField
                                   textAlign="right"
+                                  inputMode="numeric"
+                                  pattern="[0-9]*"
+                                  onFocus={(e) => { const t = e.target; setTimeout(() => t.select(), 300); }}
                                   _focus={{ bg: 'white', border: '1px solid', borderColor: '#750926' }}
                                   px={2}
                                 />
@@ -638,6 +652,9 @@ const QuotePreview: React.FC<QuotePreviewProps> = ({ quote, onUpdate, onSave }) 
                               >
                                 <NumberInputField
                                   textAlign="right"
+                                  inputMode="decimal"
+                                  pattern="[0-9.]*"
+                                  onFocus={(e) => { const t = e.target; setTimeout(() => t.select(), 300); }}
                                   _focus={{ bg: 'white', border: '1px solid', borderColor: '#750926' }}
                                   px={2}
                                 />
@@ -655,6 +672,9 @@ const QuotePreview: React.FC<QuotePreviewProps> = ({ quote, onUpdate, onSave }) 
                                 >
                                   <NumberInputField
                                     textAlign="right"
+                                    inputMode="numeric"
+                                    pattern="[0-9]*"
+                                    onFocus={(e) => { const t = e.target; setTimeout(() => t.select(), 300); }}
                                     _focus={{ bg: 'white', border: '1px solid', borderColor: '#750926' }}
                                     px={2}
                                   />
@@ -670,7 +690,7 @@ const QuotePreview: React.FC<QuotePreviewProps> = ({ quote, onUpdate, onSave }) 
                                 onChange={(e) =>
                                   updateLineItem(itemIndex, lineItemIndex, 'remark' as keyof LineItem, e.target.value)
                                 }
-                                onFocus={(e) => e.target.select()}
+                                onFocus={(e) => { const t = e.target; setTimeout(() => t.select(), 300); }}
                                 placeholder="Optional"
                                 size="sm"
                                 bg="transparent"
@@ -817,7 +837,7 @@ const QuotePreview: React.FC<QuotePreviewProps> = ({ quote, onUpdate, onSave }) 
                     maxW="120px"
                     defaultValue={18}
                   >
-                    <NumberInputField />
+                    <NumberInputField inputMode="decimal" pattern="[0-9.]*" onFocus={(e) => { const t = e.target; setTimeout(() => t.select(), 300); }} />
                   </NumberInput>
                 </HStack>
               )}
@@ -856,6 +876,7 @@ const QuotePreview: React.FC<QuotePreviewProps> = ({ quote, onUpdate, onSave }) 
           <Input
             value={localQuote.deliveryTimeline || ''}
             onChange={(e) => updateDeliveryTimeline(e.target.value)}
+            onFocus={(e) => { const t = e.target; setTimeout(() => t.select(), 300); }}
             placeholder="e.g., 7 working days from receipt"
             size="lg"
             bg="white"
@@ -899,6 +920,8 @@ const QuotePreview: React.FC<QuotePreviewProps> = ({ quote, onUpdate, onSave }) 
           resize="vertical"
           overflow="hidden"
           onFocus={(e) => {
+            const t = e.target;
+            setTimeout(() => t.select(), 300);
             e.target.style.height = 'auto';
             e.target.style.height = e.target.scrollHeight + 'px';
           }}
@@ -944,6 +967,8 @@ const QuotePreview: React.FC<QuotePreviewProps> = ({ quote, onUpdate, onSave }) 
               resize="vertical"
               overflow="hidden"
               onFocus={(e) => {
+                const t = e.target;
+                setTimeout(() => t.select(), 300);
                 e.target.style.height = 'auto';
                 e.target.style.height = e.target.scrollHeight + 'px';
               }}

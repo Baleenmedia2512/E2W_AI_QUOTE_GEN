@@ -8,7 +8,7 @@ import DownloadNotification from '../plugins/downloadNotification';
 
 // A4 dimensions at 96dpi (standard web resolution)
 const A4_WIDTH_PX = 794;   // 210mm at 96dpi
-const A4_HEIGHT_PX = 1123;  // 297mm at 96dpi
+// const A4_HEIGHT_PX = 1123;  // 297mm at 96dpi
 
 /** Represents a clickable link annotation to be overlaid on the PDF image */
 interface LinkAnnotation {

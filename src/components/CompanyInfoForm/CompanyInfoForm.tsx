@@ -258,6 +258,7 @@ const CompanyInfoForm: React.FC<CompanyInfoFormProps> = ({ onSubmit, initialData
               <Input
                 value={formData.name}
                 onChange={(e) => handleInputChange('name', e.target.value)}
+                onFocus={(e) => { const t = e.target; setTimeout(() => t.select(), 300); }}
                 placeholder="Enter your company name"
                 size="lg"
                 borderWidth="2px"
@@ -283,6 +284,7 @@ const CompanyInfoForm: React.FC<CompanyInfoFormProps> = ({ onSubmit, initialData
               <Textarea
                 value={formData.address}
                 onChange={(e) => handleInputChange('address', e.target.value)}
+                onFocus={(e) => { const t = e.target; setTimeout(() => t.select(), 300); }}
                 placeholder="Enter your complete business address"
                 rows={3}
                 size="lg"
@@ -311,6 +313,7 @@ const CompanyInfoForm: React.FC<CompanyInfoFormProps> = ({ onSubmit, initialData
                   <Input
                     value={formData.gst}
                     onChange={(e) => handleInputChange('gst', e.target.value)}
+                    onFocus={(e) => { const t = e.target; setTimeout(() => t.select(), 300); }}
                     placeholder="Enter GST number"
                     size="lg"
                     borderWidth="2px"
@@ -336,6 +339,7 @@ const CompanyInfoForm: React.FC<CompanyInfoFormProps> = ({ onSubmit, initialData
                   <Input
                     value={formData.phone}
                     onChange={(e) => handleInputChange('phone', e.target.value)}
+                    onFocus={(e) => { const t = e.target; setTimeout(() => t.select(), 300); }}
                     placeholder="+1 (555) 000-0000"
                     type="tel"
                     size="lg"
@@ -366,6 +370,7 @@ const CompanyInfoForm: React.FC<CompanyInfoFormProps> = ({ onSubmit, initialData
                   <Input
                     value={formData.email}
                     onChange={(e) => handleInputChange('email', e.target.value)}
+                    onFocus={(e) => { const t = e.target; setTimeout(() => t.select(), 300); }}
                     placeholder="company@example.com"
                     type="email"
                     size="lg"
@@ -392,6 +397,7 @@ const CompanyInfoForm: React.FC<CompanyInfoFormProps> = ({ onSubmit, initialData
                   <Input
                     value={formData.website}
                     onChange={(e) => handleInputChange('website', e.target.value)}
+                    onFocus={(e) => { const t = e.target; setTimeout(() => t.select(), 300); }}
                     placeholder="https://www.yourcompany.com"
                     type="url"
                     size="lg"
@@ -421,6 +427,7 @@ const CompanyInfoForm: React.FC<CompanyInfoFormProps> = ({ onSubmit, initialData
                   <Input
                     value={formData.designation}
                     onChange={(e) => handleInputChange('designation', e.target.value)}
+                    onFocus={(e) => { const t = e.target; setTimeout(() => t.select(), 300); }}
                     placeholder="e.g., Managing Director"
                     size="lg"
                     borderWidth="2px"
@@ -445,6 +452,7 @@ const CompanyInfoForm: React.FC<CompanyInfoFormProps> = ({ onSubmit, initialData
                   <Input
                     value={formData.signature}
                     onChange={(e) => handleInputChange('signature', e.target.value)}
+                    onFocus={(e) => { const t = e.target; setTimeout(() => t.select(), 300); }}
                     placeholder="Enter signatory name"
                     size="lg"
                     borderWidth="2px"
