@@ -184,6 +184,7 @@ const ClientInfoFormWithAutocomplete: React.FC<ClientInfoFormWithAutocompletePro
                 <Input
                   value={formData.name}
                   onChange={(e) => handleInputChange('name', e.target.value)}
+                  onFocus={(e) => { const t = e.target; setTimeout(() => t.select(), 300); }}
                   placeholder="Enter client name"
                   size="lg"
                   bg="white"
@@ -210,6 +211,7 @@ const ClientInfoFormWithAutocomplete: React.FC<ClientInfoFormWithAutocompletePro
                 <Input
                   value={formData.company}
                   onChange={(e) => handleInputChange('company', e.target.value)}
+                  onFocus={(e) => { const t = e.target; setTimeout(() => t.select(), 300); }}
                   placeholder="Enter company name"
                   size="lg"
                   bg="white"
@@ -238,6 +240,7 @@ const ClientInfoFormWithAutocomplete: React.FC<ClientInfoFormWithAutocompletePro
               <Textarea
                 value={formData.address}
                 onChange={(e) => handleInputChange('address', e.target.value)}
+                onFocus={(e) => { const t = e.target; setTimeout(() => t.select(), 300); }}
                 placeholder="Enter client address"
                 rows={3}
                 size="lg"
@@ -267,6 +270,7 @@ const ClientInfoFormWithAutocomplete: React.FC<ClientInfoFormWithAutocompletePro
                 <Input
                   value={formData.gst}
                   onChange={(e) => handleInputChange('gst', e.target.value)}
+                  onFocus={(e) => { const t = e.target; setTimeout(() => t.select(), 300); }}
                   placeholder="Enter GST number"
                   size="lg"
                   bg="white"
@@ -293,6 +297,7 @@ const ClientInfoFormWithAutocomplete: React.FC<ClientInfoFormWithAutocompletePro
                 <Input
                   value={formData.phone}
                   onChange={(e) => handleInputChange('phone', e.target.value)}
+                  onFocus={(e) => { const t = e.target; setTimeout(() => t.select(), 300); }}
                   placeholder="+1 (555) 000-0000"
                   type="tel"
                   size="lg"
@@ -322,6 +327,7 @@ const ClientInfoFormWithAutocomplete: React.FC<ClientInfoFormWithAutocompletePro
               <Input
                 value={formData.email}
                 onChange={(e) => handleInputChange('email', e.target.value)}
+                onFocus={(e) => { const t = e.target; setTimeout(() => t.select(), 300); }}
                 placeholder="client@example.com"
                 type="email"
                 size="lg"
