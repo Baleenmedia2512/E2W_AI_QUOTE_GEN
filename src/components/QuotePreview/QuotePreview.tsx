@@ -167,7 +167,7 @@ const QuotePreview: React.FC<QuotePreviewProps> = ({ quote, onUpdate, onSave }) 
     onUpdate(updatedQuote);
   };
 
-  const addLineItem = (itemIndex: number) => {
+  const _addLineItem = (itemIndex: number) => {
     if (!localQuote) return;
 
     const newLineItem: LineItem = {
