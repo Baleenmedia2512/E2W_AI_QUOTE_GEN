@@ -202,6 +202,8 @@ export const CorporateMinimal: React.FC<TemplateProps> = ({ data, editable: _edi
 
   // Single service quote (original behavior)
   if (!isMultiService) {
+    const hasSpecificTerms = quote.items.some(item => item.termsAndConditions) || !!quote.termsAndConditions;
+    const singleTotal = hasSpecificTerms ? 4 : 3;
     return (
       <>
         <div id="pdf-page-1" className="template-corporate-minimal">
@@ -209,58 +211,57 @@ export const CorporateMinimal: React.FC<TemplateProps> = ({ data, editable: _edi
           {renderClientDetails()}
 
           <div className="quote-items-section">
-            <h3 style={{ textAlign: 'center', fontSize: '20px', fontWeight: '700', textTransform: 'uppercase', letterSpacing: '0.08em', color: '#3b0a14', margin: '0 0 18px 0', paddingBottom: '10px', borderBottom: '2px solid #2980b9' }}>
+            <h3 style={{ textAlign: 'center', fontSize: '20px', fontWeight: '700', textTransform: 'uppercase', letterSpacing: '0.08em', color: '#3b0a14', margin: '0 0 8px 0', paddingBottom: '10px', borderBottom: '2px solid #2980b9' }}>
               {extractServiceType(quote.items[0]?.description || '').toUpperCase()}
+            </h3>
+            <h3 className="smart-section-heading" style={{ display: 'flex', alignItems: 'center', gap: '10px', fontSize: '15px', fontWeight: '700', textTransform: 'uppercase', letterSpacing: '0.06em', color: '#1a1a2e', margin: '16px 0 14px 0', paddingBottom: '8px', borderBottom: '2px solid #2980b9' }}>
+              <span style={{ display: 'inline-block', width: '4px', height: '18px', background: '#2980b9', borderRadius: '2px', flexShrink: 0 }} />
+              1. Pricing Summary
             </h3>
             {renderItemsTable(quote.items)}
           </div>
 
           {/* Company Contact Footer */}
-          {renderCompanyFooter(1, 3)}
+          {renderCompanyFooter(1, singleTotal)}
         </div>
 
         <div id="pdf-page-2" className="template-corporate-minimal">
           <ReferenceImages proposalPages={data.proposalPages} items={quote.items} />
 
           {/* Company Contact Footer */}
-          {renderCompanyFooter(2, 3)}
+          {renderCompanyFooter(2, singleTotal)}
         </div>
 
-        {/* Terms & Conditions Page */}
-        <div id="pdf-page-3" className="template-corporate-minimal">
-          {/* General Terms */}
+        {/* Page 3: Specific Terms & Conditions (blue bar style — same as multi-service) */}
+        {hasSpecificTerms && (
+          <div id="pdf-page-3" className="template-corporate-minimal">
+            <div className="terms-section">
+              <h3 className="smart-section-heading" style={{ display: 'flex', alignItems: 'center', gap: '10px', fontSize: '15px', fontWeight: '700', textTransform: 'uppercase', letterSpacing: '0.06em', color: '#1a1a2e', margin: '0 0 14px 0', paddingBottom: '8px', borderBottom: '2px solid #2980b9' }}>
+                <span style={{ display: 'inline-block', width: '4px', height: '18px', background: '#2980b9', borderRadius: '2px', flexShrink: 0 }} />
+                5. Terms &amp; Conditions
+              </h3>
+              <ul>
+                {filterGSTTerms(
+                  quote.items[0]?.termsAndConditions
+                    ? quote.items[0].termsAndConditions.split('\n').map(t => t.trim().replace(/^[•\-\*]\s*/, '').trim()).filter(Boolean)
+                    : filterTermsByServiceType(quote.termsAndConditions, extractServiceType(quote.items[0]?.description || ''))
+                ).map((term, i) => <li key={i}>{renderTermWithLinks(term)}</li>)}
+              </ul>
+            </div>
+            {renderCompanyFooter(3, singleTotal)}
+          </div>
+        )}
+
+        {/* Page 4 (or 3 if no specific terms): General Terms & Conditions */}
+        <div id="pdf-page-terms" className="template-corporate-minimal">
           <div className="terms-section">
             <h3 style={{ textAlign: 'center', fontSize: '20px', fontWeight: '700', textTransform: 'uppercase', letterSpacing: '0.08em', color: '#3b0a14', margin: '0 0 18px 0', paddingBottom: '10px', borderBottom: '2px solid #2980b9' }}>
               General Terms &amp; Conditions
             </h3>
             <ul>
-              {quote.termsAndConditions
-                ? filterGSTTerms(quote.termsAndConditions
-                    .split(/\n|•|\d+\.\s/)
-                    .map(t => t.trim())
-                    .filter(Boolean))
-                    .map((term, i) => <li key={i}>{renderTermWithLinks(term)}</li>)
-                : <li>Standard terms and conditions apply</li>
-              }
+              {DEFAULT_GENERAL_TERMS.map((term, i) => <li key={i}>{term}</li>)}
             </ul>
           </div>
-
-          {/* Item-specific Terms */}
-          {quote.items.map((item) => 
-            item.termsAndConditions ? (
-              <div key={item.id} className="terms-section">
-                <h3>{item.description.split(' - ')[0]} — <span style={{ textTransform: 'none' }}>SPECIFIC Ts & Cs</span></h3>
-                <ul>
-                  {filterGSTTerms(item.termsAndConditions
-                    .split(/\n|•|\d+\.\s/)
-                    .map(t => t.trim())
-                    .filter(Boolean))
-                    .map((term, i) => <li key={i}>{renderTermWithLinks(term)}</li>)
-                  }
-                </ul>
-              </div>
-            ) : null
-          )}
 
           {/* System Generated Notice */}
           <div className="system-generated-notice">
@@ -268,7 +269,7 @@ export const CorporateMinimal: React.FC<TemplateProps> = ({ data, editable: _edi
           </div>
 
           {/* Company Contact Footer */}
-          {renderCompanyFooter(3, 3)}
+          {renderCompanyFooter(singleTotal, singleTotal)}
         </div>
       </>
     );
