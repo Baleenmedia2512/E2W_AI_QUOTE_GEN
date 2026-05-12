@@ -263,6 +263,20 @@ export const CorporateMinimal: React.FC<TemplateProps> = ({ data, editable: _edi
             </ul>
           </div>
 
+          {/* Bank Details */}
+          <div className="terms-section" style={{ marginTop: '24px' }}>
+            <h3 style={{ textAlign: 'center', fontSize: '20px', fontWeight: '700', textTransform: 'uppercase', letterSpacing: '0.08em', color: '#3b0a14', margin: '0 0 18px 0', paddingBottom: '10px', borderBottom: '2px solid #2980b9' }}>
+              Bank Details
+            </h3>
+            <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '13px', color: '#1a1a2e' }}>
+              <tbody>
+                <tr><td style={{ padding: '4px 12px 4px 0', fontWeight: '600', whiteSpace: 'nowrap' }}>ICICI Current Acc.</td><td style={{ padding: '4px 0' }}>: 104005500375</td></tr>
+                <tr><td style={{ padding: '4px 12px 4px 0', fontWeight: '600', whiteSpace: 'nowrap' }}>Account Name</td><td style={{ padding: '4px 0' }}>: Baleen Media</td></tr>
+                <tr><td style={{ padding: '4px 12px 4px 0', fontWeight: '600', whiteSpace: 'nowrap' }}>IFSC</td><td style={{ padding: '4px 0' }}>: ICIC0001040</td></tr>
+              </tbody>
+            </table>
+          </div>
+
           {/* System Generated Notice */}
           <div className="system-generated-notice">
             <p>This is a system-generated quotation and does not require a signature.</p>
@@ -366,6 +380,20 @@ export const CorporateMinimal: React.FC<TemplateProps> = ({ data, editable: _edi
           <ul>
             {DEFAULT_GENERAL_TERMS.map((term, i) => <li key={i}>{term}</li>)}
           </ul>
+        </div>
+
+        {/* Bank Details */}
+        <div className="terms-section" style={{ marginTop: '24px' }}>
+          <h3 style={{ textAlign: 'center', fontSize: '20px', fontWeight: '700', textTransform: 'uppercase', letterSpacing: '0.08em', color: '#3b0a14', margin: '0 0 18px 0', paddingBottom: '10px', borderBottom: '2px solid #2980b9' }}>
+            Bank Details
+          </h3>
+          <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '13px', color: '#1a1a2e' }}>
+            <tbody>
+              <tr><td style={{ padding: '4px 12px 4px 0', fontWeight: '600', whiteSpace: 'nowrap' }}>ICICI Current Acc.</td><td style={{ padding: '4px 0' }}>: 104005500375</td></tr>
+              <tr><td style={{ padding: '4px 12px 4px 0', fontWeight: '600', whiteSpace: 'nowrap' }}>Account Name</td><td style={{ padding: '4px 0' }}>: Baleen Media</td></tr>
+              <tr><td style={{ padding: '4px 12px 4px 0', fontWeight: '600', whiteSpace: 'nowrap' }}>IFSC</td><td style={{ padding: '4px 0' }}>: ICIC0001040</td></tr>
+            </tbody>
+          </table>
         </div>
 
         {/* System Generated Notice */}
