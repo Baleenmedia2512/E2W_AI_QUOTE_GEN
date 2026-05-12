@@ -46,7 +46,7 @@ function filterPagesByCategory(pages: ExtractedPage[], category: string): Extrac
   // E.g., "Metro Branding – Underground Station - Display Price" → "Metro Branding – Underground Station"
   // E.g., "Mobile Van - Non LED Printing & Fixing Price" → "Mobile Van - Non LED"
   let serviceTypeOnly = category;
-  const pricingSuffixPattern = /\b(printing\s*&?\s*fixing|display\s+price|rental\s+price|printing\s+price|fixing\s+price)\b/i;
+  const pricingSuffixPattern = /\b(printing\s*&?\s*fixing|display\s+price|rental\s+price|printing\s+price|fixing\s+price|design\s+price|creative\s+price|\w+\s+price|\w+\s+charge)\b/i;
   const pricingMatch = category.match(pricingSuffixPattern);
   if (pricingMatch && pricingMatch.index && pricingMatch.index > 0) {
     serviceTypeOnly = category.substring(0, pricingMatch.index).replace(/[\s\-–—&]+$/, '').trim();
@@ -73,6 +73,7 @@ function filterPagesByCategory(pages: ExtractedPage[], category: string): Extrac
   }
   
   // Synonym map for common advertising/media industry terms
+  // Also includes common OCR/PDF typos as synonyms
   const synonymMap: Record<string, string[]> = {
     'ads': ['branding', 'advertising', 'ad', 'advertisement', 'advertisements'],
     'branding': ['ads', 'advertising', 'ad', 'advertisement'],
@@ -84,17 +85,34 @@ function filterPagesByCategory(pages: ExtractedPage[], category: string): Extrac
     'stickers': ['sticker'],
     'poster': ['posters'],
     'posters': ['poster'],
+    // PDF typo corrections
+    'awareness': ['awarness', 'awarenes', 'awarness'],
+    'direction': ['directio', 'dirction'],
   };
 
   // Extract meaningful keywords, excluding pricing/quantity terms
-  const words = serviceTypeOnly
+  // IMPORTANT: sub-type differentiators like "paper", "size", "a4", "a5" MUST be kept
+  // so that "NEWSPAPER INSERTION_PAPER SIZE" and "NEWSPAPER INSERTION_A4/A5" each match
+  // their own specific PDF page instead of both matching the first found page.
+  const allWords = serviceTypeOnly
     .toLowerCase()
-    .replace(/[()]/g, ' ')  // Replace parentheses with spaces so inner words are preserved
-    .split(/[\s,\-\/&]+/)
-    .filter((w) => 
-      w.length >= 3 && 
-      !['rental', 'price', 'per', 'month', 'and', 'the', 'for', 'from', 'display', 'printing', 'fixing'].includes(w)
-    );
+    .replace(/[()]/g, ' ')  // Replace parentheses with spaces
+    .split(/[\s,\-\/&_]+/)  // underscore also treated as separator (INSERTION_A4 → insertion, a4)
+    .filter((w) => w.length >= 1);
+
+  // Pricing/filler words to always discard
+  const pricingWords = new Set(['rental', 'price', 'per', 'month', 'and', 'the', 'for', 'from',
+    'display', 'printing', 'fixing', 'design', 'creative', 'extra', 'charge', 'rate']);
+
+  // Core service words — always kept regardless of length
+  const coreWords = allWords.filter(w => !pricingWords.has(w) && w.length >= 3);
+
+  // Short sub-type codes (a4, a5, a3, b4, b5, etc.) — keep ONLY if there are other
+  // items in the same category that would otherwise produce identical keyword sets.
+  // Strategy: always include them — they are critical differentiators.
+  const shortCodes = allWords.filter(w => /^[a-z]\d$/.test(w)); // e.g. a4, a5, b5
+
+  const words = [...new Set([...coreWords, ...shortCodes])];
   
   console.log('📝 Extracted keywords:', words);
   
@@ -119,12 +137,34 @@ function filterPagesByCategory(pages: ExtractedPage[], category: string): Extrac
   const matchedPages = pages.filter((page) => {
     // Clean up page text: Remove pipe characters and extra spaces that might split words
     // e.g., "li | ft" becomes "lift", "apartment li | ft branding" becomes "apartment lift branding"
-    const pageText = page.text
+    const rawPageText = page.text
       .toLowerCase()
       .replace(/\s*\|\s*/g, '') // Remove pipes and surrounding spaces
-      .replace(/[()]/g, ' ')   // Replace parentheses with spaces so compound words like "starflex" become separate
-      .replace(/\s+/g, ' ');    // Normalize multiple spaces to single space
-    
+      .replace(/[()]/g, ' ')   // Replace parentheses with spaces
+      .replace(/_/g, ' ')      // Split underscore-glued tokens
+      .replace(/\s+/g, ' ')    // Normalize multiple spaces to single space
+      .trim();
+
+    // COMPOUND-WORD SPLIT: The PDF renderer concatenates words without spaces.
+    // e.g., "NEWSPAPER INSERTION" → "newspaperinsertion", "PAPER SIZE" → "papersize"
+    // Also handles PDF typos like "awarness" for "awareness", "awarnessdirectio" etc.
+    // For each required keyword (and its known typo variants), if it appears at the START
+    // of a compound token, insert a space AFTER it so downstream matching works correctly.
+    const typoVariants: Record<string, string[]> = {
+      'awareness': ['awarness', 'awarenes'],
+      'direction': ['directio', 'dirction'],
+    };
+    let pageText = rawPageText;
+    for (const kw of requiredKeywords) {
+      const variants = [kw, ...(typoVariants[kw] || [])];
+      for (const variant of variants) {
+        const escV = variant.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+        // Insert space AFTER variant when it starts a compound word (not preceded by a letter)
+        pageText = pageText.replace(new RegExp('(?<![a-z])(' + escV + ')(?=[a-z])', 'g'), '$1 ');
+        pageText = pageText.replace(/\s+/g, ' ').trim();
+      }
+    }
+
     console.log(`🔍 Checking Page ${page.pageNumber} for keywords: [${requiredKeywords.join(', ')}]`);
     
     // EXCLUDE pricing summary pages (they contain pricing tables, not reference images)
@@ -133,9 +173,11 @@ function filterPagesByCategory(pages: ExtractedPage[], category: string): Extrac
     const hasPricingColumns = (pageText.includes('unit price') || pageText.includes('unit of measure') || 
                                pageText.includes('price per') || pageText.includes('campaign'));
     const hasQuantityColumns = pageText.includes('quantity') || pageText.includes('min.') || pageText.includes('min ');
+    // NOTE: 'rate card' alone is NOT enough to block — newspaper insertion PDFs are themselves
+    // rate cards, so every page would be blocked. Only block when combined with pricing signals.
     const isPricingSummary = pageText.includes('pricing summary') || 
                             pageText.includes('price list') ||
-                            pageText.includes('rate card') ||
+                            (pageText.includes('rate card') && hasCurrencyPatterns && (hasPricingColumns || hasQuantityColumns)) ||
                             (pageText.includes('activity') && pageText.includes('branding activities')) ||
                             (pageText.includes('unit price') && pageText.includes('total')) ||
                             (hasCurrencyPatterns && hasPricingColumns) ||
@@ -148,8 +190,9 @@ function filterPagesByCategory(pages: ExtractedPage[], category: string): Extrac
     
     // Helper: check if a single keyword (or its synonyms/variations) appears in the page text
     const keywordFoundInText = (kw: string, text: string): boolean => {
-      // Check exact match first
-      if (text.includes(kw)) return true;
+      // Use word-boundary regex as primary check so 'paper' does NOT match inside 'newspaper'
+      const wbRegex = new RegExp('(?<![a-z0-9])' + kw.replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + '(?![a-z0-9])', 'i');
+      if (wbRegex.test(text)) return true;
       
       // Check synonyms
       const synonyms = synonymMap[kw];
@@ -165,7 +208,7 @@ function filterPagesByCategory(pages: ExtractedPage[], category: string): Extrac
       // For words ending in 's', also check without the 's'
       if (kw.endsWith('s') && kw.length > 4) {
         const withoutS = kw.slice(0, -1);
-        if (!['awarenes', 'busines', 'congres', 'proces'].includes(withoutS)) {
+        if (!['busines', 'congres', 'proces'].includes(withoutS)) {
           if (text.includes(withoutS)) return true;
         }
       }
@@ -229,8 +272,9 @@ function filterPagesByCategory(pages: ExtractedPage[], category: string): Extrac
     // FLEXIBLE MATCHING: Check if ALL keywords are present (in any order, with flexible spacing)
     // For each keyword, check both the original form and without trailing 's' (for plural/singular)
     const hasAllKeywords = requiredKeywords.every((kw) => {
-      // Check exact match first
-      if (pageText.includes(kw)) return true;
+      // Use word-boundary regex so 'paper' does NOT match inside 'newspaper'
+      const wbRegex = new RegExp('(?<![a-z0-9])' + kw.replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + '(?![a-z0-9])', 'i');
+      if (wbRegex.test(pageText)) return true;
       
       // Check synonyms from synonymMap
       const synonyms = synonymMap[kw];
@@ -246,7 +290,7 @@ function filterPagesByCategory(pages: ExtractedPage[], category: string): Extrac
       // For words ending in 's', also check without the 's' (boards -> board)
       if (kw.endsWith('s') && kw.length > 4) {
         const withoutS = kw.slice(0, -1);
-        if (!['awarenes', 'busines', 'congres', 'proces'].includes(withoutS)) {
+        if (!['busines', 'congres', 'proces'].includes(withoutS)) {
           if (pageText.includes(withoutS)) {
             console.log(`  ✓ Found variation: "${kw}" matched as "${withoutS}"`);
             return true;
@@ -325,18 +369,22 @@ function filterPagesByCategory(pages: ExtractedPage[], category: string): Extrac
       return false;
     });
     
-    // RELAXED MATCHING: If strict match fails, try matching with at least 75% of keywords
-    // This handles cases where keyword naming differs slightly from PDF headings
+    // RELAXED MATCHING: If strict match fails, try matching with at least 85% of keywords
+    // This handles cases where keyword naming differs slightly from PDF headings.
+    // Threshold raised from 75% to 85% to prevent sub-type cross-matching
+    // (e.g. "paper" from "PAPER SIZE" must not cause A4/A5 page to match at 75%).
     const matchedCount = requiredKeywords.filter(kw => keywordFoundInText(kw, pageText)).length;
     const matchRatio = matchedCount / requiredKeywords.length;
     
     // Negation words like "non" are critical differentiators — they MUST be present
-    // Without "non", "LED" vs "Non LED" would be indistinguishable
+    // Without "non", "LED" vs "Non LED" would be indistinguishable.
+    // Sub-type size codes (a4, a5, paper, size) are also critical differentiators.
     const negationWords = ['non', 'not', 'without', 'no'];
-    const criticalKeywords = requiredKeywords.filter(kw => negationWords.includes(kw));
+    const sizeCodePattern = /^([a-z]\d|paper|size)$/;
+    const criticalKeywords = requiredKeywords.filter(kw => negationWords.includes(kw) || sizeCodePattern.test(kw));
     const hasMissingCritical = criticalKeywords.some(kw => !keywordFoundInText(kw, pageText));
     
-    const hasRelaxedMatch = !hasAllKeywords && matchRatio >= 0.75 && matchedCount >= 2 && !hasMissingCritical;
+    const hasRelaxedMatch = !hasAllKeywords && matchRatio >= 0.85 && matchedCount >= 2 && !hasMissingCritical;
     
     if (!hasAllKeywords && !hasRelaxedMatch) {
       // Use the same flexible matching for reporting missing keywords
@@ -361,12 +409,20 @@ function filterPagesByCategory(pages: ExtractedPage[], category: string): Extrac
     // This prevents nav-button occurrences at the top of the page from poisoning the distance.
     const allOccurrences: number[][] = requiredKeywords.map(kw => {
       const positions: number[] = [];
-      const variants = [kw, kw + 's', kw.endsWith('s') ? kw.slice(0, -1) : null].filter(Boolean) as string[];
+      // Include the keyword itself, plural/singular variants, and any known synonyms/typos
+      const variants = [
+        kw,
+        kw + 's',
+        kw.endsWith('s') ? kw.slice(0, -1) : null,
+        ...(synonymMap[kw] || []),
+      ].filter(Boolean) as string[];
       for (const v of variants) {
-        let idx = pageText.indexOf(v);
-        while (idx !== -1) {
-          positions.push(idx);
-          idx = pageText.indexOf(v, idx + 1);
+        // Use word-boundary search: find positions where v appears as a standalone word
+        // This prevents 'paper' from matching the position inside 'newspaper'
+        const variantRegex = new RegExp('(?<![a-z0-9])' + v.replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + '(?![a-z0-9])', 'gi');
+        let match: RegExpExecArray | null;
+        while ((match = variantRegex.exec(pageText)) !== null) {
+          positions.push(match.index);
         }
       }
       return [...new Set(positions)].sort((a, b) => a - b);
@@ -434,7 +490,20 @@ function filterPagesByCategory(pages: ExtractedPage[], category: string): Extrac
                                 pageText.includes('reference images') ||
                                 pageText.includes('sample image') ||
                                 pageText.includes('display area') ||
-                                pageText.includes('design specification');
+                                pageText.includes('design specification') ||
+                                // Newspaper insertion specific headings
+                                pageText.includes('ad specification') ||
+                                pageText.includes('creative specification') ||
+                                pageText.includes('size specification') ||
+                                pageText.includes('ad visual') ||
+                                pageText.includes('sample ad') ||
+                                pageText.includes('newspaper sample') ||
+                                pageText.includes('col. cm') ||
+                                pageText.includes('col cm') ||
+                                pageText.includes('column size') ||
+                                pageText.includes('column cm') ||
+                                pageText.includes('ad size') ||
+                                pageText.includes('creative size');
     
     if (isReferenceImagePage && (hasHeading || keywordsAreClose)) {
       console.log(`✅ Page ${page.pageNumber} - REFERENCE IMAGE page with heading match!`);
@@ -489,6 +558,18 @@ function filterPagesByCategory(pages: ExtractedPage[], category: string): Extrac
                      pageText.includes('specification') ||
                      pageText.includes('customer review') ||
                      pageText.includes('client review') ||
+                     // Newspaper insertion specific headings
+                     pageText.includes('ad specification') ||
+                     pageText.includes('creative specification') ||
+                     pageText.includes('size specification') ||
+                     pageText.includes('ad visual') ||
+                     pageText.includes('sample ad') ||
+                     pageText.includes('newspaper sample') ||
+                     pageText.includes('col. cm') ||
+                     pageText.includes('col cm') ||
+                     pageText.includes('column size') ||
+                     pageText.includes('ad size') ||
+                     pageText.includes('creative size') ||
                      pageText.match(/\(([2-9]\d*)\/\d+\)/);
     
     if (isRefPage) {
@@ -514,6 +595,18 @@ function filterPagesByCategory(pages: ExtractedPage[], category: string): Extrac
                            nextText.includes('specification') ||
                            nextText.includes('customer review') ||
                            nextText.includes('client review') ||
+                           // Newspaper insertion specific headings
+                           nextText.includes('ad specification') ||
+                           nextText.includes('creative specification') ||
+                           nextText.includes('size specification') ||
+                           nextText.includes('ad visual') ||
+                           nextText.includes('sample ad') ||
+                           nextText.includes('newspaper sample') ||
+                           nextText.includes('col. cm') ||
+                           nextText.includes('col cm') ||
+                           nextText.includes('column size') ||
+                           nextText.includes('ad size') ||
+                           nextText.includes('creative size') ||
                            nextText.match(/\(([2-9]\d*)\/\d+\)/);
       
       if (nextIsRefPage) {
@@ -613,7 +706,7 @@ function extractServiceType(items: QuoteItem[]): string | null {
  * Returns an array of unique service type strings.
  */
 function extractAllServiceTypes(items: QuoteItem[]): string[] {
-  const pricingSuffixPattern = /\s*[-–—]\s*\b(display\s+price|rental\s+price|printing\s+price|fixing\s+price|printing\s*&?\s*fixing\s*price?|per\s+month|rate|price)\b.*$/i;
+  const pricingSuffixPattern = /\s*[-–—]\s*\b(display\s+price|rental\s+price|printing\s+price|fixing\s+price|design\s+price|creative\s+price|printing\s*&?\s*fixing\s*price?|per\s+month|rate|price|\w+\s+price|\w+\s+charge)\b.*$/i;
   const seen = new Set<string>();
   const results: string[] = [];
 
@@ -641,7 +734,13 @@ function extractAllServiceTypes(items: QuoteItem[]): string[] {
         lower.includes('poster') ||
         lower.includes('flex') ||
         lower.includes('standee') ||
-        lower.includes('display')) {
+        lower.includes('display') ||
+        lower.includes('newspaper') ||
+        lower.includes('insertion') ||
+        lower.includes('pamphlet') ||
+        lower.includes('leaflet') ||
+        lower.includes('flyer') ||
+        lower.includes('classified')) {
       extracted = serviceType;
     }
     
@@ -656,7 +755,10 @@ function extractAllServiceTypes(items: QuoteItem[]): string[] {
             bdLower.includes('screen') || bdLower.includes('lobby') ||
             bdLower.includes('sticker') || bdLower.includes('banner') ||
             bdLower.includes('poster') || bdLower.includes('flex') ||
-            bdLower.includes('standee') || bdLower.includes('display')) {
+            bdLower.includes('standee') || bdLower.includes('display') ||
+            bdLower.includes('newspaper') || bdLower.includes('insertion') ||
+            bdLower.includes('pamphlet') || bdLower.includes('leaflet') ||
+            bdLower.includes('flyer') || bdLower.includes('classified')) {
           extracted = beforeDash;
         }
       }
@@ -671,6 +773,12 @@ function extractAllServiceTypes(items: QuoteItem[]): string[] {
       // Capture vehicle + qualifier + optional trailing noun (e.g. "Auto Back Stickers", "Bus Semi Panel Branding")
       const vehicleMatch = desc.match(/(bus|auto|tempo|apartment|building|lift|elevator|residential|commercial)\s+(full|semi|back|panel|shelter|rickshaw|branding)(\s+[a-z]+)*/i);
       if (vehicleMatch) extracted = vehicleMatch[0].trim();
+    }
+
+    if (!extracted) {
+      // Newspaper / print media keywords
+      const printMatch = desc.match(/(newspaper|insertion|pamphlet|leaflet|flyer|handbill|classified|display\s+ad|print\s+ad)(\s+[a-z]+)*/i);
+      if (printMatch) extracted = printMatch[0].trim();
     }
 
     // Final fallback: use the full pricing-suffix-stripped service type
@@ -858,10 +966,18 @@ function extractDesignSpecFields(pages: ExtractedPage[]): SpecGroup[] {
     const specMatch = text.match(/display area[^\n]*design spec[^\n]*/i)
                    || text.match(/design\s*spec[^\n]*/i)
                    || text.match(/display\s*area[^\n]*/i)
-                   || text.match(/specification[^\n]*/i);
+                   || text.match(/specification[^\n]*/i)
+                   // Newspaper insertion specific spec headings
+                   || text.match(/ad\s*spec[^\n]*/i)
+                   || text.match(/creative\s*spec[^\n]*/i)
+                   || text.match(/size\s*spec[^\n]*/i)
+                   || text.match(/col\.?\s*cm[^\n]*/i)
+                   || text.match(/column\s*size[^\n]*/i)
+                   || text.match(/ad\s*size[^\n]*/i)
+                   || text.match(/creative\s*size[^\n]*/i);
     if (!specMatch || specMatch.index === undefined) continue;
     const afterSpec = text.substring(specMatch.index + specMatch[0].length);
-    const endMatch = afterSpec.match(/\n(reference\s*image|customer review|click here)/i);
+    const endMatch = afterSpec.match(/\n(reference\s*image|ad\s*visual|sample\s*ad|newspaper\s*sample|customer review|click here)/i);
     const specSection = endMatch && endMatch.index !== undefined ? afterSpec.substring(0, endMatch.index) : afterSpec;
 
     const dimensionFields: Array<{ label: string; value: string }> = [];
@@ -1045,9 +1161,21 @@ function getSpecPages(pages: ExtractedPage[]): ExtractedPage[] {
                     text.includes('design specifications') ||
                     text.includes('design specs') ||
                     text.includes('specification') ||
-                    text.includes('display area');
+                    text.includes('display area') ||
+                    // Newspaper insertion specific spec headings
+                    text.includes('ad specification') ||
+                    text.includes('creative specification') ||
+                    text.includes('size specification') ||
+                    text.includes('col. cm') ||
+                    text.includes('col cm') ||
+                    text.includes('column size') ||
+                    text.includes('column cm') ||
+                    text.includes('ad size') ||
+                    text.includes('creative size');
     if (!hasSpec) return false;
-    const hasRefImg = text.includes('reference image') || text.includes('reference images');
+    const hasRefImg = text.includes('reference image') || text.includes('reference images') ||
+                      text.includes('ad visual') || text.includes('sample ad') ||
+                      text.includes('newspaper sample');
     // If BOTH headings appear on the same page, qualify as spec page only when
     // the spec heading comes BEFORE the reference image heading in the text.
     // This handles PDFs where Design Spec and Reference Image share a single page.
@@ -1057,7 +1185,15 @@ function getSpecPages(pages: ExtractedPage[]): ExtractedPage[] {
         text.includes('design specifications') ? text.indexOf('design specifications') : Infinity,
         text.includes('design specs') ? text.indexOf('design specs') : Infinity,
         text.includes('specification') ? text.indexOf('specification') : Infinity,
-        text.includes('display area') ? text.indexOf('display area') : Infinity
+        text.includes('display area') ? text.indexOf('display area') : Infinity,
+        text.includes('ad specification') ? text.indexOf('ad specification') : Infinity,
+        text.includes('creative specification') ? text.indexOf('creative specification') : Infinity,
+        text.includes('size specification') ? text.indexOf('size specification') : Infinity,
+        text.includes('col. cm') ? text.indexOf('col. cm') : Infinity,
+        text.includes('col cm') ? text.indexOf('col cm') : Infinity,
+        text.includes('column size') ? text.indexOf('column size') : Infinity,
+        text.includes('ad size') ? text.indexOf('ad size') : Infinity,
+        text.includes('creative size') ? text.indexOf('creative size') : Infinity
       );
       const refPos = Math.min(
         text.includes('reference image') ? text.indexOf('reference image') : Infinity,
@@ -1065,7 +1201,10 @@ function getSpecPages(pages: ExtractedPage[]): ExtractedPage[] {
         text.includes('reference photo') ? text.indexOf('reference photo') : Infinity,
         text.includes('reference photos') ? text.indexOf('reference photos') : Infinity,
         text.includes('example image') ? text.indexOf('example image') : Infinity,
-        text.includes('sample photo') ? text.indexOf('sample photo') : Infinity
+        text.includes('sample photo') ? text.indexOf('sample photo') : Infinity,
+        text.includes('ad visual') ? text.indexOf('ad visual') : Infinity,
+        text.includes('sample ad') ? text.indexOf('sample ad') : Infinity,
+        text.includes('newspaper sample') ? text.indexOf('newspaper sample') : Infinity
       );
       return specPos < refPos;
     }
@@ -1080,7 +1219,11 @@ function getRefImagePages(pages: ExtractedPage[]): ExtractedPage[] {
     return text.includes('reference image') || text.includes('reference images') ||
            text.includes('referenceimage') ||
            text.includes('reference photo') || text.includes('reference photos') ||
-           text.includes('example image') || text.includes('sample photo');
+           text.includes('example image') || text.includes('sample photo') ||
+           // Newspaper insertion specific reference/visual headings
+           text.includes('ad visual') || text.includes('sample ad') ||
+           text.includes('newspaper sample') || text.includes('creative preview') ||
+           text.includes('sample advertisement') || text.includes('ad preview');
   });
 }
 
