@@ -1,6 +1,6 @@
 import React, { useMemo, useState, useEffect } from 'react';
 import './ReferenceImages.css';
-import { extractReviewViaGemini, cropReferencePageImage, cropPageStrippingHeaderFooter, cropPageHalf } from '../../utils/pdfUtils';
+import { extractReviewViaGemini, cropReferencePageImage, cropPageStrippingHeaderFooter, cropPageHalf, cropPageFromPercent } from '../../utils/pdfUtils';
 
 interface ExtractedPage {
   pageNumber: number;
@@ -351,48 +351,111 @@ function filterPagesByCategory(pages: ExtractedPage[], category: string): Extrac
       console.log(`✅ Page ${page.pageNumber} - RELAXED match (${matchedCount}/${requiredKeywords.length} keywords, ${Math.round(matchRatio * 100)}%)`);
     }
     
-    // PRIORITY 1: Check if this is explicitly a reference image page
+    // Check if the service heading phrase appears on this page (also try plural variant)
+    const hasHeading = exactHeadingPattern.test(pageText) ||
+      new RegExp(words.join('\\s+') + 's?', 'i').test(pageText);
+
+    // SLIDING WINDOW: find the tightest cluster of all keywords across all their occurrences.
+    // Collects every position where each keyword (or plural/singular variant) appears,
+    // then picks the combination with the smallest span.
+    // This prevents nav-button occurrences at the top of the page from poisoning the distance.
+    const allOccurrences: number[][] = requiredKeywords.map(kw => {
+      const positions: number[] = [];
+      const variants = [kw, kw + 's', kw.endsWith('s') ? kw.slice(0, -1) : null].filter(Boolean) as string[];
+      for (const v of variants) {
+        let idx = pageText.indexOf(v);
+        while (idx !== -1) {
+          positions.push(idx);
+          idx = pageText.indexOf(v, idx + 1);
+        }
+      }
+      return [...new Set(positions)].sort((a, b) => a - b);
+    });
+    const allKeywordsLocated = allOccurrences.every(occ => occ.length > 0);
+
+    // Find minimum span across all position combinations (greedy: fix first keyword occurrence,
+    // pick nearest occurrence of each subsequent keyword)
+    let minSpan = Infinity;
+    if (allKeywordsLocated) {
+      for (const startPos of allOccurrences[0]) {
+        let span = 0;
+        let maxPos = startPos;
+        let minPos = startPos;
+        let valid = true;
+        for (let i = 1; i < allOccurrences.length; i++) {
+          // Pick the occurrence of this keyword closest to the current window center
+          const center = (maxPos + minPos) / 2;
+          const closest = allOccurrences[i].reduce((best, pos) =>
+            Math.abs(pos - center) < Math.abs(best - center) ? pos : best
+          );
+          maxPos = Math.max(maxPos, closest);
+          minPos = Math.min(minPos, closest);
+          span = maxPos - minPos;
+          if (span > 200) { valid = false; break; } // early exit if already too spread
+        }
+        if (valid && span < minSpan) minSpan = span;
+      }
+    }
+    const keywordsAreClose = allKeywordsLocated && minSpan <= 120;
+    console.log(`📏 Page ${page.pageNumber} - keyword cluster min span: ${minSpan}, close: ${keywordsAreClose}`);
+
+    // NEGATION GUARD: If the query does NOT include a negation word (non/no/without),
+    // but the page heading contains a negation word immediately before one of the required
+    // keywords, reject the page.
+    // e.g. query "Mobile Van LED" must not match page heading "Mobile Van Non LED".
+    // 'no' is intentionally excluded: it is a product name component ("No Parking", "No Entry"),
+    // not a variant qualifier. Only 'non' reliably signals product variants ("Non LED", "Non-lit").
+    const queryHasNegation = requiredKeywords.some(kw => ['non', 'without', 'not'].includes(kw));
+    if (!queryHasNegation && (hasHeading || keywordsAreClose)) {
+      // Use the tightest cluster window for negation checking
+      const clusterPositions = allKeywordsLocated
+        ? allOccurrences.map(occ => occ[0])
+        : [];
+      const windowStart = clusterPositions.length > 0 ? Math.max(0, Math.min(...clusterPositions) - 10) : 0;
+      const windowEnd   = clusterPositions.length > 0 ? Math.min(pageText.length, Math.max(...clusterPositions) + 30) : 150;
+      const headingWindow = pageText.substring(windowStart, windowEnd);
+      // Check if any negation word precedes a required keyword in that window
+      // 'no' excluded — it is part of product names ("No Parking"), not a variant negator.
+      const negationPattern = /\b(non|without|not)\s+\w+/g;
+      let negMatch: RegExpExecArray | null;
+      while ((negMatch = negationPattern.exec(headingWindow)) !== null) {
+        const wordAfterNeg = negMatch[0].split(/\s+/)[1];
+        if (requiredKeywords.some(kw => wordAfterNeg.startsWith(kw.substring(0, 3)))) {
+          console.log(`❌ Page ${page.pageNumber} - Negation guard: page heading has "${negMatch[0]}" but query requires positive match`);
+          return false;
+        }
+      }
+    }
+
+    // PRIORITY 1: Reference/spec page AND the service heading is present on the same page.
+    // Both conditions are REQUIRED — prevents accepting another product's ref page that
+    // happens to contain scattered keywords (e.g. "auto" in title, "back" in spec, "sticker" in material).
     const isReferenceImagePage = pageText.includes('reference image') || 
                                 pageText.includes('reference images') ||
                                 pageText.includes('sample image') ||
                                 pageText.includes('display area') ||
                                 pageText.includes('design specification');
     
-    if (isReferenceImagePage) {
-      console.log(`✅ Page ${page.pageNumber} - REFERENCE IMAGE page detected!`);
+    if (isReferenceImagePage && (hasHeading || keywordsAreClose)) {
+      console.log(`✅ Page ${page.pageNumber} - REFERENCE IMAGE page with heading match!`);
       return true;
     }
-    
-    // If all keywords are present, check if they appear close together (likely a heading)
-    // This helps ensure we match section headings like "APARTMENT LIFT BRANDING"
-    // and not just pages that happen to contain all words scattered throughout
-    const hasHeading = exactHeadingPattern.test(pageText);
+
+    // PRIORITY 2: Exact heading phrase found on page
     if (hasHeading) {
       console.log(`✅ Page ${page.pageNumber} - EXACT heading match found!`);
       return true;
     }
-    
-    // Also accept if keywords appear within 100 characters of each other (flexible heading match)
-    const keywordPositions = requiredKeywords.map(kw => pageText.indexOf(kw)).filter(pos => pos >= 0);
-    if (keywordPositions.length === requiredKeywords.length) {
-      const firstPos = Math.min(...keywordPositions);
-      const lastPos = Math.max(...keywordPositions);
-      const distance = lastPos - firstPos;
-      
-      if (distance <= 100) {
-        console.log(`✅ Page ${page.pageNumber} - Keywords appear close together (distance: ${distance})`);
-        return true;
-      }
-    }
 
-    // All keywords confirmed present via fuzzy/synonym matching — accept the page.
-    // This handles PDFs with typos (e.g. "awarnessdirectio") where exact heading
-    // reconstruction fails but keywords are definitively present.
-    if (hasAllKeywords) {
-      console.log(`✅ Page ${page.pageNumber} - Accepted (all keywords confirmed via fuzzy match)`);
+    // PRIORITY 3: Keywords appear within 100 characters of each other (flexible heading match)
+    if (keywordsAreClose) {
+      console.log(`✅ Page ${page.pageNumber} - Keywords appear close together`);
       return true;
     }
-    
+
+    // REJECT: keywords are scattered across different sections of the page (e.g. service name
+    // in heading, "back" in size spec, "sticker" in material field) — high false-positive risk.
+    console.log(`⚠️ Page ${page.pageNumber} - Keywords too scattered, rejecting to avoid wrong product match`);
     return false;
   });
   
@@ -572,7 +635,13 @@ function extractAllServiceTypes(items: QuoteItem[]): string[] {
         lower.includes('screen') ||
         lower.includes('lobby') ||
         lower.includes('hoarding') ||
-        lower.includes('board')) {
+        lower.includes('board') ||
+        lower.includes('sticker') ||
+        lower.includes('banner') ||
+        lower.includes('poster') ||
+        lower.includes('flex') ||
+        lower.includes('standee') ||
+        lower.includes('display')) {
       extracted = serviceType;
     }
     
@@ -584,7 +653,10 @@ function extractAllServiceTypes(items: QuoteItem[]): string[] {
         if (bdLower.includes('branding') || bdLower.includes('shelter') ||
             bdLower.includes('signage') || bdLower.includes('printing') ||
             bdLower.includes('ads') || bdLower.includes('advertising') ||
-            bdLower.includes('screen') || bdLower.includes('lobby')) {
+            bdLower.includes('screen') || bdLower.includes('lobby') ||
+            bdLower.includes('sticker') || bdLower.includes('banner') ||
+            bdLower.includes('poster') || bdLower.includes('flex') ||
+            bdLower.includes('standee') || bdLower.includes('display')) {
           extracted = beforeDash;
         }
       }
@@ -596,8 +668,14 @@ function extractAllServiceTypes(items: QuoteItem[]): string[] {
     }
     
     if (!extracted) {
-      const vehicleMatch = desc.match(/(bus|auto|tempo|apartment|building|lift|elevator|residential|commercial)\s+(full|semi|back|panel|shelter|rickshaw|branding)/i);
-      if (vehicleMatch) extracted = vehicleMatch[0];
+      // Capture vehicle + qualifier + optional trailing noun (e.g. "Auto Back Stickers", "Bus Semi Panel Branding")
+      const vehicleMatch = desc.match(/(bus|auto|tempo|apartment|building|lift|elevator|residential|commercial)\s+(full|semi|back|panel|shelter|rickshaw|branding)(\s+[a-z]+)*/i);
+      if (vehicleMatch) extracted = vehicleMatch[0].trim();
+    }
+
+    // Final fallback: use the full pricing-suffix-stripped service type
+    if (!extracted && serviceType.length > 0) {
+      extracted = serviceType;
     }
     
     if (extracted) {
@@ -1181,31 +1259,62 @@ export const ReferenceImages: React.FC<ReferenceImagesProps> = ({ proposalPages,
     return () => { cancelled = true; };
   }, [filteredPages]);
 
-  // Lazy spec section image crop for shared-page case (Lamp Post Die Cutting etc).
-  // Fires only when the spec page is ALSO a reference image page (both headings on same page).
-  // Uses top-half geometric crop so spec diagram (top) is separated from reference photo (bottom).
-  // Does NOT affect pages where spec and ref image are on separate pages.
+  // Lazy spec section image crop.
+  // Case A (shared page): spec + ref headings on same page → geometric top-half crop.
+  // Case B (spec-only page with photos): spec heading only, no cropped images yet,
+  //         full-page fallback is being used → Gemini Vision crop to extract vehicle photos.
   const [lazyCroppedSpecImage, setLazyCroppedSpecImage] = useState<string | null>(null);
   useEffect(() => {
-    const specPage = filteredPages.find(p => {
+    // Case A: shared page (both spec AND ref headings present)
+    const sharedPage = filteredPages.find(p => {
       const t = p.text.toLowerCase().replace(/\s*\|\s*/g, ' ');
       const hasSpec = t.includes('design specification') || t.includes('design specifications') ||
                       t.includes('design specs') || t.includes('specification') || t.includes('display area');
       const hasRef  = t.includes('reference image') || t.includes('reference images') ||
                       t.includes('reference photo') || t.includes('reference photos') ||
                       t.includes('example image') || t.includes('sample photo');
-      // Only trigger for SHARED pages (both headings present) — separate pages use normal flow
       return hasSpec && hasRef;
     });
-    if (!specPage) {
+    if (sharedPage) {
+      let cancelled = false;
+      console.log('🔍 Triggering lazy top-half crop for shared spec/ref page', sharedPage.pageNumber);
+      cropPageHalf(sharedPage.imageDataUrl, 'top').then(cropped => {
+        if (!cancelled) {
+          console.log('✅ Lazy spec top-half crop done for page', sharedPage.pageNumber);
+          setLazyCroppedSpecImage(cropped);
+        }
+      });
+      return () => { cancelled = true; };
+    }
+
+    // Case B: pure spec page with no cropped images — full-page fallback is active.
+    // Use geometric header/footer strip ONLY — preserves the full SIZE CHART diagram
+    // (title + vehicle + numbered arrows + measurements) intact.
+    // Gemini Vision is intentionally NOT used here: it isolates photos, which destroys
+    // the annotated diagram structure that is the actual spec content.
+    const pureSpecPage = filteredPages.find(p => {
+      const t = p.text.toLowerCase().replace(/\s*\|\s*/g, ' ');
+      const hasSpec = t.includes('design specification') || t.includes('design specifications') ||
+                      t.includes('design specs') || t.includes('specification') || t.includes('display area');
+      const hasRef  = t.includes('reference image') || t.includes('reference images') ||
+                      t.includes('reference photo') || t.includes('reference photos') ||
+                      t.includes('example image') || t.includes('sample photo');
+      // Pure spec page only (not shared). Always strip — even if upload-time Gemini Vision
+      // already produced croppedImages, those were photo-only crops that destroy the
+      // annotated SIZE CHART diagram. cropPageStrippingHeaderFooter is always correct here.
+      return hasSpec && !hasRef;
+    });
+    if (!pureSpecPage) {
       setLazyCroppedSpecImage(null);
       return;
     }
+    // Cut at 30% from top: removes nav bar (~8%) + spec text heading + fields (~22%)
+    // leaving the SIZE CHART diagram (title + van + annotations) intact.
     let cancelled = false;
-    console.log('🔍 Triggering lazy top-half crop for shared spec/ref page', specPage.pageNumber);
-    cropPageHalf(specPage.imageDataUrl, 'top').then(cropped => {
+    console.log('🔍 30% top-cut crop for pure spec page', pureSpecPage.pageNumber);
+    cropPageFromPercent(pureSpecPage.imageDataUrl, 0.30).then(cropped => {
       if (!cancelled) {
-        console.log('✅ Lazy spec top-half crop done for page', specPage.pageNumber);
+        console.log('✅ 30% top-cut crop done for pure spec page', pureSpecPage.pageNumber);
         setLazyCroppedSpecImage(cropped);
       }
     });

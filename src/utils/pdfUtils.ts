@@ -229,6 +229,33 @@ export function cropPageHalf(imageDataUrl: string, half: 'top' | 'bottom'): Prom
   });
 }
 
+/**
+ * Crop a page starting at a given percentage from the top, down to the bottom.
+ * E.g. cropPageFromPercent(url, 0.30) returns the bottom 70% of the page.
+ * Used when header + spec text block occupies a known fraction of the page.
+ */
+export function cropPageFromPercent(imageDataUrl: string, fromTopPercent: number): Promise<string> {
+  return new Promise((resolve) => {
+    const img = new Image();
+    img.onload = () => {
+      const w = img.naturalWidth;
+      const h = img.naturalHeight;
+      const sy = Math.round(h * fromTopPercent);
+      const newH = h - sy;
+      if (newH < 50) { resolve(imageDataUrl); return; }
+      const canvas = document.createElement('canvas');
+      canvas.width = w;
+      canvas.height = newH;
+      const ctx = canvas.getContext('2d');
+      if (!ctx) { resolve(imageDataUrl); return; }
+      ctx.drawImage(img, 0, sy, w, newH, 0, 0, w, newH);
+      resolve(canvas.toDataURL('image/jpeg', 0.85));
+    };
+    img.onerror = () => resolve(imageDataUrl);
+    img.src = imageDataUrl;
+  });
+}
+
 // --- End Auto-Crop Helpers ---
 
 // --- Customer Review OCR via Gemini Vision ---
