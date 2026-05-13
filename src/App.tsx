@@ -14,17 +14,30 @@ import { Header } from './components/Header';
 import { registerServiceWorker } from './utils/pwa';
 import { PrivateRoute } from './components/PrivateRoute';
 import { useCompanySync } from './hooks/useCompanySync';
+import { useCityServiceRegistry } from './hooks/useCityServiceRegistry';
+import { useAppStore } from './store';
 
 const App: React.FC = () => {
   // Initialize database sync for company info (syncs across devices)
   useCompanySync(true); // true = enable real-time updates
+  // Build city service registry in background whenever active proposals change
+  useCityServiceRegistry();
+
+  const { restoreActiveProposals, loadRecentProposals } = useAppStore();
 
   useEffect(() => {
     // Register service worker for PWA support (now enabled in all environments)
     registerServiceWorker().catch(err => {
       console.error('Failed to register service worker:', err);
     });
-  }, []);
+
+    // Restore active proposals from IndexedDB/localStorage on every app startup
+    const restore = async () => {
+      await loadRecentProposals();
+      await restoreActiveProposals();
+    };
+    restore();
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   return (
     <ErrorBoundary>

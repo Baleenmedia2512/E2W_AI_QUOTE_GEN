@@ -150,7 +150,7 @@ export const ModernSales: React.FC<TemplateProps> = ({ data, editable: _editable
                 <th className="ms-col-qty">QTY</th>
                 <th className="ms-col-rate">UNIT RATE</th>
                 {quote.items.some(i => i.duration && i.duration > 1) && (
-                  <th className="ms-col-dur">Months</th>
+                  <th className="ms-col-dur">Dur.</th>
                 )}
                 <th className="ms-col-amt"><span className="th-main">AMOUNT</span><span className="th-sub">(excl GST)</span></th>
                 {quote.gstEnabled && <th className="ms-col-gst-pct">GST %</th>}
@@ -172,7 +172,7 @@ export const ModernSales: React.FC<TemplateProps> = ({ data, editable: _editable
                     <td className="ms-cell-qty">{item.quantity}</td>
                     <td className="ms-cell-rate">{formatCurrency(item.rate)}</td>
                     {quote.items.some(i => i.duration && i.duration > 1) && (
-                      <td className="ms-cell-dur">{item.duration || 1}</td>
+                      <td className="ms-cell-dur">{`${item.duration || 1} ${item.durationUnit === 'days' ? 'Da' : 'Mo'}`}</td>
                     )}
                     <td className="ms-cell-amt">{formatCurrency(item.total)}</td>
                     {quote.gstEnabled && <td className="ms-cell-gst-pct">{quote.gstPercentage}%</td>}
@@ -210,7 +210,7 @@ export const ModernSales: React.FC<TemplateProps> = ({ data, editable: _editable
     
     {!isMultiService && (
       <div id="pdf-page-2" className="template-modern-sales">
-        <ReferenceImages proposalPages={data.proposalPages} items={quote.items} />
+        <ReferenceImages proposalPages={data.proposalPages} proposalPageMap={data.proposalPageMap} items={quote.items} />
 
         {renderCompanyFooter(2)}
       </div>
@@ -341,7 +341,7 @@ export const ModernSales: React.FC<TemplateProps> = ({ data, editable: _editable
           </div>
 
           <div id={`pdf-service-ref-${groupIndex}`} className="template-modern-sales">
-            <ReferenceImages proposalPages={data.proposalPages} items={group.items} />
+            <ReferenceImages proposalPages={data.proposalPages} proposalPageMap={data.proposalPageMap} items={group.items} />
 
             {renderCompanyFooter(groupIndex * 2 + 3)}
           </div>

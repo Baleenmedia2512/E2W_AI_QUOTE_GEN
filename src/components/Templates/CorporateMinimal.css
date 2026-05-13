@@ -974,8 +974,7 @@
 
   .template-corporate-minimal .item-quantity {
     width: auto;
-    text-align: center;
-    white-space: nowrap;
+    text-align: right;
   }
 
   .template-corporate-minimal .item-rate {

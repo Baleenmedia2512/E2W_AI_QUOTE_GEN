@@ -79,9 +79,9 @@ export const CorporateMinimal: React.FC<TemplateProps> = ({ data, editable: _edi
     const hasDuration = items.some(i => i.duration && i.duration > 1);
     const hasRemark = items.some(i => i.remark);
     const formatDuration = (item: typeof quote.items[0]) => {
-      if (!item.duration || item.duration <= 1) return '1';
-      const unit = item.durationUnit === 'days' ? 'Days' : 'Months';
-      return `${item.duration} ${unit}`;
+      const dur = item.duration || 1;
+      const unit = item.durationUnit === 'days' ? 'Da' : 'Mo';
+      return `${dur} ${unit}`;
     };
     const subtotal = items.reduce((sum, i) => sum + i.total, 0);
     const gstAmt = quote.gstEnabled ? subtotal * gstPct / 100 : 0;
@@ -226,7 +226,7 @@ export const CorporateMinimal: React.FC<TemplateProps> = ({ data, editable: _edi
         </div>
 
         <div id="pdf-page-2" className="template-corporate-minimal">
-          <ReferenceImages proposalPages={data.proposalPages} items={quote.items} />
+          <ReferenceImages proposalPages={data.proposalPages} proposalPageMap={data.proposalPageMap} items={quote.items} />
 
           {/* Company Contact Footer */}
           {renderCompanyFooter(2, singleTotal)}
@@ -343,7 +343,7 @@ export const CorporateMinimal: React.FC<TemplateProps> = ({ data, editable: _edi
               </div>
 
               <div id={`pdf-service-ref-${groupIndex}`} className="template-corporate-minimal">
-                <ReferenceImages proposalPages={data.proposalPages} items={group.items} />
+                <ReferenceImages proposalPages={data.proposalPages} proposalPageMap={data.proposalPageMap} items={group.items} />
 
                 {renderCompanyFooter(refPage, multiTotal)}
               </div>

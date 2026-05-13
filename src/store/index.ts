@@ -1,7 +1,17 @@
 import { create } from 'zustand';
-import { AppState, ProposalData, Message, Quote, CompanyInfo, ClientInfo, TemplateType, StoredProposal } from '../types';
+import { AppState, ProposalData, Message, Quote, CompanyInfo, ClientInfo, TemplateType, StoredProposal, ActiveProposal } from '../types';
 import { loadCompanyInfo, saveCompanyInfo as saveCompanyInfoToStorage } from '../utils/localStorage';
-import { savePageImages as savePageImagesToDB, clearPageImages } from '../utils/imageStorage';
+import {
+  savePageImages as savePageImagesToDB,
+  clearPageImages,
+  savePageImagesById,
+  loadPageImagesById,
+  clearPageImagesById,
+  saveActiveProposalIds,
+  loadActiveProposalIds,
+  saveActiveProposalMeta,
+  loadActiveProposalMeta,
+} from '../utils/imageStorage';
 import { DEFAULT_COMPANY_INFO } from '../constants/defaultCompany';
 import { companyService } from '../services/companyService';
 import { useAuthStore } from './authStore';
@@ -436,4 +446,192 @@ export const useAppStore = create<AppState>((set) => ({
       set({ cloudStorageEnabled: false });
     }
   },
+
+  // ── Multi-location active proposals (additive – does not affect existing flow) ──
+  activeProposals: [],
+
+  addActiveProposal: async (id: string) => {
+    try {
+      const state = useAppStore.getState();
+      // Already in active list → no-op
+      if (state.activeProposals.find(p => p.id === id)) return;
+
+      let storedProposal = await loadProposalById(id);
+      let fileBlob: Blob | null = null;
+
+      if (!storedProposal) {
+        const cloudProposal = state.recentProposals.find(p => p.id === id && p.isCloudStored);
+        if (cloudProposal && cloudProposal.storagePath) {
+          try {
+            fileBlob = await downloadProposalFile(cloudProposal.storagePath);
+            storedProposal = cloudProposal;
+          } catch (error) {
+            console.error('Failed to download cloud proposal for active list:', error);
+            return;
+          }
+        } else {
+          console.error('Proposal not found for active list:', id);
+          return;
+        }
+      }
+
+      if (!fileBlob && !storedProposal.fileBlob) return;
+
+      const blob = fileBlob || storedProposal.fileBlob!;
+      const file = new File([blob], storedProposal.fileName, { type: storedProposal.fileType });
+
+      let pageImages = storedProposal.pageImages;
+      let extractedImages = storedProposal.extractedImages;
+
+      if (fileBlob && storedProposal.fileType === 'application/pdf') {
+        try {
+          console.log(`🖼️ Extracting images for "${storedProposal.fileName}" (${storedProposal.pageCount} pages, limit: 10)...`);
+          const pdfResult = await extractPDFContent(file, 10);
+          pageImages = pdfResult.pageImages;
+          extractedImages = pdfResult.images;
+          console.log(`✅ "${storedProposal.fileName}": extracted ${pageImages?.length || 0} page images`);
+        } catch (error) {
+          console.warn('⚠️ Failed to extract images for active proposal:', error);
+        }
+      }
+
+      // Stamp sourceId + sourceName on every page for multi-PDF isolation
+      const stampedPageImages = (pageImages || []).map((p: any) => ({
+        ...p,
+        sourceId: storedProposal!.id,
+        sourceName: storedProposal!.fileName,
+      }));
+
+      const fileUrl = URL.createObjectURL(file);
+
+      const activeProposal: ActiveProposal = {
+        id: storedProposal.id,
+        fileName: storedProposal.fileName,
+        fileType: storedProposal.fileType,
+        pageCount: storedProposal.pageCount,
+        textContent: storedProposal.textContent,
+        fileUrl,
+        pageImages: stampedPageImages,
+      };
+
+      // Deduplicate: replace any existing entry with same id, then append
+      set(state => ({ activeProposals: [...state.activeProposals.filter(p => p.id !== activeProposal.id), activeProposal] }));
+
+      // Persist pages by proposalId (no overwrite of other PDFs)
+      if (stampedPageImages.length > 0) {
+        await savePageImagesById(storedProposal.id, stampedPageImages);
+      }
+
+      // Persist active IDs list + metadata to localStorage so refresh restores them
+      const updatedProposals = useAppStore.getState().activeProposals;
+      saveActiveProposalIds(updatedProposals.map(p => p.id));
+      saveActiveProposalMeta(updatedProposals.map(p => ({
+        id: p.id,
+        fileName: p.fileName,
+        fileType: p.fileType,
+        pageCount: p.pageCount,
+        textContent: p.textContent,
+      })));
+
+      console.log(`📦 activeProposals now: ${useAppStore.getState().activeProposals.map(p => `${p.fileName}(${p.pageImages.length}imgs)`).join(', ')}`);
+
+      // Also update the single proposal state for backward compatibility
+      set({
+        proposal: {
+          file,
+          fileName: storedProposal.fileName,
+          fileUrl,
+          textContent: storedProposal.textContent,
+          pageCount: storedProposal.pageCount,
+          currentPage: 1,
+          extractedImages,
+          pageImages: stampedPageImages,
+          uploadedAt: storedProposal.uploadedAt,
+        }
+      });
+      console.log('✅ Added to active proposals:', storedProposal.fileName);
+    } catch (error) {
+      console.error('Failed to add active proposal:', error);
+    }
+  },
+
+  removeActiveProposal: (id: string) => {
+    // Remove from memory
+    set(state => ({
+      activeProposals: state.activeProposals.filter(p => p.id !== id),
+    }));
+    // Clear that PDF's IndexedDB entry
+    clearPageImagesById(id);
+    // Update persisted ID list and metadata
+    const updatedProposals = useAppStore.getState().activeProposals;
+    saveActiveProposalIds(updatedProposals.map(p => p.id));
+    saveActiveProposalMeta(updatedProposals.map(p => ({
+      id: p.id,
+      fileName: p.fileName,
+      fileType: p.fileType,
+      pageCount: p.pageCount,
+      textContent: p.textContent,
+    })));
+    console.log(`🗑️ Removed active proposal ${id}. Remaining: ${updatedProposals.length}`);
+  },
+
+  restoreActiveProposals: async () => {
+    try {
+      const savedIds = loadActiveProposalIds();
+      if (savedIds.length === 0) return;
+
+      console.log(`🔄 Restoring ${savedIds.length} active proposals from storage...`);
+      const state = useAppStore.getState();
+      const restoredProposals: ActiveProposal[] = [];
+
+      for (const id of savedIds) {
+        // Skip if already in memory
+        if (state.activeProposals.find(p => p.id === id)) continue;
+
+        // Load pages from IndexedDB by ID
+        const pages = await loadPageImagesById(id);
+        if (pages.length === 0) {
+          console.warn(`⚠️ No cached pages for proposal ${id}, skipping restore`);
+          continue;
+        }
+
+        // Get metadata: first try recentProposals, then fall back to saved meta
+        const recentMeta = useAppStore.getState().recentProposals.find(p => p.id === id);
+        const savedMeta = loadActiveProposalMeta().find(m => m.id === id);
+        const meta = recentMeta || savedMeta;
+        if (!meta) {
+          console.warn(`⚠️ No metadata for proposal ${id}, skipping restore`);
+          continue;
+        }
+
+        restoredProposals.push({
+          id: meta.id,
+          fileName: meta.fileName,
+          fileType: meta.fileType,
+          pageCount: meta.pageCount,
+          textContent: meta.textContent,
+          fileUrl: meta.fileUrl || '',
+          pageImages: pages,
+        });
+        console.log(`✅ Restored: ${meta.fileName} (${pages.length} pages)`);
+      }
+
+      if (restoredProposals.length > 0) {
+        set(state => ({
+          activeProposals: [
+            ...state.activeProposals,
+            ...restoredProposals.filter(r => !state.activeProposals.find(p => p.id === r.id)),
+          ],
+        }));
+        console.log(`📦 Restored ${restoredProposals.length} active proposals`);
+      }
+    } catch (error) {
+      console.warn('⚠️ Failed to restore active proposals:', error);
+    }
+  },
 }));
+
+// Expose store to browser console for debugging
+if (typeof window !== 'undefined') {
+  (window as any).__store = useAppStore;
+}

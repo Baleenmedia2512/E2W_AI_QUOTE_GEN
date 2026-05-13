@@ -366,7 +366,7 @@
   line-height: 1.4;
 }
 
-.template-premium-agency .pa-cell-qty { text-align: center; }
+.template-premium-agency .pa-cell-qty { text-align: right; }
 .template-premium-agency .pa-cell-rate { text-align: right; }
 .template-premium-agency .pa-cell-dur { text-align: center; }
 .template-premium-agency .pa-cell-amt {
