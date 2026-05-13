@@ -6,6 +6,28 @@ import { CHAT_SYSTEM_PROMPT } from '../utils/promptTemplates';
 const RATE_LIMIT_DELAY = 1000; // 1 second between requests
 let lastRequestTime = 0;
 
+// ============================================================
+// 🚧 TEMPORARY HARDCODE — REMOVE WHEN RADIO PDF IS UPLOADED
+// ============================================================
+const HARDCODED_RADIO_RATE_CARD = {
+  fileName: 'Radio_Rate_Card_Hardcoded.txt',
+  content: `
+RADIO ADVERTISEMENT RATE CARD - BALEEN MEDIA - CHENNAI
+
+Station: Chennai Radio City | Min Duration: 10 Sec | Min Spots/Day: 10 | Min Days: 5 | Total Secs: 500 | Rate: ₹400 per 10sec
+Station: Chennai Big FM     | Min Duration: 10 Sec | Min Spots/Day: 10 | Min Days: 5 | Total Secs: 500 | Rate: ₹350 per 10sec
+Station: Chennai Hello FM   | Min Duration: 10 Sec | Min Spots/Day: 10 | Min Days: 5 | Total Secs: 500 | Rate: ₹450 per 10sec
+
+PRICING FORMULA: Rate per 10sec x (ad duration sec / 10) x spots per day x number of days = base cost
+GST: 18% extra
+Non-prime time: 10am - 6pm only
+Terms: Ad slots must be booked in advance. Lead time 2 working days after payment and jingle confirmation. Rate varies for prime time.
+  `
+};
+// ============================================================
+// END TEMPORARY HARDCODE
+// ============================================================
+
 const getApiKey = (): string => {
   const apiKey = import.meta.env.VITE_GEMINI_API_KEY;
   if (!apiKey || apiKey.trim() === '') {
@@ -55,8 +77,14 @@ const validateAndFixQuoteDescriptions = (quoteData: any): any => {
     const fixedLineItems = item.lineItems.map((lineItem: any) => {
       const description = lineItem.description || '';
       
-      // Check if description already starts with the service type name
-      if (!description.startsWith(serviceTypeName) && serviceTypeName) {
+      // Check if description already starts with the service type name,
+      // OR already contains it anywhere (e.g. "Chennai - Auto Back Stickers - Display Price").
+      // Without the contains-check we'd produce doubled prefixes like
+      // "Auto Back Stickers - Chennai - Auto Back Stickers - Display Price".
+      const descLower = description.toLowerCase();
+      const nameLower = serviceTypeName.toLowerCase();
+      const alreadyContainsName = nameLower && descLower.includes(nameLower);
+      if (!description.startsWith(serviceTypeName) && !alreadyContainsName && serviceTypeName) {
         // Fix: Prepend the service type name
         const fixedDescription = `${serviceTypeName} - ${description}`;
         console.log(`  ✅ Fixed: "${description}" → "${fixedDescription}"`);
@@ -223,11 +251,17 @@ export const sendMessageToGemini = async ({
 
     // Build context
     let contextPrompt = CHAT_SYSTEM_PROMPT + '\n\n';
-    
+
+    // 🚧 TEMPORARY: Inject hardcoded radio rate card — REMOVE WHEN RADIO PDF IS UPLOADED
+    const allProposalTexts = proposalTexts
+      ? [...proposalTexts, HARDCODED_RADIO_RATE_CARD]
+      : [HARDCODED_RADIO_RATE_CARD];
+    // END TEMPORARY
+
     // Multi-document support (NEW - takes priority if provided)
-    if (proposalTexts && proposalTexts.length > 0) {
-      contextPrompt += `AVAILABLE PROPOSAL DOCUMENTS (${proposalTexts.length} total):\n\n`;
-      proposalTexts.forEach((doc, idx) => {
+    if (allProposalTexts && allProposalTexts.length > 0) {
+      contextPrompt += `AVAILABLE PROPOSAL DOCUMENTS (${allProposalTexts.length} total):\n\n`;
+      allProposalTexts.forEach((doc, idx) => {
         // Increased limit to capture full documents including Terms & Conditions sections
         const preview = doc.content.substring(0, 50000); // Limit per document for token efficiency
         contextPrompt += `--- DOCUMENT ${idx + 1}: ${doc.fileName} ---\n${preview}\n--- END OF DOCUMENT ${idx + 1} ---\n\n`;

@@ -159,7 +159,7 @@ export const ClassicBusiness: React.FC<TemplateProps> = ({ data, editable: _edit
                 <th className="col-qty">Qty</th>
                 <th className="col-rate">Unit Price</th>
                 {quote.items.some(i => i.duration && i.duration > 1) && (
-                  <th className="col-duration">Months</th>
+                  <th className="col-duration">Dur.</th>
                 )}
                 <th className="col-amount"><span className="th-main">AMOUNT</span><span className="th-sub">(excl GST)</span></th>
                 {quote.gstEnabled && <th className="col-gst-pct">GST %</th>}
@@ -183,7 +183,7 @@ export const ClassicBusiness: React.FC<TemplateProps> = ({ data, editable: _edit
                     <td className="cell-qty">{item.quantity}</td>
                     <td className="cell-rate">{formatCurrency(item.rate)}</td>
                     {quote.items.some(i => i.duration && i.duration > 1) && (
-                      <td className="cell-duration">{item.duration || 1}</td>
+                      <td className="cell-duration">{`${item.duration || 1} ${item.durationUnit === 'days' ? 'Da' : 'Mo'}`}</td>
                     )}
                     <td className="cell-amount">{formatCurrency(item.total)}</td>
                     {quote.gstEnabled && <td className="cell-gst-pct">{quote.gstPercentage}%</td>}
@@ -209,7 +209,7 @@ export const ClassicBusiness: React.FC<TemplateProps> = ({ data, editable: _edit
 
         {!isMultiService && (
           <div id="pdf-page-2" className="template-classic-business">
-            <ReferenceImages proposalPages={data.proposalPages} items={quote.items} />
+            <ReferenceImages proposalPages={data.proposalPages} proposalPageMap={data.proposalPageMap} items={quote.items} />
 
             {renderCompanyFooter(2)}
           </div>
@@ -336,7 +336,7 @@ export const ClassicBusiness: React.FC<TemplateProps> = ({ data, editable: _edit
                 {renderCompanyFooter(groupIndex * 2 + 2)}              </div>
 
               <div id={`pdf-service-ref-${groupIndex}`} className="template-classic-business">
-                <ReferenceImages proposalPages={data.proposalPages} items={group.items} />
+                <ReferenceImages proposalPages={data.proposalPages} proposalPageMap={data.proposalPageMap} items={group.items} />
 
                 {renderCompanyFooter(groupIndex * 2 + 3)}
               </div>
