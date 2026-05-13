@@ -430,9 +430,15 @@ function filterPagesByCategory(pages: ExtractedPage[], category: string): Extrac
       if (headingArea.includes(kw)) return true;
       if (kw.endsWith('s') && kw.length > 4 && headingArea.includes(kw.slice(0, -1))) return true;
       if (!kw.endsWith('s') && headingArea.includes(kw + 's')) return true;
-      // Also check synonymMap and typoVariants so PDF typos like "awarness"/"directio" are tolerated
-      const headingSyns = [...(synonymMap[kw] || []), ...(typoVariants[kw] || [])];
-      if (headingSyns.some(s => headingArea.includes(s))) return true;
+      // Synonym-aware fallback — fixes pages where the PDF heading uses a misspelled
+      // variant (e.g. "awarness" instead of "awareness") which the strict includes()
+      // would otherwise reject before the proximity check ever runs.
+      const synonyms = synonymMap[kw];
+      if (synonyms) {
+        for (const syn of synonyms) {
+          if (headingArea.includes(syn)) return true;
+        }
+      }
       return false;
     });
     if (!allKeywordsInHeading) {
@@ -566,6 +572,18 @@ function filterPagesByCategory(pages: ExtractedPage[], category: string): Extrac
       let pos = pageText.indexOf(kw);
       if (pos === -1 && !kw.endsWith('s')) pos = pageText.indexOf(kw + 's');
       if (pos === -1 && kw.endsWith('s')) pos = pageText.indexOf(kw.slice(0, -1));
+      // Synonym-aware position lookup — fixes pages where the PDF uses a misspelled
+      // variant (e.g. "awarness") so the proximity check no longer silently drops
+      // the keyword and skip itself when the synonym map already knows the variant.
+      if (pos === -1) {
+        const synonyms = synonymMap[kw];
+        if (synonyms) {
+          for (const syn of synonyms) {
+            const sp = pageText.indexOf(syn);
+            if (sp !== -1) { pos = sp; break; }
+          }
+        }
+      }
       return pos;
     }).filter(pos => pos >= 0);
     if (keywordPositions.length === requiredKeywords.length) {
