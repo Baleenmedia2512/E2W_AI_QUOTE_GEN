@@ -104,40 +104,47 @@ export const useCityServiceRegistry = () => {
 
           const { GoogleGenerativeAI } = await import('@google/generative-ai');
           const genAI = new GoogleGenerativeAI(apiKey);
-          const model = genAI.getGenerativeModel({ model: 'gemini-2.5-flash-lite' });
+          const model = genAI.getGenerativeModel({
+            model: 'gemini-2.5-flash-lite',
+            generationConfig: { temperature: 0, responseMimeType: 'application/json' },
+          });
 
           const prompt = `You are reading an outdoor advertising rate card.
-Extract every distinct advertising service / variant offered in this document, along with minimum and maximum quantity constraints if mentioned.
+Extract every distinct advertising service / variant that is ACTUALLY LISTED in this specific document, along with minimum and maximum quantity constraints if mentioned.
 
-Rules:
-- Return ONLY valid JSON — no markdown, no explanation
-- Each service name must be lowercase
-- Extract every named variant as its OWN service, not as one parent. Examples:
-    • "lamp post board starflex", "lamp post board sunpack", "lamp post board dye cutting" → THREE separate services
-    • "bus full branding", "bus semi branding", "bus back panel" → THREE separate services
-    • "auto full branding", "auto semi branding", "auto back stickers" → THREE separate services
-    • "newspaper insertion a4 / a5", "newspaper insertion paper size" → TWO separate services
-- Do NOT collapse variants under a generic parent name like just "lamp post" or just "bus".
-- Do NOT extract pricing sub-rows or cost breakdowns. Skip any entry that is purely a price/cost line containing only words like: rental, printing, fixing, design, charges, installation, lamination, material, labour, artwork, gst, tax (these are sub-rows of a service, not services themselves)
-- Do NOT include prices, sizes, durations, city names, company names
-- If no minimum quantity is mentioned for a service, use 1
-- If no maximum quantity is mentioned, use null (unlimited)
+CRITICAL — anti-hallucination rules:
+- ONLY extract services that literally appear (with the same words) in the rate card content below.
+- DO NOT invent, complete, or carry-over services from any prior knowledge or examples.
+- If the document does not list a category at all, do NOT include it.
 
-Return this exact JSON structure:
+What counts as a service (BE THOROUGH — do not skip rows that are present):
+- Any row that names an advertising medium (vehicle, board, screen, banner, paper, radio slot, etc.) IS a service. Include it.
+- Any qualifier on the same row (e.g. "semi", "full", "back", "front", "panel", "interior", "lit", "non-lit", a material name, a size code, a paper size) becomes part of the service name. Each such combination is its OWN entry.
+- If a heading lists multiple variants underneath it, output ONE entry per variant (heading + variant), not one entry for the heading alone.
+- When in doubt about a clearly-listed row, INCLUDE it rather than drop it. Only omit pure pricing sub-rows (see below).
+
+Format rules:
+- Return ONLY valid JSON — no markdown, no explanation, no commentary.
+- Each service name must be lowercase.
+- Skip rows that are pricing sub-components: rows whose text consists only of words like rental, printing, fixing, design, charges, installation, lamination, material, labour, artwork, gst, tax (these are sub-rows of a service, not services themselves).
+- Do NOT include prices, sizes (in numbers), durations, city names, or company names in the service strings.
+- If no minimum quantity is given for a service, use 1.
+- If no maximum quantity is given, use null.
+
+Output schema (use this STRUCTURE only — never copy the placeholder strings, never output a service that is not present in the document):
 {
-  "services": ["bus semi branding", "bus full branding", "auto full branding", "auto back stickers", "lamp post board starflex", "lamp post board sunpack"],
+  "services": ["<service 1>", "<service 2>", "<service 3>"],
   "quantities": {
-    "bus semi branding": { "min": 50, "max": null },
-    "bus full branding": { "min": 5, "max": null },
-    "auto full branding": { "min": 1, "max": null },
-    "auto back stickers": { "min": 100, "max": null },
-    "lamp post board starflex": { "min": 10, "max": null },
-    "lamp post board sunpack": { "min": 10, "max": null }
+    "<service 1>": { "min": <number>, "max": <number|null> },
+    "<service 2>": { "min": <number>, "max": <number|null> },
+    "<service 3>": { "min": <number>, "max": <number|null> }
   }
 }
 
+Replace every <…> placeholder with a value taken DIRECTLY from the rate card content below.
+
 Rate card content:
-${proposal.textContent.slice(0, 8000)}`;
+${proposal.textContent.slice(0, 12000)}`;
 
           const result = await model.generateContent(prompt);
           const raw = result.response.text().trim();
