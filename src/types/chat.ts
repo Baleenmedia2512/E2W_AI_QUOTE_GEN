@@ -26,6 +26,7 @@ export interface Message {
   // MULTIPLE_MATCH
   isMultipleMatch?: boolean;
   groupedServices?: GroupedServices[];
+  directParts?: string[];       // Specific segments to send straight to Gemini alongside checkboxes
   originalUserInput?: string; // Stores original user message to preserve duration/days info
   
   // PARTIAL_MATCH
@@ -38,7 +39,23 @@ export interface Message {
   // NO_MATCH
   isNoMatch?: boolean;
   allServicesGrouped?: CategoryServices[];
-  
+
+  // CITY PICKER
+  isCityPicker?: boolean;
+  // Snapshot of the cityPickerState that produced this multiple-match message,
+  // so user can press "Back" on the checkbox UI to return to the city picker.
+  cityPickerSnapshot?: {
+    originalMessage: string;
+    segments: Array<{
+      raw: string;
+      cityNeeded: boolean;
+      detectedCity: string | null;
+      selectedCities: string[];
+      matchedCities?: string[];
+    }>;
+    availableCities: string[];
+  };
+
   // DEPRECATED (kept for backward compatibility)
   isServiceNotFound?: boolean;
   availableServices?: ServiceSuggestion[];

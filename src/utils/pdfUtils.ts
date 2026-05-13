@@ -195,6 +195,99 @@ export function cropPageStrippingHeaderFooter(imageDataUrl: string): Promise<str
 }
 
 /**
+ * Spec diagram crop: pixel-scans the image to find exact top/bottom boundaries of
+ * non-white content (the dimension diagram), then crops tightly to that region with
+ * a small padding. Skips the top 30% of the page first to avoid matching heading text.
+ * Pure canvas math — no API call.
+ */
+export function cropSpecDiagram(imageDataUrl: string): Promise<string> {
+  return new Promise((resolve) => {
+    const img = new Image();
+    img.onload = () => {
+      const w = img.naturalWidth;
+      const h = img.naturalHeight;
+
+      // Render full image to a canvas so we can read pixels
+      const scanCanvas = document.createElement('canvas');
+      scanCanvas.width = w;
+      scanCanvas.height = h;
+      const scanCtx = scanCanvas.getContext('2d');
+      if (!scanCtx) { resolve(imageDataUrl); return; }
+      scanCtx.drawImage(img, 0, 0, w, h);
+      const pixels = scanCtx.getImageData(0, 0, w, h).data;
+
+      // Returns true if a row has enough strongly-dark pixels to be real
+      // diagram content. Ignores faint diagonal watermarks ("BALEEN MEDIA")
+      // by requiring DARK pixels (channel < 180) AND a minimum count per row.
+      const rowHasContent = (y: number): boolean => {
+        const base = y * w * 4;
+        let darkCount = 0;
+        const required = Math.max(8, Math.round(w * 0.01)); // ~1% of width, at least 8 px
+        for (let x = 0; x < w; x++) {
+          const i = base + x * 4;
+          if (pixels[i] < 180 && pixels[i + 1] < 180 && pixels[i + 2] < 180) {
+            darkCount++;
+            if (darkCount >= required) return true;
+          }
+        }
+        return false;
+      };
+
+      // The page top contains: "Back to Summary" button, "DESIGN SPECIFICATIONS"
+      // heading, and "Material: Vinyl sticker..." text. The actual diagram begins
+      // roughly at 38% down. Skip past all of that.
+      const scanStart = Math.round(h * 0.38);
+      // End scanning at 97% to ignore footer
+      const scanEnd = Math.round(h * 0.97);
+
+      let contentTop = -1;
+      let contentBottom = -1;
+
+      for (let y = scanStart; y < scanEnd; y++) {
+        if (rowHasContent(y)) { contentTop = y; break; }
+      }
+      for (let y = scanEnd; y >= scanStart; y--) {
+        if (rowHasContent(y)) { contentBottom = y; break; }
+      }
+
+      // Fallback to fixed crop if scan found nothing
+      if (contentTop === -1 || contentBottom === -1) {
+        const topCut = Math.round(h * 0.38);
+        const bottomCut = Math.round(h * 0.05);
+        const newH = h - topCut - bottomCut;
+        if (newH < 50) { resolve(imageDataUrl); return; }
+        const fallbackCanvas = document.createElement('canvas');
+        fallbackCanvas.width = w;
+        fallbackCanvas.height = newH;
+        const fc = fallbackCanvas.getContext('2d');
+        if (!fc) { resolve(imageDataUrl); return; }
+        fc.drawImage(img, 0, topCut, w, newH, 0, 0, w, newH);
+        resolve(fallbackCanvas.toDataURL('image/jpeg', 0.85));
+        return;
+      }
+
+      // Add padding around the detected content
+      const pad = Math.round(h * 0.005); // 0.5% padding (tight)
+      const cropTop = Math.max(0, contentTop - pad);
+      const cropBottom = Math.min(h, contentBottom + pad);
+      const cropH = cropBottom - cropTop;
+
+      if (cropH < 50) { resolve(imageDataUrl); return; }
+
+      const outCanvas = document.createElement('canvas');
+      outCanvas.width = w;
+      outCanvas.height = cropH;
+      const outCtx = outCanvas.getContext('2d');
+      if (!outCtx) { resolve(imageDataUrl); return; }
+      outCtx.drawImage(img, 0, cropTop, w, cropH, 0, 0, w, cropH);
+      resolve(outCanvas.toDataURL('image/jpeg', 0.85));
+    };
+    img.onerror = () => resolve(imageDataUrl);
+    img.src = imageDataUrl;
+  });
+}
+
+/**
  * Geometric crop: return only the top half or bottom half of a page image.
  * Used to separate Design Specification (top) from Reference Image (bottom)
  * when both sections share the same PDF page.
@@ -215,6 +308,45 @@ export function cropPageHalf(imageDataUrl: string, half: 'top' | 'bottom'): Prom
       if (!ctx) { resolve(imageDataUrl); return; }
       ctx.drawImage(img, 0, sy, w, halfH, 0, 0, w, halfH);
       resolve(canvas.toDataURL('image/jpeg', 0.85));
+    };
+    img.onerror = () => resolve(imageDataUrl);
+    img.src = imageDataUrl;
+  });
+}
+
+/**
+ * Content-aware crop for SHARED spec + reference pages.
+ * Skips the page heading/material text at the top, then scans for the
+ * spec diagram content. Stops before the bottom 25% (where the
+ * "REFERENCE IMAGE" heading + photo typically live) so we don't double-show
+ * the reference photo (rendered separately by the template).
+ *
+ * Tighter crop than cropPageHalf so multi-row diagrams (driver side,
+ * conductor side, bus back) are preserved.
+ */
+export function cropSpecAboveReference(imageDataUrl: string): Promise<string> {
+  return new Promise((resolve) => {
+    const img = new Image();
+    img.onload = () => {
+      const w = img.naturalWidth;
+      const h = img.naturalHeight;
+
+      // Fixed crop: strip top 15% (page heading + "Back to Summary" button)
+      // and bottom 30% (REFERENCE IMAGE heading + reference photo).
+      // Keeps the middle 55% of the page where the spec diagram lives.
+      // This is intentionally conservative so multi-row diagrams
+      // (driver side, conductor side, bus back) are preserved.
+      const topCut = Math.round(h * 0.15);
+      const bottomCut = Math.round(h * 0.30);
+      const newH = h - topCut - bottomCut;
+      if (newH < 50) { resolve(imageDataUrl); return; }
+      const canvas = document.createElement('canvas');
+      canvas.width = w;
+      canvas.height = newH;
+      const ctx = canvas.getContext('2d');
+      if (!ctx) { resolve(imageDataUrl); return; }
+      ctx.drawImage(img, 0, topCut, w, newH, 0, 0, w, newH);
+      resolve(canvas.toDataURL('image/jpeg', 0.92));
     };
     img.onerror = () => resolve(imageDataUrl);
     img.src = imageDataUrl;
@@ -298,9 +430,9 @@ export interface PDFExtractionResult {
   pageImages: ExtractedPage[];
 }
 
-export const extractPDFContent = async (file: File): Promise<PDFExtractionResult> => {
+export const extractPDFContent = async (file: File, maxImagePages?: number): Promise<PDFExtractionResult> => {
   try {
-    console.log('Starting PDF extraction for:', file.name);
+    console.log('Starting PDF extraction for:', file.name, maxImagePages ? `(images: smart-select from first ${maxImagePages} pages or reference pages)` : '');
     const arrayBuffer = await file.arrayBuffer();
     console.log('ArrayBuffer loaded, size:', arrayBuffer.byteLength);
     
@@ -312,24 +444,29 @@ export const extractPDFContent = async (file: File): Promise<PDFExtractionResult
     const images: string[] = [];
     const pageImages: ExtractedPage[] = [];
 
-    // Extract text and render page images
+    // Keywords that indicate a page has reference images or specs worth rendering
+    const referenceKeywords = [
+      'reference image', 'reference images', 'sample image', 'display area',
+      'design specification', 'design specifications', 'specification',
+      '(2/', '(3/', '(4/', '(5/',  // page numbering like (2/3) = second page of section
+    ];
+
+    // Phase 1: Extract text from ALL pages
+    const allPageTexts: { pageNumber: number; text: string; pdfPage: any }[] = [];
     for (let i = 1; i <= pageCount; i++) {
       const page = await pdf.getPage(i);
       const content = await page.getTextContent();
-      
-      // Preserve layout structure: group text items by their Y position (line)
-      // This prevents prices from different columns being jumbled together
       const items = content.items as any[];
       if (items.length === 0) {
         textContent += '\n\n';
+        allPageTexts.push({ pageNumber: i, text: '', pdfPage: page });
         continue;
       }
 
-      // Sort by Y position (descending = top-to-bottom) then X position (left-to-right)
       const sortedItems = [...items].filter(item => item.str && item.str.trim()).sort((a, b) => {
         const yDiff = b.transform[5] - a.transform[5];
-        if (Math.abs(yDiff) > 5) return yDiff; // Different lines (5pt threshold)
-        return a.transform[4] - b.transform[4]; // Same line, sort left-to-right
+        if (Math.abs(yDiff) > 5) return yDiff;
+        return a.transform[4] - b.transform[4];
       });
 
       let pageText = '';
@@ -337,9 +474,8 @@ export const extractPDFContent = async (file: File): Promise<PDFExtractionResult
       for (const item of sortedItems) {
         const currentY = Math.round(item.transform[5]);
         if (lastY !== -1 && Math.abs(currentY - lastY) > 5) {
-          pageText += '\n'; // New line
+          pageText += '\n';
         } else if (lastY !== -1) {
-          // Same line - use tab to separate columns
           const gap = item.transform[4] - (sortedItems[sortedItems.indexOf(item) - 1]?.transform[4] || 0);
           pageText += gap > 50 ? '\t|\t' : ' ';
         }
@@ -349,26 +485,28 @@ export const extractPDFContent = async (file: File): Promise<PDFExtractionResult
 
       textContent += pageText + '\n\n';
       console.log(`Page ${i}/${pageCount} extracted, text length:`, pageText.length);
+      allPageTexts.push({ pageNumber: i, text: pageText, pdfPage: page });
+    }
 
-      // Render page as image for reference
+    // Phase 2: Render ALL pages as images so the full PDF is browsable in the UI
+    console.log(`🖼️ Rendering all ${allPageTexts.length} pages as images`);
+
+    // Phase 3: Render all pages as images
+    for (const { pageNumber, text, pdfPage } of allPageTexts) {
       try {
-        const viewport = page.getViewport({ scale: 2.0 });
+        const viewport = pdfPage.getViewport({ scale: 2.0 });
         const canvas = document.createElement('canvas');
         canvas.width = viewport.width;
         canvas.height = viewport.height;
         const ctx = canvas.getContext('2d');
         if (ctx) {
-          await page.render({ canvasContext: ctx, viewport }).promise;
+          await pdfPage.render({ canvasContext: ctx, viewport }).promise;
           const imageDataUrl = canvas.toDataURL('image/jpeg', 0.92);
-          pageImages.push({
-            pageNumber: i,
-            text: pageText,
-            imageDataUrl,
-          });
-          console.log(`Page ${i}/${pageCount} rendered as image`);
+          pageImages.push({ pageNumber, text, imageDataUrl });
+          console.log(`Page ${pageNumber}/${pageCount} rendered as image`);
         }
       } catch (imgErr) {
-        console.warn(`Failed to render page ${i} as image:`, imgErr);
+        console.warn(`Failed to render page ${pageNumber} as image:`, imgErr);
       }
     }
 

@@ -11,7 +11,7 @@ import {
 import { FiFolder, FiHome, FiFileText, FiEye } from 'react-icons/fi';
 import { useHistory } from 'react-router-dom';
 import ProposalUpload from '../components/ProposalUpload/ProposalUpload';
-import ProposalViewer from '../components/ProposalViewer/ProposalViewer';
+import MultiProposalViewer from '../components/MultiProposalViewer/MultiProposalViewer';
 import { UserProfile } from '../components/UserProfile';
 
 const DocumentsPage: React.FC = () => {
@@ -226,7 +226,7 @@ const DocumentsPage: React.FC = () => {
 
         {/* RIGHT PANEL - PDF Viewer */}
         <Box flex="1" minW="0" w={{ base: '100%', lg: 'auto' }}>
-          <ProposalViewer />
+          <MultiProposalViewer />
         </Box>
       </Flex>
     </Box>
