@@ -535,6 +535,10 @@ const ChatInterface: React.FC = () => {
         const preSegments = parseSegmentsForCity(userMessage.content, availCitiesPre);
         const preAlerts: Array<{ city: string; service: string }> = [];
         const validSegmentRaws: string[] = [];
+        // Parallel display labels (friendly: `{qty} {Service} ({City})`) — shown in the
+        // "Already confirmed" panel. Falls back to the raw segment when service is unknown.
+        const validSegmentLabels: string[] = [];
+        const titleCaseSvc = (s: string) => s.split(' ').map(w => w.charAt(0).toUpperCase() + w.slice(1).toLowerCase()).join(' ');
         // vague segment now carries the FULL matches list straight from the classifier,
         // so the checkbox group is built from real registry data (works for any category).
         const vagueSegments: Array<{ seg: typeof preSegments[0]; cityKey: string; matches: string[]; qty: number }> = [];
@@ -564,6 +568,7 @@ const ChatInterface: React.FC = () => {
             }
             // No city at all → let Gemini handle it
             validSegmentRaws.push(seg.raw);
+            validSegmentLabels.push(seg.raw);
             continue;
           }
 
@@ -605,6 +610,7 @@ const ChatInterface: React.FC = () => {
                 if (found.length === 1) {
                   // single match → specific (auto-confirm)
                   validSegmentRaws.push(seg.raw);
+                  validSegmentLabels.push(`${qty} ${titleCaseSvc(found[0])} (${cityLabel})`);
                 } else {
                   vagueSegments.push({ seg, cityKey, matches: found, qty });
                 }
@@ -613,6 +619,7 @@ const ChatInterface: React.FC = () => {
             }
             // No text-based services found → let Gemini handle it
             validSegmentRaws.push(seg.raw);
+            validSegmentLabels.push(seg.raw);
             continue;
           }
 
@@ -666,6 +673,8 @@ const ChatInterface: React.FC = () => {
               }
             }
             validSegmentRaws.push(seg.raw);
+            const labelQty = requestedQty ?? 1;
+            validSegmentLabels.push(`${labelQty} ${titleCaseSvc(matchedSvc)} (${cityLabel})`);
           }
         }
 
@@ -708,7 +717,7 @@ const ChatInterface: React.FC = () => {
               timestamp: new Date(),
               isMultipleMatch: true,
               groupedServices,
-              directParts: validSegmentRaws.length > 0 ? validSegmentRaws : undefined,
+              directParts: validSegmentLabels.length > 0 ? validSegmentLabels : undefined,
             };
             setMessages(prev => [...prev, userMessage, assistantMsg]);
             setInputValue('');
