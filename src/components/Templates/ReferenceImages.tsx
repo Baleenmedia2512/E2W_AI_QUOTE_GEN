@@ -117,7 +117,8 @@ function filterPagesByCategory(pages: ExtractedPage[], category: string): Extrac
 
   // Pricing/filler words to always discard
   const pricingWords = new Set(['rental', 'price', 'per', 'month', 'and', 'the', 'for', 'from',
-    'display', 'printing', 'fixing', 'design', 'creative', 'extra', 'charge', 'rate']);
+    'display', 'printing', 'fixing', 'design', 'creative', 'extra', 'charge', 'rate',
+    'ads']); // 'ads' is a generic suffix ("Lobby Screen Ads") that never appears in PDF headings
 
   // Core service words — always kept regardless of length
   const coreWords = allWords.filter(w => !pricingWords.has(w) && w.length >= 3);
@@ -429,6 +430,9 @@ function filterPagesByCategory(pages: ExtractedPage[], category: string): Extrac
       if (headingArea.includes(kw)) return true;
       if (kw.endsWith('s') && kw.length > 4 && headingArea.includes(kw.slice(0, -1))) return true;
       if (!kw.endsWith('s') && headingArea.includes(kw + 's')) return true;
+      // Also check synonymMap and typoVariants so PDF typos like "awarness"/"directio" are tolerated
+      const headingSyns = [...(synonymMap[kw] || []), ...(typoVariants[kw] || [])];
+      if (headingSyns.some(s => headingArea.includes(s))) return true;
       return false;
     });
     if (!allKeywordsInHeading) {
@@ -1513,12 +1517,15 @@ export const ReferenceImages: React.FC<ReferenceImagesProps> = ({ proposalPages,
     });
     // Fire lazy re-crop if:
     // - ref page has 0 cropped images (upload-time crop was skipped/empty), OR
-    // - ref page has only 1 cropped image (upload-time Gemini may have missed others on the same page)
-    // Skip only when upload already found 2+ images (confident it got all of them)
-    if (!refPage || (refPage.croppedImages && refPage.croppedImages.length > 1)) {
+    // - ref page has only 1 cropped image (upload-time Gemini may have missed others on the same page), OR
+    // - ref page has 5+ cropped images (likely Gemini returned duplicate bounding boxes at upload time)
+    // Skip only when upload found 2-4 images (reasonable range, assumed correct)
+    const storedCount = refPage.croppedImages?.length ?? 0;
+    if (!refPage || (storedCount >= 2 && storedCount <= 4)) {
       setLazyCroppedRefImages([]);
       return;
     }
+    console.log(`🔁 Lazy re-crop triggered: stored count = ${storedCount} (${storedCount === 0 ? 'empty' : storedCount === 1 ? 'may have missed images' : 'suspicious duplicate count'})`);
     let cancelled = false;
     console.log('🔍 Triggering lazy Gemini Vision crop for reference page', refPage.pageNumber);
     cropReferencePageImage(refPage.imageDataUrl, refPage.pageNumber).then(async cropped => {
