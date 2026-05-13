@@ -1538,8 +1538,12 @@ export const ReferenceImages: React.FC<ReferenceImagesProps> = ({ proposalPages,
     // - ref page has only 1 cropped image (upload-time Gemini may have missed others on the same page), OR
     // - ref page has 5+ cropped images (likely Gemini returned duplicate bounding boxes at upload time)
     // Skip only when upload found 2-4 images (reasonable range, assumed correct)
+    if (!refPage) {
+      setLazyCroppedRefImages([]);
+      return;
+    }
     const storedCount = refPage.croppedImages?.length ?? 0;
-    if (!refPage || (storedCount >= 2 && storedCount <= 4)) {
+    if (storedCount >= 2 && storedCount <= 4) {
       setLazyCroppedRefImages([]);
       return;
     }
@@ -1614,7 +1618,7 @@ export const ReferenceImages: React.FC<ReferenceImagesProps> = ({ proposalPages,
     // leaving the SIZE CHART diagram (title + van + annotations) intact.
     let cancelled = false;
     console.log('🔍 30% top-cut crop for pure spec page', pureSpecPage.pageNumber);
-    cropPageFromPercent(pureSpecPage.imageDataUrl, 0.30).then(cropped => {
+    cropPageFromPercent(pureSpecPage.imageDataUrl, 0.13002).then(cropped => {
       if (!cancelled) {
         console.log('✅ 30% top-cut crop done for pure spec page', pureSpecPage.pageNumber);
         setLazyCroppedSpecImage(cropped);
