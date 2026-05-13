@@ -163,9 +163,18 @@ const ChatInterface: React.FC = () => {
     return cities.find(c => lower.includes(c.toLowerCase())) || null;
   };
 
-  // Split message by "and" or ",", then check each segment for a city keyword
+  // Split message by "and" or ",", then check each segment for a city keyword.
+  // Pre-processing also handles Bug 1 — repeated clauses like " i need "/" i want "/
+  // " also need " treated as new " and " boundaries.
+  // (No service-name aliases here — spelling/spacing variants are handled generically
+  // inside classifySegmentByRegistry by joining adjacent words.)
   const parseSegmentsForCity = (message: string, cities: string[]): CityPickerSegment[] => {
-    const parts = message.split(/\band\b|,/i).map(p => p.trim()).filter(p => p.length > 0);
+    const normalized = message
+      // Bug 1: treat repeated "i need"/"i want"/"also need" mid-sentence as new clauses.
+      .replace(/(\S\s+)i\s+(need|want)\s+/gi, '$1and ')
+      .replace(/(\S\s+)also\s+(need|want)\s+/gi, '$1and ');
+
+    const parts = normalized.split(/\band\b|,/i).map(p => p.trim()).filter(p => p.length > 0);
     const segments = parts.map(raw => {
       const detectedCity = detectCityInText(raw, cities);
       return {
@@ -197,7 +206,51 @@ const ChatInterface: React.FC = () => {
       }
     }
 
-    return segments;
+    // ★ Forward city-inheritance: if a segment has no city but a LATER segment does,
+    // propagate that city back. Handles "auto and bus branding in chennai" where
+    // Seg 1 ("auto") has no city, Seg 2 ("bus branding in chennai") does → Seg 1 inherits Chennai.
+    // Only inherits when exactly one distinct city appears in the whole message
+    // (otherwise we genuinely don't know which city the cityless segment belongs to).
+    const distinctCities = Array.from(new Set(
+      segments.map(s => s.detectedCity).filter((c): c is string => !!c)
+    ));
+    if (distinctCities.length === 1) {
+      const onlyCity = distinctCities[0];
+      for (let i = 0; i < segments.length; i++) {
+        const s = segments[i];
+        if (!s.detectedCity) {
+          segments[i] = {
+            ...s,
+            raw: `${s.raw} ${onlyCity}`.trim(),
+            cityNeeded: false,
+            detectedCity: onlyCity,
+            selectedCities: [onlyCity],
+          };
+        }
+      }
+    }
+
+    // Bug 2: dedupe by `${city}|${normalizedServiceText}` so repeated clauses
+    // ("cab and cab", "auto and auto") collapse into a single entry.
+    const seen = new Set<string>();
+    const deduped: typeof segments = [];
+    for (const s of segments) {
+      const svcKey = s.raw
+        .toLowerCase()
+        .replace(new RegExp(cities.join('|'), 'gi'), '')
+        .replace(/\d+/g, '')
+        .replace(/\b(i|need|want|the|a|an|for|in|at|of|and|please)\b/gi, '')
+        .replace(/\s+/g, ' ').trim();
+      const dupKey = `${(s.detectedCity || '').toLowerCase()}|${svcKey}`;
+      if (svcKey.length > 0 && seen.has(dupKey)) {
+        console.log(`🧹 [Dedup] dropping duplicate segment: "${s.raw}"`);
+        continue;
+      }
+      seen.add(dupKey);
+      deduped.push(s);
+    }
+
+    return deduped;
   };
 
   // Load chat history on mount
@@ -293,6 +346,69 @@ const ChatInterface: React.FC = () => {
   };
   // ─────────────────────────────────────────────────────────────────────────
 
+  // ─── GENERIC SEGMENT CLASSIFIER (registry-driven, category-agnostic) ────
+  // Replaces hardcoded keyword logic. For ANY service category (bus, auto,
+  // newspaper, lamp post, hoarding, radio, …) decides:
+  //   • registry_unavailable → caller falls back to text scan / Gemini
+  //   • empty                → user typed only fillers
+  //   • not_found            → service genuinely absent in this city
+  //   • specific             → exactly one service matches (auto-confirm)
+  //   • vague                → 2+ services match (show checkbox group)
+  type SegmentClassification =
+    | { state: 'registry_unavailable' }
+    | { state: 'empty' }
+    | { state: 'not_found' }
+    | { state: 'specific'; matches: string[]; qty?: ServiceQuantity }
+    | { state: 'vague'; matches: string[] };
+
+  const classifySegmentByRegistry = (cityKey: string, segText: string): SegmentClassification => {
+    const entry = cityServiceRegistry.current.get(cityKey);
+    if (!entry || entry.status !== 'ready' || entry.services.length === 0) {
+      return { state: 'registry_unavailable' };
+    }
+    const cleaned = segText
+      .replace(new RegExp(`\\b${cityKey}\\b`, 'gi'), '')
+      .replace(/\d+/g, '')
+      .replace(/\b(need|for|the|a|an|in|at|of|and|months?|days?|weeks?|years?|i|want|please|generate|quote|services?|ads?|advertising|outdoor|campaign|some|any)\b/gi, '')
+      .toLowerCase().trim();
+    const userWords = cleaned.split(/\s+/).filter(w => w.length >= 2);
+    if (userWords.length === 0) return { state: 'empty' };
+
+    // Generic spelling-variant tolerance (NO hardcoded service names):
+    //   • strip trailing "s" for singular/plural (\bword s?\b regex)
+    //   • generate joined-pair tokens for adjacent user words
+    //     (e.g. "news","paper" → also try "newspaper";
+    //           "lamp","post"  → also try "lamppost")
+    //     so the user's spacing doesn't have to match the registry's spelling.
+    const baseWord = (w: string) => w.replace(/s$/, '');
+    const joinedPairs: string[] = [];
+    for (let i = 0; i < userWords.length - 1; i++) {
+      joinedPairs.push(baseWord(userWords[i]) + baseWord(userWords[i + 1]));
+    }
+    const wordMatchesService = (word: string, svc: string) =>
+      new RegExp(`\\b${baseWord(word)}s?\\b`, 'i').test(svc);
+
+    const matches = entry.services.filter(svc => {
+      // Forward match: every user word appears (singular/plural) in service name.
+      if (userWords.every(w => wordMatchesService(w, svc))) return true;
+      // Joined-pair tolerance: walk userWords, allowing adjacent pairs to merge.
+      let i = 0;
+      while (i < userWords.length) {
+        const single = wordMatchesService(userWords[i], svc);
+        const pair = i < userWords.length - 1 && new RegExp(`\\b${joinedPairs[i]}s?\\b`, 'i').test(svc);
+        if (single) { i += 1; continue; }
+        if (pair) { i += 2; continue; }
+        return false;
+      }
+      return true;
+    });
+    console.log(`🧮 [Classify] city="${cityKey}" userWords=[${userWords.join(',')}] joined=[${joinedPairs.join(',')}] → ${matches.length} match(es): [${matches.join(' | ')}]`);
+    if (matches.length === 0) return { state: 'not_found' };
+    if (matches.length === 1) return { state: 'specific', matches, qty: entry.quantities[matches[0]] };
+    return { state: 'vague', matches };
+  };
+  // ─────────────────────────────────────────────────────────────────────────
+
   // Handle keyboard appearance on mobile - adjust viewport
   useEffect(() => {
     if (typeof window !== 'undefined' && window.visualViewport) {
@@ -356,22 +472,13 @@ const ChatInterface: React.FC = () => {
         const segments: CityPickerSegment[] = rawSegments.map(seg => {
           if (!seg.cityNeeded) return seg; // already has city in the text
 
-          // Use registry if available for each city — more accurate than keyword scan
+          // Bug 4 (strict): ONLY list cities whose registry actually contains the service.
+          // No text-scan fallback — if a registry isn't ready yet, that city is excluded
+          // rather than guessed in (which previously let Madurai leak under "lamp post").
           const citiesWithService = availCities.filter(city => {
             const cityKey = KNOWN_CITY_LIST.find(c => city.toLowerCase().includes(c)) || city.toLowerCase();
-            const regCheck = checkServiceInRegistry(cityKey, seg.raw);
-            if (regCheck.result === 'found') return true;
-            if (regCheck.result === 'registry_unavailable') {
-              // Fallback: raw text scan
-              const proposal = activeProposals.find(p =>
-                p.fileName.toLowerCase().includes(city.toLowerCase())
-              );
-              if (!proposal?.textContent) return false;
-              const searchPhrase = seg.raw
-                .replace(/\d+/g, '').replace(/\bneed\b/gi, '').trim().toLowerCase();
-              return searchPhrase.length > 1 && proposal.textContent.toLowerCase().includes(searchPhrase);
-            }
-            return false; // 'not_found'
+            const cls = classifySegmentByRegistry(cityKey, seg.raw);
+            return cls.state === 'specific' || cls.state === 'vague';
           });
 
           if (citiesWithService.length === 1) {
@@ -428,7 +535,9 @@ const ChatInterface: React.FC = () => {
         const preSegments = parseSegmentsForCity(userMessage.content, availCitiesPre);
         const preAlerts: Array<{ city: string; service: string }> = [];
         const validSegmentRaws: string[] = [];
-        const vagueSegments: Array<{ seg: typeof preSegments[0]; cityKey: string; matchedSvc: string; qty: number }> = [];
+        // vague segment now carries the FULL matches list straight from the classifier,
+        // so the checkbox group is built from real registry data (works for any category).
+        const vagueSegments: Array<{ seg: typeof preSegments[0]; cityKey: string; matches: string[]; qty: number }> = [];
 
         for (const seg of preSegments) {
           const segLower = seg.raw.toLowerCase();
@@ -458,19 +567,57 @@ const ChatInterface: React.FC = () => {
             continue;
           }
 
-          // City detected — look it up in the registry
+          // City detected — classify via registry (single decision point)
           const cityKey = KNOWN_CITY_LIST.find(c => seg.detectedCity!.toLowerCase().includes(c)) || seg.detectedCity.toLowerCase();
-          const registryCheck = checkServiceInRegistry(cityKey, seg.raw);
+          const cls = classifySegmentByRegistry(cityKey, seg.raw);
+          const cityLabel = seg.detectedCity.charAt(0).toUpperCase() + seg.detectedCity.slice(1);
 
-          if (registryCheck.result === 'registry_unavailable') {
-            // Registry not built yet or failed → fallback: let Gemini handle it (safe)
+          // — registry not built yet: try a generic price-line text scan as a stop-gap —
+          if (cls.state === 'registry_unavailable') {
+            const cityProposal = activeProposals.find(p => p.fileName.toLowerCase().includes(cityKey));
+            const userWords = seg.raw
+              .replace(/\d+/g, '')
+              .replace(new RegExp(`\\b${cityKey}\\b`, 'gi'), '')
+              .replace(/\b(i|need|a|an|the|for|in|at|of|and|want|please|generate|quote|services?|ads?|advertising|outdoor|some|any)\b/gi, '')
+              .toLowerCase().replace(/\s+/g, ' ').trim()
+              .split(/\s+/).filter(w => w.length >= 2);
+
+            if (cityProposal?.textContent && userWords.length > 0) {
+              // Generic heuristic: short line containing all user words AND a price/qty hint nearby
+              const textLines = cityProposal.textContent.split(/\r?\n/);
+              const found: string[] = [];
+              for (const line of textLines) {
+                const t = line.trim();
+                if (t.length < 4 || t.length > 100) continue;
+                const tLower = t.toLowerCase();
+                const hasAllUserWords = userWords.every(w => tLower.includes(w));
+                const looksLikeServiceLine = /(rs\.?|₹|\/-|\bsq\.?cm\b|\bsec\b|\bspot\b|\bday\b|\bmonth\b|\bper\b|\d{2,})/i.test(t);
+                if (hasAllUserWords && looksLikeServiceLine) {
+                  const cleaned = t
+                    .replace(/[:\-–—]\s*[\d₹,. ]+.*$/, '')
+                    .replace(/\s+/g, ' ').trim();
+                  if (cleaned.length > 3 && !found.includes(cleaned)) found.push(cleaned);
+                }
+              }
+              if (found.length >= 1) {
+                const qtyMatch = seg.raw.match(/(\d+)/);
+                const qty = qtyMatch ? parseInt(qtyMatch[1]) : 1;
+                if (found.length === 1) {
+                  // single match → specific (auto-confirm)
+                  validSegmentRaws.push(seg.raw);
+                } else {
+                  vagueSegments.push({ seg, cityKey, matches: found, qty });
+                }
+                continue;
+              }
+            }
+            // No text-based services found → let Gemini handle it
             validSegmentRaws.push(seg.raw);
             continue;
           }
 
-          if (registryCheck.result === 'not_found') {
-            // Service genuinely absent from this city's rate card → alert
-            const cityLabel = seg.detectedCity.charAt(0).toUpperCase() + seg.detectedCity.slice(1);
+          // — empty or not_found → alert —
+          if (cls.state === 'empty' || cls.state === 'not_found') {
             const svcLabel = seg.raw
               .replace(new RegExp(seg.detectedCity, 'gi'), '')
               .replace(/\d+/g, '')
@@ -484,68 +631,45 @@ const ChatInterface: React.FC = () => {
             continue;
           }
 
-          // Service found in registry — also validate quantity if present
-          if (registryCheck.result === 'found' && registryCheck.qty) {
+          // — vague → checkbox group —
+          if (cls.state === 'vague') {
             const qtyMatch = seg.raw.match(/(\d+)/);
-            const requestedQty = qtyMatch ? parseInt(qtyMatch[1]) : null;
-            const { min, max } = registryCheck.qty;
+            const qty = qtyMatch ? parseInt(qtyMatch[1]) : 1;
+            vagueSegments.push({ seg, cityKey, matches: cls.matches, qty });
+            continue;
+          }
 
-            if (requestedQty !== null) {
+          // — specific → validate qty against registry min/max, then send to Gemini —
+          {
+            const matchedSvc = cls.matches[0];
+            const qtyMatch = seg.raw.match(/(\d+)/);
+            // Default qty falls back to registry min so users who don't type a number
+            // (e.g. "newspaper insertion in chennai") get the rate-card minimum.
+            const requestedQty = qtyMatch ? parseInt(qtyMatch[1]) : (cls.qty?.min ?? null);
+
+            if (cls.qty && requestedQty !== null) {
+              const { min, max } = cls.qty;
               if (!isQtyOverride && requestedQty < min) {
-                // Below minimum — show existing minQtyWarning modal pre-Gemini
-                const cityLabel = seg.detectedCity.charAt(0).toUpperCase() + seg.detectedCity.slice(1);
-                const svcLabel = (registryCheck.matchedService || '')
-                  .split(' ')
-                  .map(w => w.charAt(0).toUpperCase() + w.slice(1))
-                  .join(' ');
+                const svcLabel = matchedSvc.split(' ').map(w => w.charAt(0).toUpperCase() + w.slice(1)).join(' ');
                 setMessages(prev => [...prev, userMessage]);
                 setMinQtyWarning({
                   items: [{ description: `${svcLabel} - ${cityLabel}`, requested: requestedQty, minimum: min }],
-                  pendingQuote: null as any, // no quote yet — handled by pendingValidMessage path
+                  pendingQuote: null as any,
                 });
-                setPendingValidMessage(seg.raw); // store segment to re-send after user picks qty
+                setPendingValidMessage(seg.raw);
                 return;
               }
               if (max !== null && requestedQty > max) {
-                const cityLabel = seg.detectedCity.charAt(0).toUpperCase() + seg.detectedCity.slice(1);
-                const svcLabel = (registryCheck.matchedService || '')
-                  .split(' ')
-                  .map(w => w.charAt(0).toUpperCase() + w.slice(1))
-                  .join(' ');
+                const svcLabel = matchedSvc.split(' ').map(w => w.charAt(0).toUpperCase() + w.slice(1)).join(' ');
                 preAlerts.push({ city: cityLabel, service: `${svcLabel} (max ${max} units — you requested ${requestedQty})` });
                 continue;
               }
             }
-          }
-
-          // All checks passed — check specificity before deciding how to proceed
-          {
-            const matchedSvc = registryCheck.matchedService!;
-            const matchedWords = matchedSvc.split(/\s+/);
-            const userServiceWords = seg.raw
-              .toLowerCase()
-              .replace(new RegExp(`\\b${cityKey}\\b`, 'gi'), '')
-              .replace(/\d+/g, '')
-              .replace(/\b(need|for|the|a|an|in|at|of|and|i|want|please|services?|ads?|advertising|outdoor|some|any)\b/gi, '')
-              .replace(/\s+/g, ' ').trim()
-              .split(/\s+/).filter((w: string) => w.length >= 2);
-
-            const isSpecific = userServiceWords.length >= matchedWords.length &&
-              userServiceWords.every((w: string) => matchedWords.some((mw: string) => mw.startsWith(w) || w.startsWith(mw)));
-
-            if (isSpecific) {
-              // User was precise — Gemini gets exact name, no checkbox loop risk
-              validSegmentRaws.push(seg.raw);
-            } else {
-              // Vague — intercept here, expand to checkboxes from registry (never let Gemini guess)
-              const qtyMatch = seg.raw.match(/(\d+)/);
-              const qty = qtyMatch ? parseInt(qtyMatch[1]) : 1;
-              vagueSegments.push({ seg, cityKey, matchedSvc, qty });
-            }
+            validSegmentRaws.push(seg.raw);
           }
         }
 
-        // Handle vague segments with city → show checkboxes from registry only
+        // Handle vague segments with city → show checkboxes built from registry matches
         if (vagueSegments.length > 0) {
           const groupedServices: Array<{
             vehicleType: string;
@@ -553,22 +677,22 @@ const ChatInterface: React.FC = () => {
             services: Array<{ name: string; category: string }>;
           }> = [];
 
-          vagueSegments.forEach(({ seg, cityKey, matchedSvc, qty }) => {
+          vagueSegments.forEach(({ seg, matches, qty }) => {
             const cityLabel = seg.detectedCity!.charAt(0).toUpperCase() + seg.detectedCity!.slice(1);
-            const vehicleLabel = matchedSvc.split(' ').map(w => w.charAt(0).toUpperCase() + w.slice(1)).join(' ');
-            const registryEntry = cityServiceRegistry.current.get(cityKey);
-            const baseWord = matchedSvc.toLowerCase().split(' ')[0];
-            const relatedServices = registryEntry
-              ? registryEntry.services
-                  .filter(s => new RegExp(`\\b${baseWord}\\b`, 'i').test(s))
-                  .map(s => ({
-                    name: s.split(' ').map(w => w.charAt(0).toUpperCase() + w.slice(1)).join(' '),
-                    category: vehicleLabel,
-                  }))
-              : [{ name: vehicleLabel, category: vehicleLabel }];
+            // Use the FIRST matched service's leading word as the group label
+            // (e.g. "Lamp Post Branding" → "Lamp Post"; "Newspaper Insertion - RE" → "Newspaper")
+            const groupLabel = matches[0]
+              .split(/[-–—]/)[0]
+              .split(' ').slice(0, 2)
+              .map(w => w.charAt(0).toUpperCase() + w.slice(1))
+              .join(' ').trim();
+            const relatedServices = matches.map(s => ({
+              name: s.split(' ').map(w => w.charAt(0).toUpperCase() + w.slice(1)).join(' '),
+              category: groupLabel,
+            }));
 
             groupedServices.push({
-              vehicleType: `${vehicleLabel}|${cityLabel}`,
+              vehicleType: `${groupLabel}|${cityLabel}`,
               requestedQuantity: qty,
               services: relatedServices,
             });
@@ -1324,14 +1448,20 @@ const ChatInterface: React.FC = () => {
   // Build confirmation table rows from selected services, then show table (don't send yet)
   const handleShowConfirmation = (messageId: string, groupedServices: any[]) => {
     const selected = selectedServices[messageId];
-    if (!selected || Object.keys(selected).length === 0) return;
-
     const assistantMsg = messages.find(m => m.id === messageId);
+    const hasSelected = selected && Object.keys(selected).length > 0;
+    const hasDirectParts = !!assistantMsg?.directParts?.length;
+    // Allow confirmation when EITHER checkboxes are ticked OR directParts (auto-confirmed
+    // services) exist. Previously bailed out when no checkbox was ticked, which made the
+    // "Review & Confirm" button silently do nothing for users who only had auto-confirmed
+    // services and didn't want any of the optional checkbox groups.
+    if (!hasSelected && !hasDirectParts) return;
+
     const originalUserMsg = assistantMsg?.originalUserInput || '';
     const rows: Array<{ service: string; qty: number | string; city: string }> = [];
 
     groupedServices.forEach(group => {
-      const services = selected[group.vehicleType] || [];
+      const services = (selected && selected[group.vehicleType]) || [];
       services.forEach(svcName => {
         // Extract city from vehicleType key if present (format: "Bus|Chennai")
         const [, city] = group.vehicleType.includes('|')
@@ -2140,19 +2270,20 @@ const ChatInterface: React.FC = () => {
                                   .map(w => w.charAt(0).toUpperCase() + w.slice(1).toLowerCase())
                                   .join(' ');
 
-                                // Use pre-computed matchedCities from city gate (accurate registry lookup)
+                                // Use pre-computed matchedCities from city gate (strict classifier).
+                                // Render-time fallback also stays strict — no registry_unavailable leak.
                                 const citiesWithService = seg.matchedCities ?? cityPickerState.availableCities.filter(city => {
                                   const cityKey = KNOWN_CITY_LIST.find(c => city.toLowerCase().includes(c)) || city.toLowerCase();
-                                  const regCheck = checkServiceInRegistry(cityKey, seg.raw);
-                                  return regCheck.result === 'found' || regCheck.result === 'registry_unavailable';
+                                  const cls = classifySegmentByRegistry(cityKey, seg.raw);
+                                  return cls.state === 'specific' || cls.state === 'vague';
                                 });
 
                                 // Cities where registry explicitly says NOT available
                                 const citiesWithoutService = cityPickerState.availableCities.filter(city => {
                                   if (citiesWithService.includes(city)) return false;
                                   const cityKey = KNOWN_CITY_LIST.find(c => city.toLowerCase().includes(c)) || city.toLowerCase();
-                                  const regCheck = checkServiceInRegistry(cityKey, seg.raw);
-                                  return regCheck.result === 'not_found';
+                                  const cls = classifySegmentByRegistry(cityKey, seg.raw);
+                                  return cls.state === 'not_found' || cls.state === 'empty';
                                 });
 
                                 const allCitiesSelected = citiesWithService.length > 0 && citiesWithService.every(c => seg.selectedCities.includes(c));
@@ -2202,10 +2333,15 @@ const ChatInterface: React.FC = () => {
                                         {/* Only show cities where service is available (or registry unavailable = show with fallback) */}
                                         {citiesWithService.map((city, cIdx) => {
                                           const isSelected = seg.selectedCities.includes(city);
-                                          // Get min qty hint from registry
+                                          // Get min qty hint from registry (strict classifier so "min 10"
+                                          // never leaks in from an unrelated reverse-match).
                                           const cityKey = KNOWN_CITY_LIST.find(c => city.toLowerCase().includes(c)) || city.toLowerCase();
-                                          const regCheck = checkServiceInRegistry(cityKey, seg.raw);
-                                          const minQty = regCheck.result === 'found' ? regCheck.qty?.min : null;
+                                          const cls = classifySegmentByRegistry(cityKey, seg.raw);
+                                          const minQty = (cls.state === 'specific' || cls.state === 'vague')
+                                            ? cls.matches.map(m => cityServiceRegistry.current.get(cityKey)?.quantities[m]?.min)
+                                                .filter((n): n is number => typeof n === 'number' && n > 0)
+                                                .sort((a, b) => a - b)[0] ?? null
+                                            : null;
 
                                           return (
                                             <Box
