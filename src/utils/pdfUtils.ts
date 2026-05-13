@@ -323,6 +323,33 @@ export function cropPageHalf(imageDataUrl: string, half: 'top' | 'bottom'): Prom
 }
 
 /**
+ * Crops the spec section above the reference image.
+ * Returns the top 55% of the page — where the spec heading, material text and
+ * dimension diagram live — discarding the reference photo at the bottom.
+ * Pure canvas math — no API call.
+ */
+export function cropSpecAboveReference(imageDataUrl: string): Promise<string> {
+  return new Promise((resolve) => {
+    const img = new Image();
+    img.onload = () => {
+      const w = img.naturalWidth;
+      const h = img.naturalHeight;
+      const cropH = Math.round(h * 0.55);
+      if (cropH < 50) { resolve(imageDataUrl); return; }
+      const canvas = document.createElement('canvas');
+      canvas.width = w;
+      canvas.height = cropH;
+      const ctx = canvas.getContext('2d');
+      if (!ctx) { resolve(imageDataUrl); return; }
+      ctx.drawImage(img, 0, 0, w, cropH, 0, 0, w, cropH);
+      resolve(canvas.toDataURL('image/jpeg', 0.85));
+    };
+    img.onerror = () => resolve(imageDataUrl);
+    img.src = imageDataUrl;
+  });
+}
+
+/**
  * Crop a page starting at a given percentage from the top, down to the bottom.
  * E.g. cropPageFromPercent(url, 0.30) returns the bottom 70% of the page.
  * Used when header + spec text block occupies a known fraction of the page.
