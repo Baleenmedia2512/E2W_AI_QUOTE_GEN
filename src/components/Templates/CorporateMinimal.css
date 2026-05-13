@@ -1,13 +1,15 @@
 .template-corporate-minimal {
   background: #ffffff;
-  padding: 36px 44px 80px 44px;
+  padding: 36px 44px 20px 44px;
   max-width: 210mm; /* A4 width */
-  min-height: 297mm; /* A4 height — gives footer room to sit at bottom */
+  min-height: 297mm; /* A4 height */
   margin: 0 auto;
   font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
   color: #2d3436;
   line-height: 1.4;
   position: relative;
+  display: flex;
+  flex-direction: column;
 }
 
 /* Subtle top accent bar */
@@ -656,11 +658,12 @@
 
 /* ─── Company Contact Footer ─── */
 .template-corporate-minimal .company-contact-footer {
-  position: absolute;
-  bottom: 20px;
-  left: 44px;
-  right: 44px;
+  position: static !important;
+  margin-top: auto !important;
   padding-top: 12px;
+  bottom: unset !important;
+  left: unset !important;
+  right: unset !important;
 }
 
 .template-corporate-minimal .company-contact-footer .footer-page-number {
@@ -822,12 +825,7 @@
   }
 
   .template-corporate-minimal .company-contact-footer {
-    position: static;
     margin-top: 24px;
-    padding-top: 12px;
-    left: unset;
-    right: unset;
-    bottom: unset;
   }
 }
 
@@ -840,12 +838,7 @@
   }
 
   .template-corporate-minimal .company-contact-footer {
-    position: static;
     margin-top: 20px;
-    padding-top: 10px;
-    left: unset;
-    right: unset;
-    bottom: unset;
   }
 
   .template-corporate-minimal::before {
