@@ -99,7 +99,7 @@ If no product images or photos are found on this page, return exactly: []`;
       box: (b.box_2d || b.box) as [number, number, number, number],
     }));
 
-    return boxes.filter(b => {
+    const validBoxes = boxes.filter(b => {
       if (!b.box || !Array.isArray(b.box) || b.box.length !== 4) return false;
       const [yMin, xMin, yMax, xMax] = b.box;
       if (typeof yMin !== 'number' || typeof xMin !== 'number' ||
@@ -109,6 +109,34 @@ If no product images or photos are found on this page, return exactly: []`;
       const area = ((yMax - yMin) * (xMax - xMin)) / (1000 * 1000);
       return area >= 0.04;
     });
+
+    // IoU deduplication: Gemini often returns multiple overlapping boxes for the same
+    // visual element (e.g. 5 nearly-identical bounding boxes for one mockup image).
+    // Sort by area descending (prefer largest box), then discard any box that overlaps
+    // more than 40% with an already-kept box.
+    const sorted = [...validBoxes].sort((a, b) => {
+      const areaA = (a.box[2] - a.box[0]) * (a.box[3] - a.box[1]);
+      const areaB = (b.box[2] - b.box[0]) * (b.box[3] - b.box[1]);
+      return areaB - areaA; // largest first
+    });
+    const deduped: ImageBoundingBox[] = [];
+    for (const box of sorted) {
+      const [yMin, xMin, yMax, xMax] = box.box;
+      const boxArea = (yMax - yMin) * (xMax - xMin);
+      const overlaps = deduped.some(k => {
+        const [kyMin, kxMin, kyMax, kxMax] = k.box;
+        const kArea = (kyMax - kyMin) * (kxMax - kxMin);
+        const interY = Math.max(0, Math.min(yMax, kyMax) - Math.max(yMin, kyMin));
+        const interX = Math.max(0, Math.min(xMax, kxMax) - Math.max(xMin, kxMin));
+        const interArea = interY * interX;
+        const unionArea = boxArea + kArea - interArea;
+        const iou = unionArea > 0 ? interArea / unionArea : 0;
+        return iou > 0.40; // 40% overlap → treat as duplicate
+      });
+      if (!overlaps) deduped.push(box);
+    }
+    console.log(`📦 Boxes after IoU dedup: ${deduped.length} (was ${validBoxes.length})`);
+    return deduped;
   } catch (error) {
     console.warn(`⚠️ Gemini Vision detection failed for page ${pageNumber}:`, error);
     return [];
