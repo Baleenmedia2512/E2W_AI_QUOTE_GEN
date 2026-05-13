@@ -6,6 +6,10 @@ export interface ExtractedPage {
   pageNumber: number;
   text: string;
   imageDataUrl: string;
+  croppedImages?: string[];
+  // Source tracking for multi-PDF isolation
+  sourceId?: string;
+  sourceName?: string;
 }
 
 export interface TemplateData {
@@ -13,6 +17,8 @@ export interface TemplateData {
   client: ClientInfo;
   quote: Quote;
   proposalPages?: ExtractedPage[];
+  // Multi-PDF map: city/sourceName key -> pages from that PDF
+  proposalPageMap?: Record<string, ExtractedPage[]>;
 }
 
 export interface TemplateProps {

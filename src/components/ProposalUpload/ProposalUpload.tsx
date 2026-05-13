@@ -45,14 +45,18 @@ const ProposalUpload: React.FC = () => {
   const [loading, setLoading] = useState(false);
   const [isDragging, setIsDragging] = useState(false);
   const [processingFileType, setProcessingFileType] = useState<string>('file');
+  const [batchProgress, setBatchProgress] = useState<{ current: number; total: number } | null>(null);
   const [showRecent, setShowRecent] = useState(false);
-  const { proposal, setProposal, recentProposals, loadRecentProposals, selectProposal, deleteProposalFromLibrary } = useAppStore();
-  const toast = useToast();
+  const { proposal, setProposal, recentProposals, loadRecentProposals, selectProposal, deleteProposalFromLibrary, activeProposals, addActiveProposal, removeActiveProposal } = useAppStore();
+
+  // Load recent proposals on mount and check cloud storage availability
   
   // Duplicate detection state
   const { isOpen, onOpen, onClose } = useDisclosure();
   const [pendingFile, setPendingFile] = useState<File | null>(null);
   const [duplicateInfo, setDuplicateInfo] = useState<{ fileName: string; uploadedAt: Date } | null>(null);
+
+  const toast = useToast();
 
   const borderColor = useColorModeValue('gray.200', 'gray.600');
   const dragBorderColor = useColorModeValue('brand.500', 'brand.300');
@@ -98,47 +102,72 @@ const ProposalUpload: React.FC = () => {
 
   // Check for duplicates before processing (CLOUD-ONLY when available, fallback to local)
   const processFile = async (file: File) => {
+    // Show loading immediately so user sees feedback right away
+    setLoading(true);
     let duplicate: any = null;
     const { cloudStorageEnabled } = useAppStore.getState();
     
-    // If cloud storage is enabled, check ONLY cloud (skip local)
-    if (cloudStorageEnabled) {
-      try {
-        const cloudDuplicate = await findCloudDuplicate(file.name, file.size);
-        if (cloudDuplicate) {
-          duplicate = cloudProposalToStored(cloudDuplicate);
-          console.log('☁️ Duplicate found in cloud storage:', duplicate.fileName);
+    try {
+      // If cloud storage is enabled, check ONLY cloud (skip local)
+      if (cloudStorageEnabled) {
+        try {
+          const cloudDuplicate = await findCloudDuplicate(file.name, file.size);
+          if (cloudDuplicate) {
+            duplicate = cloudProposalToStored(cloudDuplicate);
+            console.log('☁️ Duplicate found in cloud storage:', duplicate.fileName);
+          }
+        } catch (error) {
+          console.warn('⚠️ Cloud duplicate check failed:', error);
         }
-      } catch (error) {
-        console.warn('⚠️ Cloud duplicate check failed:', error);
+      } else {
+        // Fallback to local IndexedDB check if cloud is not available
+        try {
+          duplicate = await findDuplicateProposal(file.name, file.type || 'application/pdf', file.size);
+          if (duplicate) {
+            console.log('💾 Duplicate found in local storage:', duplicate.fileName);
+          }
+        } catch (error) {
+          console.warn('⚠️ Local duplicate check failed:', error);
+        }
       }
-    } else {
-      // Fallback to local IndexedDB check if cloud is not available
-      duplicate = await findDuplicateProposal(file.name, file.type || 'application/pdf', file.size);
+      
       if (duplicate) {
-        console.log('💾 Duplicate found in local storage:', duplicate.fileName);
+        // Duplicate found - hide spinner and show confirmation dialog
+        setLoading(false);
+        setPendingFile(file);
+        setDuplicateInfo({
+          fileName: duplicate.fileName,
+          uploadedAt: duplicate.uploadedAt,
+        });
+        onOpen(); // Open confirmation modal
+        return;
       }
-    }
-    
-    if (duplicate) {
-      // Duplicate found - show confirmation dialog
-      setPendingFile(file);
-      setDuplicateInfo({
-        fileName: duplicate.fileName,
-        uploadedAt: duplicate.uploadedAt,
+      
+      // No duplicate - proceed with upload (actualProcessFile manages its own loading state)
+      setLoading(false);
+      await actualProcessFile(file);
+    } catch (err: any) {
+      setLoading(false);
+      toast({
+        title: 'Upload Error',
+        description: err.message || 'Something went wrong. Please try again.',
+        status: 'error',
+        duration: 3000,
+        isClosable: true,
       });
-      onOpen(); // Open confirmation modal
-      return;
+      console.error('processFile error:', err);
     }
-    
-    // No duplicate - proceed with upload
-    await actualProcessFile(file);
   };
 
   // Handle user's choice from confirmation dialog (CLOUD-ONLY when available)
   const handleReplaceConfirm = async () => {
     onClose();
-    if (pendingFile) {
+    setLoading(true);
+    if (!pendingFile) {
+      setLoading(false);
+      return;
+    }
+    try {
       let duplicate: any = null;
       const { cloudStorageEnabled } = useAppStore.getState();
       
@@ -168,18 +197,20 @@ const ProposalUpload: React.FC = () => {
         await deleteProposalFromLibrary(duplicate.id);
       }
       
-      // Process the new file
-      await actualProcessFile(pendingFile);
+      // Process the new file (actualProcessFile manages its own loading state via finally)
       setPendingFile(null);
       setDuplicateInfo(null);
-      
+      await actualProcessFile(pendingFile);
+    } catch (err: any) {
+      setLoading(false);
       toast({
-        title: 'Replaced',
-        description: 'File replaced successfully with new version',
-        status: 'success',
-        duration: 2000,
+        title: 'Replace Error',
+        description: err.message || 'Something went wrong. Please try again.',
+        status: 'error',
+        duration: 3000,
         isClosable: true,
       });
+      console.error('handleReplaceConfirm error:', err);
     }
   };
 
@@ -217,6 +248,7 @@ const ProposalUpload: React.FC = () => {
     }
     
     if (!validation.valid) {
+      setLoading(false);
       toast({
         title: 'Error',
         description: validation.error || 'Invalid file',
@@ -227,6 +259,8 @@ const ProposalUpload: React.FC = () => {
       return;
     }
 
+    // Note: setLoading(true) was already called by processFile/handleReplaceConfirm
+    // We just ensure loading stays true during extraction
     setLoading(true);
 
     try {
@@ -326,10 +360,94 @@ const ProposalUpload: React.FC = () => {
     }
   };
 
+  // Process multiple files sequentially (batch mode skips duplicates silently)
+  const processBatchFiles = async (files: File[]) => {
+    if (files.length === 0) return;
+
+    console.log(`📂 [BATCH] Starting upload of ${files.length} file(s):`, files.map(f => f.name));
+
+    if (files.length === 1) {
+      // Single file — use normal flow (shows duplicate modal)
+      await processFile(files[0]);
+      return;
+    }
+
+    // Multiple files — process one by one, skip duplicates silently
+    setBatchProgress({ current: 0, total: files.length });
+    let skipped = 0;
+    let processed = 0;
+
+    for (let i = 0; i < files.length; i++) {
+      setBatchProgress({ current: i + 1, total: files.length });
+      const file = files[i];
+      console.log(`📄 [BATCH ${i + 1}/${files.length}] Processing: ${file.name} (${(file.size / 1024 / 1024).toFixed(2)} MB)`);
+
+      // Silent duplicate check
+      let isDuplicate = false;
+      const { cloudStorageEnabled } = useAppStore.getState();
+
+      try {
+        if (cloudStorageEnabled) {
+          const cloudDuplicate = await findCloudDuplicate(file.name, file.size);
+          if (cloudDuplicate) isDuplicate = true;
+        } else {
+          const localDuplicate = await findDuplicateProposal(file.name, file.type || 'application/pdf', file.size);
+          if (localDuplicate) isDuplicate = true;
+        }
+      } catch {
+        // ignore duplicate check errors in batch
+      }
+
+      if (isDuplicate) {
+        console.warn(`⚠️ [BATCH ${i + 1}/${files.length}] SKIPPED (duplicate): ${file.name}`);
+        skipped++;
+        continue;
+      }
+
+      try {
+        await actualProcessFile(file);
+        console.log(`✅ [BATCH ${i + 1}/${files.length}] UPLOADED successfully: ${file.name}`);
+        processed++;
+      } catch (err) {
+        console.error(`❌ [BATCH ${i + 1}/${files.length}] FAILED: ${file.name}`, err);
+      }
+    }
+
+    setBatchProgress(null);
+    console.log(`📊 [BATCH] Done — ${processed} uploaded, ${skipped} skipped (duplicates), ${files.length - processed - skipped} failed`);
+
+    toast({
+      title: skipped === files.length ? 'All Duplicates' : 'Upload Complete',
+      description: skipped === 0
+        ? `${processed} file(s) uploaded successfully.`
+        : `${processed} file(s) uploaded. ${skipped} duplicate(s) skipped.`,
+      status: skipped === files.length ? 'warning' : 'success',
+      duration: 3000,
+      isClosable: true,
+    });
+  };
+
   const handleFileSelect = async (event: React.ChangeEvent<HTMLInputElement>) => {
-    const file = event.target.files?.[0];
-    if (!file) return;
-    await processFile(file);
+    const files = event.target.files;
+    if (!files || files.length === 0) return;
+    // Capture files as array BEFORE resetting input (resetting clears the live FileList)
+    const fileArray = Array.from(files);
+    // Reset input so the same files can be re-selected if needed
+    event.target.value = '';
+    try {
+      await processBatchFiles(fileArray);
+    } catch (err: any) {
+      setLoading(false);
+      setBatchProgress(null);
+      toast({
+        title: 'Upload Error',
+        description: err.message || 'Something went wrong. Please try again.',
+        status: 'error',
+        duration: 3000,
+        isClosable: true,
+      });
+      console.error('handleFileSelect error:', err);
+    }
   };
 
   const handleDragOver = (event: React.DragEvent<HTMLDivElement>) => {
@@ -351,8 +469,7 @@ const ProposalUpload: React.FC = () => {
 
     const files = event.dataTransfer.files;
     if (files && files.length > 0) {
-      const file = files[0];
-      await processFile(file);
+      await processBatchFiles(Array.from(files));
     }
   };
 
@@ -361,12 +478,25 @@ const ProposalUpload: React.FC = () => {
   };
 
   const handleLoadProposal = async (id: string) => {
+    const alreadyLoaded = activeProposals.find(p => p.id === id);
+    if (alreadyLoaded) {
+      // Toggle: unload if already loaded
+      removeActiveProposal(id);
+      toast({
+        title: 'Unloaded',
+        description: `${alreadyLoaded.fileName} removed from active PDFs`,
+        status: 'info',
+        duration: 2000,
+        isClosable: true,
+      });
+      return;
+    }
     setLoading(true);
     try {
-      await selectProposal(id);
+      await addActiveProposal(id);
       toast({
-        title: 'Success',
-        description: 'Proposal loaded from library',
+        title: 'Loaded ✓',
+        description: 'PDF added to active proposals',
         status: 'success',
         duration: 2000,
         isClosable: true,
@@ -440,6 +570,7 @@ const ProposalUpload: React.FC = () => {
           ref={fileInputRef}
           type="file"
           accept=".pdf,.jpg,.jpeg,.xlsx,.xls"
+          multiple
           onChange={handleFileSelect}
           style={{ display: 'none' }}
         />
@@ -466,9 +597,9 @@ const ProposalUpload: React.FC = () => {
             <VStack spacing={3}>
               <Icon as={FiUploadCloud} boxSize={12} color="brand.500" />
               <VStack spacing={1}>
-                <Heading size="sm" fontWeight="medium">Click to upload file</Heading>
-                <Text fontSize="sm" color="gray.500">or drag and drop</Text>
-                <Text fontSize="xs" color="gray.400">PDF, JPEG, or Excel files (max 10MB)</Text>
+                <Heading size="sm" fontWeight="medium">Click to upload files</Heading>
+                <Text fontSize="sm" color="gray.500">or drag and drop (select multiple)</Text>
+                <Text fontSize="xs" color="gray.400">PDF, JPEG, or Excel files (max 10MB each)</Text>
               </VStack>
             </VStack>
           </Center>
@@ -509,7 +640,12 @@ const ProposalUpload: React.FC = () => {
             <HStack spacing={3}>
               <Spinner size="sm" color="brand.500" />
               <Text fontSize="sm" color="gray.600">
-                Processing {processingFileType === 'pdf' ? 'PDF' : processingFileType === 'image' ? 'image' : processingFileType === 'excel' ? 'Excel file' : 'file'}...
+                {batchProgress && batchProgress.total > 1
+                  ? `Processing file ${batchProgress.current} of ${batchProgress.total}...`
+                  : !processingFileType
+                  ? 'Checking file...'
+                  : `Processing ${processingFileType === 'pdf' ? 'PDF' : processingFileType === 'image' ? 'image' : processingFileType === 'excel' ? 'Excel file' : 'file'}...`
+                }
               </Text>
             </HStack>
           </Center>
@@ -561,6 +697,18 @@ const ProposalUpload: React.FC = () => {
                       >
                         {recentProposals.length}
                       </Badge>
+                      {activeProposals.length > 0 && (
+                        <Badge
+                          colorScheme="green"
+                          fontSize="xs"
+                          borderRadius="full"
+                          px={2}
+                          py={0.5}
+                          fontWeight="600"
+                        >
+                          {activeProposals.length}/{recentProposals.filter(p => p.fileType === 'application/pdf').length} loaded
+                        </Badge>
+                      )}
                     </HStack>
                     <Text fontSize="xs" color="gray.500" fontWeight="normal">
                       {showRecent ? 'Click to hide' : 'Click to view saved files'}
@@ -696,24 +844,29 @@ const ProposalUpload: React.FC = () => {
                       
                       {/* Action Buttons - Enhanced */}
                       <VStack spacing={2} flexShrink={0}>
-                        <Button
-                          size="sm"
-                          colorScheme="brand"
-                          onClick={() => handleLoadProposal(storedProposal.id)}
-                          isDisabled={loading}
-                          leftIcon={<Icon as={FiUploadCloud} />}
-                          borderRadius="lg"
-                          fontWeight="600"
-                          px={4}
-                          boxShadow="sm"
-                          _hover={{
-                            transform: 'scale(1.05)',
-                            boxShadow: 'md',
-                          }}
-                          transition="all 0.2s"
-                        >
-                          Load
-                        </Button>
+                        {(() => {
+                          const isLoaded = activeProposals.some(p => p.id === storedProposal.id);
+                          return (
+                            <Button
+                              size="sm"
+                              colorScheme={isLoaded ? 'green' : 'brand'}
+                              onClick={() => handleLoadProposal(storedProposal.id)}
+                              isDisabled={loading}
+                              leftIcon={<Icon as={FiUploadCloud} />}
+                              borderRadius="lg"
+                              fontWeight="600"
+                              px={4}
+                              boxShadow="sm"
+                              _hover={{
+                                transform: 'scale(1.05)',
+                                boxShadow: 'md',
+                              }}
+                              transition="all 0.2s"
+                            >
+                              {isLoaded ? 'Loaded ✓' : 'Load'}
+                            </Button>
+                          );
+                        })()}
                         <IconButton
                           aria-label="Delete proposal"
                           icon={<Icon as={FiTrash2} boxSize={4} />}

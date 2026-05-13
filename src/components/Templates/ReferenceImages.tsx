@@ -1,12 +1,14 @@
 import React, { useMemo, useState, useEffect } from 'react';
 import './ReferenceImages.css';
-import { extractReviewViaGemini, cropReferencePageImage, cropPageStrippingHeaderFooter, cropPageHalf, cropPageFromPercent } from '../../utils/pdfUtils';
+import { extractReviewViaGemini, cropReferencePageImage, cropPageStrippingHeaderFooter, cropSpecAboveReference, cropSpecDiagram, cropPageFromPercent } from '../../utils/pdfUtils';
 
 interface ExtractedPage {
   pageNumber: number;
   text: string;
   imageDataUrl: string;
   croppedImages?: string[];
+  sourceId?: string;
+  sourceName?: string;
 }
 
 interface QuoteItem {
@@ -17,6 +19,7 @@ interface QuoteItem {
 
 interface ReferenceImagesProps {
   proposalPages?: ExtractedPage[];
+  proposalPageMap?: Record<string, ExtractedPage[]>; // fileName.toLowerCase() → pages
   items?: QuoteItem[];
 }
 
@@ -40,7 +43,15 @@ interface SpecGroup {
  */
 function filterPagesByCategory(pages: ExtractedPage[], category: string): ExtractedPage[] {
   console.log('🔍 Filtering pages for category:', category);
-  
+
+  // Strip city prefix if present e.g. "Madurai - Auto Semi Branding - Display Price"
+  const cityPrefixRe = /^(chennai|madurai|coimbatore|salem|trichy|tirupur|erode|vellore|tirunelveli|bangalore|hyderabad|mumbai|delhi)\s*[-–—]\s*/i;
+  const cleanCategory = category.replace(cityPrefixRe, '');
+  if (cleanCategory !== category) {
+    console.log('🏙️ Stripped city prefix, using:', cleanCategory);
+  }
+  // Use cleaned category for all subsequent matching
+  category = cleanCategory;
   // Extract the service type part by removing pricing/quantity suffixes
   // Preserves sub-type qualifiers like "Underground Station", "Interior", "Non LED"
   // E.g., "Metro Branding – Underground Station - Display Price" → "Metro Branding – Underground Station"
@@ -85,6 +96,10 @@ function filterPagesByCategory(pages: ExtractedPage[], category: string): Extrac
     'stickers': ['sticker'],
     'poster': ['posters'],
     'posters': ['poster'],
+    'hoarding': ['hoardings'],
+    'hoardings': ['hoarding'],
+    'banner': ['banners'],
+    'banners': ['banner'],
     // PDF typo corrections
     'awareness': ['awarness', 'awarenes', 'awarness'],
     'direction': ['directio', 'dirction'],
@@ -128,8 +143,12 @@ function filterPagesByCategory(pages: ExtractedPage[], category: string): Extrac
   // E.g., "Apartment Lift Branding" → /apartment\s+lift\s+branding/i
   // E.g., "Bus Full Branding" → /bus\s+full\s+branding/i
   
-  // Create a flexible regex pattern from the keywords
-  const keywordPattern = words.join('\\s+');
+  // Create a flexible regex pattern from the keywords, allowing singular/plural variants
+  const keywordPatternParts = words.map(w => {
+    // Allow optional trailing 's' for singular/plural matching
+    return `${w}s?`;
+  });
+  const keywordPattern = keywordPatternParts.join('\\s+');
   const exactHeadingPattern = new RegExp(keywordPattern, 'i');
   
   console.log('🎯 Exact heading pattern:', exactHeadingPattern.source);
@@ -399,6 +418,24 @@ function filterPagesByCategory(pages: ExtractedPage[], category: string): Extrac
       console.log(`✅ Page ${page.pageNumber} - RELAXED match (${matchedCount}/${requiredKeywords.length} keywords, ${Math.round(matchRatio * 100)}%)`);
     }
     
+    // STRICT HEADING CHECK FIRST: PDF reference pages have the service name at the very top
+    // (e.g. "AUTO BACK STICKERS (2/3)" or "AUTO SEMI BRANDING (2/3)").
+    // Reject pages whose first ~120 chars (the heading area) don't contain all keywords.
+    // This MUST run before the reference-image-page priority check, otherwise pages with
+    // generic markers like "DESIGN SPECIFICATIONS" / "DISPLAY AREA" (present on every spec page)
+    // would be wrongly accepted regardless of what service they actually depict.
+    const headingArea = pageText.substring(0, 120);
+    const allKeywordsInHeading = requiredKeywords.every(kw => {
+      if (headingArea.includes(kw)) return true;
+      if (kw.endsWith('s') && kw.length > 4 && headingArea.includes(kw.slice(0, -1))) return true;
+      if (!kw.endsWith('s') && headingArea.includes(kw + 's')) return true;
+      return false;
+    });
+    if (!allKeywordsInHeading) {
+      console.log(`❌ Page ${page.pageNumber} - Keywords not all in heading area. Heading: "${headingArea.substring(0, 60)}..."`);
+      return false;
+    }
+
     // Check if the service heading phrase appears on this page (also try plural variant)
     const hasHeading = exactHeadingPattern.test(pageText) ||
       new RegExp(words.join('\\s+') + 's?', 'i').test(pageText);
@@ -486,6 +523,7 @@ function filterPagesByCategory(pages: ExtractedPage[], category: string): Extrac
     // PRIORITY 1: Reference/spec page AND the service heading is present on the same page.
     // Both conditions are REQUIRED — prevents accepting another product's ref page that
     // happens to contain scattered keywords (e.g. "auto" in title, "back" in spec, "sticker" in material).
+    // (only reached when heading already matches the required service)
     const isReferenceImagePage = pageText.includes('reference image') || 
                                 pageText.includes('reference images') ||
                                 pageText.includes('sample image') ||
@@ -515,6 +553,30 @@ function filterPagesByCategory(pages: ExtractedPage[], category: string): Extrac
       console.log(`✅ Page ${page.pageNumber} - EXACT heading match found!`);
       return true;
     }
+    
+    // Also accept if keywords appear within 60 characters of each other (flexible heading match)
+    // Tight window prevents false positives where keywords appear scattered across the page
+    // e.g. "auto" in heading + "back" in navigation + "stickers" via fuzzy ≠ "auto back stickers"
+    const keywordPositions = requiredKeywords.map(kw => {
+      // indexOf for exact, otherwise try synonym/variation positions
+      let pos = pageText.indexOf(kw);
+      if (pos === -1 && !kw.endsWith('s')) pos = pageText.indexOf(kw + 's');
+      if (pos === -1 && kw.endsWith('s')) pos = pageText.indexOf(kw.slice(0, -1));
+      return pos;
+    }).filter(pos => pos >= 0);
+    if (keywordPositions.length === requiredKeywords.length) {
+      const firstPos = Math.min(...keywordPositions);
+      const lastPos = Math.max(...keywordPositions);
+      const distance = lastPos - firstPos;
+      
+      if (distance <= 60) {
+        console.log(`✅ Page ${page.pageNumber} - Keywords appear close together (distance: ${distance})`);
+        return true;
+      } else {
+        console.log(`❌ Page ${page.pageNumber} - Keywords too far apart (distance: ${distance}), likely scattered`);
+      }
+    }
+    
 
     // PRIORITY 3: Keywords appear within 100 characters of each other (flexible heading match)
     if (keywordsAreClose) {
@@ -710,8 +772,14 @@ function extractAllServiceTypes(items: QuoteItem[]): string[] {
   const seen = new Set<string>();
   const results: string[] = [];
 
+  // Known city names to strip from multi-city description prefixes
+  // e.g. "Madurai - Auto Semi Branding - Display Price" → "Auto Semi Branding - Display Price"
+  const cityPrefixPattern = /^(chennai|madurai|coimbatore|salem|trichy|tirupur|erode|vellore|tirunelveli|bangalore|hyderabad|mumbai|delhi)\s*[-–—]\s*/i;
+
   for (const item of items) {
-    const desc = item.description;
+    // Strip city prefix if present before processing
+    const rawDesc = item.description.replace(cityPrefixPattern, '');
+    const desc = rawDesc;
     
     let serviceType = desc.replace(pricingSuffixPattern, '').trim();
     serviceType = serviceType.replace(/[\s\-–—&]+$/, '').trim();
@@ -740,7 +808,16 @@ function extractAllServiceTypes(items: QuoteItem[]): string[] {
         lower.includes('pamphlet') ||
         lower.includes('leaflet') ||
         lower.includes('flyer') ||
-        lower.includes('classified')) {
+        lower.includes('classified') ||
+        lower.includes('sticker') ||
+        lower.includes('poster') ||
+        lower.includes('banner') ||
+        lower.includes('insertion') ||
+        lower.includes('distribution') ||
+        lower.includes('barricade') ||
+        lower.includes('pamphlet') ||
+        lower.includes('awareness') ||
+        lower.includes('direction')) {
       extracted = serviceType;
     }
     
@@ -825,6 +902,10 @@ function filterPagesByQuoteItems(pages: ExtractedPage[], items: QuoteItem[]): Ex
       
       if (matchingPages.length > 0) {
         console.log(`📊 Found ${matchingPages.length} pages matching "${serviceType}"`);
+        // DEBUG: dump first 250 chars of each matched page so we can see what's actually on it
+        matchingPages.forEach(p => {
+          console.log(`   📄 Page ${p.pageNumber} text:`, p.text.replace(/\s+/g, ' ').substring(0, 250));
+        });
         
         // Filter to only reference pages (2/X or higher)
         const referencePages = matchingPages.filter(page => {
@@ -1283,35 +1364,78 @@ function extractRefSectionImages(pages: ExtractedPage[]): string[] {
   return [refPages[0].imageDataUrl];
 }
 
-export const ReferenceImages: React.FC<ReferenceImagesProps> = ({ proposalPages, items }) => {
+// Known city names for multi-location quote extraction
+const CITY_NAMES = ['chennai', 'madurai', 'coimbatore', 'salem', 'trichy', 'tiruchirappalli',
+  'erode', 'tirunelveli', 'vellore', 'thanjavur', 'tiruppur', 'hosur', 'bangalore', 'mumbai',
+  'delhi', 'hyderabad', 'pune', 'kolkata', 'ahmedabad', 'surat', 'jaipur', 'lucknow',
+  'kochi', 'vizag', 'visakhapatnam', 'nagpur', 'nashik', 'mysore', 'mysuru'];
+
+/**
+ * Extract city name from quote item descriptions.
+ * Returns the first city found in any item description (case-insensitive).
+ */
+function extractCityFromItems(items: QuoteItem[]): string | null {
+  for (const item of items) {
+    const desc = item.description.toLowerCase();
+    for (const city of CITY_NAMES) {
+      if (desc.includes(city)) return city;
+    }
+  }
+  return null;
+}
+
+/**
+ * Given a proposalPageMap and a city name, find the pages for that city's PDF.
+ * Map keys are full lowercase filenames like "coimbatore rate card.pdf".
+ */
+function getPagesForCity(proposalPageMap: Record<string, ExtractedPage[]>, city: string): ExtractedPage[] | null {
+  const key = Object.keys(proposalPageMap).find(k => k.includes(city));
+  if (key) return proposalPageMap[key];
+  return null;
+}
+
+export const ReferenceImages: React.FC<ReferenceImagesProps> = ({ proposalPages, proposalPageMap, items }) => {
+  // Determine which pages to use: city-isolated from map, or all flat pages
+  const resolvedPages = useMemo(() => {
+    if (proposalPageMap && items && items.length > 0) {
+      const city = extractCityFromItems(items);
+      if (city) {
+        const cityPages = getPagesForCity(proposalPageMap, city);
+        if (cityPages && cityPages.length > 0) {
+          console.log(`🌆 ReferenceImages: Using ${cityPages.length} pages from city "${city}"`);
+          return cityPages;
+        }
+      }
+    }
+    return proposalPages;
+  }, [proposalPages, proposalPageMap, items]);
+
   // Automatically filter pages by quote items
   const filteredPages = useMemo(() => {
-    if (!proposalPages || proposalPages.length === 0) {
+    if (!resolvedPages || resolvedPages.length === 0) {
       console.log('❌ ReferenceImages: No proposal pages available');
       return [];
     }
     
-    console.log('📄 ReferenceImages: Processing', proposalPages.length, 'proposal pages');
+    console.log('📄 ReferenceImages: Processing', resolvedPages.length, 'proposal pages');
     console.log('📋 ReferenceImages: Quote items:', items?.map(i => i.description));
     
     // Debug: Log first page text to see what we're working with
-    if (proposalPages.length > 0) {
-      console.log('📝 Sample page text:', proposalPages[0].text.substring(0, 200));
+    if (resolvedPages.length > 0) {
+      console.log('📝 Sample page text:', resolvedPages[0].text.substring(0, 200));
     }
     
     // Automatically filter by quote items - no manual selection
-    const filtered = filterPagesByQuoteItems(proposalPages, items || []);
+    const filtered = filterPagesByQuoteItems(resolvedPages, items || []);
     console.log('✅ ReferenceImages: Filtered to', filtered.length, 'pages');
     
     return filtered;
-  }, [proposalPages, items]);
-
-  // Customer review pages: sweep ALL proposalPages unconditionally.
+  }, [resolvedPages, items]);
   // This is separate from filteredPages so spec/ref image logic is completely unaffected.
   const reviewPages = useMemo(() => {
-    if (!proposalPages) return [];
+    if (!resolvedPages) return [];
     const filteredPageNums = new Set(filteredPages.map(p => p.pageNumber));
-    const extra = proposalPages.filter(p =>
+    const extra = resolvedPages.filter(p =>
       !filteredPageNums.has(p.pageNumber) &&
       REVIEW_HEADING_PATTERN.test(p.text)
     );
@@ -1319,12 +1443,22 @@ export const ReferenceImages: React.FC<ReferenceImagesProps> = ({ proposalPages,
       console.log('📝 ReferenceImages: Found', extra.length, 'customer review page(s) outside filtered set');
     }
     return [...filteredPages, ...extra];
-  }, [proposalPages, filteredPages]);
+  }, [resolvedPages, filteredPages]);
 
   // Smart content extraction from parsed text — section-aware
   // specGroups and image extraction use filteredPages ONLY (unchanged behaviour)
   const specGroups = useMemo(() => extractDesignSpecFields(filteredPages), [filteredPages]);
   const hasSpecContent = specGroups.some(g => g.fields.length > 0);
+  // hasMeaningfulSpec: true only when spec table has dimension/measurement data (not just material name)
+  const hasMeaningfulSpec = useMemo(() => {
+    if (!hasSpecContent) return false;
+    const totalFields = specGroups.reduce((sum, g) => sum + g.fields.length, 0);
+    if (totalFields > 2) return true;
+    const dimensionKeywords = /\d[\s]*["'x×(]|\b(inches|inch|cm|mm|feet|ft|size|width|height|dimension|side|driver|conductor)\b/i;
+    return specGroups.some(g => g.fields.some(f =>
+      dimensionKeywords.test(f.value) || dimensionKeywords.test(f.label)
+    ));
+  }, [specGroups, hasSpecContent]);
   // Spec image: only from Design Specification pages
   const specImageUrl = useMemo(() => extractSpecSectionImage(filteredPages), [filteredPages]);
   // Reference images: ALL images from Reference Image pages — never falls back to spec pages
@@ -1464,7 +1598,39 @@ export const ReferenceImages: React.FC<ReferenceImagesProps> = ({ proposalPages,
     return () => { cancelled = true; };
   }, [filteredPages]);
 
-  if (!proposalPages || proposalPages.length === 0) {
+  // Lazy crop for PURE spec pages (spec heading only, no reference image heading on same page).
+  // Fires when the spec page has no croppedImages — strips header/footer so only the diagram shows.
+  // Does NOT affect shared pages (handled by lazyCroppedSpecImage above) or pages with croppedImages.
+  const [lazyCroppedPureSpecImage, setLazyCroppedPureSpecImage] = useState<string | null>(null);
+  useEffect(() => {
+    const pureSpecPage = filteredPages.find(p => {
+      const t = p.text.toLowerCase().replace(/\s*\|\s*/g, ' ');
+      const hasSpec = t.includes('design specification') || t.includes('design specifications') ||
+                      t.includes('design specs') || t.includes('specification') || t.includes('display area');
+      const hasRef  = t.includes('reference image') || t.includes('reference images') ||
+                      t.includes('reference photo') || t.includes('reference photos') ||
+                      t.includes('example image') || t.includes('sample photo');
+      // Pure spec pages (no reference image heading) — always run the full-page
+      // header/footer strip, because pre-cropped images may capture only the
+      // first diagram strip (driver side) and miss conductor side / bus back.
+      return hasSpec && !hasRef;
+    });
+    if (!pureSpecPage) {
+      setLazyCroppedPureSpecImage(null);
+      return;
+    }
+    let cancelled = false;
+    console.log('🔍 Triggering header/footer strip for pure spec page', pureSpecPage.pageNumber);
+    cropSpecDiagram(pureSpecPage.imageDataUrl).then(cropped => {
+      if (!cancelled) {
+        console.log('✅ Pure spec page strip done for page', pureSpecPage.pageNumber);
+        setLazyCroppedPureSpecImage(cropped);
+      }
+    });
+    return () => { cancelled = true; };
+  }, [filteredPages]);
+
+  if (!resolvedPages || resolvedPages.length === 0) {
     console.log('❌ ReferenceImages: No proposal pages, returning null');
     return null;
   }
@@ -1503,9 +1669,10 @@ export const ReferenceImages: React.FC<ReferenceImagesProps> = ({ proposalPages,
               ))}
             </div>
           )}
-          {specImageUrl && (
+          {/* Show spec image when: no spec at all, OR spec has only minimal content (material only, no dimensions) */}
+          {specImageUrl && !hasMeaningfulSpec && (
             <div className="ref-img-container spec-img-container">
-              <img src={lazyCroppedSpecImage ?? specImageUrl} alt="Design specification diagram" className="ref-img" />
+              <img src={lazyCroppedSpecImage ?? lazyCroppedPureSpecImage ?? specImageUrl} alt="Design specification diagram" className="ref-img" />
             </div>
           )}
         </div>

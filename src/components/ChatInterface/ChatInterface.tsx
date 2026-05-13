@@ -23,6 +23,11 @@ import { loadAllProposalsFromCloud } from '../../services/supabaseProposalServic
 import { DEFAULT_GENERAL_TERMS } from '../../utils/quoteGrouping';
 import { SpeechRecognition } from '@capacitor-community/speech-recognition';
 import { Capacitor } from '@capacitor/core';
+import {
+  getCityServiceRegistry,
+  KNOWN_CITY_LIST,
+  type ServiceQuantity,
+} from '../../hooks/useCityServiceRegistry';
 
 const SUGGESTION_PROMPTS = [
   'Generate quote for 100 auto full branding',
@@ -32,9 +37,17 @@ const SUGGESTION_PROMPTS = [
   'Create quote for the services in proposal',
 ];
 
+interface CityPickerSegment {
+  raw: string;                    // Original segment text (e.g. "100 bus")
+  cityNeeded: boolean;            // true if no city was detected in this segment
+  detectedCity: string | null;    // City found in segment text (if any)
+  selectedCities: string[];       // Cities chosen by user (multi-select)
+  matchedCities?: string[];       // Cities where service is confirmed available (from registry)
+}
+
 const ChatInterface: React.FC = () => {
   const history = useHistory();
-  const { proposal, setCurrentQuote } = useAppStore();
+  const { proposal, setCurrentQuote, activeProposals } = useAppStore();
   const [messages, setMessages] = useState<Message[]>([]);
   const [inputValue, setInputValue] = useState('');
   const [isLoading, setIsLoading] = useState(false);
@@ -44,19 +57,58 @@ const ChatInterface: React.FC = () => {
   const recognitionRef = useRef<any>(null);
   // Cache: service key (lowercase) -> minimum quantity, persists across messages in the same session
   const minQtyCacheRef = useRef<Map<string, number>>(new Map());
-  
+
+  // ── City Service Registry ─────────────────────────────────────────────────
+  // Built by useCityServiceRegistry() in App.tsx (runs on every page).
+  // Read here via the module-level singleton — no local useEffect needed.
+  const cityServiceRegistry = { current: getCityServiceRegistry() };
+  // ─────────────────────────────────────────────────────────────────────────
+
   // Multi-select state for MULTIPLE_MATCH scenarios
-  // Map: messageId -> { vehicleType -> selectedServiceNames[] }
+  // Map: messageId -> { groupKey (vehicleType|city) -> string[] of selected service names }
   const [selectedServices, setSelectedServices] = useState<Record<string, Record<string, string[]>>>({});
+
+  // Confirmation table state: shown after service selection, before final Gemini call
+  const [confirmationTable, setConfirmationTable] = useState<{
+    messageId: string;
+    rows: Array<{ service: string; qty: number | string; city: string }>;
+    originalUserInput: string;
+  } | null>(null);
+
+  // City picker state: holds segments awaiting city selection when multiple city PDFs are loaded
+  const [cityPickerState, setCityPickerState] = useState<{
+    messageId: string;
+    originalMessage: string;
+    segments: CityPickerSegment[];
+    availableCities: string[];
+  } | null>(null);
+
   // Minimum quantity warning dialog state
   const [minQtyWarning, setMinQtyWarning] = useState<{
     items: Array<{ description: string; requested: number; minimum: number }>;
     pendingQuote: Quote;
   } | null>(null);
 
-  // Helper function to detect if request contains full service names (prevents checkbox loops)
+  // Unavailable service alert state: shown when a service doesn't exist in a city's rate card
+  const [unavailableServices, setUnavailableServices] = useState<Array<{ city: string; service: string }>>([]);
+  // Pending valid message to send to Gemini after user dismisses the unavailable-service alert
+  const [pendingValidMessage, setPendingValidMessage] = useState<string | null>(null);
   const isFullySpecifiedRequest = (userRequest: string): boolean => {
     const request = userRequest.toLowerCase();
+    
+    // Check for multi-city pattern: "CityName qty service, CityName qty service"
+    // e.g. "Chennai 50 auto full branding, Madurai 100 auto semi branding"
+    // Uses KNOWN_CITY_LIST to stay in sync with the rest of the app
+    const commaParts = request.split(',').map(p => p.trim()).filter(p => p.length > 0);
+    if (commaParts.length > 1) {
+      const allPartsHaveCity = commaParts.every(part =>
+        KNOWN_CITY_LIST.some(city => part.startsWith(city))
+      );
+      if (allPartsHaveCity) {
+        console.log('✅ Client-side detection: Multi-city request detected, treating as EXACT_MATCH');
+        return true;
+      }
+    }
     
     // Check if request contains complete service specifications
     // These patterns indicate the user has already specified the full service name
@@ -84,6 +136,70 @@ const ChatInterface: React.FC = () => {
     return false;
   };
 
+  // Extract city names from activeProposals file names (matched against KNOWN_CITY_LIST)
+  const getAvailableCities = (): string[] => {
+    const cities: string[] = [];
+    activeProposals.forEach(p => {
+      const nameLower = p.fileName.toLowerCase();
+      KNOWN_CITY_LIST.forEach(city => {
+        if (nameLower.includes(city) && !cities.find(c => c.toLowerCase() === city)) {
+          cities.push(city.charAt(0).toUpperCase() + city.slice(1));
+        }
+      });
+    });
+    // Fallback: if no known city matched, use cleaned file names as city labels
+    if (cities.length === 0) {
+      activeProposals.forEach(p => {
+        const name = p.fileName.replace(/\.(pdf|xlsx?)$/i, '').replace(/[_\-]+/g, ' ').trim();
+        if (!cities.includes(name)) cities.push(name);
+      });
+    }
+    return cities;
+  };
+
+  // Return first city from the list that appears in the text segment (case-insensitive)
+  const detectCityInText = (text: string, cities: string[]): string | null => {
+    const lower = text.toLowerCase();
+    return cities.find(c => lower.includes(c.toLowerCase())) || null;
+  };
+
+  // Split message by "and" or ",", then check each segment for a city keyword
+  const parseSegmentsForCity = (message: string, cities: string[]): CityPickerSegment[] => {
+    const parts = message.split(/\band\b|,/i).map(p => p.trim()).filter(p => p.length > 0);
+    const segments = parts.map(raw => {
+      const detectedCity = detectCityInText(raw, cities);
+      return {
+        raw,
+        cityNeeded: !detectedCity,
+        detectedCity,
+        selectedCities: detectedCity ? [detectedCity] : [],
+      };
+    });
+
+    // If a segment is ONLY a city name (no service words), inherit service from previous segment
+    // e.g. "100 bus semi branding Chennai and madurai" → madurai inherits "100 bus semi branding"
+    for (let i = 1; i < segments.length; i++) {
+      const seg = segments[i];
+      const strippedRaw = seg.raw
+        .replace(new RegExp(cities.join('|'), 'gi'), '')
+        .replace(/\d+/g, '')
+        .replace(/\s+/g, ' ').trim();
+      if (strippedRaw.length === 0 && seg.detectedCity) {
+        // Only a city — inherit previous segment's service
+        const prev = segments[i - 1];
+        const prevService = prev.raw
+          .replace(new RegExp(cities.join('|'), 'gi'), '')
+          .trim();
+        segments[i] = {
+          ...seg,
+          raw: `${prevService} ${seg.detectedCity}`.trim(),
+        };
+      }
+    }
+
+    return segments;
+  };
+
   // Load chat history on mount
   useEffect(() => {
     const history = loadChatHistory();
@@ -106,6 +222,76 @@ const ChatInterface: React.FC = () => {
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [messages, isLoading]);
+
+  // Sync minQtyCacheRef from the global registry on mount (registry may already
+  // be populated by useCityServiceRegistry in App.tsx before this component mounts)
+  useEffect(() => {
+    getCityServiceRegistry().forEach(entry => {
+      if (entry.status === 'ready') {
+        Object.entries(entry.quantities).forEach(([svc, q]) => {
+          if (q.min > 1) minQtyCacheRef.current.set(svc, q.min);
+        });
+      }
+    });
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Helper: check if a user query segment matches any service in a city's registry.
+  // Returns 'found' | 'not_found' | 'registry_unavailable'
+  const checkServiceInRegistry = (
+    cityKey: string,
+    querySegment: string
+  ): { result: 'found' | 'not_found' | 'registry_unavailable'; matchedService?: string; qty?: ServiceQuantity } => {
+    const entry = cityServiceRegistry.current.get(cityKey);
+    if (!entry || entry.status !== 'ready' || entry.services.length === 0) {
+      console.log(`📋 [Registry] "${cityKey}" — not ready or empty`);
+      return { result: 'registry_unavailable' };
+    }
+
+    console.log(`📋 [Registry] "${cityKey}" services (${entry.services.length}):`, entry.services);
+
+    // Clean query: strip city name, numbers, filler words
+    const cleaned = querySegment
+      .replace(new RegExp(`\\b${cityKey}\\b`, 'gi'), '')
+      .replace(/\d+/g, '')
+      .replace(/\b(need|for|the|a|an|in|at|of|and|months?|days?|weeks?|years?|i|want|please|generate|quote|services?|ads?|advertising|outdoor|campaign|some|any)\b/gi, '')
+      .toLowerCase()
+      .trim();
+
+    const userWords = cleaned.split(/\s+/).filter(w => w.length >= 2);
+    if (userWords.length === 0) return { result: 'registry_unavailable' };
+
+    // Normalize a word to its base (strip trailing 's') for singular/plural matching
+    // e.g. "hoardings" → "hoarding" → regex \bhoardings?\b matches both "hoarding" and "hoardings"
+    const baseWord = (w: string) => w.replace(/s$/, '');
+
+    // Forward match: ALL user words appear in registry service name
+    const forwardMatches = entry.services.filter(svc =>
+      userWords.every(word => new RegExp(`\\b${baseWord(word)}s?\\b`, 'i').test(svc))
+    );
+
+    // Reverse match: ALL registry service words appear in user query (user typed more than needed)
+    // e.g. "newspaper insertion paper size" → registry "newspaper insertion" → reverse match ✓
+    const reverseMatches = forwardMatches.length === 0
+      ? entry.services.filter(svc => {
+          const svcWords = svc.split(/\s+/).filter(w => w.length >= 2);
+          return svcWords.every(sw =>
+            userWords.some(uw => new RegExp(`\\b${baseWord(sw)}s?\\b`, 'i').test(uw))
+          );
+        })
+      : [];
+
+    const matches = forwardMatches.length > 0 ? forwardMatches : reverseMatches;
+
+    console.log(`🔍 [Registry] query="${querySegment}" → cleaned words: [${userWords.join(', ')}]`);
+    console.log(`🔍 [Registry] forwardMatches: [${forwardMatches.join(', ')}] | reverseMatches: [${reverseMatches.join(', ')}]`);
+
+    if (matches.length === 0) return { result: 'not_found' };
+
+    // Return the first/best match with its quantity constraints
+    const best = matches[0];
+    return { result: 'found', matchedService: best, qty: entry.quantities[best] };
+  };
+  // ─────────────────────────────────────────────────────────────────────────
 
   // Handle keyboard appearance on mobile - adjust viewport
   useEffect(() => {
@@ -130,52 +316,353 @@ const ChatInterface: React.FC = () => {
     }
   }, []);
 
-  const handleSendMessage = async () => {
-    if (!inputValue.trim()) return;
+  // Thin wrapper: reads inputValue from state and delegates to sendMessageWithContent
+  const handleSendMessage = () => {
+    if (!inputValue.trim() || isLoading) return;
+    const text = inputValue;
+    setInputValue('');
+    sendMessageWithContent(text);
+  };
+
+  // Core send logic — accepts text directly, no reliance on inputValue state
+  const sendMessageWithContent = async (text: string) => {
+    if (!text.trim() || isLoading) return;
+
+    // Strip internal bypass flags (never shown to user or sent to Gemini)
+    const isQtyOverride = text.includes('[QTY_OVERRIDE]');
+    const cleanedText = text.replace(/\s*\[QTY_OVERRIDE\]/g, '').trim();
 
     const userMessage: Message = {
       id: Date.now().toString(),
       role: 'user',
-      content: inputValue.trim(),
+      content: cleanedText,
       timestamp: new Date(),
     };
 
+    // ─── CITY GATE ────────────────────────────────────────────────────────────
+    // When multiple city PDFs are loaded, every "and"-segment must have a city.
+    // If any segment is missing a city, intercept and show a city picker UI
+    // instead of sending to Gemini with an ambiguous city context.
+    // Skip the gate entirely for fully-specified requests (e.g. "50 auto full branding")
+    // — those go straight to Gemini as EXACT_MATCH.
+    if (activeProposals.length > 1) {
+      const availCities = getAvailableCities();
+      if (availCities.length > 1) {
+        const rawSegments = parseSegmentsForCity(userMessage.content, availCities);
+
+        // Auto-assign city for segments whose service exists in exactly ONE city's registry.
+        // Falls back to raw PDF text scan if registry not yet built for a city.
+        // Only segments present in 2+ cities remain cityNeeded=true and appear in the picker.
+        const segments: CityPickerSegment[] = rawSegments.map(seg => {
+          if (!seg.cityNeeded) return seg; // already has city in the text
+
+          // Use registry if available for each city — more accurate than keyword scan
+          const citiesWithService = availCities.filter(city => {
+            const cityKey = KNOWN_CITY_LIST.find(c => city.toLowerCase().includes(c)) || city.toLowerCase();
+            const regCheck = checkServiceInRegistry(cityKey, seg.raw);
+            if (regCheck.result === 'found') return true;
+            if (regCheck.result === 'registry_unavailable') {
+              // Fallback: raw text scan
+              const proposal = activeProposals.find(p =>
+                p.fileName.toLowerCase().includes(city.toLowerCase())
+              );
+              if (!proposal?.textContent) return false;
+              const searchPhrase = seg.raw
+                .replace(/\d+/g, '').replace(/\bneed\b/gi, '').trim().toLowerCase();
+              return searchPhrase.length > 1 && proposal.textContent.toLowerCase().includes(searchPhrase);
+            }
+            return false; // 'not_found'
+          });
+
+          if (citiesWithService.length === 1) {
+            console.log(`🏙️ Registry auto-assigned "${seg.raw}" → ${citiesWithService[0]}`);
+            return {
+              ...seg,
+              cityNeeded: false,
+              detectedCity: citiesWithService[0],
+              selectedCities: [citiesWithService[0]],
+              matchedCities: citiesWithService,
+            };
+          }
+
+          // 0 cities (service not found anywhere) or 2+ cities (need picker)
+          return { ...seg, matchedCities: citiesWithService };
+        });
+
+        // Show city picker only when a segment needs a city AND the service was found in 2+ cities.
+        // If service is found in 0 cities (unknown query) let Gemini handle it directly.
+        const hasServiceRequest = segments.some(s =>
+          s.cityNeeded && s.matchedCities !== undefined && s.matchedCities.length >= 2
+        );
+        if (hasServiceRequest) {
+          const pickerMsgId = (Date.now() + 1).toString();
+          const pickerMsg: Message = {
+            id: pickerMsgId,
+            role: 'assistant',
+            content: '🏙️ Multiple city rate cards are loaded. Please select the city for each service below:',
+            timestamp: new Date(),
+            isCityPicker: true,
+          };
+          setMessages(prev => [...prev, userMessage, pickerMsg]);
+          setInputValue('');
+          setCityPickerState({
+            messageId: pickerMsgId,
+            originalMessage: userMessage.content,
+            segments,
+            availableCities: availCities,
+          });
+          return; // Stop here — do NOT send to Gemini yet
+        }
+      }
+    }
+    // ─────────────────────────────────────────────────────────────────────────
+
+    // ─── PRE-GEMINI CITY-SERVICE AVAILABILITY CHECK (Registry-based) ────────
+    // Replaces the old strict-parser check. Uses cityServiceRegistry built from
+    // Gemini's one-time PDF read to verify service availability + quantity constraints.
+    // SKIP: checkbox-confirmed messages are already verified upstream.
+    const isCheckboxConfirmed = userMessage.content.includes('[User has already specified complete service names from checkboxes]');
+    if (activeProposals.length > 1 && !isCheckboxConfirmed) {
+      const availCitiesPre = getAvailableCities();
+      if (availCitiesPre.length > 1) {
+        const preSegments = parseSegmentsForCity(userMessage.content, availCitiesPre);
+        const preAlerts: Array<{ city: string; service: string }> = [];
+        const validSegmentRaws: string[] = [];
+        const vagueSegments: Array<{ seg: typeof preSegments[0]; cityKey: string; matchedSvc: string; qty: number }> = [];
+
+        for (const seg of preSegments) {
+          const segLower = seg.raw.toLowerCase();
+
+          if (!seg.detectedCity) {
+            // No city in this segment — check if it names a known-but-unloaded city
+            const unloadedCity = KNOWN_CITY_LIST.find(city =>
+              new RegExp(`\\b${city}\\b`).test(segLower) &&
+              !activeProposals.some(p => p.fileName.toLowerCase().includes(city))
+            );
+            if (unloadedCity) {
+              const cityLabel = unloadedCity.charAt(0).toUpperCase() + unloadedCity.slice(1);
+              const svcLabel = seg.raw
+                .replace(new RegExp(unloadedCity, 'gi'), '')
+                .replace(/\d+/g, '')
+                .replace(/\b(need|for|the|a|an|in|at|of|months?|days?|weeks?|years?)\b/gi, '')
+                .replace(/\s+/g, ' ')
+                .trim()
+                .split(' ')
+                .map(w => w.charAt(0).toUpperCase() + w.slice(1).toLowerCase())
+                .join(' ') || cityLabel;
+              preAlerts.push({ city: cityLabel, service: svcLabel });
+              continue;
+            }
+            // No city at all → let Gemini handle it
+            validSegmentRaws.push(seg.raw);
+            continue;
+          }
+
+          // City detected — look it up in the registry
+          const cityKey = KNOWN_CITY_LIST.find(c => seg.detectedCity!.toLowerCase().includes(c)) || seg.detectedCity.toLowerCase();
+          const registryCheck = checkServiceInRegistry(cityKey, seg.raw);
+
+          if (registryCheck.result === 'registry_unavailable') {
+            // Registry not built yet or failed → fallback: let Gemini handle it (safe)
+            validSegmentRaws.push(seg.raw);
+            continue;
+          }
+
+          if (registryCheck.result === 'not_found') {
+            // Service genuinely absent from this city's rate card → alert
+            const cityLabel = seg.detectedCity.charAt(0).toUpperCase() + seg.detectedCity.slice(1);
+            const svcLabel = seg.raw
+              .replace(new RegExp(seg.detectedCity, 'gi'), '')
+              .replace(/\d+/g, '')
+              .replace(/\b(need|for|the|a|an|in|at|of|months?|days?|weeks?|years?)\b/gi, '')
+              .replace(/\s+/g, ' ')
+              .trim()
+              .split(' ')
+              .map(w => w.charAt(0).toUpperCase() + w.slice(1).toLowerCase())
+              .join(' ') || cityLabel;
+            preAlerts.push({ city: cityLabel, service: svcLabel });
+            continue;
+          }
+
+          // Service found in registry — also validate quantity if present
+          if (registryCheck.result === 'found' && registryCheck.qty) {
+            const qtyMatch = seg.raw.match(/(\d+)/);
+            const requestedQty = qtyMatch ? parseInt(qtyMatch[1]) : null;
+            const { min, max } = registryCheck.qty;
+
+            if (requestedQty !== null) {
+              if (!isQtyOverride && requestedQty < min) {
+                // Below minimum — show existing minQtyWarning modal pre-Gemini
+                const cityLabel = seg.detectedCity.charAt(0).toUpperCase() + seg.detectedCity.slice(1);
+                const svcLabel = (registryCheck.matchedService || '')
+                  .split(' ')
+                  .map(w => w.charAt(0).toUpperCase() + w.slice(1))
+                  .join(' ');
+                setMessages(prev => [...prev, userMessage]);
+                setMinQtyWarning({
+                  items: [{ description: `${svcLabel} - ${cityLabel}`, requested: requestedQty, minimum: min }],
+                  pendingQuote: null as any, // no quote yet — handled by pendingValidMessage path
+                });
+                setPendingValidMessage(seg.raw); // store segment to re-send after user picks qty
+                return;
+              }
+              if (max !== null && requestedQty > max) {
+                const cityLabel = seg.detectedCity.charAt(0).toUpperCase() + seg.detectedCity.slice(1);
+                const svcLabel = (registryCheck.matchedService || '')
+                  .split(' ')
+                  .map(w => w.charAt(0).toUpperCase() + w.slice(1))
+                  .join(' ');
+                preAlerts.push({ city: cityLabel, service: `${svcLabel} (max ${max} units — you requested ${requestedQty})` });
+                continue;
+              }
+            }
+          }
+
+          // All checks passed — check specificity before deciding how to proceed
+          {
+            const matchedSvc = registryCheck.matchedService!;
+            const matchedWords = matchedSvc.split(/\s+/);
+            const userServiceWords = seg.raw
+              .toLowerCase()
+              .replace(new RegExp(`\\b${cityKey}\\b`, 'gi'), '')
+              .replace(/\d+/g, '')
+              .replace(/\b(need|for|the|a|an|in|at|of|and|i|want|please|services?|ads?|advertising|outdoor|some|any)\b/gi, '')
+              .replace(/\s+/g, ' ').trim()
+              .split(/\s+/).filter((w: string) => w.length >= 2);
+
+            const isSpecific = userServiceWords.length >= matchedWords.length &&
+              userServiceWords.every((w: string) => matchedWords.some((mw: string) => mw.startsWith(w) || w.startsWith(mw)));
+
+            if (isSpecific) {
+              // User was precise — Gemini gets exact name, no checkbox loop risk
+              validSegmentRaws.push(seg.raw);
+            } else {
+              // Vague — intercept here, expand to checkboxes from registry (never let Gemini guess)
+              const qtyMatch = seg.raw.match(/(\d+)/);
+              const qty = qtyMatch ? parseInt(qtyMatch[1]) : 1;
+              vagueSegments.push({ seg, cityKey, matchedSvc, qty });
+            }
+          }
+        }
+
+        // Handle vague segments with city → show checkboxes from registry only
+        if (vagueSegments.length > 0) {
+          const groupedServices: Array<{
+            vehicleType: string;
+            requestedQuantity: number;
+            services: Array<{ name: string; category: string }>;
+          }> = [];
+
+          vagueSegments.forEach(({ seg, cityKey, matchedSvc, qty }) => {
+            const cityLabel = seg.detectedCity!.charAt(0).toUpperCase() + seg.detectedCity!.slice(1);
+            const vehicleLabel = matchedSvc.split(' ').map(w => w.charAt(0).toUpperCase() + w.slice(1)).join(' ');
+            const registryEntry = cityServiceRegistry.current.get(cityKey);
+            const baseWord = matchedSvc.toLowerCase().split(' ')[0];
+            const relatedServices = registryEntry
+              ? registryEntry.services
+                  .filter(s => new RegExp(`\\b${baseWord}\\b`, 'i').test(s))
+                  .map(s => ({
+                    name: s.split(' ').map(w => w.charAt(0).toUpperCase() + w.slice(1)).join(' '),
+                    category: vehicleLabel,
+                  }))
+              : [{ name: vehicleLabel, category: vehicleLabel }];
+
+            groupedServices.push({
+              vehicleType: `${vehicleLabel}|${cityLabel}`,
+              requestedQuantity: qty,
+              services: relatedServices,
+            });
+          });
+
+          if (groupedServices.length > 0) {
+            if (preAlerts.length > 0) setUnavailableServices(preAlerts);
+            const assistantId = Date.now().toString();
+            const assistantMsg: Message = {
+              id: assistantId,
+              role: 'assistant',
+              content: `🔀 Multiple services found. Select all you need:`,
+              timestamp: new Date(),
+              isMultipleMatch: true,
+              groupedServices,
+              directParts: validSegmentRaws.length > 0 ? validSegmentRaws : undefined,
+            };
+            setMessages(prev => [...prev, userMessage, assistantMsg]);
+            setInputValue('');
+            return;
+          }
+        }
+
+        if (preAlerts.length > 0) {
+          setUnavailableServices(preAlerts);
+          if (validSegmentRaws.length === 0) {
+            setMessages(prev => [...prev, userMessage]);
+            return;
+          }
+          setMessages(prev => [...prev, userMessage]);
+          setPendingValidMessage(validSegmentRaws.join(' and '));
+          return;
+        }
+      }
+    }
+    // ─────────────────────────────────────────────────────────────────────────
+
     setMessages(prev => [...prev, userMessage]);
-    setInputValue('');
     setIsLoading(true);
     setError(null);
 
-    try {
-      // Load all proposals from cloud for multi-document search
-      let allProposals: any[] = [];
-      try {
-        allProposals = await loadAllProposalsFromCloud(100);
-      } catch (err) {
-        console.warn('Could not load proposals from cloud, using current proposal only:', err);
-      }
 
+    try {
       // Prepare proposal contexts for AI
       let proposalContexts: Array<{fileName: string, content: string}> | undefined;
-      
-      if (allProposals && allProposals.length > 0) {
-        // Multi-document mode: Send ALL uploaded proposals to AI
-        proposalContexts = allProposals
-          .filter(p => p.text_content && p.text_content.trim().length > 50)
-          .map(p => ({
-            fileName: p.file_name,
-            content: p.text_content
-          }));
-        console.log(`📚 Multi-document search enabled: ${proposalContexts.length} documents available`);
+
+      if (activeProposals.length > 0) {
+        // Multi-location mode: use only user-selected active proposals
+        proposalContexts = activeProposals
+          .filter(p => p.textContent && p.textContent.trim().length > 50)
+          .map(p => ({ fileName: p.fileName, content: p.textContent }));
+        console.log(`🎯 Multi-location mode: using ${proposalContexts.length} user-selected proposals`);
+      } else {
+        // Default: Load all proposals from cloud for multi-document search
+        let allProposals: any[] = [];
+        try {
+          allProposals = await loadAllProposalsFromCloud(100);
+        } catch (err) {
+          console.warn('Could not load proposals from cloud, using current proposal only:', err);
+        }
+
+        if (allProposals && allProposals.length > 0) {
+          // Multi-document mode: Send ALL uploaded proposals to AI
+          proposalContexts = allProposals
+            .filter(p => p.text_content && p.text_content.trim().length > 50)
+            .map(p => ({
+              fileName: p.file_name,
+              content: p.text_content
+            }));
+          console.log(`📚 Multi-document search enabled: ${proposalContexts.length} documents available`);
+        }
       }
 
       // 🔧 CLIENT-SIDE VALIDATION: Check if request is fully specified (prevents checkbox loops)
       let enhancedUserMessage = userMessage.content;
       const isFullySpecified = isFullySpecifiedRequest(userMessage.content);
-      
+
       if (isFullySpecified) {
         // Add instruction to AI to treat this as EXACT_MATCH
-        enhancedUserMessage = `[EXACT_MATCH_HINT: This request contains full service names] ${userMessage.content}`;
+        enhancedUserMessage = `[EXACT_MATCH_HINT: This request contains full service names] ${enhancedUserMessage}`;
         console.log('🔧 Added EXACT_MATCH hint to prevent re-analysis');
+      }
+
+      // Add city→PDF mapping hint when multiple PDFs are loaded so AI knows which
+      // document to draw prices from for each city section
+      if (activeProposals.length > 1) {
+        const cityMappingHint = activeProposals
+          .map(p => {
+            const name = p.fileName.replace(/\.(pdf|xlsx?)$/i, '').replace(/[_-]+/g, ' ').trim();
+            return `"${p.fileName}" → ${name} pricing`;
+          })
+          .join('; ');
+        enhancedUserMessage = `[CITY_PDF_MAP: ${cityMappingHint}] ${enhancedUserMessage}`;
+        console.log('🗺️ Added city→PDF mapping hint:', cityMappingHint);
       }
 
       const response = await sendMessageToGemini({
@@ -389,8 +876,9 @@ const ChatInterface: React.FC = () => {
             console.log('⚠️ Detected rate card footnotes in T&C, using DEFAULT_GENERAL_TERMS instead');
           } else {
             // Looks like legitimate T&C from a proposal
-            finalTermsAndConditions = geminiTerms || 'Standard terms and conditions apply';
-            console.log('✅ Using extracted T&C from proposal document');
+            // If empty (common in multi-city responses), fall back to defaults
+            finalTermsAndConditions = geminiTerms || DEFAULT_GENERAL_TERMS.join('\n');
+            console.log(geminiTerms ? '✅ Using extracted T&C from proposal document' : '✅ Using DEFAULT_GENERAL_TERMS (AI returned empty T&C)');
           }
         }
         
@@ -479,14 +967,250 @@ const ChatInterface: React.FC = () => {
     }
   };
 
+  // Find the activeProposal whose fileName contains the given city name
+  // Toggle a city on/off for a segment (multi-select)
+  const handleCitySelection = (segmentIdx: number, city: string) => {
+    setCityPickerState(prev => {
+      if (!prev) return prev;
+      const newSegments = [...prev.segments];
+      const seg = newSegments[segmentIdx];
+      const alreadySelected = seg.selectedCities.includes(city);
+      newSegments[segmentIdx] = {
+        ...seg,
+        selectedCities: alreadySelected
+          ? seg.selectedCities.filter(c => c !== city)
+          : [...seg.selectedCities, city],
+      };
+      return { ...prev, segments: newSegments };
+    });
+  };
+
+  // Select-all / Clear-all toggle for a city-picker segment
+  const handleCitySelectAll = (segmentIdx: number, cities: string[]) => {
+    setCityPickerState(prev => {
+      if (!prev) return prev;
+      const newSegments = [...prev.segments];
+      const seg = newSegments[segmentIdx];
+      const allSelected = cities.length > 0 && cities.every(c => seg.selectedCities.includes(c));
+      newSegments[segmentIdx] = {
+        ...seg,
+        selectedCities: allSelected ? [] : [...cities],
+      };
+      return { ...prev, segments: newSegments };
+    });
+  };
+
+  // Select-all / Clear-all toggle for a service group inside the multi-match UI
+  const handleServiceSelectAll = (messageId: string, groupKey: string, serviceNames: string[]) => {
+    setSelectedServices(prev => {
+      const messageMap = { ...(prev[messageId] || {}) };
+      const current = messageMap[groupKey] || [];
+      const allSelected = serviceNames.length > 0 && serviceNames.every(n => current.includes(n));
+      if (allSelected) {
+        // Clear all in this group
+        const next = { ...messageMap };
+        delete next[groupKey];
+        return { ...prev, [messageId]: next };
+      }
+      messageMap[groupKey] = [...serviceNames];
+      return { ...prev, [messageId]: messageMap };
+    });
+  };
+
+  // Confirm city selections → extract services client-side per city → show checkboxes directly
+  // Falls back to Gemini only if extraction fails
+  const handleCityConfirm = () => {
+    if (!cityPickerState) return;
+
+    // Build one pair per { segment, city } combination
+    const pairs: Array<{ raw: string; city: string; qty: number }> = [];
+    cityPickerState.segments.forEach(seg => {
+      if (seg.cityNeeded && seg.selectedCities.length === 0) return;
+      const cities = seg.cityNeeded
+        ? seg.selectedCities
+        : (seg.detectedCity ? [seg.detectedCity] : [cityPickerState.availableCities[0]]);
+      const qtyMatch = seg.raw.match(/(\d+)/);
+      const qty = qtyMatch ? parseInt(qtyMatch[1]) : 1;
+      cities.forEach(city => pairs.push({ raw: seg.raw, city, qty }));
+    });
+
+    const groupedServices: Array<{
+      vehicleType: string;
+      requestedQuantity: number;
+      services: Array<{ name: string; category: string }>;
+    }> = [];
+    // Pairs where user was specific enough → send straight to Gemini, skip checkboxes
+    const directParts: string[] = [];
+    const missingServiceAlerts: Array<{ city: string; service: string }> = [];
+    let needsGemini = false;
+
+    for (const pair of pairs) {
+      const cityKey = KNOWN_CITY_LIST.find(c => pair.city.toLowerCase().includes(c)) || pair.city.toLowerCase();
+      const regCheck = checkServiceInRegistry(cityKey, pair.raw);
+      const cityLabel = pair.city.charAt(0).toUpperCase() + pair.city.slice(1);
+
+      if (regCheck.result === 'not_found') {
+        const svcLabel = pair.raw
+          .replace(/\d+/g, '')
+          .replace(/\b(need|for|the|a|an|in|at|of)\b/gi, '')
+          .replace(/\s+/g, ' ').trim()
+          .split(' ').map(w => w.charAt(0).toUpperCase() + w.slice(1).toLowerCase()).join(' ');
+        missingServiceAlerts.push({ city: cityLabel, service: svcLabel });
+        continue;
+      }
+
+      if (regCheck.result === 'registry_unavailable') {
+        needsGemini = true;
+        continue;
+      }
+
+      // 'found' — determine if user's query is specific or vague
+      const matchedSvc = regCheck.matchedService!;
+
+      // Count how many services in this city match the user's query (by base word)
+      const registryEntry = cityServiceRegistry.current.get(cityKey);
+      const baseWord = matchedSvc.toLowerCase().split(' ')[0];
+      const relatedServices = registryEntry
+        ? registryEntry.services
+            .filter(s => new RegExp(`\\b${baseWord}\\b`, 'i').test(s))
+            .map(s => ({
+              name: s.split(' ').map(w => w.charAt(0).toUpperCase() + w.slice(1)).join(' '),
+              category: matchedSvc.split(' ').map(w => w.charAt(0).toUpperCase() + w.slice(1)).join(' '),
+            }))
+        : [{ name: matchedSvc.split(' ').map(w => w.charAt(0).toUpperCase() + w.slice(1)).join(' '), category: matchedSvc }];
+
+      // Specific if: only ONE service matches in this city (unambiguous) OR user typed enough words
+      const matchedWords = matchedSvc.toLowerCase().split(/\s+/);
+      const userServiceWords = pair.raw
+        .toLowerCase()
+        .replace(new RegExp(`\\b${cityKey}\\b`, 'gi'), '')
+        .replace(/\d+/g, '')
+        .replace(/\b(need|for|the|a|an|in|at|of|and|i|want|please|services?|ads?|advertising|outdoor|some|any)\b/gi, '')
+        .replace(/\s+/g, ' ').trim()
+        .split(/\s+/).filter(w => w.length >= 2);
+
+      const isUnique = relatedServices.length === 1; // only one service with this base word in the city
+      const isWordSpecific = userServiceWords.length >= matchedWords.length &&
+        userServiceWords.every(w => matchedWords.some(mw => mw.startsWith(w) || w.startsWith(mw)));
+      const isSpecific = isUnique || isWordSpecific;
+
+      if (isSpecific) {
+        // User was precise OR only one option exists — skip checkboxes, send directly
+        const svcTitleCase = matchedSvc.split(' ').map(w => w.charAt(0).toUpperCase() + w.slice(1)).join(' ');
+        directParts.push(`${pair.qty} ${svcTitleCase} ${cityLabel}`);
+        console.log(`⚡ ${isUnique ? 'Unique' : 'Specific'} match: "${pair.raw}" → "${matchedSvc}" (${cityLabel}) — skipping checkboxes`);
+        continue;
+      }
+
+      // Vague — multiple services match, show checkboxes
+      const vehicleLabel = matchedSvc.split(' ').map(w => w.charAt(0).toUpperCase() + w.slice(1)).join(' ');
+
+      groupedServices.push({
+        vehicleType: `${vehicleLabel}|${cityLabel}`,
+        requestedQuantity: pair.qty,
+        services: relatedServices,
+      });
+    }
+
+    if (missingServiceAlerts.length > 0) {
+      setUnavailableServices(missingServiceAlerts);
+    }
+
+    setCityPickerState(null);
+    setInputValue('');
+
+    // If ALL pairs were specific → send everything straight to Gemini
+    if (directParts.length > 0 && groupedServices.length === 0 && !needsGemini) {
+      const durationMatch = cityPickerState.originalMessage.match(/(\d+)\s*(days?|months?)/i);
+      const durationSuffix = durationMatch ? ` for ${durationMatch[0]}` : '';
+      const combined = `Generate quote for ${directParts.join(' and ')}${durationSuffix} [User has already specified complete service names from checkboxes]`;
+      console.log('⚡ All specific — sending direct to Gemini:', combined);
+      sendMessageWithContent(combined);
+      return;
+    }
+
+    // Mix of specific + vague OR registry unavailable → send specific ones as Gemini parts too
+    if (needsGemini || (groupedServices.length === 0 && missingServiceAlerts.length === 0)) {
+      const reconstructed = pairs.map(p => `${p.city} ${p.qty > 1 ? p.qty + ' ' : ''}${p.raw.replace(/\d+/g, '').trim()}`).join(' and ');
+      sendMessageWithContent(reconstructed);
+      return;
+    }
+
+    if (groupedServices.length === 0) return; // All unavailable or all direct
+
+    // Some vague → show checkboxes (direct ones will be appended at confirm step via originalUserInput)
+    const msgId = (Date.now() + 1).toString();
+    const assistantMsg: Message = {
+      id: msgId,
+      role: 'assistant',
+      content: `🔀 Multiple services found across ${groupedServices.length} group${groupedServices.length !== 1 ? 's' : ''}. Select all you need:`,
+      timestamp: new Date(),
+      isMultipleMatch: true,
+      groupedServices,
+      originalUserInput: cityPickerState.originalMessage,
+      // Carry direct parts so handleConfirmAndGenerate can append them
+      directParts,
+      // Snapshot picker state so user can press "Back" to re-open the city picker
+      cityPickerSnapshot: {
+        originalMessage: cityPickerState.originalMessage,
+        segments: cityPickerState.segments,
+        availableCities: cityPickerState.availableCities,
+      },
+    };
+    setMessages(prev => [...prev, assistantMsg]);
+  };
+
   const handleSuggestionClick = (suggestion: string) => {
     setInputValue(suggestion);
+  };
+
+  // Back button on the multi-match checkbox UI: re-open the city picker
+  // using the snapshot saved on the message, and remove the checkbox message.
+  const handleBackToCityPicker = (messageId: string) => {
+    const msg = messages.find(m => m.id === messageId);
+    if (!msg?.cityPickerSnapshot) return;
+    // Remove the multiple-match message and any prior assistant city-picker
+    // message that triggered it (we'll show a fresh picker)
+    setMessages(prev => prev.filter(m => m.id !== messageId && !m.isCityPicker));
+    setSelectedServices(prev => {
+      const next = { ...prev };
+      delete next[messageId];
+      return next;
+    });
+    const pickerMsgId = (Date.now() + 1).toString();
+    const pickerMsg: Message = {
+      id: pickerMsgId,
+      role: 'assistant',
+      content: '🏙️ Multiple city rate cards are loaded. Please select the city for each service below:',
+      timestamp: new Date(),
+      isCityPicker: true,
+    };
+    setMessages(prev => [...prev, pickerMsg]);
+    setCityPickerState({
+      messageId: pickerMsgId,
+      originalMessage: msg.cityPickerSnapshot.originalMessage,
+      segments: msg.cityPickerSnapshot.segments,
+      availableCities: msg.cityPickerSnapshot.availableCities,
+    });
   };
 
   // Handle min qty warning: user chooses to continue with requested qty
   const handleMinQtyContinue = () => {
     if (!minQtyWarning) return;
+    const pending = pendingValidMessage;
     setMinQtyWarning(null);
+
+    // Pre-Gemini path: pendingQuote is null — send pending segment to Gemini as-is
+    // Append [QTY_OVERRIDE] so the pre-Gemini qty check is skipped (user confirmed the qty)
+    if (!minQtyWarning.pendingQuote) {
+      if (pending) {
+        setPendingValidMessage(null);
+        sendMessageWithContent(pending + ' [QTY_OVERRIDE]');
+      }
+      return;
+    }
+
+    // Post-Gemini path: quote already generated by Gemini, just navigate
     const quoteReadyMessage: Message = {
       id: (Date.now() + 2).toString(),
       role: 'assistant',
@@ -500,6 +1224,22 @@ const ChatInterface: React.FC = () => {
   // Handle min qty warning: user chooses to use minimum quantities
   const handleMinQtyUseMinimum = () => {
     if (!minQtyWarning) return;
+    const pending = pendingValidMessage;
+
+    // Pre-Gemini path: pendingQuote is null — replace qty with min in pending segment, then send
+    if (!minQtyWarning.pendingQuote) {
+      setMinQtyWarning(null);
+      if (pending) {
+        // Replace the first number in the pending segment with the minimum
+        const minQty = minQtyWarning.items[0]?.minimum ?? 1;
+        const newMsg = pending.replace(/\b\d+\b/, String(minQty));
+        setPendingValidMessage(null);
+        sendMessageWithContent(newMsg);
+      }
+      return;
+    }
+
+    // Post-Gemini path: update quote item quantities to their minimums
     const updatedQuote = { ...minQtyWarning.pendingQuote };
     updatedQuote.items = updatedQuote.items.map(item => {
       if (item.minimumQuantity && item.quantity < item.minimumQuantity) {
@@ -560,83 +1300,94 @@ const ChatInterface: React.FC = () => {
     }, 100);
   };
 
-  // Handle checkbox selection for MULTIPLE_MATCH multi-select
-  const handleServiceCheckbox = (messageId: string, vehicleType: string, serviceName: string, isChecked: boolean) => {
+  // Handle checkbox selection for MULTIPLE_MATCH multi-select (now supports multiple per group)
+  const handleServiceCheckbox = (messageId: string, groupKey: string, serviceName: string, isChecked: boolean) => {
     setSelectedServices(prev => {
       const newState = { ...prev };
-      if (!newState[messageId]) {
-        newState[messageId] = {};
-      }
-      
-      const current = newState[messageId][vehicleType] || [];
+      if (!newState[messageId]) newState[messageId] = {};
+      const current = newState[messageId][groupKey] || [];
       if (isChecked) {
-        newState[messageId][vehicleType] = [...current, serviceName];
+        newState[messageId][groupKey] = [...current, serviceName];
       } else {
         const updated = current.filter(s => s !== serviceName);
         if (updated.length === 0) {
-          delete newState[messageId][vehicleType];
+          delete newState[messageId][groupKey];
         } else {
-          newState[messageId][vehicleType] = updated;
+          newState[messageId][groupKey] = updated;
         }
       }
-      
-      // Clean up empty message entries
-      if (Object.keys(newState[messageId]).length === 0) {
-        delete newState[messageId];
-      }
-      
+      if (Object.keys(newState[messageId]).length === 0) delete newState[messageId];
       return newState;
     });
   };
 
-  // Generate quote for all selected services in MULTIPLE_MATCH
-  const handleGenerateSelectedQuote = async (messageId: string, groupedServices: any[]) => {
+  // Build confirmation table rows from selected services, then show table (don't send yet)
+  const handleShowConfirmation = (messageId: string, groupedServices: any[]) => {
     const selected = selectedServices[messageId];
-    if (!selected || Object.keys(selected).length === 0) {
-      return; // Nothing selected
-    }
+    if (!selected || Object.keys(selected).length === 0) return;
 
-    // Build the combined request string with full service names
-    const parts: string[] = [];
-    groupedServices.forEach(group => {
-      const serviceNames = selected[group.vehicleType];
-      if (serviceNames && serviceNames.length > 0) {
-        const qty = group.requestedQuantity || '';
-        serviceNames.forEach(serviceName => {
-          parts.push(`${qty} ${serviceName}`.trim());
-        });
-      }
-    });
-
-    if (parts.length === 0) return;
-
-    // Extract duration info from original user message (e.g. "15 days", "3 months", "12 days")
-    // Find the assistant message to get its stored originalUserInput
     const assistantMsg = messages.find(m => m.id === messageId);
     const originalUserMsg = assistantMsg?.originalUserInput || '';
-    // Extract duration phrase: "15 days", "3 months", "6 months", "12 days" etc.
-    const durationMatch = originalUserMsg.match(/(\d+)\s*(days?|months?)/i);
+    const rows: Array<{ service: string; qty: number | string; city: string }> = [];
+
+    groupedServices.forEach(group => {
+      const services = selected[group.vehicleType] || [];
+      services.forEach(svcName => {
+        // Extract city from vehicleType key if present (format: "Bus|Chennai")
+        const [, city] = group.vehicleType.includes('|')
+          ? group.vehicleType.split('|')
+          : [group.vehicleType, ''];
+        rows.push({ service: svcName, qty: group.requestedQuantity || '—', city: city || '—' });
+      });
+    });
+
+    // Also add directParts (auto-confirmed services) to the confirmation table
+    if (assistantMsg?.directParts?.length) {
+      (assistantMsg.directParts as string[]).forEach(part => {
+        // Format: "1 Cab Branding Chennai" → parse service + city
+        const match = part.match(/^(\d+)\s+(.+?)\s+(\w+)$/);
+        if (match) {
+          rows.push({ service: match[2], qty: parseInt(match[1]), city: match[3] });
+        } else {
+          rows.push({ service: part, qty: 1, city: '—' });
+        }
+      });
+    }
+
+    if (rows.length === 0) return;
+    setConfirmationTable({ messageId, rows, originalUserInput: originalUserMsg });
+  };
+
+  // Final confirm: send selected services to Gemini
+  const handleConfirmAndGenerate = () => {
+    if (!confirmationTable) return;
+    const { rows, originalUserInput } = confirmationTable;
+
+    const durationMatch = originalUserInput.match(/(\d+)\s*(days?|months?)/i);
     const durationSuffix = durationMatch ? ` for ${durationMatch[0]}` : '';
 
-    // 🔧 IMPROVED FORMAT: Make it clear these are full service specifications, preserve duration
+    const parts = rows.map(r =>
+      r.city && r.city !== '—'
+        ? `${r.qty} ${r.service} ${r.city}`
+        : `${r.qty} ${r.service}`
+    );
+
+    // directParts are already included in rows (added by handleShowConfirmation)
     const combinedRequest = `Generate quote for ${parts.join(' and ')}${durationSuffix} [User has already specified complete service names from checkboxes]`;
-    console.log('🔧 Combined request with full specifications:', combinedRequest);
-    
-    setInputValue(combinedRequest);
-    
-    // Clear selections after generating
+    console.log('🔧 Confirmation → Gemini request:', combinedRequest);
+
+    const clearedMsgId = confirmationTable.messageId;
+    setConfirmationTable(null);
     setSelectedServices(prev => {
       const newState = { ...prev };
-      delete newState[messageId];
+      delete newState[clearedMsgId];
       return newState;
     });
-    
-    // Auto-send
-    setTimeout(() => {
-      const sendBtn = document.querySelector('[data-send-btn]') as HTMLButtonElement;
-      if (sendBtn) sendBtn.click();
-    }, 100);
+    setInputValue('');
+    sendMessageWithContent(combinedRequest);
   };
+
+
 
   // Initialize speech recognition for mobile using Capacitor plugin
   useEffect(() => {
@@ -1070,60 +1821,122 @@ const ChatInterface: React.FC = () => {
                           </Text>
                         </Box>
 
-                        {/* 2️⃣ MULTIPLE_MATCH - Show grouped services with checkboxes for multi-select */}
+                        {/* 2️⃣ MULTIPLE_MATCH - Show grouped services with checkboxes (multi-select per group) */}
                         {message.isMultipleMatch && message.groupedServices && message.groupedServices.length > 0 && (
                           <Box mt={3}>
                             <Text fontSize="12px" fontWeight="600" color="orange.600" mb={3} px={1}>
-                              🔀 Multiple services found. Select the ones you need:
+                              🔀 Multiple services found. Select all you need:
                             </Text>
+
+                            {/* Back button — return to the city picker that produced this list */}
+                            {message.cityPickerSnapshot && (
+                              <Button
+                                size="sm"
+                                variant="outline"
+                                colorScheme="gray"
+                                mb={3}
+                                onClick={() => handleBackToCityPicker(message.id)}
+                              >
+                                ← Back to city selection
+                              </Button>
+                            )}
+
+                            {/* Already confirmed services (directParts) — shown as locked green items */}
+                            {message.directParts && message.directParts.length > 0 && (
+                              <Box mb={3} p={3} borderRadius="12px" bg="green.50" border="1px solid" borderColor="green.200">
+                                <Text fontSize="12px" fontWeight="700" color="green.700" mb={2}>
+                                  ✅ Already confirmed:
+                                </Text>
+                                <VStack align="stretch" spacing={1}>
+                                  {message.directParts.map((part, pIdx) => (
+                                    <Text key={pIdx} fontSize="13px" color="green.700" fontWeight="500">
+                                      • {part}
+                                    </Text>
+                                  ))}
+                                </VStack>
+                              </Box>
+                            )}
+
                             <VStack align="stretch" spacing={4}>
-                              {message.groupedServices.map((group, gIdx) => (
-                                <Box key={gIdx}>
-                                  <Text fontSize="13px" fontWeight="700" color="gray.700" mb={2} px={1}>
-                                    {group.vehicleType} Services {group.requestedQuantity ? `(${group.requestedQuantity} units)` : ''}
-                                  </Text>
-                                  <VStack align="stretch" spacing={2}>
-                                    {group.services.map((svc, sIdx) => {
-                                      const isChecked = (selectedServices[message.id]?.[group.vehicleType] || []).includes(svc.name);
-                                      return (
-                                        <Box
-                                          key={sIdx}
-                                          p={3}
-                                          borderRadius="12px"
-                                          border="2px solid"
-                                          borderColor={isChecked ? 'blue.400' : 'gray.200'}
-                                          bg={isChecked ? 'blue.50' : 'white'}
-                                          _hover={{
-                                            borderColor: isChecked ? 'blue.500' : 'blue.300',
-                                            bg: isChecked ? 'blue.100' : 'blue.25',
-                                            transform: 'translateX(2px)',
-                                          }}
-                                          transition="all 0.2s ease"
-                                        >
-                                          <Checkbox
-                                            isChecked={isChecked}
-                                            onChange={(e) => handleServiceCheckbox(message.id, group.vehicleType, svc.name, e.target.checked)}
-                                            colorScheme="blue"
-                                            size="md"
-                                            fontWeight="500"
-                                            fontSize="13px"
-                                            spacing={3}
-                                            cursor="pointer"
+                              {message.groupedServices.map((group, gIdx) => {
+                                const selectedForGroup = selectedServices[message.id]?.[group.vehicleType] || [];
+                                const [vehiclePart, cityPart] = group.vehicleType.includes('|')
+                                  ? group.vehicleType.split('|')
+                                  : [group.vehicleType, null];
+                                const groupServiceNames = group.services.map(s => s.name);
+                                const allInGroupSelected = groupServiceNames.length > 0 && groupServiceNames.every(n => selectedForGroup.includes(n));
+                                return (
+                                  <Box key={gIdx}>
+                                    <HStack mb={2} px={1} spacing={2} align="center" justify="space-between">
+                                      <HStack spacing={2} align="center">
+                                        <Text fontSize="13px" fontWeight="700" color="gray.700">
+                                          {vehiclePart.split(' ')[0]} Services
+                                        </Text>
+                                        {cityPart && (
+                                          <Box
+                                            px={2}
+                                            py={0.5}
+                                            borderRadius="6px"
+                                            bg="blue.50"
+                                            border="1px solid"
+                                            borderColor="blue.200"
                                           >
-                                            <Text fontSize="13px" fontWeight="500" color={isChecked ? 'blue.700' : 'gray.700'}>
-                                              {svc.name}
+                                            <Text fontSize="11px" fontWeight="700" color="blue.600">
+                                              📍 {cityPart}
                                             </Text>
-                                          </Checkbox>
-                                        </Box>
-                                      );
-                                    })}
-                                  </VStack>
-                                </Box>
-                              ))}
+                                          </Box>
+                                        )}
+                                      </HStack>
+                                      <Button
+                                        size="xs"
+                                        variant="ghost"
+                                        colorScheme="blue"
+                                        onClick={() => handleServiceSelectAll(message.id, group.vehicleType, groupServiceNames)}
+                                      >
+                                        {allInGroupSelected ? 'Clear all' : 'Select all'}
+                                      </Button>
+                                    </HStack>
+                                    <VStack align="stretch" spacing={2}>
+                                      {group.services.map((svc, sIdx) => {
+                                        const isChecked = selectedForGroup.includes(svc.name);
+                                        return (
+                                          <Box
+                                            key={sIdx}
+                                            p={3}
+                                            borderRadius="12px"
+                                            border="2px solid"
+                                            borderColor={isChecked ? 'blue.400' : 'gray.200'}
+                                            bg={isChecked ? 'blue.50' : 'white'}
+                                            _hover={{
+                                              borderColor: isChecked ? 'blue.500' : 'blue.300',
+                                              bg: isChecked ? 'blue.100' : 'blue.25',
+                                              transform: 'translateX(2px)',
+                                            }}
+                                            transition="all 0.2s ease"
+                                          >
+                                            <Checkbox
+                                              isChecked={isChecked}
+                                              onChange={(e) => handleServiceCheckbox(message.id, group.vehicleType, svc.name, e.target.checked)}
+                                              colorScheme="blue"
+                                              size="md"
+                                              spacing={3}
+                                              cursor="pointer"
+                                            >
+                                              <Text fontSize="13px" fontWeight="500" color={isChecked ? 'blue.700' : 'gray.700'}>
+                                                {svc.name}
+                                              </Text>
+                                            </Checkbox>
+                                          </Box>
+                                        );
+                                      })}
+                                    </VStack>
+                                  </Box>
+                                );
+                              })}
                             </VStack>
-                            
-                            {/* Generate Quote Button - Only show if at least one service is selected */}
-                            {selectedServices[message.id] && Object.keys(selectedServices[message.id]).length > 0 && (
+
+                            {/* Review button — show when ≥1 service selected OR directParts exist */}
+                            {(selectedServices[message.id] && Object.keys(selectedServices[message.id]).length > 0) || (message.directParts && message.directParts.length > 0) ? (
                               <Button
                                 mt={4}
                                 w="full"
@@ -1134,22 +1947,22 @@ const ChatInterface: React.FC = () => {
                                 fontSize="15px"
                                 py={6}
                                 borderRadius="14px"
-                                onClick={() => handleGenerateSelectedQuote(message.id, message.groupedServices!)}
+                                onClick={() => handleShowConfirmation(message.id, message.groupedServices!)}
                                 isDisabled={isLoading}
                                 _hover={{
-                                  bgGradient: "linear(135deg, #b91c1c 0%, #9f1239 50%, #881337 100%)",
+                                  bgGradient: 'linear(135deg, #b91c1c 0%, #9f1239 50%, #881337 100%)',
                                   transform: 'translateY(-2px)',
                                   boxShadow: '0 12px 24px rgba(220, 38, 38, 0.3)',
                                 }}
-                                _active={{
-                                  transform: 'translateY(0)',
-                                }}
+                                _active={{ transform: 'translateY(0)' }}
                                 transition="all 0.2s ease"
                                 leftIcon={<Icon as={FiCheck} boxSize="18px" />}
                               >
-                                Generate Quote for {Object.values(selectedServices[message.id]).reduce((sum, arr) => sum + arr.length, 0)} Selected Service{Object.values(selectedServices[message.id]).reduce((sum, arr) => sum + arr.length, 0) > 1 ? 's' : ''}
+                                Review & Confirm ({
+                                  Object.values(selectedServices[message.id] || {}).flat().length + (message.directParts?.length || 0)
+                                } service{Object.values(selectedServices[message.id] || {}).flat().length + (message.directParts?.length || 0) !== 1 ? 's' : ''} selected)
                               </Button>
-                            )}
+                            ) : null}
                           </Box>
                         )}
 
@@ -1309,6 +2122,155 @@ const ChatInterface: React.FC = () => {
                                 </Box>
                               ))}
                             </VStack>
+                          </Box>
+                        )}
+
+                        {/* 🏙️ CITY PICKER — service-first layout */}
+                        {message.isCityPicker && cityPickerState && cityPickerState.messageId === message.id && (
+                          <Box mt={3}>
+                            <VStack align="stretch" spacing={4}>
+                              {cityPickerState.segments.map((seg, segIdx) => {
+                                // Build service label from the segment
+                                const svcLabel = seg.raw
+                                  .replace(/\d+/g, '')
+                                  .replace(/\b(need|for|the|a|an|in|at|of|and|i|want|please)\b/gi, '')
+                                  .replace(/\s+/g, ' ')
+                                  .trim()
+                                  .split(' ')
+                                  .map(w => w.charAt(0).toUpperCase() + w.slice(1).toLowerCase())
+                                  .join(' ');
+
+                                // Use pre-computed matchedCities from city gate (accurate registry lookup)
+                                const citiesWithService = seg.matchedCities ?? cityPickerState.availableCities.filter(city => {
+                                  const cityKey = KNOWN_CITY_LIST.find(c => city.toLowerCase().includes(c)) || city.toLowerCase();
+                                  const regCheck = checkServiceInRegistry(cityKey, seg.raw);
+                                  return regCheck.result === 'found' || regCheck.result === 'registry_unavailable';
+                                });
+
+                                // Cities where registry explicitly says NOT available
+                                const citiesWithoutService = cityPickerState.availableCities.filter(city => {
+                                  if (citiesWithService.includes(city)) return false;
+                                  const cityKey = KNOWN_CITY_LIST.find(c => city.toLowerCase().includes(c)) || city.toLowerCase();
+                                  const regCheck = checkServiceInRegistry(cityKey, seg.raw);
+                                  return regCheck.result === 'not_found';
+                                });
+
+                                const allCitiesSelected = citiesWithService.length > 0 && citiesWithService.every(c => seg.selectedCities.includes(c));
+                                return (
+                                  <Box key={segIdx} p={3} borderRadius="12px" bg="gray.50" border="1px solid" borderColor="gray.200">
+                                    {/* Service header */}
+                                    <HStack justify="space-between" align="center" mb={2}>
+                                      <Text fontSize="13px" fontWeight="700" color="gray.800" textTransform="uppercase" letterSpacing="wider">
+                                        {svcLabel}
+                                      </Text>
+                                      {seg.cityNeeded && citiesWithService.length > 1 && (
+                                        <Button
+                                          size="xs"
+                                          variant="ghost"
+                                          colorScheme="blue"
+                                          onClick={() => handleCitySelectAll(segIdx, citiesWithService)}
+                                          isDisabled={isLoading}
+                                        >
+                                          {allCitiesSelected ? 'Clear all' : 'Select all'}
+                                        </Button>
+                                      )}
+                                    </HStack>
+
+                                    {seg.detectedCity && !seg.cityNeeded ? (
+                                      // Auto-assigned (only available in one city) — show as locked but visible
+                                      <Box
+                                        p={2.5}
+                                        borderRadius="10px"
+                                        border="2px solid"
+                                        borderColor="green.300"
+                                        bg="green.50"
+                                      >
+                                        <HStack justify="space-between">
+                                          <Text fontSize="13px" fontWeight="600" color="green.700">
+                                            ✅ Auto-assigned: <b>{seg.detectedCity}</b>
+                                          </Text>
+                                          <Text fontSize="11px" color="green.500">Only city available</Text>
+                                        </HStack>
+                                      </Box>
+                                    ) : citiesWithService.length === 0 && citiesWithoutService.length > 0 ? (
+                                      // All cities explicitly don't have it
+                                      <Text fontSize="12px" color="orange.600" fontWeight="500">
+                                        ⚠ Not available in any loaded city
+                                      </Text>
+                                    ) : (
+                                      <VStack align="stretch" spacing={2}>
+                                        {/* Only show cities where service is available (or registry unavailable = show with fallback) */}
+                                        {citiesWithService.map((city, cIdx) => {
+                                          const isSelected = seg.selectedCities.includes(city);
+                                          // Get min qty hint from registry
+                                          const cityKey = KNOWN_CITY_LIST.find(c => city.toLowerCase().includes(c)) || city.toLowerCase();
+                                          const regCheck = checkServiceInRegistry(cityKey, seg.raw);
+                                          const minQty = regCheck.result === 'found' ? regCheck.qty?.min : null;
+
+                                          return (
+                                            <Box
+                                              key={cIdx}
+                                              p={2.5}
+                                              borderRadius="10px"
+                                              border="2px solid"
+                                              borderColor={isSelected ? 'blue.400' : 'gray.200'}
+                                              bg={isSelected ? 'blue.50' : 'white'}
+                                              _hover={{ borderColor: 'blue.300' }}
+                                              transition="all 0.15s ease"
+                                            >
+                                              <HStack justify="space-between" align="center">
+                                                <Checkbox
+                                                  isChecked={isSelected}
+                                                  onChange={() => handleCitySelection(segIdx, city)}
+                                                  colorScheme="blue"
+                                                  size="md"
+                                                  isDisabled={isLoading}
+                                                >
+                                                  <Text fontSize="13px" fontWeight={isSelected ? '700' : '500'} color={isSelected ? 'blue.700' : 'gray.700'}>
+                                                    {city}
+                                                  </Text>
+                                                </Checkbox>
+                                                {minQty && minQty > 1 && (
+                                                  <Text fontSize="11px" color="gray.400" fontWeight="500">
+                                                    min {minQty}
+                                                  </Text>
+                                                )}
+                                              </HStack>
+                                            </Box>
+                                          );
+                                        })}
+                                      </VStack>
+                                    )}
+                                  </Box>
+                                );
+                              })}
+                            </VStack>
+
+                            {/* Confirm button */}
+                            {cityPickerState.segments.some(s => s.cityNeeded && s.selectedCities.length > 0) && (
+                              <Button
+                                mt={4}
+                                w="full"
+                                bgGradient="linear(135deg, #dc2626 0%, #be123c 50%, #9f1239 100%)"
+                                color="white"
+                                fontWeight="700"
+                                fontSize="15px"
+                                py={6}
+                                borderRadius="14px"
+                                onClick={handleCityConfirm}
+                                isDisabled={isLoading}
+                                leftIcon={<Icon as={FiCheck} boxSize="18px" />}
+                                _hover={{
+                                  bgGradient: 'linear(135deg, #b91c1c 0%, #9f1239 50%, #881337 100%)',
+                                  transform: 'translateY(-2px)',
+                                  boxShadow: '0 12px 24px rgba(220, 38, 38, 0.3)',
+                                }}
+                                _active={{ transform: 'translateY(0)' }}
+                                transition="all 0.2s ease"
+                              >
+                                Confirm Cities & Continue
+                              </Button>
+                            )}
                           </Box>
                         )}
 
@@ -1701,6 +2663,185 @@ const ChatInterface: React.FC = () => {
           />
         </HStack>
       </VStack>
+
+      {/* Confirmation Table Modal — shown after service selection, before Gemini call */}
+      {confirmationTable && (
+        <Box
+          position="fixed"
+          top="0" left="0" right="0" bottom="0"
+          bg="rgba(0,0,0,0.55)"
+          zIndex={9999}
+          display="flex"
+          alignItems="center"
+          justifyContent="center"
+          px={4}
+        >
+          <Box
+            bg="white"
+            borderRadius="16px"
+            p={6}
+            maxW="460px"
+            w="100%"
+            boxShadow="0 8px 32px rgba(0,0,0,0.18)"
+          >
+            <Text fontSize="16px" fontWeight="700" color="gray.800" mb={4}>
+              📋 Confirm Your Services
+            </Text>
+
+            {/* Table Header */}
+            <Box borderRadius="8px" overflow="hidden" border="1px solid" borderColor="gray.200" mb={4}>
+              <HStack bg="gray.800" px={3} py={2} spacing={0}>
+                <Text flex={2} fontSize="11px" fontWeight="700" color="white" textTransform="uppercase" letterSpacing="wider">Service</Text>
+                <Text flex={1} fontSize="11px" fontWeight="700" color="white" textTransform="uppercase" letterSpacing="wider" textAlign="right">City</Text>
+              </HStack>
+              {confirmationTable.rows.map((row, idx) => (
+                <HStack
+                  key={idx}
+                  px={3}
+                  py={2.5}
+                  spacing={0}
+                  bg={idx % 2 === 0 ? 'white' : 'gray.50'}
+                  borderTop="1px solid"
+                  borderColor="gray.100"
+                >
+                  <Text flex={2} fontSize="13px" fontWeight="500" color="gray.800">{row.service}</Text>
+                  <Text flex={1} fontSize="13px" color="blue.600" fontWeight="600" textAlign="right">{row.city}</Text>
+                </HStack>
+              ))}
+            </Box>
+
+            <Text fontSize="12px" color="gray.500" mb={5}>
+              {confirmationTable.rows.length} service{confirmationTable.rows.length !== 1 ? 's' : ''} selected. Confirm to generate the quote.
+            </Text>
+
+            <HStack spacing={3} justify="flex-end">
+              <Button
+                size="sm"
+                variant="outline"
+                borderColor="gray.300"
+                color="gray.600"
+                borderRadius="8px"
+                onClick={() => setConfirmationTable(null)}
+              >
+                ← Edit
+              </Button>
+              <Button
+                size="sm"
+                bgGradient="linear(135deg, #dc2626 0%, #be123c 50%, #9f1239 100%)"
+                color="white"
+                fontWeight="700"
+                borderRadius="8px"
+                px={6}
+                onClick={handleConfirmAndGenerate}
+                leftIcon={<Icon as={FiCheck} boxSize="14px" />}
+                _hover={{ bgGradient: 'linear(135deg, #b91c1c 0%, #9f1239 100%)' }}
+              >
+                Generate Quote
+              </Button>
+            </HStack>
+          </Box>
+        </Box>
+      )}
+
+      {/* Unavailable Service Alert */}
+      {unavailableServices.length > 0 && (
+        <Box
+          position="fixed"
+          top="0" left="0" right="0" bottom="0"
+          bg="rgba(0,0,0,0.45)"
+          zIndex={9998}
+          display="flex"
+          alignItems="center"
+          justifyContent="center"
+          px={4}
+        >
+          <Box
+            bg="white"
+            borderRadius="14px"
+            p={5}
+            maxW="420px"
+            w="100%"
+            boxShadow="0 8px 32px rgba(0,0,0,0.18)"
+          >
+            {/* Header */}
+            <Box mb={3}>
+              <Text fontSize="15px" fontWeight="700" color="#b45309">
+                ⚠️ Service Not Available
+              </Text>
+            </Box>
+
+            {/* Missing service rows */}
+            {unavailableServices.map((item, i) => (
+              <Box
+                key={i}
+                mb={2}
+                p={3}
+                bg="#fffbeb"
+                borderRadius="8px"
+                borderLeft="3px solid #f59e0b"
+              >
+                <Text fontSize="13px" color="#78350f">
+                  <b>{item.service}</b> is currently not offered in{' '}
+                  <b>{item.city}</b>.
+                </Text>
+              </Box>
+            ))}
+
+            {/* Context-aware footer message */}
+            {pendingValidMessage ? (
+              <Box mt={3} mb={4} p={3} bg="#f0fdf4" borderRadius="8px" borderLeft="3px solid #16a34a">
+                <Text fontSize="12.5px" color="#15803d" fontWeight="600">
+                  ✓ Don't worry — we'll still generate the quote for your other available service{pendingValidMessage.toLowerCase().includes(' and ') ? 's' : ''}.
+                </Text>
+                <Text fontSize="12px" color="#166534" mt={1}>
+                  Click <b>Close</b> to proceed with the available request.
+                </Text>
+              </Box>
+            ) : (
+              <Text fontSize="12px" color="gray.500" mt={3} mb={4}>
+                Please try a different service for{' '}
+                {unavailableServices.map(s => s.city).join(', ')}.
+              </Text>
+            )}
+
+            <HStack spacing={3} justify="flex-end">
+              {pendingValidMessage && (
+                <Button
+                  size="sm"
+                  variant="outline"
+                  borderColor="gray.300"
+                  color="gray.600"
+                  borderRadius="8px"
+                  onClick={() => {
+                    setUnavailableServices([]);
+                    setPendingValidMessage(null);
+                  }}
+                  _hover={{ bg: 'gray.50' }}
+                >
+                  Cancel
+                </Button>
+              )}
+              <Button
+                size="sm"
+                bg={pendingValidMessage ? '#16a34a' : '#1a3a5c'}
+                color="white"
+                borderRadius="8px"
+                onClick={() => {
+                  setUnavailableServices([]);
+                  if (pendingValidMessage) {
+                    const msg = pendingValidMessage;
+                    setPendingValidMessage(null);
+                    sendMessageWithContent(msg);
+                  }
+                }}
+                _hover={{ bg: pendingValidMessage ? '#15803d' : '#1e4d78' }}
+              >
+                {pendingValidMessage ? 'Close & Generate Quote' : 'Close'}
+              </Button>
+            </HStack>
+          </Box>
+        </Box>
+      )}
 
       {/* Minimum Quantity Warning Dialog */}
       {minQtyWarning && (

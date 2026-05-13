@@ -39,6 +39,7 @@ interface QuotePreviewProps {
 
 const QuotePreview: React.FC<QuotePreviewProps> = ({ quote, onUpdate, onSave }) => {
   const [localQuote, setLocalQuote] = useState<Quote | null>(quote);
+  const [rateInputValues, setRateInputValues] = useState<Record<string, string>>({});
   const isMobile = useBreakpointValue({ base: true, md: false });
 
   useEffect(() => {
@@ -482,12 +483,22 @@ const QuotePreview: React.FC<QuotePreviewProps> = ({ quote, onUpdate, onSave }) 
                               Rate
                             </Text>
                             <NumberInput
-                              value={lineItem.unitPrice}
-                              onChange={(_, value) =>
-                                updateLineItem(itemIndex, lineItemIndex, 'unitPrice', value)
+                              value={rateInputValues[lineItem.id] ?? String(lineItem.unitPrice)}
+                              onChange={(valueString, valueNumber) => {
+                                setRateInputValues(prev => ({ ...prev, [lineItem.id]: valueString }));
+                                if (!isNaN(valueNumber)) {
+                                  updateLineItem(itemIndex, lineItemIndex, 'unitPrice', valueNumber);
+                                }
+                              }}
+                              onBlur={() =>
+                                setRateInputValues(prev => {
+                                  const next = { ...prev };
+                                  delete next[lineItem.id];
+                                  return next;
+                                })
                               }
                               min={0}
-                              precision={2}
+                              step={0.01}
                               size="sm"
                             >
                               <NumberInputField
@@ -642,12 +653,22 @@ const QuotePreview: React.FC<QuotePreviewProps> = ({ quote, onUpdate, onSave }) 
                             </Td>
                             <Td isNumeric>
                               <NumberInput
-                                value={lineItem.unitPrice}
-                                onChange={(_, value) =>
-                                  updateLineItem(itemIndex, lineItemIndex, 'unitPrice', value)
+                                value={rateInputValues[lineItem.id] ?? String(lineItem.unitPrice)}
+                                onChange={(valueString, valueNumber) => {
+                                  setRateInputValues(prev => ({ ...prev, [lineItem.id]: valueString }));
+                                  if (!isNaN(valueNumber)) {
+                                    updateLineItem(itemIndex, lineItemIndex, 'unitPrice', valueNumber);
+                                  }
+                                }}
+                                onBlur={() =>
+                                  setRateInputValues(prev => {
+                                    const next = { ...prev };
+                                    delete next[lineItem.id];
+                                    return next;
+                                  })
                                 }
                                 min={0}
-                                precision={2}
+                                step={0.01}
                                 size="sm"
                               >
                                 <NumberInputField

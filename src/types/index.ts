@@ -10,6 +10,20 @@ export interface ExtractedPage {
   text: string;
   imageDataUrl: string;
   croppedImages?: string[];
+  // Source tracking for multi-PDF isolation
+  sourceId?: string;   // proposalId this page came from
+  sourceName?: string; // fileName this page came from
+}
+
+// Active proposal loaded by user for multi-location quote generation
+export interface ActiveProposal {
+  id: string;
+  fileName: string;
+  fileType: string;
+  pageCount: number;
+  textContent: string;
+  fileUrl: string;
+  pageImages: ExtractedPage[];
 }
 
 export interface StoredProposal {
@@ -82,6 +96,12 @@ export interface AppState {
   // Cloud storage state (NEW - additive)
   cloudStorageEnabled: boolean;
   checkCloudStorage: () => Promise<void>;
+
+  // Multi-location active proposals (additive - does not affect existing flow)
+  activeProposals: ActiveProposal[];
+  addActiveProposal: (id: string) => Promise<void>;
+  removeActiveProposal: (id: string) => void;
+  restoreActiveProposals: () => Promise<void>;
 }
 
 export type { Message, Quote, QuoteItem, LineItem, CompanyInfo, ClientInfo, TemplateData, TemplateProps, TemplateType, Template, TemplateMetadata, Lead, LeadSearchResult };

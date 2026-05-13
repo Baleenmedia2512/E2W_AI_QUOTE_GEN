@@ -298,7 +298,7 @@
 .template-modern-sales .ms-cell-num { text-align: center; font-weight: 600; color: #059669; font-size: 10.5px; }
 .template-modern-sales .ms-cell-desc strong { font-size: 11px; color: #0f172a; }
 .template-modern-sales .ms-item-details { font-size: 9px; color: #64748b; margin-top: 3px; line-height: 1.4; }
-.template-modern-sales .ms-cell-qty { text-align: center; }
+.template-modern-sales .ms-cell-qty { text-align: right; }
 .template-modern-sales .ms-cell-rate { text-align: right; }
 .template-modern-sales .ms-cell-dur { text-align: center; }
 .template-modern-sales .ms-cell-amt { text-align: right; font-weight: 700; color: #0f172a; }
