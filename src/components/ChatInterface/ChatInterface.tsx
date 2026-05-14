@@ -83,6 +83,10 @@ const ChatInterface: React.FC = () => {
     availableCities: string[];
   } | null>(null);
 
+  // Multi-select for the city-only "all services" list.
+  // Map: messageId -> set of "City|Service" keys → quantity (defaults to minQty).
+  const [cityServiceSelection, setCityServiceSelection] = useState<Record<string, Record<string, number>>>({});
+
   // Minimum quantity warning dialog state
   const [minQtyWarning, setMinQtyWarning] = useState<{
     items: Array<{ description: string; requested: number; minimum: number }>;
@@ -93,6 +97,9 @@ const ChatInterface: React.FC = () => {
   const [unavailableServices, setUnavailableServices] = useState<Array<{ city: string; service: string }>>([]);
   // Pending valid message to send to Gemini after user dismisses the unavailable-service alert
   const [pendingValidMessage, setPendingValidMessage] = useState<string | null>(null);
+  // Alternate message used when user clicks "Use Minimum" on a multi-segment below-min warning.
+  // Holds the original message rewritten with each below-min segment's qty bumped to its registry minimum.
+  const [pendingMinReplacedMessage, setPendingMinReplacedMessage] = useState<string | null>(null);
   const isFullySpecifiedRequest = (userRequest: string): boolean => {
     const request = userRequest.toLowerCase();
     
@@ -161,6 +168,35 @@ const ChatInterface: React.FC = () => {
   const detectCityInText = (text: string, cities: string[]): string | null => {
     const lower = text.toLowerCase();
     return cities.find(c => lower.includes(c.toLowerCase())) || null;
+  };
+
+  // Detect "city-only" queries — the user typed one or more known city names
+  // with no service / quantity. Returns lowercase city keys (matches registry keys),
+  // or [] if the query is anything more than just city names + filler words.
+  // Examples that match: "madurai" · "coimbatore" · "show services in chennai"
+  //                      "madurai, trichy" · "what's available in chennai"
+  // Examples that DO NOT match: "50 auto chennai" · "bus in madurai" · "chennai vs madurai"
+  const detectCityOnlyQuery = (text: string): string[] => {
+    const availCities = getAvailableCities().map(c => c.toLowerCase());
+    if (availCities.length === 0) return [];
+    if (/\d/.test(text)) return []; // any digit → not a city-only query
+
+    const cleaned = text
+      .toLowerCase()
+      .replace(/[?!.,;:]/g, ' ')
+      .replace(/\b(show|me|all|list|services?|in|for|of|the|a|an|please|what|whats|which|available|need|want|want|i|about|tell|give)\b/g, ' ')
+      .replace(/\s+/g, ' ')
+      .trim();
+    if (!cleaned) return [];
+
+    const tokens = cleaned.split(/\s+/).filter(Boolean);
+    const cities: string[] = [];
+    for (const t of tokens) {
+      const match = availCities.find(c => c === t);
+      if (!match) return []; // any non-city token disqualifies the query
+      if (!cities.includes(match)) cities.push(match);
+    }
+    return cities;
   };
 
   // Split message by "and" or ",", then check each segment for a city keyword.
@@ -381,12 +417,13 @@ const ChatInterface: React.FC = () => {
     //           "lamp","post"  → also try "lamppost")
     //     so the user's spacing doesn't have to match the registry's spelling.
     const baseWord = (w: string) => w.replace(/s$/, '');
+    const escapeRx = (s: string) => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
     const joinedPairs: string[] = [];
     for (let i = 0; i < userWords.length - 1; i++) {
       joinedPairs.push(baseWord(userWords[i]) + baseWord(userWords[i + 1]));
     }
     const wordMatchesService = (word: string, svc: string) =>
-      new RegExp(`\\b${baseWord(word)}s?\\b`, 'i').test(svc);
+      new RegExp(`\\b${escapeRx(baseWord(word))}s?\\b`, 'i').test(svc);
 
     const matches = entry.services.filter(svc => {
       // Forward match: every user word appears (singular/plural) in service name.
@@ -395,7 +432,7 @@ const ChatInterface: React.FC = () => {
       let i = 0;
       while (i < userWords.length) {
         const single = wordMatchesService(userWords[i], svc);
-        const pair = i < userWords.length - 1 && new RegExp(`\\b${joinedPairs[i]}s?\\b`, 'i').test(svc);
+        const pair = i < userWords.length - 1 && new RegExp(`\\b${escapeRx(joinedPairs[i])}s?\\b`, 'i').test(svc);
         if (single) { i += 1; continue; }
         if (pair) { i += 2; continue; }
         return false;
@@ -405,6 +442,30 @@ const ChatInterface: React.FC = () => {
     console.log(`🧮 [Classify] city="${cityKey}" userWords=[${userWords.join(',')}] joined=[${joinedPairs.join(',')}] → ${matches.length} match(es): [${matches.join(' | ')}]`);
     if (matches.length === 0) return { state: 'not_found' };
     if (matches.length === 1) return { state: 'specific', matches, qty: entry.quantities[matches[0]] };
+
+    // ── TF-IDF tie-break ──────────────────────────────────────────────────
+    // Multiple candidates matched — score each by IDF-weighted token overlap.
+    // Rare disambiguating words ("underground", "lobby", "lit") outweigh
+    // common ones ("branding", "board"). If the top score clearly beats the
+    // runner-up (>= 25% margin AND >= 1.0 absolute), classify as specific.
+    const idf = entry.idf || {};
+    const userTokens = [...userWords.map(baseWord), ...joinedPairs];
+    const scoreOf = (svc: string): number => {
+      const svcTokens = new Set(svc.split(/\s+/).map(baseWord));
+      let s = 0;
+      for (const t of userTokens) if (svcTokens.has(t)) s += idf[t] ?? 1;
+      return s;
+    };
+    const scored = matches
+      .map(svc => ({ svc, score: scoreOf(svc) }))
+      .sort((a, b) => b.score - a.score);
+    console.log(`🧮 [Classify] TF-IDF scores:`, scored.slice(0, 5).map(s => `${s.svc}=${s.score.toFixed(2)}`).join(' | '));
+
+    const [top, second] = scored;
+    const clearWinner = top.score >= 1.0 && top.score >= second.score * 1.25;
+    if (clearWinner) {
+      return { state: 'specific', matches: [top.svc], qty: entry.quantities[top.svc] };
+    }
     return { state: 'vague', matches };
   };
   // ─────────────────────────────────────────────────────────────────────────
@@ -446,7 +507,11 @@ const ChatInterface: React.FC = () => {
 
     // Strip internal bypass flags (never shown to user or sent to Gemini)
     const isQtyOverride = text.includes('[QTY_OVERRIDE]');
-    const cleanedText = text.replace(/\s*\[QTY_OVERRIDE\]/g, '').trim();
+    const isCheckboxConfirmedFlag = text.includes('[User has already specified complete service names from checkboxes]');
+    const cleanedText = text
+      .replace(/\s*\[QTY_OVERRIDE\]/g, '')
+      .replace(/\s*\[User has already specified complete service names from checkboxes\]/g, '')
+      .trim();
 
     const userMessage: Message = {
       id: Date.now().toString(),
@@ -454,6 +519,49 @@ const ChatInterface: React.FC = () => {
       content: cleanedText,
       timestamp: new Date(),
     };
+
+    // ─── CITY-ONLY QUERY GATE ────────────────────────────────────────────────
+    // If the user types just a city name (or a few cities) with no service / qty,
+    // surface every service available in that city as clickable chips so they can
+    // pick one without having to remember the catalogue. Examples that trigger:
+    //   "madurai"  · "coimbatore"  · "show services in chennai"  · "madurai, trichy"
+    if (!isQtyOverride && !isCheckboxConfirmedFlag) {
+      const cityOnlyMatches = detectCityOnlyQuery(cleanedText);
+      if (cityOnlyMatches.length > 0) {
+        const lists = cityOnlyMatches
+          .map(cityKey => {
+            const entry = cityServiceRegistry.current.get(cityKey);
+            if (!entry || entry.status !== 'ready' || entry.services.length === 0) return null;
+            const services = entry.services.map(svc => ({
+              name: svc.split(' ').map(w => w.charAt(0).toUpperCase() + w.slice(1)).join(' '),
+              minQty: entry.quantities[svc]?.min ?? 1,
+            }));
+            return {
+              city: cityKey.charAt(0).toUpperCase() + cityKey.slice(1),
+              services,
+            };
+          })
+          .filter((x): x is { city: string; services: Array<{ name: string; minQty: number }> } => !!x);
+
+        if (lists.length > 0) {
+          const assistantMsg: Message = {
+            id: (Date.now() + 1).toString(),
+            role: 'assistant',
+            content: lists.length === 1
+              ? `Here are all services available in ${lists[0].city}. Tap any to start a quote:`
+              : `Here are services available in: ${lists.map(l => l.city).join(', ')}. Tap any to start:`,
+            timestamp: new Date(),
+            isCityServiceList: true,
+            cityServiceList: lists,
+          };
+          setMessages(prev => [...prev, userMessage, assistantMsg]);
+          setInputValue('');
+          return;
+        }
+      }
+    }
+    // ─────────────────────────────────────────────────────────────────────────
+
 
     // ─── CITY GATE ────────────────────────────────────────────────────────────
     // When multiple city PDFs are loaded, every "and"-segment must have a city.
@@ -528,7 +636,7 @@ const ChatInterface: React.FC = () => {
     // Replaces the old strict-parser check. Uses cityServiceRegistry built from
     // Gemini's one-time PDF read to verify service availability + quantity constraints.
     // SKIP: checkbox-confirmed messages are already verified upstream.
-    const isCheckboxConfirmed = userMessage.content.includes('[User has already specified complete service names from checkboxes]');
+    const isCheckboxConfirmed = isCheckboxConfirmedFlag;
     if (activeProposals.length > 1 && !isCheckboxConfirmed) {
       const availCitiesPre = getAvailableCities();
       if (availCitiesPre.length > 1) {
@@ -542,6 +650,15 @@ const ChatInterface: React.FC = () => {
         // vague segment now carries the FULL matches list straight from the classifier,
         // so the checkbox group is built from real registry data (works for any category).
         const vagueSegments: Array<{ seg: typeof preSegments[0]; cityKey: string; matches: string[]; qty: number }> = [];
+        // Collected below-minimum segments — surfaced AFTER the loop in a single combined warning
+        // so other valid segments aren't dropped (previously a `return` bailed out on the first).
+        const belowMinSegments: Array<{
+          rawSegment: string;
+          requestedQty: number;
+          minQty: number;
+          svcLabel: string;
+          cityLabel: string;
+        }> = [];
 
         for (const seg of preSegments) {
           const segLower = seg.raw.toLowerCase();
@@ -658,13 +775,19 @@ const ChatInterface: React.FC = () => {
               const { min, max } = cls.qty;
               if (!isQtyOverride && requestedQty < min) {
                 const svcLabel = matchedSvc.split(' ').map(w => w.charAt(0).toUpperCase() + w.slice(1)).join(' ');
-                setMessages(prev => [...prev, userMessage]);
-                setMinQtyWarning({
-                  items: [{ description: `${svcLabel} - ${cityLabel}`, requested: requestedQty, minimum: min }],
-                  pendingQuote: null as any,
+                // Collect — DO NOT return. We still want every other segment processed
+                // so the user gets a single combined warning and the full batch is sent
+                // to Gemini after they choose Continue / Use Minimum.
+                belowMinSegments.push({
+                  rawSegment: seg.raw,
+                  requestedQty,
+                  minQty: min,
+                  svcLabel,
+                  cityLabel,
                 });
-                setPendingValidMessage(seg.raw);
-                return;
+                validSegmentRaws.push(seg.raw);
+                validSegmentLabels.push(`${requestedQty} ${titleCaseSvc(matchedSvc)} (${cityLabel}) ⚠️ below min ${min}`);
+                continue;
               }
               if (max !== null && requestedQty > max) {
                 const svcLabel = matchedSvc.split(' ').map(w => w.charAt(0).toUpperCase() + w.slice(1)).join(' ');
@@ -676,6 +799,36 @@ const ChatInterface: React.FC = () => {
             const labelQty = requestedQty ?? 1;
             validSegmentLabels.push(`${labelQty} ${titleCaseSvc(matchedSvc)} (${cityLabel})`);
           }
+        }
+
+        // ── If any below-min segments were collected, surface a single combined warning ──
+        // pendingValidMessage carries the FULL message (all segments) so Continue keeps
+        // every service. pendingMinReplacedMessage carries the same message with each
+        // below-min segment's first number rewritten to its registry minimum.
+        if (belowMinSegments.length > 0) {
+          setMessages(prev => [...prev, userMessage]);
+          const fullMessage = validSegmentRaws.join(' and ');
+          let rewritten = fullMessage;
+          for (const bm of belowMinSegments) {
+            // Replace the original below-min segment with the same segment whose first
+            // number has been bumped to its minimum. We replace the exact raw substring
+            // to avoid colliding with other segments that share keywords.
+            const rewrittenSeg = bm.rawSegment.replace(/\b\d+\b/, String(bm.minQty));
+            rewritten = rewritten.replace(bm.rawSegment, rewrittenSeg);
+          }
+          setMinQtyWarning({
+            items: belowMinSegments.map(bm => ({
+              description: `${bm.svcLabel} - ${bm.cityLabel}`,
+              requested: bm.requestedQty,
+              minimum: bm.minQty,
+            })),
+            pendingQuote: null as any,
+          });
+          setPendingValidMessage(fullMessage);
+          setPendingMinReplacedMessage(rewritten);
+          // Surface availability alerts (if any) at the same time so the user sees the full picture.
+          if (preAlerts.length > 0) setUnavailableServices(preAlerts);
+          return;
         }
 
         // Handle vague segments with city → show checkboxes built from registry matches
@@ -1333,11 +1486,12 @@ const ChatInterface: React.FC = () => {
     const pending = pendingValidMessage;
     setMinQtyWarning(null);
 
-    // Pre-Gemini path: pendingQuote is null — send pending segment to Gemini as-is
-    // Append [QTY_OVERRIDE] so the pre-Gemini qty check is skipped (user confirmed the qty)
+    // Pre-Gemini path: pendingQuote is null — send pending FULL message (all segments) to Gemini.
+    // Append [QTY_OVERRIDE] so the pre-Gemini qty check is skipped (user confirmed the qty).
     if (!minQtyWarning.pendingQuote) {
       if (pending) {
         setPendingValidMessage(null);
+        setPendingMinReplacedMessage(null);
         sendMessageWithContent(pending + ' [QTY_OVERRIDE]');
       }
       return;
@@ -1358,15 +1512,18 @@ const ChatInterface: React.FC = () => {
   const handleMinQtyUseMinimum = () => {
     if (!minQtyWarning) return;
     const pending = pendingValidMessage;
+    const minReplaced = pendingMinReplacedMessage;
 
-    // Pre-Gemini path: pendingQuote is null — replace qty with min in pending segment, then send
+    // Pre-Gemini path: pendingQuote is null — send the pre-rewritten FULL message that
+    // already has each below-min segment's qty bumped to its registry minimum.
     if (!minQtyWarning.pendingQuote) {
       setMinQtyWarning(null);
-      if (pending) {
-        // Replace the first number in the pending segment with the minimum
-        const minQty = minQtyWarning.items[0]?.minimum ?? 1;
-        const newMsg = pending.replace(/\b\d+\b/, String(minQty));
+      // Prefer the pre-rewritten multi-segment message; fall back to legacy single-segment behavior.
+      const newMsg = minReplaced
+        ?? (pending ? pending.replace(/\b\d+\b/, String(minQtyWarning.items[0]?.minimum ?? 1)) : null);
+      if (newMsg) {
         setPendingValidMessage(null);
+        setPendingMinReplacedMessage(null);
         sendMessageWithContent(newMsg);
       }
       return;
@@ -1480,16 +1637,29 @@ const ChatInterface: React.FC = () => {
       });
     });
 
-    // Also add directParts (auto-confirmed services) to the confirmation table
+    // Also add directParts (auto-confirmed services) to the confirmation table.
+    // Accepted formats produced upstream:
+    //   "100 Cab Branding (Chennai)"
+    //   "100 Cab Branding (Chennai) ⚠️ below min 100"
+    //   "100 Cab Branding Chennai"   (legacy, no parens)
     if (assistantMsg?.directParts?.length) {
       (assistantMsg.directParts as string[]).forEach(part => {
-        // Format: "1 Cab Branding Chennai" → parse service + city
-        const match = part.match(/^(\d+)\s+(.+?)\s+(\w+)$/);
-        if (match) {
-          rows.push({ service: match[2], qty: parseInt(match[1]), city: match[3] });
-        } else {
-          rows.push({ service: part, qty: 1, city: '—' });
+        // Strip any trailing warning marker (e.g. "⚠️ below min 100") before parsing.
+        const cleaned = part.replace(/\s*⚠️.*$/u, '').trim();
+
+        // Try "(City)" parenthesised form first.
+        let m = cleaned.match(/^(\d+)\s+(.+?)\s*\(([^)]+)\)\s*$/);
+        if (m) {
+          rows.push({ service: m[2].trim(), qty: parseInt(m[1]), city: m[3].trim() });
+          return;
         }
+        // Fallback to legacy space-separated trailing-word city.
+        m = cleaned.match(/^(\d+)\s+(.+?)\s+(\w+)$/);
+        if (m) {
+          rows.push({ service: m[2].trim(), qty: parseInt(m[1]), city: m[3].trim() });
+          return;
+        }
+        rows.push({ service: cleaned || part, qty: 1, city: '—' });
       });
     }
 
@@ -2264,6 +2434,173 @@ const ChatInterface: React.FC = () => {
                           </Box>
                         )}
 
+                        {/* 🏙️ CITY-ONLY QUERY — show all services for the typed city, multi-select */}
+                        {message.isCityServiceList && message.cityServiceList && message.cityServiceList.length > 0 && (() => {
+                          const selection = cityServiceSelection[message.id] || {};
+                          const selectedCount = Object.keys(selection).length;
+                          const updateSelection = (next: Record<string, number>) => {
+                            setCityServiceSelection(prev => ({ ...prev, [message.id]: next }));
+                          };
+                          const toggle = (key: string, defaultQty: number) => {
+                            const next = { ...selection };
+                            if (key in next) delete next[key]; else next[key] = defaultQty;
+                            updateSelection(next);
+                          };
+                          const setQty = (key: string, qty: number) => {
+                            if (!Number.isFinite(qty) || qty < 1) qty = 1;
+                            updateSelection({ ...selection, [key]: qty });
+                          };
+                          const handleGenerate = () => {
+                            const parts: string[] = [];
+                            for (const [key, qty] of Object.entries(selection)) {
+                              const [city, ...rest] = key.split('|');
+                              const svcName = rest.join('|');
+                              parts.push(`${qty} ${svcName} in ${city}`);
+                            }
+                            if (parts.length === 0) return;
+                            const prompt = `Generate quote for ${parts.join(' and ')}`;
+                            setInputValue(prompt);
+                            setCityServiceSelection(prev => {
+                              const cp = { ...prev }; delete cp[message.id]; return cp;
+                            });
+                            setTimeout(() => {
+                              const sendBtn = document.querySelector('[data-send-btn]') as HTMLButtonElement;
+                              sendBtn?.click();
+                            }, 100);
+                          };
+
+                          return (
+                            <Box mt={3}>
+                              <VStack align="stretch" spacing={4}>
+                                {message.cityServiceList!.map((cityGroup, cIdx) => {
+                                  const allKeys = cityGroup.services.map(s => `${cityGroup.city}|${s.name}`);
+                                  const allSelected = allKeys.every(k => k in selection);
+                                  const toggleAll = () => {
+                                    const next = { ...selection };
+                                    if (allSelected) {
+                                      allKeys.forEach(k => { delete next[k]; });
+                                    } else {
+                                      cityGroup.services.forEach(s => {
+                                        const k = `${cityGroup.city}|${s.name}`;
+                                        if (!(k in next)) next[k] = s.minQty > 1 ? s.minQty : 1;
+                                      });
+                                    }
+                                    updateSelection(next);
+                                  };
+                                  return (
+                                    <Box key={cIdx}>
+                                      <HStack mb={2} px={1} spacing={2} justify="space-between">
+                                        <HStack spacing={2}>
+                                          <Text fontSize="11px" fontWeight="700" color="blue.600" textTransform="uppercase" letterSpacing="wider">
+                                            📍 {cityGroup.city}
+                                          </Text>
+                                          <Text fontSize="11px" color="gray.500">
+                                            ({cityGroup.services.length} services)
+                                          </Text>
+                                        </HStack>
+                                        <Button size="xs" variant="link" colorScheme="blue" onClick={toggleAll}>
+                                          {allSelected ? 'Clear all' : 'Select all'}
+                                        </Button>
+                                      </HStack>
+                                      <Box display="flex" flexWrap="wrap" gap={2}>
+                                        {cityGroup.services.map((svc, sIdx) => {
+                                          const key = `${cityGroup.city}|${svc.name}`;
+                                          const isSelected = key in selection;
+                                          const defaultQty = svc.minQty > 1 ? svc.minQty : 1;
+                                          return (
+                                            <Box
+                                              key={sIdx}
+                                              as="button"
+                                              type="button"
+                                              onClick={() => toggle(key, defaultQty)}
+                                              borderWidth="1.5px"
+                                              borderColor={isSelected ? 'blue.500' : 'gray.200'}
+                                              bg={isSelected ? 'blue.50' : 'white'}
+                                              borderRadius="12px"
+                                              px={3}
+                                              py={2}
+                                              fontSize="12px"
+                                              fontWeight="500"
+                                              color="gray.800"
+                                              textAlign="left"
+                                              transition="all 0.15s ease"
+                                              _hover={{ borderColor: 'blue.400', transform: 'translateY(-1px)' }}
+                                            >
+                                              <HStack spacing={2} align="center">
+                                                <Box
+                                                  w="16px"
+                                                  h="16px"
+                                                  borderRadius="4px"
+                                                  borderWidth="1.5px"
+                                                  borderColor={isSelected ? 'blue.500' : 'gray.300'}
+                                                  bg={isSelected ? 'blue.500' : 'white'}
+                                                  display="flex"
+                                                  alignItems="center"
+                                                  justifyContent="center"
+                                                  flexShrink={0}
+                                                >
+                                                  {isSelected && <Icon as={FiCheck} boxSize="11px" color="white" />}
+                                                </Box>
+                                                <Text>{svc.name}</Text>
+                                                {svc.minQty > 1 && (
+                                                  <Text as="span" fontSize="10px" color="gray.500">
+                                                    (min {svc.minQty})
+                                                  </Text>
+                                                )}
+                                              </HStack>
+                                              {isSelected && (
+                                                <HStack mt={2} spacing={1} onClick={(e) => e.stopPropagation()}>
+                                                  <Button size="xs" variant="outline" px={2} minW="24px" h="24px"
+                                                    onClick={(e) => { e.stopPropagation(); setQty(key, (selection[key] || defaultQty) - 1); }}
+                                                  >−</Button>
+                                                  <Input
+                                                    size="xs"
+                                                    w="56px"
+                                                    h="24px"
+                                                    textAlign="center"
+                                                    value={selection[key] ?? defaultQty}
+                                                    onChange={(e) => setQty(key, parseInt(e.target.value) || 1)}
+                                                    onClick={(e) => e.stopPropagation()}
+                                                  />
+                                                  <Button size="xs" variant="outline" px={2} minW="24px" h="24px"
+                                                    onClick={(e) => { e.stopPropagation(); setQty(key, (selection[key] || defaultQty) + 1); }}
+                                                  >+</Button>
+                                                </HStack>
+                                              )}
+                                            </Box>
+                                          );
+                                        })}
+                                      </Box>
+                                    </Box>
+                                  );
+                                })}
+
+                                <HStack spacing={3} justify="space-between" pt={2} borderTopWidth="1px" borderColor="gray.100">
+                                  <Text fontSize="12px" color="gray.600" fontWeight="500">
+                                    {selectedCount === 0
+                                      ? 'Select one or more services to continue.'
+                                      : `${selectedCount} service${selectedCount === 1 ? '' : 's'} selected`}
+                                  </Text>
+                                  <Button
+                                    size="sm"
+                                    bgGradient="linear(135deg, #dc2626 0%, #be123c 50%, #9f1239 100%)"
+                                    color="white"
+                                    fontWeight="700"
+                                    borderRadius="8px"
+                                    px={5}
+                                    isDisabled={selectedCount === 0}
+                                    leftIcon={<Icon as={FiCheck} boxSize="14px" />}
+                                    onClick={handleGenerate}
+                                    _hover={{ bgGradient: 'linear(135deg, #b91c1c 0%, #9f1239 100%)' }}
+                                  >
+                                    Generate Quote
+                                  </Button>
+                                </HStack>
+                              </VStack>
+                            </Box>
+                          );
+                        })()}
+
                         {/* 🏙️ CITY PICKER — service-first layout */}
                         {message.isCityPicker && cityPickerState && cityPickerState.messageId === message.id && (
                           <Box mt={3}>
@@ -3031,7 +3368,9 @@ const ChatInterface: React.FC = () => {
                 onClick={handleMinQtyContinue}
                 _hover={{ bg: '#fff5f5' }}
               >
-                Continue with {minQtyWarning.items[0].requested}
+                {minQtyWarning.items.length > 1
+                  ? `Continue with requested (${minQtyWarning.items.length})`
+                  : `Continue with ${minQtyWarning.items[0].requested}`}
               </Button>
               <Button
                 size="sm"
@@ -3040,7 +3379,9 @@ const ChatInterface: React.FC = () => {
                 onClick={handleMinQtyUseMinimum}
                 _hover={{ bg: '#1e4d78' }}
               >
-                Use Minimum ({minQtyWarning.items[0].minimum})
+                {minQtyWarning.items.length > 1
+                  ? `Use Minimums (${minQtyWarning.items.length})`
+                  : `Use Minimum (${minQtyWarning.items[0].minimum})`}
               </Button>
             </HStack>
           </Box>

@@ -358,6 +358,15 @@ export const exportToPDF = async (
       } else {
         console.log('ℹ️ No T&C section found or section is empty');
       }
+
+      // General Terms & Conditions + Bank Details (final page in CorporateMinimal/ModernSales/PremiumAgency single-service)
+      console.log('📄 Checking for general T&C + banking page...');
+      const generalTermsResult = await captureSectionAtA4('pdf-page-terms');
+      if (generalTermsResult && generalTermsResult.canvas.height > 10) {
+        addCanvasToPDF(generalTermsResult.canvas, generalTermsResult.links, 'general-terms', false);
+      } else {
+        console.log('ℹ️ No general T&C/banking section found or section is empty');
+      }
     }
 
     console.log(`📄 PDF created with ${pageCount} pages`);

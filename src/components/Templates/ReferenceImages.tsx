@@ -100,6 +100,14 @@ function filterPagesByCategory(pages: ExtractedPage[], category: string): Extrac
     'hoardings': ['hoarding'],
     'banner': ['banners'],
     'banners': ['banner'],
+    // Vehicle / transit synonyms
+    'cab': ['taxi', 'car', 'cab'],
+    'taxi': ['cab', 'car', 'taxi'],
+    'van': ['vehicle', 'van'],
+    'mobile': ['mobile'],
+    // Print / media synonyms
+    'advertisement': ['ad', 'ads', 'advert', 'advertising'],
+    'radio': ['fm', 'radio', 'broadcast'],
     // PDF typo corrections
     'awareness': ['awarness', 'awarenes', 'awarness'],
     'direction': ['directio', 'dirction'],
@@ -815,6 +823,7 @@ function extractAllServiceTypes(items: QuoteItem[]): string[] {
         lower.includes('printing') ||
         lower.includes('ads') ||
         lower.includes('advertising') ||
+        lower.includes('advertisement') ||
         lower.includes('screen') ||
         lower.includes('lobby') ||
         lower.includes('hoarding') ||
@@ -831,15 +840,18 @@ function extractAllServiceTypes(items: QuoteItem[]): string[] {
         lower.includes('leaflet') ||
         lower.includes('flyer') ||
         lower.includes('classified') ||
-        lower.includes('sticker') ||
-        lower.includes('poster') ||
-        lower.includes('banner') ||
-        lower.includes('insertion') ||
         lower.includes('distribution') ||
         lower.includes('barricade') ||
-        lower.includes('pamphlet') ||
         lower.includes('awareness') ||
-        lower.includes('direction')) {
+        lower.includes('direction') ||
+        lower.includes('mobile') ||
+        lower.includes('van') ||
+        lower.includes('cab') ||
+        lower.includes('taxi') ||
+        lower.includes('radio') ||
+        lower.includes('metro') ||
+        lower.includes('lamp') ||
+        lower.includes('hoardings')) {
       extracted = serviceType;
     }
     
@@ -851,13 +863,18 @@ function extractAllServiceTypes(items: QuoteItem[]): string[] {
         if (bdLower.includes('branding') || bdLower.includes('shelter') ||
             bdLower.includes('signage') || bdLower.includes('printing') ||
             bdLower.includes('ads') || bdLower.includes('advertising') ||
+            bdLower.includes('advertisement') ||
             bdLower.includes('screen') || bdLower.includes('lobby') ||
             bdLower.includes('sticker') || bdLower.includes('banner') ||
             bdLower.includes('poster') || bdLower.includes('flex') ||
             bdLower.includes('standee') || bdLower.includes('display') ||
             bdLower.includes('newspaper') || bdLower.includes('insertion') ||
             bdLower.includes('pamphlet') || bdLower.includes('leaflet') ||
-            bdLower.includes('flyer') || bdLower.includes('classified')) {
+            bdLower.includes('flyer') || bdLower.includes('classified') ||
+            bdLower.includes('mobile') || bdLower.includes('van') ||
+            bdLower.includes('cab') || bdLower.includes('taxi') ||
+            bdLower.includes('radio') || bdLower.includes('metro') ||
+            bdLower.includes('lamp') || bdLower.includes('board')) {
           extracted = beforeDash;
         }
       }
@@ -869,8 +886,8 @@ function extractAllServiceTypes(items: QuoteItem[]): string[] {
     }
     
     if (!extracted) {
-      // Capture vehicle + qualifier + optional trailing noun (e.g. "Auto Back Stickers", "Bus Semi Panel Branding")
-      const vehicleMatch = desc.match(/(bus|auto|tempo|apartment|building|lift|elevator|residential|commercial)\s+(full|semi|back|panel|shelter|rickshaw|branding)(\s+[a-z]+)*/i);
+      // Capture vehicle + qualifier + optional trailing noun (e.g. "Auto Back Stickers", "Bus Semi Panel Branding", "Mobile Van LED")
+      const vehicleMatch = desc.match(/(bus|auto|mobile|van|cab|taxi|tempo|apartment|building|lift|elevator|residential|commercial)\s+(full|semi|back|panel|shelter|rickshaw|branding|led|non|van)(\s+[a-z]+)*/i);
       if (vehicleMatch) extracted = vehicleMatch[0].trim();
     }
 
