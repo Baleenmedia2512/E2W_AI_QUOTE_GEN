@@ -260,7 +260,7 @@
 
 ---
 
-### Metro Branding Underground
+### Metro Branding Underground stations
 | Field | Details |
 |---|---|
 | Rental Price | ₹2,10,000/month |
@@ -348,3 +348,39 @@
 | Newspaper Insertion Paper Size | 20,000 copies | ₹61,200 |
 | Pamphlet Distribution | 3,000 copies | ₹7,200 |
 | Wall Posters | 1,000 posters | ₹26,200 |
+
+
+##Inner Header content Service Name list
+
+Bus Semi Branding
+Bus Shelter – Double Panel – Lit
+Auto Full Branding
+Auto Semi Branding
+Auto Back Stickers
+Cab Branding
+Mobile Van – LED
+Mobile Van – Non LED
+Apartment Lift Branding
+Apartment Lobby Screen Branding
+No Parking Board
+Lamp Post Board (Star Flex)
+Lamp Post Board (Sun Pack)
+Barricade Branding
+Traffic Awareness Board
+Newspaper Insertion – A4 / A5
+Newspaper Insertion – Paper Size
+Pamphlet Distribution
+Wall Posters
+Flex Banner
+Metro Branding – Interior
+Metro Branding – Underground Stations
+Direction Board
+LED Hoardings
+Flex Hoardings
+Lamp Post Board (Dye Cutting)
+Paper Advertisement Daily Thanthi
+Paper Advertisement Dinamalar
+Paper Advertisement Dinakaran
+Paper Advertisement The Hindu
+Paper Advertisement Times of India
+Radio Advertisement
