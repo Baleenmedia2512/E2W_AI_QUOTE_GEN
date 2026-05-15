@@ -20,7 +20,7 @@
 #pdf-page-terms,
 #pdf-page-summary,
 [id^="pdf-service-"] {
-  font-family: 'Inter', 'Segoe UI', Arial, sans-serif !important;
+  font-family: 'Calibri' !important;
   width: 794px !important;           /* A4 width at 96dpi */
   min-width: 794px !important;
   max-width: 794px !important;
