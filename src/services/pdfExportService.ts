@@ -9,6 +9,49 @@ import DownloadNotification from '../plugins/downloadNotification';
 // A4 dimensions at 96dpi (standard web resolution)
 const A4_WIDTH_PX = 794;   // 210mm at 96dpi
 const A4_HEIGHT_PX = 1123;  // 297mm at 96dpi
+const PDF_FONT_FAMILY = "'Inter'";
+const PDF_FONT_LOAD_SPECS = [
+  '400 14px Inter',
+  '500 14px Inter',
+  '600 14px Inter',
+  '700 14px Inter',
+];
+
+const forcePdfFontInTree = (root: HTMLElement): void => {
+  root.style.setProperty('font-family', PDF_FONT_FAMILY, 'important');
+  root.style.setProperty('font-style', 'normal', 'important');
+  root.querySelectorAll<HTMLElement>('*').forEach((node) => {
+    node.style.setProperty('font-family', PDF_FONT_FAMILY, 'important');
+    node.style.setProperty('font-style', 'normal', 'important');
+  });
+};
+
+const enforcePdfFontInClonedDoc = (doc: Document): void => {
+  const style = doc.createElement('style');
+  style.textContent = `
+    * {
+      font-family: ${PDF_FONT_FAMILY} !important;
+      font-style: normal !important;
+      -webkit-text-size-adjust: 100% !important;
+      text-size-adjust: 100% !important;
+    }
+  `;
+  doc.head.appendChild(style);
+};
+
+const ensurePdfFontLoaded = async (): Promise<void> => {
+  // Load target font once before capture to avoid device-specific fallback glyphs.
+  if (!document.fonts) {
+    return;
+  }
+
+  try {
+    await Promise.all(PDF_FONT_LOAD_SPECS.map((spec) => document.fonts.load(spec)));
+    await document.fonts.ready;
+  } catch (error) {
+    console.warn('⚠️ PDF font preload failed, continuing with fallback fonts:', error);
+  }
+};
 
 /** Represents a clickable link annotation to be overlaid on the PDF image */
 interface LinkAnnotation {
@@ -47,6 +90,7 @@ const captureSectionAtA4 = async (containerId: string): Promise<{ canvas: HTMLCa
     backgroundColor: '#ffffff',
     display: 'block'
   });
+  forcePdfFontInTree(clone);
 
   document.body.appendChild(clone);
 
@@ -103,7 +147,10 @@ const captureSectionAtA4 = async (containerId: string): Promise<{ canvas: HTMLCa
       useCORS: true,
       allowTaint: false,
       backgroundColor: '#ffffff',
-      logging: false
+      logging: false,
+      onclone: (doc) => {
+        enforcePdfFontInClonedDoc(doc);
+      },
     });
 
     console.log(`✅ Section captured: ${canvas.width}x${canvas.height}px`);
@@ -153,7 +200,10 @@ const legacyFullCapture = async (
     width: A4_WIDTH_PX,
     windowWidth: A4_WIDTH_PX,
     scrollX: 0,
-    scrollY: 0
+    scrollY: 0,
+    onclone: (doc) => {
+      enforcePdfFontInClonedDoc(doc);
+    },
   });
   
   // Restore styles
@@ -195,6 +245,7 @@ export const exportToPDF = async (
     // Show loading state
     const originalCursor = document.body.style.cursor;
     document.body.style.cursor = 'wait';
+    await ensurePdfFontLoaded();
 
     const isMobileDevice = isMobile();
     console.log('📱 Device type:', isMobileDevice ? 'Mobile' : 'Desktop');
@@ -484,6 +535,7 @@ export const exportToPDFWithOptions = async (
 
   try {
     document.body.style.cursor = 'wait';
+    await ensurePdfFontLoaded();
 
     // Force desktop A4 layout for PDF capture regardless of screen size
     const a4WidthPx = orientation === 'portrait' ? 794 : 1123; // 210mm or 297mm at 96dpi
@@ -506,7 +558,10 @@ export const exportToPDFWithOptions = async (
       backgroundColor: '#ffffff',
       logging: false,
       width: a4WidthPx,
-      windowWidth: a4WidthPx
+      windowWidth: a4WidthPx,
+      onclone: (doc) => {
+        enforcePdfFontInClonedDoc(doc);
+      },
     });
 
     // Restore original styles immediately after capture

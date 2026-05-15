@@ -384,3 +384,20 @@
 30. Paper Advertisement The Hindu
 31. Paper Advertisement Times of India
 32. Radio Advertisement
+
+
+| City       | Service                               | Duration              |
+| ---------- | ------------------------------------- | --------------------- |
+| Chennai    | Bus Semi Branding                     | 30 days / 1 Bus month |
+| Chennai    | Bus Shelter – Double Panel – Lit      | 30 days               |
+| Chennai    | Cab Branding                          | 1 Cab month           |
+| Chennai    | Mobile Van – LED                      | 1 Van month           |
+| Chennai    | Mobile Van – NON LED                  | 1 Van month           |
+| Chennai    | Metro Branding – Interior             | 1 Metro month         |
+| Chennai    | Metro Branding – Underground Stations | 1 Metro month         |
+| Chennai    | LED Hoardings                         | Minimum 7 days        |
+| Chennai    | Flex Hoardings                        | 30 days               |
+| Madurai    | Bus Full Branding                     | 45 days               |
+| Madurai    | Bus Shelter – Double Panel – Lit      | 30 days               |
+| Coimbatore | Bus Full Branding                     | 45 days               |
+| Coimbatore | Bus Shelter – Double Panel – Lit      | 30 days               |

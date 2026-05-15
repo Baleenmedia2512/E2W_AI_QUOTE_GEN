@@ -20,12 +20,13 @@
 #pdf-page-terms,
 #pdf-page-summary,
 [id^="pdf-service-"] {
+  font-family: 'Inter', 'Segoe UI', Arial, sans-serif !important;
   width: 794px !important;           /* A4 width at 96dpi */
   min-width: 794px !important;
   max-width: 794px !important;
   box-sizing: border-box;
   background: #ffffff;
-  font-size: 13px;                   /* Fixed font size, not responsive */
+  font-size: 16px;                   /* Fixed font size, not responsive */
   line-height: 1.6;
   overflow: visible;
   margin: 0 !important;
@@ -112,6 +113,7 @@ html body [id^="pdf-service-ref-"] {
 #pdf-page-terms *,
 #pdf-page-summary *,
 [id^="pdf-service-"] * {
+  font-family: inherit !important;
   max-width: 100% !important;
   flex-wrap: wrap !important;        /* Allow wrapping if needed */
   word-wrap: break-word !important;
@@ -128,7 +130,7 @@ html body [id^="pdf-service-ref-"] {
   max-width: 100% !important;
   table-layout: auto;                 /* Allow auto layout for better fitting */
   border-collapse: collapse;
-  font-size: 13px !important;          /* Fixed font size for tables */
+  font-size: 16px !important;          /* Fixed font size for tables */
 }
 
 #pdf-page-1 th,
@@ -140,7 +142,7 @@ html body [id^="pdf-service-ref-"] {
 [id^="pdf-service-"] th,
 [id^="pdf-service-"] td {
   padding: 4px 5px !important;        /* Minimal cell padding for large margins */
-  font-size: 13px !important;
+  font-size: 16px !important;
   word-break: break-word !important;
   line-height: 1.2 !important;
 }
@@ -255,7 +257,7 @@ html body [id^="pdf-service-ref-"] {
 }
 
 .template-corporate-minimal .system-generated-notice p {
-  font-size: 13px !important;
+  font-size: 16px !important;
   color: #1a3a5c !important;
   font-weight: 500 !important;
   letter-spacing: 0.3px !important;
@@ -288,7 +290,7 @@ html body [id^="pdf-service-ref-"] {
 }
 
 .template-classic-business .system-generated-notice p {
-  font-size: 12px !important;
+  font-size: 15px !important;
   color: #5a4a2a !important;
   font-weight: 500 !important;
   letter-spacing: 0.3px !important;
@@ -324,7 +326,7 @@ html body [id^="pdf-service-ref-"] {
 }
 
 [id^="pdf-service-ref-"] .pa-notice p {
-  font-size: 12px !important;
+  font-size: 15px !important;
   color: #5a4a3a !important;
   font-weight: 500 !important;
   letter-spacing: 0.3px !important;
@@ -349,7 +351,7 @@ html body [id^="pdf-service-ref-"] {
 }
 
 [id^="pdf-service-ref-"] .ms-notice p {
-  font-size: 12px !important;
+  font-size: 15px !important;
   color: #047857 !important;
   font-weight: 600 !important;
   letter-spacing: 0.3px !important;
@@ -381,7 +383,7 @@ html body [id^="pdf-service-ref-"] {
   align-items: center !important;
   flex-wrap: wrap !important;
   gap: 20px !important;
-  font-size: 9px !important;
+  font-size: 12px !important;
   color: #636e72 !important;
 }
 
@@ -408,7 +410,7 @@ html body [id^="pdf-service-ref-"] {
 #pdf-page-summary .notes-section p,
 [id^="pdf-service-"]:not([id^="pdf-service-ref-"]) .terms-section ul,
 [id^="pdf-service-"]:not([id^="pdf-service-ref-"]) .notes-section p {
-  font-size: 9px !important;          /* Smaller font for terms to fit with margins */
+  font-size: 12px !important;          /* Smaller font for terms to fit with margins */
   line-height: 1.4 !important;
   padding-right: 0 !important;
   margin-right: 0 !important;
@@ -427,21 +429,21 @@ html body [id^="pdf-service-ref-"] {
 #pdf-page-1 h1,
 #pdf-page-summary h1,
 [id^="pdf-service-"]:not([id^="pdf-service-ref-"]) h1 {
-  font-size: 14px !important;
+  font-size: 17px !important;
   margin-bottom: 8px !important;
 }
 
 #pdf-page-1 h2,
 #pdf-page-summary h2,
 [id^="pdf-service-"]:not([id^="pdf-service-ref-"]) h2 {
-  font-size: 13px !important;
+  font-size: 16px !important;
   margin-bottom: 6px !important;
 }
 
 #pdf-page-1 h3,
 #pdf-page-summary h3,
 [id^="pdf-service-"]:not([id^="pdf-service-ref-"]) h3 {
-  font-size: 11px !important;
+  font-size: 14px !important;
   margin-bottom: 6px !important;
 }
 
@@ -472,7 +474,7 @@ html body [id^="pdf-service-ref-"] {
 [id^="pdf-service-"]:not([id^="pdf-service-ref-"]) .company-name,
 [id^="pdf-service-"]:not([id^="pdf-service-ref-"]) .company-title,
 [id^="pdf-service-"]:not([id^="pdf-service-ref-"]) .letterhead-name {
-  font-size: 16px !important;
+  font-size: 19px !important;
   margin-bottom: 4px !important;
 }
 
@@ -488,7 +490,7 @@ html body [id^="pdf-service-ref-"] {
 [id^="pdf-service-"]:not([id^="pdf-service-ref-"]) .client-details,
 [id^="pdf-service-"]:not([id^="pdf-service-ref-"]) .letterhead-info,
 [id^="pdf-service-"]:not([id^="pdf-service-ref-"]) .company-info p {
-  font-size: 9px !important;
+  font-size: 12px !important;
   line-height: 1.3 !important;
   margin: 2px 0 !important;
 }
@@ -526,7 +528,7 @@ html body [id^="pdf-service-ref-"] {
   margin-top: 0 !important;
   margin-bottom: 35px !important;  /* Increased from 20px to 35px */
   padding-bottom: 12px !important;  /* Added padding */
-  font-size: 22px;  /* Increased from 18px to 22px */
+  font-size: 24px;  /* Increased from 18px to 22px */
   font-weight: 700;  /* Increased from 600 to 700 */
   color: #750926;  /* Changed from #333 to match branding */
   text-align: center;
@@ -562,7 +564,7 @@ html body [id^="pdf-service-ref-"] {
 /* Image captions */
 #pdf-page-2 .reference-image-caption,
 [id^="pdf-service-ref-"] .reference-image-caption {
-  font-size: 12px;
+  font-size: 15px;
   color: #666;
   text-align: center;
   margin: 10px 0 25px 0;  /* Increased bottom margin from 20px to 25px */
@@ -583,7 +585,7 @@ html body [id^="pdf-service-ref-"] {
 /* Service type headings in reference section */
 #pdf-page-2 .service-type-heading,
 [id^="pdf-service-ref-"] .service-type-heading {
-  font-size: 16px;
+  font-size: 19px;
   font-weight: 600;
   color: #750926;
   margin: 30px 0 15px 0;
@@ -605,7 +607,7 @@ html body [id^="pdf-service-ref-"] {
   [id^="pdf-service-"] {
     width: 794px !important;
     min-width: 794px !important;
-    font-size: 13px !important;
+    font-size: 16px !important;
   }
   
   #pdf-page-1 *,
