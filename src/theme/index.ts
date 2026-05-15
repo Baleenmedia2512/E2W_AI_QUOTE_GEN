@@ -62,8 +62,8 @@ const theme = extendTheme({
     },
   },
   fonts: {
-    heading: `'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', 'Helvetica Neue', sans-serif`,
-    body: `'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', 'Helvetica Neue', sans-serif`,
+    heading: `'Calibri'`,
+    body: `'Calibri'`,
   },
   styles: {
     global: {

@@ -9,12 +9,10 @@ import DownloadNotification from '../plugins/downloadNotification';
 // A4 dimensions at 96dpi (standard web resolution)
 const A4_WIDTH_PX = 794;   // 210mm at 96dpi
 const A4_HEIGHT_PX = 1123;  // 297mm at 96dpi
-const PDF_FONT_FAMILY = "'Inter'";
+const PDF_FONT_FAMILY = "'Calibri'";
 const PDF_FONT_LOAD_SPECS = [
-  '400 14px Inter',
-  '500 14px Inter',
-  '600 14px Inter',
-  '700 14px Inter',
+  '400 14px Calibri',
+  '700 14px Calibri',
 ];
 
 const forcePdfFontInTree = (root: HTMLElement): void => {
