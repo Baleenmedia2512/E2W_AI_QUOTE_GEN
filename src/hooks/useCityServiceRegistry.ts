@@ -64,7 +64,7 @@ const _registry = new Map<string, CityRegistry>();
 // previously cached (and possibly truncated) registries are invalidated and
 // rebuilt from the source PDF. Keys include this version so old entries are
 // simply ignored (and pruned on next persist).
-const PARSER_VERSION = 'v7-list-regex-fix';
+const PARSER_VERSION = 'v9-minqty-not-campaign-days';
 const SESSION_KEY = `e2w_city_service_registry__${PARSER_VERSION}`;
 const LOCAL_KEY_PREFIX = `e2w_registry_v2:${PARSER_VERSION}:`;
 const DEFAULT_TTL_DAYS = 7;
@@ -393,6 +393,7 @@ export const useCityServiceRegistry = () => {
       (async () => {
         try {
           const pdfHash = await hashText(proposal.textContent!);
+          let seededServiceNames: string[] | null = null;
 
           // Tier-3 cache: localStorage hit (within TTL + same pdfHash) → no API call
           const cached = readFromLocal(cityKey);
@@ -428,16 +429,8 @@ export const useCityServiceRegistry = () => {
             console.log(`🔎 [Registry] "${cityKey}" fast-path matched ${rawLines.length} raw lines, ${serviceNames.length} after filter. Raw block:\n${rawBlock}`);
 
             if (serviceNames.length > 0) {
-              const reg = buildRegistryFromGemini(cityKey, { services: serviceNames }, pdfHash);
-              const finalCount = Object.keys(reg.entries).length;
-              if (finalCount < serviceNames.length) {
-                console.warn(`⚠️ [Registry] "${cityKey}" lost ${serviceNames.length - finalCount} entries during canonical dedupe. Input names:`, serviceNames);
-              }
-              _registry.set(cityKey, reg);
-              persistToSession();
-              persistToLocal(cityKey, reg);
-              console.log(`✅ [Registry] "${cityKey}" built from explicit service list: ${finalCount} services (no API call)`);
-              return;
+              seededServiceNames = serviceNames;
+              console.log(`✅ [Registry] "${cityKey}" seeded ${serviceNames.length} services from explicit list; continuing to quantity extraction`);
             }
           } else {
             console.log(`🔎 [Registry] "${cityKey}" — no "##Inner Header content Service Name list" section found, trying heading-pattern fast path`);
@@ -487,17 +480,12 @@ export const useCityServiceRegistry = () => {
             }
           }
 
-          if (headingCandidates.size > 0) {
+          if (!seededServiceNames && headingCandidates.size > 0) {
             const serviceNames = [...headingCandidates];
-            const reg = buildRegistryFromGemini(cityKey, { services: serviceNames }, pdfHash);
-            const finalCount = Object.keys(reg.entries).length;
-            _registry.set(cityKey, reg);
-            persistToSession();
-            persistToLocal(cityKey, reg);
-            console.log(`✅ [Registry] "${cityKey}" built from heading-pattern fast path: ${finalCount} services (no API call). Headings:`, serviceNames);
-            return;
+            seededServiceNames = serviceNames;
+            console.log(`✅ [Registry] "${cityKey}" seeded ${serviceNames.length} services from heading-pattern fast path; continuing to quantity extraction. Headings:`, serviceNames);
           } else {
-            console.log(`🔎 [Registry] "${cityKey}" — heading-pattern fast path found 0 candidates, falling back to Gemini`);
+            console.log(`🔎 [Registry] "${cityKey}" — heading-pattern fast path found 0 candidates, using Gemini full extraction`);
           }
 
           // ── Diagnostic: dump what we're sending to Gemini so we can see if
@@ -558,6 +546,11 @@ For EACH service found in Step 1:
 - If the Pricing Summary row name DIFFERS from the inner-page heading name, record the Summary name as an alias.
 - If no matching Pricing Summary row exists, use min=1 and null for the rest.
 
+CRITICAL — Min Quantity vs Campaign Duration:
+- "min quantity" means the MINIMUM NUMBER OF UNITS to book (e.g. 1 van, 5 buses, 50 autos). It comes ONLY from the "Min Quantity" column in the Pricing Summary table.
+- "Campaign Days" or "Campaign Duration" (e.g. 30 days) is a time period — it is NOT min quantity. NEVER use a days/duration value as the min quantity.
+- If a service detail page says "Campaign Days: 30" but the Pricing Summary row shows Min Qty = 1, the correct min is 1.
+
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 OUTPUT FORMAT — return ONLY valid JSON
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
@@ -586,6 +579,16 @@ CRITICAL RULES:
 - Return ONLY valid JSON — no markdown fences, no explanation, no extra text.
 - Never copy the placeholder strings above. Every value must come directly from the document below.
 
+${seededServiceNames && seededServiceNames.length > 0 ? `
+SEED SERVICES (deterministic parser result):
+${seededServiceNames.map((s, i) => `${i + 1}. ${s}`).join('\n')}
+
+IMPORTANT FOR THIS RUN:
+- Use the seed list above as the EXACT services[] output (lowercase).
+- Do NOT add/remove/reword service names.
+- Focus on extracting quantities/price metadata for these services from the pricing summary.
+` : ''}
+
 Rate card content:
 ${proposal.textContent.slice(0, 50000)}`;
 
@@ -594,8 +597,11 @@ ${proposal.textContent.slice(0, 50000)}`;
           console.log(`🤖 [Registry] "${cityKey}" raw Gemini response (${raw.length} chars):\n${raw.slice(0, 2000)}${raw.length > 2000 ? '\n…(truncated)' : ''}`);
           const jsonStr = raw.replace(/^```(?:json)?\s*/i, '').replace(/\s*```$/i, '').trim();
           const parsed = JSON.parse(jsonStr);
+          const parsedForBuild = (seededServiceNames && seededServiceNames.length > 0)
+            ? { ...parsed, services: seededServiceNames }
+            : parsed;
 
-          const reg = buildRegistryFromGemini(cityKey, parsed, pdfHash);
+          const reg = buildRegistryFromGemini(cityKey, parsedForBuild, pdfHash);
           _registry.set(cityKey, reg);
           persistToSession();
           persistToLocal(cityKey, reg);
