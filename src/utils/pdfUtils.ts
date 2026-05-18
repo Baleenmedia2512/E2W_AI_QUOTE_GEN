@@ -1,5 +1,5 @@
-import * as pdfjsLib from 'pdfjs-dist';
 import { GoogleGenerativeAI } from '@google/generative-ai';
+import * as pdfjsLib from 'pdfjs-dist';
 
 // Configure PDF.js worker - Use unpkg CDN as fallback with proper configuration
 // Try multiple CDN sources for better reliability

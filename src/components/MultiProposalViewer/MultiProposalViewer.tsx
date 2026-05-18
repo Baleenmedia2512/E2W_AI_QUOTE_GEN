@@ -1,4 +1,3 @@
-import React, { useState } from 'react';
 import {
   Box,
   HStack,
@@ -11,7 +10,9 @@ import {
   Badge,
   useColorModeValue,
 } from '@chakra-ui/react';
+import React, { useState } from 'react';
 import { FiChevronLeft, FiChevronRight, FiX, FiFileText, FiLayers } from 'react-icons/fi';
+
 import { useAppStore } from '../../store';
 import { ActiveProposal } from '../../types';
 

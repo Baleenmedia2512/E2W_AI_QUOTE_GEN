@@ -12,6 +12,7 @@
  */
 
 import { useEffect } from 'react';
+
 import { useAppStore } from '../store';
 
 // ── Shared types ─────────────────────────────────────────────────────────────

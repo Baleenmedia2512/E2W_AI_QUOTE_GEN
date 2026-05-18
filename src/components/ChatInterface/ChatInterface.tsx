@@ -1,4 +1,5 @@
-import React, { useState, useRef, useEffect } from 'react';
+import { Capacitor } from '@capacitor/core';
+import { SpeechRecognition } from '@capacitor-community/speech-recognition';
 import {
   Box,
   Input,
@@ -12,22 +13,24 @@ import {
   Icon,
   Checkbox,
 } from '@chakra-ui/react';
+import React, { useState, useRef, useEffect } from 'react';
 import { FiSend, FiCheck, FiMic } from 'react-icons/fi';
 import { useHistory } from 'react-router-dom';
-import { useAppStore } from '../../store';
-import { sendMessageToGemini } from '../../services/geminiService';
-import { Message } from '../../types/chat';
-import { Quote, QuoteItem } from '../../types/quote';
-import { saveChatHistory, loadChatHistory } from '../../utils/localStorage';
-import { loadAllProposalsFromCloud } from '../../services/supabaseProposalService';
-import { DEFAULT_GENERAL_TERMS } from '../../utils/quoteGrouping';
-import { SpeechRecognition } from '@capacitor-community/speech-recognition';
-import { Capacitor } from '@capacitor/core';
+
 import {
   getCityServiceRegistry,
   KNOWN_CITY_LIST,
   type ServiceQuantity,
 } from '../../hooks/useCityServiceRegistry';
+import { sendMessageToGemini } from '../../services/geminiService';
+import { loadAllProposalsFromCloud } from '../../services/supabaseProposalService';
+import { useAppStore } from '../../store';
+import { Message } from '../../types/chat';
+import { Quote, QuoteItem } from '../../types/quote';
+import { saveChatHistory, loadChatHistory } from '../../utils/localStorage';
+import { DEFAULT_GENERAL_TERMS } from '../../utils/quoteGrouping';
+
+
 
 const SUGGESTION_PROMPTS = [
   'Generate quote for 100 auto full branding',

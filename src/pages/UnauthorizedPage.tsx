@@ -1,6 +1,7 @@
-import React from 'react';
 import { Box, Button, Container, Heading, Text, VStack } from '@chakra-ui/react';
+import React from 'react';
 import { useHistory } from 'react-router-dom';
+
 import { useAuthStore } from '../store/authStore';
 
 const UnauthorizedPage: React.FC = () => {

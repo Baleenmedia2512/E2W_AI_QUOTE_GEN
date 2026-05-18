@@ -1,4 +1,3 @@
-import React from 'react';
 import {
   Box,
   Flex,
@@ -8,8 +7,10 @@ import {
   Icon,
   Badge,
 } from '@chakra-ui/react';
+import React from 'react';
 import { FiHome, FiFileText, FiEye, FiMessageSquare, FiFolder } from 'react-icons/fi';
 import { useHistory } from 'react-router-dom';
+
 import ChatInterface from '../components/ChatInterface/ChatInterface';
 import { UserProfile } from '../components/UserProfile';
 

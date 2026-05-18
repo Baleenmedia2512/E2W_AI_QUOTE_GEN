@@ -1,12 +1,13 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { useHistory } from 'react-router-dom';
-import { useAppStore } from '../store';
-import { TemplateSelector } from '../components/TemplateSelector/TemplateSelector';
-import { CorporateMinimal } from '../components/Templates/CorporateMinimal';
-import { PremiumAgency } from '../components/Templates/PremiumAgency';
-import { ModernSales } from '../components/Templates/ModernSales';
+
 import { ClassicBusiness } from '../components/Templates/ClassicBusiness';
+import { CorporateMinimal } from '../components/Templates/CorporateMinimal';
+import { ModernSales } from '../components/Templates/ModernSales';
+import { PremiumAgency } from '../components/Templates/PremiumAgency';
+import { TemplateSelector } from '../components/TemplateSelector/TemplateSelector';
 import { exportToPDF } from '../services/pdfExportService';
+import { useAppStore } from '../store';
 import { ExtractedPage } from '../types';
 import './QuotePreviewPage.css';
 

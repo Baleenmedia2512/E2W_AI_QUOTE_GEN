@@ -218,7 +218,7 @@ export async function syncPendingChanges(): Promise<{
  */
 export function getSyncStatus(): SyncStatus {
   let lastSync: Date | null = null;
-  let conflictsDetected = 0;
+  const conflictsDetected = 0;
 
   // Check localStorage for last sync timestamp
   try {

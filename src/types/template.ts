@@ -1,5 +1,5 @@
-import { CompanyInfo } from './company';
 import { ClientInfo } from './client';
+import { CompanyInfo } from './company';
 import { Quote } from './quote';
 
 export interface ExtractedPage {

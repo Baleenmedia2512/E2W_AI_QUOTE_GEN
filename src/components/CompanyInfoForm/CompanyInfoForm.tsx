@@ -1,5 +1,4 @@
-﻿import React, { useState, useEffect } from 'react';
-import {
+﻿import {
   Box,
   Button,
   FormControl,
@@ -17,7 +16,9 @@ import {
   Text,
   Icon,
 } from '@chakra-ui/react';
+import React, { useState, useEffect } from 'react';
 import { FiUploadCloud } from 'react-icons/fi';
+
 import { CompanyInfo } from '../../types/company';
 import { saveCompanyInfo, loadCompanyInfo } from '../../utils/localStorage';
 import './CompanyInfoForm.css';

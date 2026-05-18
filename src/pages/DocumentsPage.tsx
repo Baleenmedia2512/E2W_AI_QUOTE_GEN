@@ -1,4 +1,3 @@
-import React from 'react';
 import {
   Box,
   Flex,
@@ -8,10 +7,12 @@ import {
   Icon,
   Badge,
 } from '@chakra-ui/react';
+import React from 'react';
 import { FiFolder, FiHome, FiFileText, FiEye } from 'react-icons/fi';
 import { useHistory } from 'react-router-dom';
-import ProposalUpload from '../components/ProposalUpload/ProposalUpload';
+
 import MultiProposalViewer from '../components/MultiProposalViewer/MultiProposalViewer';
+import ProposalUpload from '../components/ProposalUpload/ProposalUpload';
 import { UserProfile } from '../components/UserProfile';
 
 const DocumentsPage: React.FC = () => {

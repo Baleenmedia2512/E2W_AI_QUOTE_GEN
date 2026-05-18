@@ -3,11 +3,12 @@
  * Shows user-friendly notifications for app updates, sync status, and cache management
  */
 
-import React, { useEffect, useState } from 'react';
 import { Box, Button, Text, useToast, VStack, HStack, Icon, Progress } from '@chakra-ui/react';
+import React, { useEffect, useState } from 'react';
 import { FiRefreshCw, FiDownload, FiAlertCircle } from 'react-icons/fi';
-import { checkForUpdates, clearCacheAndReload, formatVersion, AppVersion } from '../../utils/cacheVersion';
+
 import { getSyncStatus, syncPendingChanges } from '../../services/dataSyncService';
+import { checkForUpdates, clearCacheAndReload, formatVersion, AppVersion } from '../../utils/cacheVersion';
 
 export const UpdateNotification: React.FC = () => {
   const [hasUpdate, setHasUpdate] = useState(false);

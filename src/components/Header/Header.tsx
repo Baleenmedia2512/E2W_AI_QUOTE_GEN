@@ -1,5 +1,6 @@
-import React from 'react';
 import { Box, Container, HStack, Heading, Spacer } from '@chakra-ui/react';
+import React from 'react';
+
 import { UserProfile } from '../UserProfile';
 
 export const Header: React.FC = () => {

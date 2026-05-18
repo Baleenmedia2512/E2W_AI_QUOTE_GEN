@@ -1,9 +1,9 @@
 import { Message } from './chat';
-import { Quote, QuoteItem, LineItem } from './quote';
-import { CompanyInfo } from './company';
 import { ClientInfo } from './client';
-import { TemplateData, TemplateProps, TemplateType, Template, TemplateMetadata } from './template';
+import { CompanyInfo } from './company';
 import { Lead, LeadSearchResult } from './lead';
+import { Quote, QuoteItem, LineItem } from './quote';
+import { TemplateData, TemplateProps, TemplateType, Template, TemplateMetadata } from './template';
 
 export interface ExtractedPage {
   pageNumber: number;

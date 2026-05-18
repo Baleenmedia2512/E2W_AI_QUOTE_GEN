@@ -1,6 +1,8 @@
 import bcrypt from 'bcryptjs';
-import { supabase } from './supabaseClient';
+
 import { AuthUser, LoginCredentials } from '../types/auth';
+
+import { supabase } from './supabaseClient';
 
 class AuthService {
   /**

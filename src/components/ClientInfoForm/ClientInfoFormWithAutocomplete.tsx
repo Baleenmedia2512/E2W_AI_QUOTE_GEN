@@ -1,4 +1,3 @@
-import React, { useState, useEffect } from 'react';
 import {
   Box,
   Button,
@@ -14,10 +13,12 @@ import {
   GridItem,
   Text,
 } from '@chakra-ui/react';
-import { ClientInfo } from '../../types/client';
-import { AutocompleteInput } from '../AutocompleteInput';
+import React, { useState, useEffect } from 'react';
+
 import { searchLeads } from '../../services/leadService';
+import { ClientInfo } from '../../types/client';
 import { LeadSearchResult } from '../../types/lead';
+import { AutocompleteInput } from '../AutocompleteInput';
 import './ClientInfoForm.css';
 
 interface ClientInfoFormWithAutocompleteProps {

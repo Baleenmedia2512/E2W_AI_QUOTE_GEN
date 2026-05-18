@@ -1,4 +1,3 @@
-import React, { useRef, useState, useEffect } from 'react';
 import {
   Box,
   Button,
@@ -26,9 +25,11 @@ import {
   ModalFooter,
   useDisclosure,
 } from '@chakra-ui/react';
+import React, { useRef, useState, useEffect } from 'react';
 import { FiUploadCloud, FiFile, FiClock, FiTrash2, FiChevronDown, FiChevronUp, FiFileText, FiImage, FiAlertTriangle } from 'react-icons/fi';
+
+import { findCloudDuplicate, cloudProposalToStored } from '../../services/supabaseProposalService';
 import { useAppStore } from '../../store';
-import { extractPDFContent, validatePDFFile } from '../../utils/pdfUtils';
 import { 
   extractImageContent, 
   extractExcelContent, 
@@ -36,8 +37,8 @@ import {
   validateExcelFile,
   detectFileType 
 } from '../../utils/fileUtils';
+import { extractPDFContent, validatePDFFile } from '../../utils/pdfUtils';
 import { findDuplicateProposal } from '../../utils/proposalStorage';
-import { findCloudDuplicate, cloudProposalToStored } from '../../services/supabaseProposalService';
 
 
 const ProposalUpload: React.FC = () => {

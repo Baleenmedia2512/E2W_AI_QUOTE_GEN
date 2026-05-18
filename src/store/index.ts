@@ -1,6 +1,16 @@
 import { create } from 'zustand';
+
+import { DEFAULT_COMPANY_INFO } from '../constants/defaultCompany';
+import { companyService } from '../services/companyService';
+import {
+  checkCloudStorageAvailability,
+  loadAllProposalsFromCloud,
+  uploadProposalToCloud,
+  deleteProposalFromCloud,
+  downloadProposalFile,
+  cloudProposalToStored,
+} from '../services/supabaseProposalService';
 import { AppState, ProposalData, Message, Quote, CompanyInfo, ClientInfo, TemplateType, StoredProposal, ActiveProposal } from '../types';
-import { loadCompanyInfo, saveCompanyInfo as saveCompanyInfoToStorage } from '../utils/localStorage';
 import {
   savePageImages as savePageImagesToDB,
   clearPageImages,
@@ -12,9 +22,7 @@ import {
   saveActiveProposalMeta,
   loadActiveProposalMeta,
 } from '../utils/imageStorage';
-import { DEFAULT_COMPANY_INFO } from '../constants/defaultCompany';
-import { companyService } from '../services/companyService';
-import { useAuthStore } from './authStore';
+import { loadCompanyInfo, saveCompanyInfo as saveCompanyInfoToStorage } from '../utils/localStorage';
 import { extractPDFContent } from '../utils/pdfUtils';
 import {
   loadRecentProposals as loadProposalsFromDB,
@@ -22,14 +30,8 @@ import {
   deleteProposalFromLibrary as deleteProposalFromDB,
   saveProposalToLibrary,
 } from '../utils/proposalStorage';
-import {
-  checkCloudStorageAvailability,
-  loadAllProposalsFromCloud,
-  uploadProposalToCloud,
-  deleteProposalFromCloud,
-  downloadProposalFile,
-  cloudProposalToStored,
-} from '../services/supabaseProposalService';
+
+import { useAuthStore } from './authStore';
 
 const initialProposalState: ProposalData = {
   file: null,

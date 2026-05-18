@@ -1,4 +1,3 @@
-import React, { useState, useEffect, useRef } from 'react';
 import {
   Box,
   Input,
@@ -10,6 +9,8 @@ import {
   InputRightElement,
   useOutsideClick,
 } from '@chakra-ui/react';
+import React, { useState, useEffect, useRef } from 'react';
+
 import { LeadSearchResult } from '../../types/lead';
 
 interface AutocompleteInputProps {

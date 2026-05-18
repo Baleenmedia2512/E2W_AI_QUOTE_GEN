@@ -1,5 +1,6 @@
-import { supabase } from './supabaseClient';
 import { CompanyInfo } from '../types/company';
+
+import { supabase } from './supabaseClient';
 
 /**
  * Company Service - Manages company information with database sync

@@ -3,8 +3,9 @@
  * Enables team-wide visibility of uploaded proposals
  */
 
-import { supabase } from './supabaseClient';
 import { StoredProposal } from '../types';
+
+import { supabase } from './supabaseClient';
 
 export interface CloudProposal {
   id: string;

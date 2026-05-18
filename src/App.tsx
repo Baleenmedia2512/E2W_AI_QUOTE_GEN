@@ -1,21 +1,22 @@
+import { Box } from '@chakra-ui/react';
 import React, { useEffect } from 'react';
 import { BrowserRouter as Router, Route, Switch, Redirect } from 'react-router-dom';
-import { Box } from '@chakra-ui/react';
-import HomePage from './pages/HomePage';
+
+import BottomNav from './components/BottomNav/BottomNav';
+import { ErrorBoundary } from './components/ErrorBoundary/ErrorBoundary';
+import { Header } from './components/Header';
+import { PrivateRoute } from './components/PrivateRoute';
+import { useCityServiceRegistry } from './hooks/useCityServiceRegistry';
+import { useCompanySync } from './hooks/useCompanySync';
 import DocumentsPage from './pages/DocumentsPage';
+import HomePage from './pages/HomePage';
+import LoginPage from './pages/LoginPage';
 import QuotePage from './pages/QuotePage';
 import { QuotePreviewPage } from './pages/QuotePreviewPage';
-import LoginPage from './pages/LoginPage';
 import UnauthorizedPage from './pages/UnauthorizedPage';
-import { ErrorBoundary } from './components/ErrorBoundary/ErrorBoundary';
-import BottomNav from './components/BottomNav/BottomNav';
-import { Header } from './components/Header';
 // import { UpdateNotification } from './components/UpdateNotification'; // Disabled
-import { registerServiceWorker } from './utils/pwa';
-import { PrivateRoute } from './components/PrivateRoute';
-import { useCompanySync } from './hooks/useCompanySync';
-import { useCityServiceRegistry } from './hooks/useCityServiceRegistry';
 import { useAppStore } from './store';
+import { registerServiceWorker } from './utils/pwa';
 
 const App: React.FC = () => {
   // Initialize database sync for company info (syncs across devices)

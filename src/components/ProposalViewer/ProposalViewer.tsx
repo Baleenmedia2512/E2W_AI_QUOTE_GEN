@@ -1,5 +1,4 @@
-﻿import React, { useState, useRef, useEffect, useCallback } from 'react';
-import {
+﻿import {
   Box,
   Card,
   CardHeader,
@@ -16,6 +15,7 @@ import {
   useBreakpointValue,
   Image,
 } from '@chakra-ui/react';
+import React, { useState, useRef, useEffect, useCallback } from 'react';
 import {
   FiChevronLeft,
   FiChevronRight,
@@ -24,6 +24,7 @@ import {
   FiFile,
 } from 'react-icons/fi';
 import { Document, Page, pdfjs } from 'react-pdf';
+
 import { useAppStore } from '../../store';
 import { detectFileType } from '../../utils/fileUtils';
 import 'react-pdf/dist/Page/AnnotationLayer.css';

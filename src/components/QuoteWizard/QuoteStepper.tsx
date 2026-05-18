@@ -1,4 +1,3 @@
-import React from 'react';
 import {
   Box,
   Container,
@@ -9,6 +8,7 @@ import {
   Progress,
   Icon,
 } from '@chakra-ui/react';
+import React from 'react';
 import { FiCheck } from 'react-icons/fi';
 
 interface QuoteStepperProps {

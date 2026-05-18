@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import { ViewIcon, ViewOffIcon, LockIcon } from '@chakra-ui/icons';
 import {
   Box,
   Button,
@@ -20,8 +20,9 @@ import {
   Badge,
   Icon,
 } from '@chakra-ui/react';
-import { ViewIcon, ViewOffIcon, LockIcon } from '@chakra-ui/icons';
+import React, { useState, useEffect } from 'react';
 import { useHistory, useLocation } from 'react-router-dom';
+
 import { useAuthStore } from '../store/authStore';
 
 const LoginPage: React.FC = () => {

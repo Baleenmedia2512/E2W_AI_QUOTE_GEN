@@ -1,5 +1,4 @@
-﻿import React, { useState, useEffect } from 'react';
-import {
+﻿import {
   Box,
   Button,
   HStack,
@@ -27,7 +26,9 @@ import {
   CardBody,
   useBreakpointValue,
 } from '@chakra-ui/react';
+import React, { useState, useEffect } from 'react';
 import { FiTrash2, FiEdit3 } from 'react-icons/fi';
+
 import { Quote, QuoteItem, LineItem } from '../../types/quote';
 import './QuotePreview.css';
 

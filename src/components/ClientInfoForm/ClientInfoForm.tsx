@@ -1,5 +1,4 @@
-﻿import React, { useState, useEffect } from 'react';
-import {
+﻿import {
   Box,
   Button,
   FormControl,
@@ -14,6 +13,8 @@ import {
   GridItem,
   Text,
 } from '@chakra-ui/react';
+import React, { useState, useEffect } from 'react';
+
 import { ClientInfo } from '../../types/client';
 import './ClientInfoForm.css';
 

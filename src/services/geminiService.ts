@@ -1,4 +1,5 @@
 import { GoogleGenerativeAI } from '@google/generative-ai';
+
 import { Message } from '../types/chat';
 import { CHAT_SYSTEM_PROMPT } from '../utils/promptTemplates';
 

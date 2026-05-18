@@ -1,4 +1,3 @@
-import React, { useState, useEffect } from 'react';
 import {
   Box,
   Button,
@@ -8,17 +7,19 @@ import {
   Icon,
   IconButton,
 } from '@chakra-ui/react';
+import React, { useState, useEffect } from 'react';
 import { FiArrowLeft, FiArrowRight } from 'react-icons/fi';
 import { useHistory } from 'react-router-dom';
+
+import ClientInfoForm from '../components/ClientInfoForm/ClientInfoFormWithAutocomplete';
+import CompanyInfoForm from '../components/CompanyInfoForm/CompanyInfoForm';
+import QuotePreview from '../components/QuotePreview/QuotePreview';
 import QuoteNavBar from '../components/QuoteWizard/QuoteNavBar';
 import QuoteStepper from '../components/QuoteWizard/QuoteStepper';
-import CompanyInfoForm from '../components/CompanyInfoForm/CompanyInfoForm';
-import ClientInfoForm from '../components/ClientInfoForm/ClientInfoFormWithAutocomplete';
-import QuotePreview from '../components/QuotePreview/QuotePreview';
 import { TemplateSelector } from '../components/TemplateSelector/TemplateSelector';
 import { useAppStore } from '../store';
-import { CompanyInfo } from '../types/company';
 import { ClientInfo } from '../types/client';
+import { CompanyInfo } from '../types/company';
 import { Quote } from '../types/quote';
 import { saveCompanyInfo } from '../utils/localStorage';
 

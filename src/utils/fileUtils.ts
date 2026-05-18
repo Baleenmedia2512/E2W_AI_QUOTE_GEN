@@ -1,5 +1,5 @@
-import * as XLSX from 'xlsx';
 import { GoogleGenerativeAI } from '@google/generative-ai';
+import * as XLSX from 'xlsx';
 
 export interface FileExtractionResult {
   textContent: string;

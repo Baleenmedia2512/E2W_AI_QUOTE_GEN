@@ -1,9 +1,10 @@
 ﻿import React from 'react';
+
 import { Template, TemplateType } from '../../types';
-import { CorporateMinimal } from '../Templates/CorporateMinimal';
-import { PremiumAgency } from '../Templates/PremiumAgency';
-import { ModernSales } from '../Templates/ModernSales';
 import { ClassicBusiness } from '../Templates/ClassicBusiness';
+import { CorporateMinimal } from '../Templates/CorporateMinimal';
+import { ModernSales } from '../Templates/ModernSales';
+import { PremiumAgency } from '../Templates/PremiumAgency';
 import './TemplateSelector.css';
 
 interface TemplateSelectorProps {

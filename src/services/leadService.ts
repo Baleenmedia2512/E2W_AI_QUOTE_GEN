@@ -1,5 +1,6 @@
-import { supabase } from './supabaseClient';
 import { Lead, LeadSearchResult } from '../types/lead';
+
+import { supabase } from './supabaseClient';
 
 /**
  * Search leads by name, phone, or company

@@ -1,10 +1,11 @@
-import jsPDF from 'jspdf';
-import html2canvas from 'html2canvas';
-import { TemplateType } from '../types';
 import { Capacitor } from '@capacitor/core';
 import { Filesystem, Directory } from '@capacitor/filesystem';
 import { FileOpener } from '@capacitor-community/file-opener';
+import html2canvas from 'html2canvas';
+import jsPDF from 'jspdf';
+
 import DownloadNotification from '../plugins/downloadNotification';
+import { TemplateType } from '../types';
 
 // A4 dimensions at 96dpi (standard web resolution)
 const A4_WIDTH_PX = 794;   // 210mm at 96dpi

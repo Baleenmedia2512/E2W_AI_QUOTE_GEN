@@ -1,4 +1,4 @@
-import React from 'react';
+import { ChevronDownIcon } from '@chakra-ui/icons';
 import {
   Box,
   Button,
@@ -14,8 +14,9 @@ import {
   Badge,
   useToast,
 } from '@chakra-ui/react';
-import { ChevronDownIcon } from '@chakra-ui/icons';
+import React from 'react';
 import { useHistory } from 'react-router-dom';
+
 import { useAuthStore } from '../../store/authStore';
 
 export const UserProfile: React.FC = () => {

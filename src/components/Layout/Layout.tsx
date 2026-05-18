@@ -1,4 +1,4 @@
-import React from 'react';
+import { HamburgerIcon, MoonIcon, SunIcon } from '@chakra-ui/icons';
 import {
   Box,
   Container,
@@ -18,7 +18,7 @@ import {
   useDisclosure,
   VStack,
 } from '@chakra-ui/react';
-import { HamburgerIcon, MoonIcon, SunIcon } from '@chakra-ui/icons';
+import React from 'react';
 import { FiHome, FiFileText, FiEye } from 'react-icons/fi';
 import { useHistory } from 'react-router-dom';
 
