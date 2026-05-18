@@ -39,6 +39,7 @@ import {
 } from '../../utils/fileUtils';
 import { extractPDFContent, validatePDFFile } from '../../utils/pdfUtils';
 import { findDuplicateProposal } from '../../utils/proposalStorage';
+import { logger } from '../../utils/logger';
 
 
 const ProposalUpload: React.FC = () => {
@@ -115,20 +116,20 @@ const ProposalUpload: React.FC = () => {
           const cloudDuplicate = await findCloudDuplicate(file.name, file.size);
           if (cloudDuplicate) {
             duplicate = cloudProposalToStored(cloudDuplicate);
-            console.log('☁️ Duplicate found in cloud storage:', duplicate.fileName);
+            logger.info('☁️ Duplicate found in cloud storage:', duplicate.fileName);
           }
         } catch (error) {
-          console.warn('⚠️ Cloud duplicate check failed:', error);
+          logger.warn('⚠️ Cloud duplicate check failed:', error);
         }
       } else {
         // Fallback to local IndexedDB check if cloud is not available
         try {
           duplicate = await findDuplicateProposal(file.name, file.type || 'application/pdf', file.size);
           if (duplicate) {
-            console.log('💾 Duplicate found in local storage:', duplicate.fileName);
+            logger.info('💾 Duplicate found in local storage:', duplicate.fileName);
           }
         } catch (error) {
-          console.warn('⚠️ Local duplicate check failed:', error);
+          logger.warn('⚠️ Local duplicate check failed:', error);
         }
       }
       
@@ -156,7 +157,7 @@ const ProposalUpload: React.FC = () => {
         duration: 3000,
         isClosable: true,
       });
-      console.error('processFile error:', err);
+      logger.error('processFile error:', err);
     }
   };
 
@@ -183,7 +184,7 @@ const ProposalUpload: React.FC = () => {
             duplicate = cloudProposalToStored(cloudDuplicate);
           }
         } catch (error) {
-          console.warn('⚠️ Cloud duplicate check failed during replacement:', error);
+          logger.warn('⚠️ Cloud duplicate check failed during replacement:', error);
         }
       } else {
         // Fallback to local if cloud not available
@@ -211,7 +212,7 @@ const ProposalUpload: React.FC = () => {
         duration: 3000,
         isClosable: true,
       });
-      console.error('handleReplaceConfirm error:', err);
+      logger.error('handleReplaceConfirm error:', err);
     }
   };
 
@@ -273,7 +274,7 @@ const ProposalUpload: React.FC = () => {
 
       // Extract content based on file type
       if (fileType === 'pdf') {
-        console.log('Processing PDF file:', file.name);
+        logger.info('Processing PDF file:', file.name);
         const pdfResult = await extractPDFContent(file);
         textContent = pdfResult.textContent;
         pageCount = pdfResult.pageCount;
@@ -281,14 +282,14 @@ const ProposalUpload: React.FC = () => {
         pageImages = pdfResult.pageImages;
         successMessage = 'PDF uploaded successfully!';
         
-        console.log('PDF extraction successful:', {
+        logger.info('PDF extraction successful:', {
           fileName: file.name,
           pageCount,
           textLength: textContent.length,
           hasText: textContent.length > 0
         });
       } else if (fileType === 'image') {
-        console.log('Processing JPEG image:', file.name);
+        logger.info('Processing JPEG image:', file.name);
         const imageResult = await extractImageContent(file);
         textContent = imageResult.textContent;
         pageCount = imageResult.pageCount;
@@ -296,13 +297,13 @@ const ProposalUpload: React.FC = () => {
         pageImages = imageResult.pageImages;
         successMessage = 'Image uploaded and text extracted successfully!';
         
-        console.log('Image extraction successful:', {
+        logger.info('Image extraction successful:', {
           fileName: file.name,
           textLength: textContent.length,
           hasText: textContent.length > 0
         });
       } else if (fileType === 'excel') {
-        console.log('Processing Excel file:', file.name);
+        logger.info('Processing Excel file:', file.name);
         const excelResult = await extractExcelContent(file);
         textContent = excelResult.textContent;
         pageCount = excelResult.pageCount;
@@ -310,7 +311,7 @@ const ProposalUpload: React.FC = () => {
         pageImages = excelResult.pageImages;
         successMessage = `Excel file uploaded! ${pageCount} sheet(s) extracted.`;
         
-        console.log('Excel extraction successful:', {
+        logger.info('Excel extraction successful:', {
           fileName: file.name,
           sheetCount: pageCount,
           textLength: textContent.length,
@@ -336,7 +337,7 @@ const ProposalUpload: React.FC = () => {
         uploadedAt: new Date(),
       };
       
-      console.log('Updating proposal store with:', proposalData);
+      logger.info('Updating proposal store with:', proposalData);
       setProposal(proposalData);
 
       toast({
@@ -355,7 +356,7 @@ const ProposalUpload: React.FC = () => {
         duration: 3000,
         isClosable: true,
       });
-      console.error('File processing error:', err);
+      logger.error('File processing error:', err);
     } finally {
       setLoading(false);
     }
@@ -365,7 +366,7 @@ const ProposalUpload: React.FC = () => {
   const processBatchFiles = async (files: File[]) => {
     if (files.length === 0) return;
 
-    console.log(`📂 [BATCH] Starting upload of ${files.length} file(s):`, files.map(f => f.name));
+    logger.info(`📂 [BATCH] Starting upload of ${files.length} file(s):`, files.map(f => f.name));
 
     if (files.length === 1) {
       // Single file — use normal flow (shows duplicate modal)
@@ -381,7 +382,7 @@ const ProposalUpload: React.FC = () => {
     for (let i = 0; i < files.length; i++) {
       setBatchProgress({ current: i + 1, total: files.length });
       const file = files[i];
-      console.log(`📄 [BATCH ${i + 1}/${files.length}] Processing: ${file.name} (${(file.size / 1024 / 1024).toFixed(2)} MB)`);
+      logger.info(`📄 [BATCH ${i + 1}/${files.length}] Processing: ${file.name} (${(file.size / 1024 / 1024).toFixed(2)} MB)`);
 
       // Silent duplicate check
       let isDuplicate = false;
@@ -400,22 +401,22 @@ const ProposalUpload: React.FC = () => {
       }
 
       if (isDuplicate) {
-        console.warn(`⚠️ [BATCH ${i + 1}/${files.length}] SKIPPED (duplicate): ${file.name}`);
+        logger.warn(`⚠️ [BATCH ${i + 1}/${files.length}] SKIPPED (duplicate): ${file.name}`);
         skipped++;
         continue;
       }
 
       try {
         await actualProcessFile(file);
-        console.log(`✅ [BATCH ${i + 1}/${files.length}] UPLOADED successfully: ${file.name}`);
+        logger.info(`✅ [BATCH ${i + 1}/${files.length}] UPLOADED successfully: ${file.name}`);
         processed++;
       } catch (err) {
-        console.error(`❌ [BATCH ${i + 1}/${files.length}] FAILED: ${file.name}`, err);
+        logger.error(`❌ [BATCH ${i + 1}/${files.length}] FAILED: ${file.name}`, err);
       }
     }
 
     setBatchProgress(null);
-    console.log(`📊 [BATCH] Done — ${processed} uploaded, ${skipped} skipped (duplicates), ${files.length - processed - skipped} failed`);
+    logger.info(`📊 [BATCH] Done — ${processed} uploaded, ${skipped} skipped (duplicates), ${files.length - processed - skipped} failed`);
 
     toast({
       title: skipped === files.length ? 'All Duplicates' : 'Upload Complete',
@@ -447,7 +448,7 @@ const ProposalUpload: React.FC = () => {
         duration: 3000,
         isClosable: true,
       });
-      console.error('handleFileSelect error:', err);
+      logger.error('handleFileSelect error:', err);
     }
   };
 

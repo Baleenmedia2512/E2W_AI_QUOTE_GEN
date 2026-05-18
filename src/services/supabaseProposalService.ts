@@ -6,6 +6,7 @@
 import { StoredProposal } from '../types';
 
 import { supabase } from './supabaseClient';
+import { logger } from '../utils/logger';
 
 export interface CloudProposal {
   id: string;
@@ -43,13 +44,13 @@ export async function uploadProposalToCloud(
       if (user) {
         currentUserId = user.id;
         currentUserName = user.email || 'Authenticated User';
-        console.log('✅ Authenticated user:', currentUserId, currentUserName);
+        logger.info('✅ Authenticated user:', currentUserId, currentUserName);
       } else {
-        console.log('ℹ️ No auth session, using anonymous upload');
+        logger.info('ℹ️ No auth session, using anonymous upload');
       }
     } catch (authError) {
       // Auth failed - continue with anonymous upload
-      console.log('ℹ️ Auth check failed, continuing with anonymous upload');
+      logger.info('ℹ️ Auth check failed, continuing with anonymous upload');
     }
 
     // Create storage path: user_id/timestamp_filename
@@ -58,7 +59,7 @@ export async function uploadProposalToCloud(
     const storagePath = `${currentUserId}/${timestamp}_${sanitizedFileName}`;
 
     // Upload file to Supabase Storage
-    console.log('📤 Uploading file to Supabase Storage:', storagePath);
+    logger.info('📤 Uploading file to Supabase Storage:', storagePath);
     const { error: uploadError } = await supabase.storage
       .from('proposals')
       .upload(storagePath, file, {
@@ -67,7 +68,7 @@ export async function uploadProposalToCloud(
       });
 
     if (uploadError) {
-      console.error('❌ Storage upload error:', uploadError);
+      logger.error('❌ Storage upload error:', uploadError);
       return { success: false, error: uploadError.message };
     }
 
@@ -79,7 +80,7 @@ export async function uploadProposalToCloud(
     const fileUrl = urlData.publicUrl;
 
     // Save metadata to database
-    console.log('💾 Saving proposal metadata to database, user_id:', currentUserId);
+    logger.info('💾 Saving proposal metadata to database, user_id:', currentUserId);
     const { data: proposalData, error: dbError } = await supabase
       .from('proposals')
       .insert({
@@ -97,16 +98,16 @@ export async function uploadProposalToCloud(
       .single();
 
     if (dbError) {
-      console.error('❌ Database insert error:', dbError);
+      logger.error('❌ Database insert error:', dbError);
       // Cleanup: delete uploaded file
       await supabase.storage.from('proposals').remove([storagePath]);
       return { success: false, error: dbError.message };
     }
 
-    console.log('✅ Proposal uploaded to cloud successfully');
+    logger.info('✅ Proposal uploaded to cloud successfully');
     return { success: true, proposal: proposalData };
   } catch (error: any) {
-    console.error('❌ Upload to cloud failed:', error);
+    logger.error('❌ Upload to cloud failed:', error);
     return { success: false, error: error.message || 'Unknown error' };
   }
 }
@@ -118,7 +119,7 @@ export async function loadAllProposalsFromCloud(
   limit: number = 20
 ): Promise<CloudProposal[]> {
   try {
-    console.log('📂 Loading proposals from cloud...');
+    logger.info('📂 Loading proposals from cloud...');
     const { data, error } = await supabase
       .from('proposals')
       .select('*')
@@ -126,14 +127,14 @@ export async function loadAllProposalsFromCloud(
       .limit(limit);
 
     if (error) {
-      console.error('❌ Error loading proposals from cloud:', error);
+      logger.error('❌ Error loading proposals from cloud:', error);
       return [];
     }
 
-    console.log(`✅ Loaded ${data?.length || 0} proposals from cloud`);
+    logger.info(`✅ Loaded ${data?.length || 0} proposals from cloud`);
     return data || [];
   } catch (error) {
-    console.error('❌ Exception loading proposals:', error);
+    logger.error('❌ Exception loading proposals:', error);
     return [];
   }
 }
@@ -150,13 +151,13 @@ export async function loadProposalFromCloud(id: string): Promise<CloudProposal |
       .single();
 
     if (error) {
-      console.error('❌ Error loading proposal:', error);
+      logger.error('❌ Error loading proposal:', error);
       return null;
     }
 
     return data;
   } catch (error) {
-    console.error('❌ Exception loading proposal:', error);
+    logger.error('❌ Exception loading proposal:', error);
     return null;
   }
 }
@@ -174,7 +175,7 @@ export async function deleteProposalFromCloud(id: string): Promise<boolean> {
       .single();
 
     if (!proposal) {
-      console.error('❌ Proposal not found');
+      logger.error('❌ Proposal not found');
       return false;
     }
 
@@ -184,7 +185,7 @@ export async function deleteProposalFromCloud(id: string): Promise<boolean> {
       .remove([proposal.storage_path]);
 
     if (storageError) {
-      console.warn('⚠️ Storage delete error:', storageError);
+      logger.warn('⚠️ Storage delete error:', storageError);
       // Continue anyway to delete database record
     }
 
@@ -195,14 +196,14 @@ export async function deleteProposalFromCloud(id: string): Promise<boolean> {
       .eq('id', id);
 
     if (dbError) {
-      console.error('❌ Database delete error:', dbError);
+      logger.error('❌ Database delete error:', dbError);
       return false;
     }
 
-    console.log('✅ Proposal deleted from cloud');
+    logger.info('✅ Proposal deleted from cloud');
     return true;
   } catch (error) {
-    console.error('❌ Exception deleting proposal:', error);
+    logger.error('❌ Exception deleting proposal:', error);
     return false;
   }
 }
@@ -225,17 +226,17 @@ export async function findCloudDuplicate(
       .maybeSingle();
 
     if (error) {
-      console.error('❌ Error checking for duplicates:', error);
+      logger.error('❌ Error checking for duplicates:', error);
       return null;
     }
 
     if (data) {
-      console.log('🔍 Found duplicate in cloud:', data.file_name);
+      logger.info('🔍 Found duplicate in cloud:', data.file_name);
     }
 
     return data;
   } catch (error) {
-    console.error('❌ Exception checking duplicates:', error);
+    logger.error('❌ Exception checking duplicates:', error);
     return null;
   }
 }
@@ -250,13 +251,13 @@ export async function downloadProposalFile(storagePath: string): Promise<Blob | 
       .download(storagePath);
 
     if (error) {
-      console.error('❌ Error downloading file:', error);
+      logger.error('❌ Error downloading file:', error);
       return null;
     }
 
     return data;
   } catch (error) {
-    console.error('❌ Exception downloading file:', error);
+    logger.error('❌ Exception downloading file:', error);
     return null;
   }
 }
@@ -274,14 +275,14 @@ export async function checkCloudStorageAvailability(): Promise<boolean> {
     
     if (error) {
       // Check if error is due to bucket not existing vs permission issue
-      console.warn('⚠️ Cloud storage check:', error.message);
+      logger.warn('⚠️ Cloud storage check:', error.message);
       return false;
     }
 
-    console.log('✅ Cloud storage is available');
+    logger.info('✅ Cloud storage is available');
     return true;
   } catch (error) {
-    console.warn('⚠️ Cloud storage check failed:', error);
+    logger.warn('⚠️ Cloud storage check failed:', error);
     return false;
   }
 }

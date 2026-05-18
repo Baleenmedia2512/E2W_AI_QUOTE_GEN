@@ -1,3 +1,5 @@
+import { logger } from './logger';
+
 // Service Worker Registration - Enhanced with update detection
 export const registerServiceWorker = async (): Promise<void> => {
   if ('serviceWorker' in navigator) {
@@ -6,7 +8,7 @@ export const registerServiceWorker = async (): Promise<void> => {
         scope: '/'
       });
 
-      console.log('✅ Service Worker registered successfully:', registration);
+      logger.info('✅ Service Worker registered successfully:', registration);
 
       // Automatic update checks - DISABLED
       // Check for updates every 30 seconds (reduced from 1 minute)
@@ -22,7 +24,7 @@ export const registerServiceWorker = async (): Promise<void> => {
       //     newWorker.addEventListener('statechange', () => {
       //       if (newWorker.state === 'installed' && navigator.serviceWorker.controller) {
       //         // New service worker available
-      //         console.log('🔄 New version available!');
+      //         logger.info('🔄 New version available!');
       //         
       //         // Show update notification
       //         showUpdateNotification(() => {
@@ -37,7 +39,7 @@ export const registerServiceWorker = async (): Promise<void> => {
       // Listen for service worker messages - DISABLED
       // navigator.serviceWorker.addEventListener('message', (event) => {
       //   if (event.data && event.data.type === 'SW_ACTIVATED') {
-      //     console.log(`✅ Service Worker activated (v${event.data.version})`);
+      //     logger.info(`✅ Service Worker activated (v${event.data.version})`);
       //     
       //     // Show success notification
       //     const notification = document.createElement('div');
@@ -62,11 +64,11 @@ export const registerServiceWorker = async (): Promise<void> => {
 
       return Promise.resolve();
     } catch (error) {
-      console.error('❌ Service Worker registration failed:', error);
+      logger.error('❌ Service Worker registration failed:', error);
       return Promise.reject(error);
     }
   } else {
-    console.warn('⚠️ Service Workers are not supported in this browser');
+    logger.warn('⚠️ Service Workers are not supported in this browser');
     return Promise.reject(new Error('Service Workers not supported'));
   }
 };
@@ -174,10 +176,10 @@ export const unregisterServiceWorker = async (): Promise<void> => {
     try {
       const registration = await navigator.serviceWorker.ready;
       await registration.unregister();
-      console.log('Service Worker unregistered');
+      logger.info('Service Worker unregistered');
       return Promise.resolve();
     } catch (error) {
-      console.error('Service Worker unregistration failed:', error);
+      logger.error('Service Worker unregistration failed:', error);
       return Promise.reject(error);
     }
   }
@@ -199,7 +201,7 @@ export const promptInstall = (): void => {
     deferredPrompt = e;
 
     // Show install button or prompt
-    console.log('PWA install prompt available');
+    logger.info('PWA install prompt available');
     
     // You can trigger this from a button click
     const installButton = document.getElementById('pwa-install-button');
@@ -209,7 +211,7 @@ export const promptInstall = (): void => {
         if (deferredPrompt) {
           deferredPrompt.prompt();
           const { outcome } = await deferredPrompt.userChoice;
-          console.log(`User response to install prompt: ${outcome}`);
+          logger.info(`User response to install prompt: ${outcome}`);
           deferredPrompt = null;
           installButton.style.display = 'none';
         }
@@ -221,7 +223,7 @@ export const promptInstall = (): void => {
 // Track PWA installation
 export const trackPWAInstall = (): void => {
   window.addEventListener('appinstalled', () => {
-    console.log('PWA was installed');
+    logger.info('PWA was installed');
     // Track installation analytics
   });
 };
@@ -230,7 +232,7 @@ export const trackPWAInstall = (): void => {
 export const requestPersistentStorage = async (): Promise<boolean> => {
   if (navigator.storage && navigator.storage.persist) {
     const isPersisted = await navigator.storage.persist();
-    console.log(`Persistent storage granted: ${isPersisted}`);
+    logger.info(`Persistent storage granted: ${isPersisted}`);
     return isPersisted;
   }
   return false;
@@ -244,7 +246,7 @@ export const checkStorageQuota = async (): Promise<{ usage: number; quota: numbe
     const quota = estimate.quota || 0;
     const percentage = quota > 0 ? (usage / quota) * 100 : 0;
     
-    console.log(`Storage used: ${(usage / 1024 / 1024).toFixed(2)} MB of ${(quota / 1024 / 1024).toFixed(2)} MB (${percentage.toFixed(2)}%)`);
+    logger.info(`Storage used: ${(usage / 1024 / 1024).toFixed(2)} MB of ${(quota / 1024 / 1024).toFixed(2)} MB (${percentage.toFixed(2)}%)`);
     
     return { usage, quota, percentage };
   }

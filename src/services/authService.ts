@@ -3,6 +3,7 @@ import bcrypt from 'bcryptjs';
 import { AuthUser, LoginCredentials } from '../types/auth';
 
 import { supabase } from './supabaseClient';
+import { logger } from '../utils/logger';
 
 class AuthService {
   /**
@@ -21,7 +22,7 @@ class AuthService {
       .single();
 
     if (error || !user) {
-      console.error('Login error:', error);
+      logger.error('Login error:', error);
       throw new Error('Invalid email or password');
     }
 
@@ -33,7 +34,7 @@ class AuthService {
       .single();
 
     if (roleError || !role) {
-      console.error('Role fetch error:', roleError);
+      logger.error('Role fetch error:', roleError);
       throw new Error('Unable to fetch user role');
     }
 
@@ -69,7 +70,7 @@ class AuthService {
           ? JSON.parse(roleData.permissions) 
           : roleData.permissions;
       } catch (e) {
-        console.error('Failed to parse permissions:', e);
+        logger.error('Failed to parse permissions:', e);
       }
     }
     
@@ -92,7 +93,7 @@ class AuthService {
   logout(): void {
     localStorage.removeItem('currentUser');
     localStorage.removeItem('authToken');
-    console.log('✅ User logged out successfully');
+    logger.info('✅ User logged out successfully');
   }
 
   /**
@@ -106,7 +107,7 @@ class AuthService {
       }
       return null;
     } catch (error) {
-      console.error('Error getting current user:', error);
+      logger.error('Error getting current user:', error);
       return null;
     }
   }

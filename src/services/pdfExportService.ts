@@ -6,6 +6,7 @@ import jsPDF from 'jspdf';
 
 import DownloadNotification from '../plugins/downloadNotification';
 import { TemplateType } from '../types';
+import { logger } from '../utils/logger';
 
 // A4 dimensions at 96dpi (standard web resolution)
 const A4_WIDTH_PX = 794;   // 210mm at 96dpi
@@ -26,11 +27,11 @@ interface LinkAnnotation {
 const captureSectionAtA4 = async (containerId: string): Promise<{ canvas: HTMLCanvasElement; links: LinkAnnotation[] } | null> => {
   const source = document.getElementById(containerId);
   if (!source) {
-    console.warn(`⚠️ Section ${containerId} not found`);
+    logger.warn(`⚠️ Section ${containerId} not found`);
     return null;
   }
 
-  console.log(`📸 Capturing section: ${containerId}`);
+  logger.info(`📸 Capturing section: ${containerId}`);
   
   // Create off-screen clone at fixed A4 width
   const clone = source.cloneNode(true) as HTMLElement;
@@ -54,7 +55,7 @@ const captureSectionAtA4 = async (containerId: string): Promise<{ canvas: HTMLCa
   try {
     // Wait for fonts to load
     await document.fonts.ready;
-    console.log('✅ Fonts loaded');
+    logger.info('✅ Fonts loaded');
     
     // Wait for all images in the clone to load
     const images = Array.from(clone.querySelectorAll('img'));
@@ -67,7 +68,7 @@ const captureSectionAtA4 = async (containerId: string): Promise<{ canvas: HTMLCa
         });
       })
     );
-    console.log(`✅ ${images.length} images loaded`);
+    logger.info(`✅ ${images.length} images loaded`);
 
     // Wait for full reflow — longer delay ensures tfoot and all rows are painted
     await new Promise(r => setTimeout(r, 300));
@@ -90,7 +91,7 @@ const captureSectionAtA4 = async (containerId: string): Promise<{ canvas: HTMLCa
         });
       }
     });
-    console.log(`🔗 Collected ${links.length} link annotations from ${containerId}`);
+    logger.info(`🔗 Collected ${links.length} link annotations from ${containerId}`);
 
     // Capture with html2canvas at fixed A4 dimensions
     const canvas = await html2canvas(clone, {
@@ -106,11 +107,11 @@ const captureSectionAtA4 = async (containerId: string): Promise<{ canvas: HTMLCa
       logging: false
     });
 
-    console.log(`✅ Section captured: ${canvas.width}x${canvas.height}px`);
+    logger.info(`✅ Section captured: ${canvas.width}x${canvas.height}px`);
 
     return { canvas, links };
   } catch (error) {
-    console.error(`❌ Failed to capture ${containerId}:`, error);
+    logger.error(`❌ Failed to capture ${containerId}:`, error);
     throw error;
   } finally {
     // Clean up clone
@@ -127,7 +128,7 @@ const legacyFullCapture = async (
   pdfWidth: number,
   pdfHeight: number
 ): Promise<void> => {
-  console.log('🔄 Using legacy full-element capture');
+  logger.info('🔄 Using legacy full-element capture');
   
   const originalStyle = element.getAttribute('style') || '';
   const originalClass = element.className;
@@ -188,16 +189,16 @@ export const exportToPDF = async (
   clientName?: string
 ): Promise<void> => {
   try {
-    console.log('📸 Starting PDF export process...');
-    console.log('Element to capture:', element);
-    console.log('Quote number:', quoteNumber);
+    logger.info('📸 Starting PDF export process...');
+    logger.info('Element to capture:', element);
+    logger.info('Quote number:', quoteNumber);
     
     // Show loading state
     const originalCursor = document.body.style.cursor;
     document.body.style.cursor = 'wait';
 
     const isMobileDevice = isMobile();
-    console.log('📱 Device type:', isMobileDevice ? 'Mobile' : 'Desktop');
+    logger.info('📱 Device type:', isMobileDevice ? 'Mobile' : 'Desktop');
 
     // Create PDF with A4 dimensions
     const pdf = new jsPDF({
@@ -246,7 +247,7 @@ export const exportToPDF = async (
         // Content fits within A4 — render at full page
         pdf.addImage(imgData, 'PNG', 0, 0, pdfWidth, imgHeight);
         addLinkAnnotations(links, 0, cssToPdf, 0);
-        console.log(`✅ Page ${pageCount} added (${label}): ${pdfWidth}×${Math.round(imgHeight)}mm`);
+        logger.info(`✅ Page ${pageCount} added (${label}): ${pdfWidth}×${Math.round(imgHeight)}mm`);
       } else if (imgHeight <= pdfHeight * 1.5) {
         // Content overflows but is less than 1.5x A4 — scale to fit on one page
         const scale = pdfHeight / imgHeight;
@@ -254,12 +255,12 @@ export const exportToPDF = async (
         const xOffset = (pdfWidth - scaledWidth) / 2; // Center horizontally
         pdf.addImage(imgData, 'PNG', xOffset, 0, scaledWidth, pdfHeight);
         addLinkAnnotations(links, xOffset, scaledWidth / A4_WIDTH_PX, 0);
-        console.log(`✅ Page ${pageCount} added (${label}): scaled to fit (${Math.round(imgHeight - pdfHeight)}mm overflow)`);
+        logger.info(`✅ Page ${pageCount} added (${label}): scaled to fit (${Math.round(imgHeight - pdfHeight)}mm overflow)`);
       } else {
         // Content is very tall (>1.5x A4) — split across multiple pages
         pdf.addImage(imgData, 'PNG', 0, 0, pdfWidth, imgHeight);
         addLinkAnnotations(links, 0, cssToPdf, 0);
-        console.log(`✅ Page ${pageCount} added (${label}): ${pdfWidth}×${Math.round(imgHeight)}mm`);
+        logger.info(`✅ Page ${pageCount} added (${label}): ${pdfWidth}×${Math.round(imgHeight)}mm`);
         
         let remainingHeight = imgHeight - pdfHeight;
         let yOffset = -pdfHeight;
@@ -272,7 +273,7 @@ export const exportToPDF = async (
           yOffset -= pdfHeight;
           pageYStart += pdfHeight;
           remainingHeight -= pdfHeight;
-          console.log(`✅ Additional page ${pageCount} added for overflow`);
+          logger.info(`✅ Additional page ${pageCount} added for overflow`);
         }
       }
     };
@@ -282,7 +283,7 @@ export const exportToPDF = async (
 
     if (isMultiService) {
       // --- MULTI-SERVICE QUOTE ---
-      console.log('📄 Multi-service quote detected');
+      logger.info('📄 Multi-service quote detected');
 
       // Capture summary page
       const summaryResult = await captureSectionAtA4('pdf-page-summary');
@@ -314,53 +315,53 @@ export const exportToPDF = async (
       }
 
       // Terms & Conditions (Last page - multi-service)
-      console.log('📄 Checking for T&C page (multi-service)...');
+      logger.info('📄 Checking for T&C page (multi-service)...');
       const termsMultiResult = await captureSectionAtA4('pdf-page-terms');
       if (termsMultiResult && termsMultiResult.canvas.height > 10) {
         addCanvasToPDF(termsMultiResult.canvas, termsMultiResult.links, 'terms', false);
       } else {
-        console.log('ℹ️ No multi-service T&C section found or section is empty');
+        logger.info('ℹ️ No multi-service T&C section found or section is empty');
       }
 
       if (pageCount === 0) {
-        console.warn('⚠️ No multi-service sections captured, using fallback');
+        logger.warn('⚠️ No multi-service sections captured, using fallback');
         await legacyFullCapture(element, pdf, pdfWidth, pdfHeight);
         pageCount = 1;
       }
     } else {
       // --- SINGLE-SERVICE QUOTE (original behavior) ---
-      console.log('📄 Capturing quotation content...');
+      logger.info('📄 Capturing quotation content...');
       const quotationResult = await captureSectionAtA4('pdf-page-1');
       
       if (quotationResult) {
         addCanvasToPDF(quotationResult.canvas, quotationResult.links, 'quotation', true);
       } else {
-        console.warn('⚠️ Quotation section not found, using fallback full capture');
+        logger.warn('⚠️ Quotation section not found, using fallback full capture');
         await legacyFullCapture(element, pdf, pdfWidth, pdfHeight);
         pageCount = 1;
       }
 
       // Reference Images (Page 2+)
-      console.log('📄 Checking for reference images...');
+      logger.info('📄 Checking for reference images...');
       const referenceResult = await captureSectionAtA4('pdf-page-2');
       
       if (referenceResult && referenceResult.canvas.height > 10) {
         addCanvasToPDF(referenceResult.canvas, referenceResult.links, 'references', false);
       } else {
-        console.log('ℹ️ No reference images section found or section is empty');
+        logger.info('ℹ️ No reference images section found or section is empty');
       }
 
       // Terms & Conditions (Last page)
-      console.log('📄 Checking for T&C page...');
+      logger.info('📄 Checking for T&C page...');
       const termsResult = await captureSectionAtA4('pdf-page-3');
       if (termsResult && termsResult.canvas.height > 10) {
         addCanvasToPDF(termsResult.canvas, termsResult.links, 'terms', false);
       } else {
-        console.log('ℹ️ No T&C section found or section is empty');
+        logger.info('ℹ️ No T&C section found or section is empty');
       }
     }
 
-    console.log(`📄 PDF created with ${pageCount} pages`);
+    logger.info(`📄 PDF created with ${pageCount} pages`);
 
     // Add PDF metadata
     pdf.setProperties({
@@ -382,11 +383,11 @@ export const exportToPDF = async (
     const clientStr = (clientName || '').replace(/\s+/g, '');
     const filename = `${dateStr}_${clientStr}_${quoteNumber}.pdf`;
 
-    console.log('💾 Saving PDF as:', filename);
+    logger.info('💾 Saving PDF as:', filename);
     
     // Handle mobile vs web differently
     if (isMobile()) {
-      console.log('📱 Mobile detected - using Filesystem API');
+      logger.info('📱 Mobile detected - using Filesystem API');
       try {
         // Get PDF as base64
         const pdfBase64 = pdf.output('dataurlstring').split(',')[1];
@@ -399,7 +400,7 @@ export const exportToPDF = async (
           recursive: true
         });
         
-        console.log('✅ PDF saved to:', result.uri);
+        logger.info('✅ PDF saved to:', result.uri);
         
         // Extract the actual file path from the URI
         const filePath = result.uri.replace('file://', '');
@@ -412,9 +413,9 @@ export const exportToPDF = async (
             title: 'PDF Downloaded',
             message: `${filename} is ready to view`
           });
-          console.log('✅ Download notification shown');
+          logger.info('✅ Download notification shown');
         } catch (notifError) {
-          console.error('⚠️ Notification plugin not available:', notifError);
+          logger.error('⚠️ Notification plugin not available:', notifError);
           // Continue - notification is optional
         }
         
@@ -425,31 +426,31 @@ export const exportToPDF = async (
             contentType: 'application/pdf',
             openWithDefault: true
           });
-          console.log('✅ PDF auto-opened in default viewer');
+          logger.info('✅ PDF auto-opened in default viewer');
         } catch (openError) {
-          console.error('⚠️ Failed to auto-open PDF:', openError);
+          logger.error('⚠️ Failed to auto-open PDF:', openError);
           // Show success message as fallback
           alert(`PDF saved successfully!\n\nFile: ${filename}\nLocation: Documents folder\n\nPlease open it from your file manager.`);
         }
       } catch (error) {
-        console.error('❌ Mobile save error:', error);
+        logger.error('❌ Mobile save error:', error);
         // Fallback to browser download
-        console.log('🔄 Falling back to browser download');
+        logger.info('🔄 Falling back to browser download');
         pdf.save(filename);
       }
     } else {
       // Web browser - use normal download
-      console.log('💻 Web detected - using browser download');
+      logger.info('💻 Web detected - using browser download');
       pdf.save(filename);
     }
 
     // Restore cursor
     document.body.style.cursor = originalCursor;
     
-    console.log('✅ PDF export complete');
+    logger.info('✅ PDF export complete');
     return Promise.resolve();
   } catch (error) {
-    console.error('PDF Export Error:', error);
+    logger.error('PDF Export Error:', error);
     document.body.style.cursor = 'default';
     throw new Error('Failed to generate PDF. Please try again.');
   }
@@ -534,7 +535,7 @@ export const exportToPDFWithOptions = async (
 
     // Handle mobile vs web differently
     if (isMobile()) {
-      console.log('📱 Mobile detected - using Filesystem API');
+      logger.info('📱 Mobile detected - using Filesystem API');
       try {
         const pdfBase64 = pdf.output('dataurlstring').split(',')[1];
         
@@ -545,7 +546,7 @@ export const exportToPDFWithOptions = async (
           recursive: true
         });
         
-        console.log('✅ PDF saved to:', result.uri);
+        logger.info('✅ PDF saved to:', result.uri);
         
         // Extract the actual file path from the URI
         const filePath = result.uri.replace('file://', '');
@@ -558,9 +559,9 @@ export const exportToPDFWithOptions = async (
             title: 'PDF Downloaded',
             message: `${finalFilename} is ready to view`
           });
-          console.log('✅ Download notification shown');
+          logger.info('✅ Download notification shown');
         } catch (notifError) {
-          console.error('⚠️ Failed to show notification:', notifError);
+          logger.error('⚠️ Failed to show notification:', notifError);
         }
         
         alert(`PDF saved successfully!\n\nFile: ${finalFilename}\nLocation: Documents folder\n\nTap the notification to open.`);
@@ -576,7 +577,7 @@ export const exportToPDFWithOptions = async (
           });
         }
       } catch (error) {
-        console.error('❌ Mobile save error:', error);
+        logger.error('❌ Mobile save error:', error);
         pdf.save(finalFilename);
       }
     } else {
@@ -587,7 +588,7 @@ export const exportToPDFWithOptions = async (
 
     return Promise.resolve();
   } catch (error) {
-    console.error('PDF Export Error:', error);
+    logger.error('PDF Export Error:', error);
     document.body.style.cursor = 'default';
     throw error;
   }
@@ -604,12 +605,12 @@ export const estimatePDFSize = (element: HTMLElement): number => {
 // Function to validate element before export
 export const validateElementForExport = (element: HTMLElement | null): boolean => {
   if (!element) {
-    console.error('Element is null');
+    logger.error('Element is null');
     return false;
   }
 
   if (element.scrollHeight === 0 || element.scrollWidth === 0) {
-    console.error('Element has no dimensions');
+    logger.error('Element has no dimensions');
     return false;
   }
 

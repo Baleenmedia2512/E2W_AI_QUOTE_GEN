@@ -4,6 +4,7 @@
  */
 
 import { StoredProposal } from '../types';
+import { logger } from './logger';
 
 const DB_NAME = 'e2w_quote_gen';
 const DB_VERSION = 3; // Increment version for new object store
@@ -22,7 +23,7 @@ function openDB(): Promise<IDBDatabase> {
         const store = db.createObjectStore(PROPOSALS_STORE, { keyPath: 'id' });
         store.createIndex('uploadedAt', 'uploadedAt', { unique: false });
         store.createIndex('fileName', 'fileName', { unique: false });
-        console.log('✅ Created proposal_library object store');
+        logger.info('✅ Created proposal_library object store');
       }
       
       // Keep existing proposal_images store (don't break it)
@@ -66,10 +67,10 @@ export async function saveProposalToLibrary(proposal: Omit<StoredProposal, 'id'>
     // Cleanup old proposals (keep only MAX_PROPOSALS)
     await cleanupOldProposals();
     
-    console.log('✅ Saved proposal to library:', storedProposal.fileName);
+    logger.info('✅ Saved proposal to library:', storedProposal.fileName);
     return id;
   } catch (error) {
-    console.error('❌ Failed to save proposal to library:', error);
+    logger.error('❌ Failed to save proposal to library:', error);
     throw error;
   }
 }
@@ -103,10 +104,10 @@ export async function loadRecentProposals(): Promise<StoredProposal[]> {
     
     db.close();
     
-    console.log(`✅ Loaded ${proposals.length} proposals from library`);
+    logger.info(`✅ Loaded ${proposals.length} proposals from library`);
     return proposals;
   } catch (error) {
-    console.warn('⚠️ Failed to load proposals from library:', error);
+    logger.warn('⚠️ Failed to load proposals from library:', error);
     return [];
   }
 }
@@ -129,11 +130,11 @@ export async function loadProposalById(id: string): Promise<StoredProposal | nul
     db.close();
     
     if (result) {
-      console.log('✅ Loaded proposal from library:', result.fileName);
+      logger.info('✅ Loaded proposal from library:', result.fileName);
     }
     return result;
   } catch (error) {
-    console.error('❌ Failed to load proposal by ID:', error);
+    logger.error('❌ Failed to load proposal by ID:', error);
     return null;
   }
 }
@@ -172,12 +173,12 @@ export async function findDuplicateProposal(
     );
     
     if (duplicate) {
-      console.log('🔍 Found duplicate proposal:', duplicate.fileName);
+      logger.info('🔍 Found duplicate proposal:', duplicate.fileName);
     }
     
     return duplicate || null;
   } catch (error) {
-    console.warn('⚠️ Failed to check for duplicates:', error);
+    logger.warn('⚠️ Failed to check for duplicates:', error);
     return null;
   }
 }
@@ -199,9 +200,9 @@ export async function deleteProposalFromLibrary(id: string): Promise<void> {
     
     db.close();
     
-    console.log('✅ Deleted proposal from library:', id);
+    logger.info('✅ Deleted proposal from library:', id);
   } catch (error) {
-    console.error('❌ Failed to delete proposal:', error);
+    logger.error('❌ Failed to delete proposal:', error);
     throw error;
   }
 }
@@ -238,7 +239,7 @@ async function cleanupOldProposals(): Promise<void> {
       const toDelete = proposals.slice(MAX_PROPOSALS);
       for (const proposal of toDelete) {
         store.delete(proposal.id);
-        console.log('🗑️ Cleaned up old proposal:', proposal.id);
+        logger.info('🗑️ Cleaned up old proposal:', proposal.id);
       }
     }
     
@@ -249,7 +250,7 @@ async function cleanupOldProposals(): Promise<void> {
     
     db.close();
   } catch (error) {
-    console.warn('⚠️ Failed to cleanup old proposals:', error);
+    logger.warn('⚠️ Failed to cleanup old proposals:', error);
   }
 }
 
@@ -270,9 +271,9 @@ export async function clearProposalLibrary(): Promise<void> {
     
     db.close();
     
-    console.log('✅ Cleared proposal library');
+    logger.info('✅ Cleared proposal library');
   } catch (error) {
-    console.error('❌ Failed to clear proposal library:', error);
+    logger.error('❌ Failed to clear proposal library:', error);
     throw error;
   }
 }

@@ -1,3 +1,5 @@
+import { logger } from './logger';
+
 /**
  * Cache Version Management Utility
  * Handles version checking, cache busting, and update notifications
@@ -55,7 +57,7 @@ export async function getCurrentVersion(): Promise<AppVersion | null> {
       setTimeout(() => resolve(null), 2000);
     });
   } catch (error) {
-    console.error('Failed to get version:', error);
+    logger.error('Failed to get version:', error);
     return null;
   }
 }
@@ -70,7 +72,7 @@ export function getStoredVersion(): AppVersion | null {
       return JSON.parse(stored);
     }
   } catch (error) {
-    console.error('Failed to get stored version:', error);
+    logger.error('Failed to get stored version:', error);
   }
   return null;
 }
@@ -82,7 +84,7 @@ export function saveVersion(version: AppVersion): void {
   try {
     localStorage.setItem(VERSION_KEY, JSON.stringify(version));
   } catch (error) {
-    console.error('Failed to save version:', error);
+    logger.error('Failed to save version:', error);
   }
 }
 
@@ -111,9 +113,9 @@ export async function checkForUpdates(): Promise<{
   const hasUpdate = current.buildTimestamp > stored.buildTimestamp;
 
   if (hasUpdate) {
-    console.log('🔄 Update detected!');
-    console.log(`   Previous: v${stored.version} (${new Date(stored.buildTimestamp).toLocaleString()})`);
-    console.log(`   Current:  v${current.version} (${new Date(current.buildTimestamp).toLocaleString()})`);
+    logger.info('🔄 Update detected!');
+    logger.info(`   Previous: v${stored.version} (${new Date(stored.buildTimestamp).toLocaleString()})`);
+    logger.info(`   Current:  v${current.version} (${new Date(current.buildTimestamp).toLocaleString()})`);
     
     // Update stored version
     saveVersion(current);
@@ -130,13 +132,13 @@ export async function checkForUpdates(): Promise<{
  * Force clear all caches and reload
  */
 export async function clearCacheAndReload(): Promise<void> {
-  console.log('🗑️ Clearing cache and reloading...');
+  logger.info('🗑️ Clearing cache and reloading...');
 
   // Clear service worker caches
   if ('caches' in window) {
     const cacheNames = await caches.keys();
     await Promise.all(cacheNames.map(name => {
-      console.log(`Deleting cache: ${name}`);
+      logger.info(`Deleting cache: ${name}`);
       return caches.delete(name);
     }));
   }
@@ -197,10 +199,10 @@ export async function getCacheStats(): Promise<{
     }
   }
 
-  console.log(`📊 Cache Stats:`);
-  console.log(`   Caches: ${cacheNames.length}`);
-  console.log(`   Items: ${itemCount}`);
-  console.log(`   Size: ${(totalSize / 1024 / 1024).toFixed(2)} MB`);
+  logger.info(`📊 Cache Stats:`);
+  logger.info(`   Caches: ${cacheNames.length}`);
+  logger.info(`   Items: ${itemCount}`);
+  logger.info(`   Size: ${(totalSize / 1024 / 1024).toFixed(2)} MB`);
 
   return { cacheNames, totalSize, itemCount };
 }
@@ -237,12 +239,12 @@ export async function debugCache(): Promise<void> {
   const stats = await getCacheStats();
   const isStale = isCacheStale();
 
-  console.log('Current Version:', current ? formatVersion(current) : 'Unknown');
-  console.log('Stored Version:', stored ? formatVersion(stored) : 'None');
-  console.log('Cache Stale:', isStale);
-  console.log('Cache Names:', stats.cacheNames);
-  console.log('Cache Items:', stats.itemCount);
-  console.log('Cache Size:', (stats.totalSize / 1024 / 1024).toFixed(2), 'MB');
+  logger.info('Current Version:', current ? formatVersion(current) : 'Unknown');
+  logger.info('Stored Version:', stored ? formatVersion(stored) : 'None');
+  logger.info('Cache Stale:', isStale);
+  logger.info('Cache Names:', stats.cacheNames);
+  logger.info('Cache Items:', stats.itemCount);
+  logger.info('Cache Size:', (stats.totalSize / 1024 / 1024).toFixed(2), 'MB');
   
   // Check storage quota
   if (navigator.storage && navigator.storage.estimate) {
@@ -251,9 +253,9 @@ export async function debugCache(): Promise<void> {
     const quota = estimate.quota || 0;
     const percentage = quota > 0 ? (usage / quota) * 100 : 0;
     
-    console.log('Storage Used:', (usage / 1024 / 1024).toFixed(2), 'MB');
-    console.log('Storage Quota:', (quota / 1024 / 1024).toFixed(2), 'MB');
-    console.log('Storage %:', percentage.toFixed(2) + '%');
+    logger.info('Storage Used:', (usage / 1024 / 1024).toFixed(2), 'MB');
+    logger.info('Storage Quota:', (quota / 1024 / 1024).toFixed(2), 'MB');
+    logger.info('Storage %:', percentage.toFixed(2) + '%');
   }
   
   console.groupEnd();
@@ -263,5 +265,5 @@ export async function debugCache(): Promise<void> {
 if (typeof window !== 'undefined' && process.env.NODE_ENV === 'development') {
   (window as any).debugCache = debugCache;
   (window as any).clearCache = clearCacheAndReload;
-  console.log('💡 Cache debug tools available: window.debugCache(), window.clearCache()');
+  logger.info('💡 Cache debug tools available: window.debugCache(), window.clearCache()');
 }

@@ -22,6 +22,7 @@ import { ClientInfo } from '../types/client';
 import { CompanyInfo } from '../types/company';
 import { Quote } from '../types/quote';
 import { saveCompanyInfo } from '../utils/localStorage';
+import { logger } from '../utils/logger';
 
 type QuoteStep = 'company' | 'client' | 'preview' | 'template';
 
@@ -33,19 +34,19 @@ const QuotePage: React.FC = () => {
 
   // Determine initial step based on available data
   useEffect(() => {
-    console.log('📄 QuotePage mounted - checking data...');
-    console.log('Has companyInfo:', !!companyInfo);
-    console.log('Has clientInfo:', !!clientInfo);
-    console.log('Has currentQuote:', !!currentQuote);
+    logger.info('📄 QuotePage mounted - checking data...');
+    logger.info('Has companyInfo:', !!companyInfo);
+    logger.info('Has clientInfo:', !!clientInfo);
+    logger.info('Has currentQuote:', !!currentQuote);
     
     if (!companyInfo) {
-      console.log('→ Setting step to: company');
+      logger.info('→ Setting step to: company');
       setCurrentStep('company');
     } else if (!clientInfo) {
-      console.log('→ Setting step to: client');
+      logger.info('→ Setting step to: client');
       setCurrentStep('client');
     } else if (currentQuote) {
-      console.log('→ Setting step to: preview');
+      logger.info('→ Setting step to: preview');
       setCurrentStep('preview');
     }
   }, []); // Only run on mount
@@ -88,7 +89,7 @@ const QuotePage: React.FC = () => {
         updatedAt: new Date(),
       };
       setCurrentQuote(newQuote);
-      console.log('✅ Created new quote with sample item:', newQuote);
+      logger.info('✅ Created new quote with sample item:', newQuote);
     }
     
     setCurrentStep('preview');
@@ -117,49 +118,49 @@ const QuotePage: React.FC = () => {
     }
     
     localStorage.setItem('savedQuotes', JSON.stringify(savedQuotes));
-    console.log('Saved quote:', currentQuote);
+    logger.info('Saved quote:', currentQuote);
   };
 
   const handleGeneratePDF = () => {
-    console.log('🔍 Continue to Template clicked');
+    logger.info('🔍 Continue to Template clicked');
     
     if (!currentQuote) {
-      console.error('❌ No quote available');
+      logger.error('❌ No quote available');
       alert('Please create a quote first');
       return;
     }
     
     if (!companyInfo) {
-      console.error('❌ Company info missing');
+      logger.error('❌ Company info missing');
       alert('Please add company information first');
       setCurrentStep('company');
       return;
     }
     
     if (!clientInfo) {
-      console.error('❌ Client info missing');
+      logger.error('❌ Client info missing');
       alert('Please add client information first');
       setCurrentStep('client');
       return;
     }
     
-    console.log('✅ Validation passed - moving to template selection...');
+    logger.info('✅ Validation passed - moving to template selection...');
     setCurrentStep('template');
   };
 
   const handleTemplateSelected = () => {
-    console.log('🚀 PREVIEW & EXPORT PDF BUTTON CLICKED');
-    console.log('Template selected:', selectedTemplate);
-    console.log('Current quote:', currentQuote);
-    console.log('Company info:', companyInfo);
-    console.log('Client info:', clientInfo);
+    logger.info('🚀 PREVIEW & EXPORT PDF BUTTON CLICKED');
+    logger.info('Template selected:', selectedTemplate);
+    logger.info('Current quote:', currentQuote);
+    logger.info('Company info:', companyInfo);
+    logger.info('Client info:', clientInfo);
     
     setIsNavigating(true);
     
     try {
       // Ensure quote has at least one item for preview
       if (currentQuote && currentQuote.items.length === 0) {
-        console.log('⚠️ Quote has no items, adding sample item...');
+        logger.info('⚠️ Quote has no items, adding sample item...');
         const updatedQuote = {
           ...currentQuote,
           items: [{
@@ -175,12 +176,12 @@ const QuotePage: React.FC = () => {
         };
         setCurrentQuote(updatedQuote);
         localStorage.setItem('currentQuote', JSON.stringify(updatedQuote));
-        console.log('✅ Sample item added to quote');
+        logger.info('✅ Sample item added to quote');
       } else if (currentQuote) {
         localStorage.setItem('currentQuote', JSON.stringify(currentQuote));
-        console.log('✅ Quote saved to localStorage');
+        logger.info('✅ Quote saved to localStorage');
       } else {
-        console.error('❌ No quote to save!');
+        logger.error('❌ No quote to save!');
         alert('Please create a quote first');
         setIsNavigating(false);
         return;
@@ -188,36 +189,36 @@ const QuotePage: React.FC = () => {
       
       if (companyInfo) {
         localStorage.setItem('companyInfo', JSON.stringify(companyInfo));
-        console.log('✅ Company info saved to localStorage');
+        logger.info('✅ Company info saved to localStorage');
       } else {
-        console.error('❌ No company info to save!');
+        logger.error('❌ No company info to save!');
       }
       
       if (clientInfo) {
         localStorage.setItem('clientInfo', JSON.stringify(clientInfo));
-        console.log('✅ Client info saved to localStorage');
+        logger.info('✅ Client info saved to localStorage');
       } else {
-        console.error('❌ No client info to save!');
+        logger.error('❌ No client info to save!');
       }
       
       localStorage.setItem('selectedTemplate', selectedTemplate);
-      console.log('✅ Template saved to localStorage:', selectedTemplate);
+      logger.info('✅ Template saved to localStorage:', selectedTemplate);
       
-      console.log('🔄 Navigating to /preview...');
-      console.log('History object:', history);
+      logger.info('🔄 Navigating to /preview...');
+      logger.info('History object:', history);
       
       // Try multiple navigation methods
       try {
         history.push('/preview');
-        console.log('✅ history.push executed');
+        logger.info('✅ history.push executed');
       } catch (navError) {
-        console.error('❌ history.push failed:', navError);
-        console.log('🔄 Trying window.location fallback...');
+        logger.error('❌ history.push failed:', navError);
+        logger.info('🔄 Trying window.location fallback...');
         window.location.href = '/preview';
       }
       
     } catch (error) {
-      console.error('❌ Error in handleTemplateSelected:', error);
+      logger.error('❌ Error in handleTemplateSelected:', error);
       alert('An error occurred: ' + (error as Error).message);
       setIsNavigating(false);
     }

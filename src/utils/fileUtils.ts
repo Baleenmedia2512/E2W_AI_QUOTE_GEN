@@ -1,5 +1,6 @@
 import { GoogleGenerativeAI } from '@google/generative-ai';
 import * as XLSX from 'xlsx';
+import { logger } from './logger';
 
 export interface FileExtractionResult {
   textContent: string;
@@ -59,7 +60,7 @@ export const validateExcelFile = (file: File): { valid: boolean; error?: string 
  */
 export const extractImageContent = async (file: File): Promise<FileExtractionResult> => {
   try {
-    console.log('Starting image extraction for:', file.name);
+    logger.info('Starting image extraction for:', file.name);
     
     // Convert image to base64
     const arrayBuffer = await file.arrayBuffer();
@@ -79,7 +80,7 @@ export const extractImageContent = async (file: File): Promise<FileExtractionRes
     const genAI = new GoogleGenerativeAI(apiKey.trim());
     const model = genAI.getGenerativeModel({ model: 'gemini-2.5-flash-lite' });
     
-    console.log('Sending image to Gemini Vision API for text extraction...');
+    logger.info('Sending image to Gemini Vision API for text extraction...');
     
     const prompt = `Extract ALL text content from this image. Preserve the layout, structure, and formatting as much as possible. Include:
 - All headings and titles
@@ -117,7 +118,7 @@ CRITICAL FOR TABLES (ESPECIALLY RATE CARDS):
     const response = await result.response;
     const textContent = response.text();
     
-    console.log('Image text extraction successful, length:', textContent.length);
+    logger.info('Image text extraction successful, length:', textContent.length);
     
     if (!textContent || textContent.trim().length === 0) {
       throw new Error('No text could be extracted from the image. The image may not contain readable text.');
@@ -134,7 +135,7 @@ CRITICAL FOR TABLES (ESPECIALLY RATE CARDS):
       }]
     };
   } catch (error: any) {
-    console.error('Error extracting image content:', error);
+    logger.error('Error extracting image content:', error);
     throw new Error(`Failed to extract text from image: ${error.message || 'Unknown error'}`);
   }
 };
@@ -144,12 +145,12 @@ CRITICAL FOR TABLES (ESPECIALLY RATE CARDS):
  */
 export const extractExcelContent = async (file: File): Promise<FileExtractionResult> => {
   try {
-    console.log('Starting Excel extraction for:', file.name);
+    logger.info('Starting Excel extraction for:', file.name);
     
     const arrayBuffer = await file.arrayBuffer();
     const workbook = XLSX.read(arrayBuffer, { type: 'array' });
     
-    console.log('Excel workbook loaded, sheets:', workbook.SheetNames.length);
+    logger.info('Excel workbook loaded, sheets:', workbook.SheetNames.length);
     
     let textContent = '';
     const sheets = workbook.SheetNames;
@@ -175,7 +176,7 @@ export const extractExcelContent = async (file: File): Promise<FileExtractionRes
     });
     
     const finalText = textContent.trim();
-    console.log('Excel extraction complete. Total text length:', finalText.length);
+    logger.info('Excel extraction complete. Total text length:', finalText.length);
     
     if (finalText.length === 0) {
       throw new Error('Excel file appears to be empty or contains no readable data.');
@@ -195,7 +196,7 @@ export const extractExcelContent = async (file: File): Promise<FileExtractionRes
       pageImages
     };
   } catch (error: any) {
-    console.error('Error extracting Excel content:', error);
+    logger.error('Error extracting Excel content:', error);
     throw new Error(`Failed to extract Excel content: ${error.message || 'Unknown error'}`);
   }
 };

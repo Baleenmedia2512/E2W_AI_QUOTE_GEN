@@ -1,3 +1,5 @@
+import { logger } from './logger';
+
 const DB_NAME = 'e2w_quote_gen';
 const DB_VERSION = 3;
 const STORE_NAME = 'proposal_images';
@@ -39,7 +41,7 @@ export async function savePageImages(pageImages: ExtractedPage[]): Promise<void>
     });
     db.close();
   } catch (e) {
-    console.warn('Failed to save page images to IndexedDB:', e);
+    logger.warn('Failed to save page images to IndexedDB:', e);
   }
 }
 
@@ -56,7 +58,7 @@ export async function loadPageImages(): Promise<ExtractedPage[]> {
     db.close();
     return result;
   } catch (e) {
-    console.warn('Failed to load page images from IndexedDB:', e);
+    logger.warn('Failed to load page images from IndexedDB:', e);
     return [];
   }
 }
@@ -73,7 +75,7 @@ export async function clearPageImages(): Promise<void> {
     });
     db.close();
   } catch (e) {
-    console.warn('Failed to clear page images from IndexedDB:', e);
+    logger.warn('Failed to clear page images from IndexedDB:', e);
   }
 }
 
@@ -92,7 +94,7 @@ export async function savePageImagesById(proposalId: string, pageImages: Extract
     });
     db.close();
   } catch (e) {
-    console.warn(`Failed to save page images for proposal ${proposalId}:`, e);
+    logger.warn(`Failed to save page images for proposal ${proposalId}:`, e);
   }
 }
 
@@ -110,7 +112,7 @@ export async function loadPageImagesById(proposalId: string): Promise<ExtractedP
     db.close();
     return result;
   } catch (e) {
-    console.warn(`Failed to load page images for proposal ${proposalId}:`, e);
+    logger.warn(`Failed to load page images for proposal ${proposalId}:`, e);
     return [];
   }
 }
@@ -128,7 +130,7 @@ export async function clearPageImagesById(proposalId: string): Promise<void> {
     });
     db.close();
   } catch (e) {
-    console.warn(`Failed to clear page images for proposal ${proposalId}:`, e);
+    logger.warn(`Failed to clear page images for proposal ${proposalId}:`, e);
   }
 }
 
@@ -139,7 +141,7 @@ export function saveActiveProposalIds(ids: string[]): void {
   try {
     localStorage.setItem(ACTIVE_IDS_KEY, JSON.stringify(ids));
   } catch (e) {
-    console.warn('Failed to save active proposal IDs:', e);
+    logger.warn('Failed to save active proposal IDs:', e);
   }
 }
 
@@ -149,7 +151,7 @@ export function loadActiveProposalIds(): string[] {
     const saved = localStorage.getItem(ACTIVE_IDS_KEY);
     return saved ? JSON.parse(saved) : [];
   } catch (e) {
-    console.warn('Failed to load active proposal IDs:', e);
+    logger.warn('Failed to load active proposal IDs:', e);
     return [];
   }
 }
@@ -159,7 +161,7 @@ export function clearActiveProposalIds(): void {
   try {
     localStorage.removeItem(ACTIVE_IDS_KEY);
   } catch (e) {
-    console.warn('Failed to clear active proposal IDs:', e);
+    logger.warn('Failed to clear active proposal IDs:', e);
   }
 }
 
@@ -187,7 +189,7 @@ export function saveActiveProposalMeta(proposals: ActiveProposalMeta[]): void {
     }));
     localStorage.setItem(ACTIVE_META_KEY, JSON.stringify(meta));
   } catch (e) {
-    console.warn('Failed to save active proposal meta:', e);
+    logger.warn('Failed to save active proposal meta:', e);
   }
 }
 
@@ -197,7 +199,7 @@ export function loadActiveProposalMeta(): ActiveProposalMeta[] {
     const saved = localStorage.getItem(ACTIVE_META_KEY);
     return saved ? JSON.parse(saved) : [];
   } catch (e) {
-    console.warn('Failed to load active proposal meta:', e);
+    logger.warn('Failed to load active proposal meta:', e);
     return [];
   }
 }
@@ -207,6 +209,6 @@ export function clearActiveProposalMeta(): void {
   try {
     localStorage.removeItem(ACTIVE_META_KEY);
   } catch (e) {
-    console.warn('Failed to clear active proposal meta:', e);
+    logger.warn('Failed to clear active proposal meta:', e);
   }
 }

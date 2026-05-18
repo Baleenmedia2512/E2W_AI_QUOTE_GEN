@@ -2,6 +2,7 @@ import React, { useMemo, useState, useEffect } from 'react';
 
 import './ReferenceImages.css';
 import { extractReviewViaGemini, cropReferencePageImage, cropPageStrippingHeaderFooter, cropSpecDiagram, cropPageHalf, cropPageFromPercent } from '../../utils/pdfUtils';
+import { logger } from '../../utils/logger';
 
 interface ExtractedPage {
   pageNumber: number;
@@ -43,13 +44,13 @@ interface SpecGroup {
  * Uses strict matching to ensure we get the right pages.
  */
 function filterPagesByCategory(pages: ExtractedPage[], category: string): ExtractedPage[] {
-  console.log('🔍 Filtering pages for category:', category);
+  logger.info('🔍 Filtering pages for category:', category);
 
   // Strip city prefix if present e.g. "Madurai - Auto Semi Branding - Display Price"
   const cityPrefixRe = /^(chennai|madurai|coimbatore|salem|trichy|tirupur|erode|vellore|tirunelveli|bangalore|hyderabad|mumbai|delhi)\s*[-–—]\s*/i;
   const cleanCategory = category.replace(cityPrefixRe, '');
   if (cleanCategory !== category) {
-    console.log('🏙️ Stripped city prefix, using:', cleanCategory);
+    logger.info('🏙️ Stripped city prefix, using:', cleanCategory);
   }
   // Use cleaned category for all subsequent matching
   category = cleanCategory;
@@ -62,7 +63,7 @@ function filterPagesByCategory(pages: ExtractedPage[], category: string): Extrac
   const pricingMatch = category.match(pricingSuffixPattern);
   if (pricingMatch && pricingMatch.index && pricingMatch.index > 0) {
     serviceTypeOnly = category.substring(0, pricingMatch.index).replace(/[\s\-–—&]+$/, '').trim();
-    console.log('📌 Using service type (pricing suffix removed):', serviceTypeOnly);
+    logger.info('📌 Using service type (pricing suffix removed):', serviceTypeOnly);
   } else {
     // Only fall back to first-dash split if no sub-type qualifiers are present
     // Sub-type qualifiers: words like interior, underground, exterior, station, etc.
@@ -74,12 +75,12 @@ function filterPagesByCategory(pages: ExtractedPage[], category: string): Extrac
       serviceTypeOnly = category
         .replace(/\s*[-–—]\s*\b(display\s+price|rental\s+price|printing\s+price|fixing\s+price|printing\s*&?\s*fixing\s*price?|per\s+month|rate|price)\b.*$/i, '')
         .replace(/[\s\-–—&]+$/, '').trim();
-      console.log('📌 Using service type (sub-type preserved):', serviceTypeOnly);
+      logger.info('📌 Using service type (sub-type preserved):', serviceTypeOnly);
     } else {
       const dashIndex = category.indexOf(' - ');
       if (dashIndex > 0) {
         serviceTypeOnly = category.substring(0, dashIndex).trim();
-        console.log('📌 Using service type only:', serviceTypeOnly);
+        logger.info('📌 Using service type only:', serviceTypeOnly);
       }
     }
   }
@@ -131,7 +132,7 @@ function filterPagesByCategory(pages: ExtractedPage[], category: string): Extrac
 
   const words = [...new Set([...coreWords, ...shortCodes])];
   
-  console.log('📝 Extracted keywords:', words);
+  logger.info('📝 Extracted keywords:', words);
   
   if (words.length === 0) return [];
   
@@ -139,7 +140,7 @@ function filterPagesByCategory(pages: ExtractedPage[], category: string): Extrac
   // e.g., "Mobile Van Branding - Mobile Van - LED Branding" should only require 'mobile', 'van', 'branding', 'led' once each
   const requiredKeywords = [...new Set(words)];
   
-  console.log('🔑 Required keywords for matching:', requiredKeywords);
+  logger.info('🔑 Required keywords for matching:', requiredKeywords);
   
   // Strategy: Build an exact heading pattern from the category
   // E.g., "Apartment Lift Branding" → /apartment\s+lift\s+branding/i
@@ -153,7 +154,7 @@ function filterPagesByCategory(pages: ExtractedPage[], category: string): Extrac
   const keywordPattern = keywordPatternParts.join('\\s+');
   const exactHeadingPattern = new RegExp(keywordPattern, 'i');
   
-  console.log('🎯 Exact heading pattern:', exactHeadingPattern.source);
+  logger.info('🎯 Exact heading pattern:', exactHeadingPattern.source);
 
   const matchedPages = pages.filter((page) => {
     // Clean up page text: Remove pipe characters and extra spaces that might split words
@@ -186,7 +187,7 @@ function filterPagesByCategory(pages: ExtractedPage[], category: string): Extrac
       }
     }
 
-    console.log(`🔍 Checking Page ${page.pageNumber} for keywords: [${requiredKeywords.join(', ')}]`);
+    logger.info(`🔍 Checking Page ${page.pageNumber} for keywords: [${requiredKeywords.join(', ')}]`);
     
     // EXCLUDE pricing summary pages (they contain pricing tables, not reference images)
     // Detect currency symbols/patterns that indicate pricing content
@@ -205,7 +206,7 @@ function filterPagesByCategory(pages: ExtractedPage[], category: string): Extrac
                             (hasCurrencyPatterns && hasQuantityColumns);
     
     if (isPricingSummary) {
-      console.log(`❌ Page ${page.pageNumber} - Excluded (pricing summary table)`);
+      logger.info(`❌ Page ${page.pageNumber} - Excluded (pricing summary table)`);
       return false;
     }
     
@@ -220,7 +221,7 @@ function filterPagesByCategory(pages: ExtractedPage[], category: string): Extrac
       if (synonyms) {
         for (const syn of synonyms) {
           if (text.includes(syn)) {
-            console.log(`  ✓ Synonym match: "${kw}" matched via synonym "${syn}"`);
+            logger.info(`  ✓ Synonym match: "${kw}" matched via synonym "${syn}"`);
             return true;
           }
         }
@@ -302,7 +303,7 @@ function filterPagesByCategory(pages: ExtractedPage[], category: string): Extrac
       if (synonyms) {
         for (const syn of synonyms) {
           if (pageText.includes(syn)) {
-            console.log(`  ✓ Synonym match: "${kw}" matched via synonym "${syn}"`);
+            logger.info(`  ✓ Synonym match: "${kw}" matched via synonym "${syn}"`);
             return true;
           }
         }
@@ -313,7 +314,7 @@ function filterPagesByCategory(pages: ExtractedPage[], category: string): Extrac
         const withoutS = kw.slice(0, -1);
         if (!['busines', 'congres', 'proces'].includes(withoutS)) {
           if (pageText.includes(withoutS)) {
-            console.log(`  ✓ Found variation: "${kw}" matched as "${withoutS}"`);
+            logger.info(`  ✓ Found variation: "${kw}" matched as "${withoutS}"`);
             return true;
           }
         }
@@ -323,7 +324,7 @@ function filterPagesByCategory(pages: ExtractedPage[], category: string): Extrac
       if (!kw.endsWith('s')) {
         const withS = kw + 's';
         if (pageText.includes(withS)) {
-          console.log(`  ✓ Found variation: "${kw}" matched as "${withS}"`);
+          logger.info(`  ✓ Found variation: "${kw}" matched as "${withS}"`);
           return true;
         }
       }
@@ -335,7 +336,7 @@ function filterPagesByCategory(pages: ExtractedPage[], category: string): Extrac
           if (word.length >= kw.length - 2 && word.length <= kw.length + 2) {
             const startMatch = kw.substring(0, 4) === word.substring(0, 4);
             if (startMatch) {
-              console.log(`  ✓ Found fuzzy match: "${kw}" matched as "${word}" (same start + similar length)`);
+              logger.info(`  ✓ Found fuzzy match: "${kw}" matched as "${word}" (same start + similar length)`);
               return true;
             }
             
@@ -356,7 +357,7 @@ function filterPagesByCategory(pages: ExtractedPage[], category: string): Extrac
             
             const similarity = commonChars / kw.length;
             if (similarity >= 0.85) {
-              console.log(`  ✓ Found fuzzy match: "${kw}" matched as "${word}" (${Math.round(similarity * 100)}% characters match)`);
+              logger.info(`  ✓ Found fuzzy match: "${kw}" matched as "${word}" (${Math.round(similarity * 100)}% characters match)`);
               return true;
             }
           }
@@ -379,7 +380,7 @@ function filterPagesByCategory(pages: ExtractedPage[], category: string): Extrac
                 }
               }
               if (commonChars / kw.length >= 0.85) {
-                console.log(`  ✓ Found compound-word match: "${kw}" matched as prefix of "${word}"`);
+                logger.info(`  ✓ Found compound-word match: "${kw}" matched as prefix of "${word}"`);
                 return true;
               }
             }
@@ -411,13 +412,13 @@ function filterPagesByCategory(pages: ExtractedPage[], category: string): Extrac
       // Use the same flexible matching for reporting missing keywords
       const missingKeywords = requiredKeywords.filter(kw => !keywordFoundInText(kw, pageText));
       
-      console.log(`❌ Page ${page.pageNumber} - Missing keywords: [${missingKeywords.join(', ')}] (matched ${matchedCount}/${requiredKeywords.length})`);
-      console.log(`   Page text sample: ${pageText.substring(0, 200)}...`);
+      logger.info(`❌ Page ${page.pageNumber} - Missing keywords: [${missingKeywords.join(', ')}] (matched ${matchedCount}/${requiredKeywords.length})`);
+      logger.info(`   Page text sample: ${pageText.substring(0, 200)}...`);
       return false;
     }
     
     if (hasRelaxedMatch) {
-      console.log(`✅ Page ${page.pageNumber} - RELAXED match (${matchedCount}/${requiredKeywords.length} keywords, ${Math.round(matchRatio * 100)}%)`);
+      logger.info(`✅ Page ${page.pageNumber} - RELAXED match (${matchedCount}/${requiredKeywords.length} keywords, ${Math.round(matchRatio * 100)}%)`);
     }
     
     // STRICT HEADING CHECK FIRST: PDF reference pages have the service name at the very top
@@ -443,7 +444,7 @@ function filterPagesByCategory(pages: ExtractedPage[], category: string): Extrac
       return false;
     });
     if (!allKeywordsInHeading) {
-      console.log(`❌ Page ${page.pageNumber} - Keywords not all in heading area. Heading: "${headingArea.substring(0, 60)}..."`);
+      logger.info(`❌ Page ${page.pageNumber} - Keywords not all in heading area. Heading: "${headingArea.substring(0, 60)}..."`);
       return false;
     }
 
@@ -501,7 +502,7 @@ function filterPagesByCategory(pages: ExtractedPage[], category: string): Extrac
       }
     }
     const keywordsAreClose = allKeywordsLocated && minSpan <= 120;
-    console.log(`📏 Page ${page.pageNumber} - keyword cluster min span: ${minSpan}, close: ${keywordsAreClose}`);
+    logger.info(`📏 Page ${page.pageNumber} - keyword cluster min span: ${minSpan}, close: ${keywordsAreClose}`);
 
     // NEGATION GUARD: If the query does NOT include a negation word (non/no/without),
     // but the page heading contains a negation word immediately before one of the required
@@ -525,7 +526,7 @@ function filterPagesByCategory(pages: ExtractedPage[], category: string): Extrac
       while ((negMatch = negationPattern.exec(headingWindow)) !== null) {
         const wordAfterNeg = negMatch[0].split(/\s+/)[1];
         if (requiredKeywords.some(kw => wordAfterNeg.startsWith(kw.substring(0, 3)))) {
-          console.log(`❌ Page ${page.pageNumber} - Negation guard: page heading has "${negMatch[0]}" but query requires positive match`);
+          logger.info(`❌ Page ${page.pageNumber} - Negation guard: page heading has "${negMatch[0]}" but query requires positive match`);
           return false;
         }
       }
@@ -555,13 +556,13 @@ function filterPagesByCategory(pages: ExtractedPage[], category: string): Extrac
                                 pageText.includes('creative size');
     
     if (isReferenceImagePage && (hasHeading || keywordsAreClose)) {
-      console.log(`✅ Page ${page.pageNumber} - REFERENCE IMAGE page with heading match!`);
+      logger.info(`✅ Page ${page.pageNumber} - REFERENCE IMAGE page with heading match!`);
       return true;
     }
 
     // PRIORITY 2: Exact heading phrase found on page
     if (hasHeading) {
-      console.log(`✅ Page ${page.pageNumber} - EXACT heading match found!`);
+      logger.info(`✅ Page ${page.pageNumber} - EXACT heading match found!`);
       return true;
     }
     
@@ -593,27 +594,27 @@ function filterPagesByCategory(pages: ExtractedPage[], category: string): Extrac
       const distance = lastPos - firstPos;
       
       if (distance <= 60) {
-        console.log(`✅ Page ${page.pageNumber} - Keywords appear close together (distance: ${distance})`);
+        logger.info(`✅ Page ${page.pageNumber} - Keywords appear close together (distance: ${distance})`);
         return true;
       } else {
-        console.log(`❌ Page ${page.pageNumber} - Keywords too far apart (distance: ${distance}), likely scattered`);
+        logger.info(`❌ Page ${page.pageNumber} - Keywords too far apart (distance: ${distance}), likely scattered`);
       }
     }
     
 
     // PRIORITY 3: Keywords appear within 100 characters of each other (flexible heading match)
     if (keywordsAreClose) {
-      console.log(`✅ Page ${page.pageNumber} - Keywords appear close together`);
+      logger.info(`✅ Page ${page.pageNumber} - Keywords appear close together`);
       return true;
     }
 
     // REJECT: keywords are scattered across different sections of the page (e.g. service name
     // in heading, "back" in size spec, "sticker" in material field) — high false-positive risk.
-    console.log(`⚠️ Page ${page.pageNumber} - Keywords too scattered, rejecting to avoid wrong product match`);
+    logger.info(`⚠️ Page ${page.pageNumber} - Keywords too scattered, rejecting to avoid wrong product match`);
     return false;
   });
   
-  console.log(`📊 Found ${matchedPages.length} matching pages for "${category}"`);
+  logger.info(`📊 Found ${matchedPages.length} matching pages for "${category}"`);
   
   // POST-PROCESSING: Look for reference image pages adjacent to keyword matches
   // E.g., if page 32 has keywords but page 33 is reference image, include page 33
@@ -625,7 +626,7 @@ function filterPagesByCategory(pages: ExtractedPage[], category: string): Extrac
     // Check if this page has (1/X) pattern - skip it entirely
     const hasFirstPagePattern = pageText.match(/\(1\/\d+\)/);
     if (hasFirstPagePattern) {
-      console.log(`🔄 Page ${page.pageNumber} - Excluded (1/X pattern)`);
+      logger.info(`🔄 Page ${page.pageNumber} - Excluded (1/X pattern)`);
       return;
     }
     
@@ -658,7 +659,7 @@ function filterPagesByCategory(pages: ExtractedPage[], category: string): Extrac
                      pageText.match(/\(([2-9]\d*)\/\d+\)/);
     
     if (isRefPage) {
-      console.log(`🎯 Page ${page.pageNumber} - Reference image page found`);
+      logger.info(`🎯 Page ${page.pageNumber} - Reference image page found`);
       pageNumbersToInclude.add(page.pageNumber);
       return;
     }
@@ -695,19 +696,19 @@ function filterPagesByCategory(pages: ExtractedPage[], category: string): Extrac
                            nextText.match(/\(([2-9]\d*)\/\d+\)/);
       
       if (nextIsRefPage) {
-        console.log(`🔄 Page ${page.pageNumber} - Skipped, using next page ${nextPage.pageNumber} (reference page)`);
+        logger.info(`🔄 Page ${page.pageNumber} - Skipped, using next page ${nextPage.pageNumber} (reference page)`);
         pageNumbersToInclude.add(nextPage.pageNumber);
         return;
       }
     }
     
     // No reference page found in adjacent pages, include current page
-    console.log(`✅ Page ${page.pageNumber} - Included (keyword match)`);
+    logger.info(`✅ Page ${page.pageNumber} - Included (keyword match)`);
     pageNumbersToInclude.add(page.pageNumber);
   });
   
   const refinedPages = pages.filter(p => pageNumbersToInclude.has(p.pageNumber));
-  console.log(`📊 After refinement: ${refinedPages.length} pages for "${category}"`);
+  logger.info(`📊 After refinement: ${refinedPages.length} pages for "${category}"`);
   return refinedPages;
 }
 
@@ -745,7 +746,7 @@ function extractServiceType(items: QuoteItem[]): string | null {
         lower.includes('lobby') ||
         lower.includes('hoarding') ||
         lower.includes('board')) {
-      console.log('📌 Extracted service type (pricing suffix removed):', serviceType);
+      logger.info('📌 Extracted service type (pricing suffix removed):', serviceType);
       return serviceType;
     }
     
@@ -762,7 +763,7 @@ function extractServiceType(items: QuoteItem[]): string | null {
           bdLower.includes('advertising') ||
           bdLower.includes('screen') ||
           bdLower.includes('lobby')) {
-        console.log('📌 Extracted service type from dash pattern:', beforeDash);
+        logger.info('📌 Extracted service type from dash pattern:', beforeDash);
         return beforeDash;
       }
     }
@@ -771,14 +772,14 @@ function extractServiceType(items: QuoteItem[]): string | null {
     const brandingMatch = desc.match(/([a-z\s]+branding)/i);
     if (brandingMatch) {
       const matchedType = brandingMatch[1].trim();
-      console.log('📌 Extracted service type from branding pattern:', matchedType);
+      logger.info('📌 Extracted service type from branding pattern:', matchedType);
       return matchedType;
     }
     
     // Also check for specific vehicle/building patterns (backward compatibility)
     const vehicleMatch = desc.match(/(bus|auto|tempo|apartment|building|lift|elevator|residential|commercial)\s+(full|semi|back|panel|shelter|rickshaw|branding)/i);
     if (vehicleMatch) {
-      console.log('📌 Extracted service type from vehicle/building pattern:', vehicleMatch[0]);
+      logger.info('📌 Extracted service type from vehicle/building pattern:', vehicleMatch[0]);
       return vehicleMatch[0];
     }
   }
@@ -891,7 +892,7 @@ function extractAllServiceTypes(items: QuoteItem[]): string[] {
       if (!seen.has(key)) {
         seen.add(key);
         results.push(extracted);
-        console.log('📌 Extracted service type:', extracted);
+        logger.info('📌 Extracted service type:', extracted);
       }
     }
   }
@@ -906,7 +907,7 @@ function extractAllServiceTypes(items: QuoteItem[]): string[] {
  */
 function filterPagesByQuoteItems(pages: ExtractedPage[], items: QuoteItem[]): ExtractedPage[] {
   if (!items || items.length === 0) {
-    console.log('⚠️ No quote items provided');
+    logger.info('⚠️ No quote items provided');
     return [];
   }
   
@@ -916,18 +917,18 @@ function filterPagesByQuoteItems(pages: ExtractedPage[], items: QuoteItem[]): Ex
   const serviceTypes = extractAllServiceTypes(items);
   
   if (serviceTypes.length > 0) {
-    console.log(`🎯 Detected ${serviceTypes.length} service type(s):`, serviceTypes);
+    logger.info(`🎯 Detected ${serviceTypes.length} service type(s):`, serviceTypes);
     
     // Loop through EACH service type and collect pages
     for (const serviceType of serviceTypes) {
-      console.log(`\n🔍 Searching pages for: "${serviceType}"`);
+      logger.info(`\n🔍 Searching pages for: "${serviceType}"`);
       const matchingPages = filterPagesByCategory(pages, serviceType);
       
       if (matchingPages.length > 0) {
-        console.log(`📊 Found ${matchingPages.length} pages matching "${serviceType}"`);
+        logger.info(`📊 Found ${matchingPages.length} pages matching "${serviceType}"`);
         // DEBUG: dump first 250 chars of each matched page so we can see what's actually on it
         matchingPages.forEach(p => {
-          console.log(`   📄 Page ${p.pageNumber} text:`, p.text.replace(/\s+/g, ' ').substring(0, 250));
+          logger.info(`   📄 Page ${p.pageNumber} text:`, p.text.replace(/\s+/g, ' ').substring(0, 250));
         });
         
         // Filter to only reference pages (2/X or higher)
@@ -973,7 +974,7 @@ function filterPagesByQuoteItems(pages: ExtractedPage[], items: QuoteItem[]): Ex
         });
         
         if (referencePages.length > 0) {
-          console.log(`✅ Found ${referencePages.length} reference pages for "${serviceType}"`);
+          logger.info(`✅ Found ${referencePages.length} reference pages for "${serviceType}"`);
           referencePages.forEach((page) => matchedPages.add(page.pageNumber));
         } else {
           // Fallback: include all matching except (1/X) pricing pages
@@ -985,24 +986,24 @@ function filterPagesByQuoteItems(pages: ExtractedPage[], items: QuoteItem[]): Ex
           filteredMatchingPages.forEach((page) => matchedPages.add(page.pageNumber));
         }
       } else {
-        console.log(`⚠️ No pages found for "${serviceType}"`);
+        logger.info(`⚠️ No pages found for "${serviceType}"`);
       }
     }
     
     if (matchedPages.size > 0) {
       const result = pages.filter((page) => matchedPages.has(page.pageNumber));
-      console.log(`📊 Final result: ${result.length} reference pages for ${serviceTypes.length} service type(s)`);
+      logger.info(`📊 Final result: ${result.length} reference pages for ${serviceTypes.length} service type(s)`);
       return result;
     }
   }
   
   // Fallback: Process each item individually (unchanged from original)
   items.forEach((item) => {
-    console.log('🔍 Processing item:', item.description);
+    logger.info('🔍 Processing item:', item.description);
     const matchingPages = filterPagesByCategory(pages, item.description);
     
     if (matchingPages.length === 0) {
-      console.log(`⚠️ No pages found for "${item.description}"`);
+      logger.info(`⚠️ No pages found for "${item.description}"`);
       return;
     }
     
@@ -1018,26 +1019,26 @@ function filterPagesByQuoteItems(pages: ExtractedPage[], items: QuoteItem[]): Ex
       // EXPLICIT CHECK: Exclude any page with (1/X) pattern (pricing page)
       const hasFirstPagePattern = text.match(/\(1\/\d+\)/);
       if (hasFirstPagePattern) {
-        console.log(`  ❌ Page ${page.pageNumber} - Excluded (found (1/X) pattern - pricing page)`);
+        logger.info(`  ❌ Page ${page.pageNumber} - Excluded (found (1/X) pattern - pricing page)`);
         return false;
       }
         
       const hasReferencePattern = text.match(/\(([2-9]\d*)\/(\d+)\)/);
       if (hasReferencePattern) {
-        console.log(`  ✅ Page ${page.pageNumber} has reference pattern: (2/X) or higher`);
+        logger.info(`  ✅ Page ${page.pageNumber} has reference pattern: (2/X) or higher`);
       }
       return hasReferencePattern;
     });
     
     // If we found reference pages with the pattern, use those (preferred)
     if (referencePages.length > 0) {
-      console.log(`✅ Using ${referencePages.length} reference pages with (X/Y) pattern`);
+      logger.info(`✅ Using ${referencePages.length} reference pages with (X/Y) pattern`);
       referencePages.forEach((page) => matchedPages.add(page.pageNumber));
     } else {
       // Fallback: Include all matching pages if no (X/Y) pattern found
       // (user's PDF might not have the pattern)
       // BUT STILL exclude any (1/X) pages to avoid showing pricing pages
-      console.log(`⚠️ No (X/Y) pattern found for reference pages, checking all ${matchingPages.length} matching pages`);
+      logger.info(`⚠️ No (X/Y) pattern found for reference pages, checking all ${matchingPages.length} matching pages`);
       
       const filteredMatchingPages = matchingPages.filter(page => {
         const text = page.text.toLowerCase().replace(/\s*\|\s*/g, '').replace(/\s+/g, ' ');
@@ -1045,19 +1046,19 @@ function filterPagesByQuoteItems(pages: ExtractedPage[], items: QuoteItem[]): Ex
         // EXPLICIT CHECK: Exclude any page with (1/X) pattern (pricing page)
         const hasFirstPagePattern = text.match(/\(1\/\d+\)/);
         if (hasFirstPagePattern) {
-          console.log(`  ❌ Page ${page.pageNumber} - Excluded from fallback (found (1/X) pattern)`);
+          logger.info(`  ❌ Page ${page.pageNumber} - Excluded from fallback (found (1/X) pattern)`);
           return false;
         }
         return true;
       });
       
-      console.log(`📊 After filtering out (1/X) pages: ${filteredMatchingPages.length} pages remain`);
+      logger.info(`📊 After filtering out (1/X) pages: ${filteredMatchingPages.length} pages remain`);
       filteredMatchingPages.forEach((page) => matchedPages.add(page.pageNumber));
     }
   });
   
   const result = pages.filter((page) => matchedPages.has(page.pageNumber));
-  console.log(`📊 Final result: ${result.length} reference pages out of ${pages.length} total pages`);
+  logger.info(`📊 Final result: ${result.length} reference pages out of ${pages.length} total pages`);
   
   return result;
 }
@@ -1425,7 +1426,7 @@ export const ReferenceImages: React.FC<ReferenceImagesProps> = ({ proposalPages,
       if (city) {
         const cityPages = getPagesForCity(proposalPageMap, city);
         if (cityPages && cityPages.length > 0) {
-          console.log(`🌆 ReferenceImages: Using ${cityPages.length} pages from city "${city}"`);
+          logger.info(`🌆 ReferenceImages: Using ${cityPages.length} pages from city "${city}"`);
           return cityPages;
         }
       }
@@ -1436,21 +1437,21 @@ export const ReferenceImages: React.FC<ReferenceImagesProps> = ({ proposalPages,
   // Automatically filter pages by quote items
   const filteredPages = useMemo(() => {
     if (!resolvedPages || resolvedPages.length === 0) {
-      console.log('❌ ReferenceImages: No proposal pages available');
+      logger.info('❌ ReferenceImages: No proposal pages available');
       return [];
     }
     
-    console.log('📄 ReferenceImages: Processing', resolvedPages.length, 'proposal pages');
-    console.log('📋 ReferenceImages: Quote items:', items?.map(i => i.description));
+    logger.info('📄 ReferenceImages: Processing', resolvedPages.length, 'proposal pages');
+    logger.info('📋 ReferenceImages: Quote items:', items?.map(i => i.description));
     
     // Debug: Log first page text to see what we're working with
     if (resolvedPages.length > 0) {
-      console.log('📝 Sample page text:', resolvedPages[0].text.substring(0, 200));
+      logger.info('📝 Sample page text:', resolvedPages[0].text.substring(0, 200));
     }
     
     // Automatically filter by quote items - no manual selection
     const filtered = filterPagesByQuoteItems(resolvedPages, items || []);
-    console.log('✅ ReferenceImages: Filtered to', filtered.length, 'pages');
+    logger.info('✅ ReferenceImages: Filtered to', filtered.length, 'pages');
     
     return filtered;
   }, [resolvedPages, items]);
@@ -1463,7 +1464,7 @@ export const ReferenceImages: React.FC<ReferenceImagesProps> = ({ proposalPages,
       REVIEW_HEADING_PATTERN.test(p.text)
     );
     if (extra.length > 0) {
-      console.log('📝 ReferenceImages: Found', extra.length, 'customer review page(s) outside filtered set');
+      logger.info('📝 ReferenceImages: Found', extra.length, 'customer review page(s) outside filtered set');
     }
     return [...filteredPages, ...extra];
   }, [resolvedPages, filteredPages]);
@@ -1504,10 +1505,10 @@ export const ReferenceImages: React.FC<ReferenceImagesProps> = ({ proposalPages,
     if (!reviewPage) return;
 
     let cancelled = false;
-    console.log('🔍 Triggering Gemini OCR for review page', reviewPage.pageNumber);
+    logger.info('🔍 Triggering Gemini OCR for review page', reviewPage.pageNumber);
     extractReviewViaGemini(reviewPage.imageDataUrl).then(data => {
       if (!cancelled && data) {
-        console.log('✅ Gemini review OCR result:', data);
+        logger.info('✅ Gemini review OCR result:', data);
         setGeminiReview(data);
       }
     });
@@ -1548,17 +1549,17 @@ export const ReferenceImages: React.FC<ReferenceImagesProps> = ({ proposalPages,
       setLazyCroppedRefImages([]);
       return;
     }
-    console.log(`🔁 Lazy re-crop triggered: stored count = ${storedCount} (${storedCount === 0 ? 'empty' : storedCount === 1 ? 'may have missed images' : 'suspicious duplicate count'})`);
+    logger.info(`🔁 Lazy re-crop triggered: stored count = ${storedCount} (${storedCount === 0 ? 'empty' : storedCount === 1 ? 'may have missed images' : 'suspicious duplicate count'})`);
     let cancelled = false;
-    console.log('🔍 Triggering lazy Gemini Vision crop for reference page', refPage.pageNumber);
+    logger.info('🔍 Triggering lazy Gemini Vision crop for reference page', refPage.pageNumber);
     cropReferencePageImage(refPage.imageDataUrl, refPage.pageNumber).then(async cropped => {
       if (cancelled) return;
       if (cropped.length > 0) {
-        console.log('✅ Lazy crop: got', cropped.length, 'image(s) from reference page', refPage.pageNumber);
+        logger.info('✅ Lazy crop: got', cropped.length, 'image(s) from reference page', refPage.pageNumber);
         setLazyCroppedRefImages(cropped);
       } else {
         // Gemini Vision returned nothing — use geometric header/footer strip as fallback
-        console.log('⚠️ Gemini Vision empty, using geometric strip for reference page', refPage.pageNumber);
+        logger.info('⚠️ Gemini Vision empty, using geometric strip for reference page', refPage.pageNumber);
         const stripped = await cropPageStrippingHeaderFooter(refPage.imageDataUrl);
         if (!cancelled) setLazyCroppedRefImages([stripped]);
       }
@@ -1584,10 +1585,10 @@ export const ReferenceImages: React.FC<ReferenceImagesProps> = ({ proposalPages,
     });
     if (sharedPage) {
       let cancelled = false;
-      console.log('🔍 Triggering lazy top-half crop for shared spec/ref page', sharedPage.pageNumber);
+      logger.info('🔍 Triggering lazy top-half crop for shared spec/ref page', sharedPage.pageNumber);
       cropPageHalf(sharedPage.imageDataUrl, 'top').then(cropped => {
         if (!cancelled) {
-          console.log('✅ Lazy spec top-half crop done for page', sharedPage.pageNumber);
+          logger.info('✅ Lazy spec top-half crop done for page', sharedPage.pageNumber);
           setLazyCroppedSpecImage(cropped);
         }
       });
@@ -1618,10 +1619,10 @@ export const ReferenceImages: React.FC<ReferenceImagesProps> = ({ proposalPages,
     // Cut at 30% from top: removes nav bar (~8%) + spec text heading + fields (~22%)
     // leaving the SIZE CHART diagram (title + van + annotations) intact.
     let cancelled = false;
-    console.log('🔍 30% top-cut crop for pure spec page', pureSpecPage.pageNumber);
+    logger.info('🔍 30% top-cut crop for pure spec page', pureSpecPage.pageNumber);
     cropPageFromPercent(pureSpecPage.imageDataUrl, 0.13002).then(cropped => {
       if (!cancelled) {
-        console.log('✅ 30% top-cut crop done for pure spec page', pureSpecPage.pageNumber);
+        logger.info('✅ 30% top-cut crop done for pure spec page', pureSpecPage.pageNumber);
         setLazyCroppedSpecImage(cropped);
       }
     });
@@ -1650,10 +1651,10 @@ export const ReferenceImages: React.FC<ReferenceImagesProps> = ({ proposalPages,
       return;
     }
     let cancelled = false;
-    console.log('🔍 Triggering header/footer strip for pure spec page', pureSpecPage.pageNumber);
+    logger.info('🔍 Triggering header/footer strip for pure spec page', pureSpecPage.pageNumber);
     cropSpecDiagram(pureSpecPage.imageDataUrl).then(cropped => {
       if (!cancelled) {
-        console.log('✅ Pure spec page strip done for page', pureSpecPage.pageNumber);
+        logger.info('✅ Pure spec page strip done for page', pureSpecPage.pageNumber);
         setLazyCroppedPureSpecImage(cropped);
       }
     });
@@ -1661,15 +1662,15 @@ export const ReferenceImages: React.FC<ReferenceImagesProps> = ({ proposalPages,
   }, [filteredPages]);
 
   if (!resolvedPages || resolvedPages.length === 0) {
-    console.log('❌ ReferenceImages: No proposal pages, returning null');
+    logger.info('❌ ReferenceImages: No proposal pages, returning null');
     return null;
   }
   if (filteredPages.length === 0) {
-    console.log('⚠️ ReferenceImages: No filtered pages found');
+    logger.info('⚠️ ReferenceImages: No filtered pages found');
     return null;
   }
 
-  console.log('✅ ReferenceImages: Rendering smart layout for', filteredPages.length, 'pages');
+  logger.info('✅ ReferenceImages: Rendering smart layout for', filteredPages.length, 'pages');
 
   return (
     <div className="smart-reference-page">

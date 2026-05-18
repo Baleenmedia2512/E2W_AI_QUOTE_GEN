@@ -10,6 +10,7 @@ import { exportToPDF } from '../services/pdfExportService';
 import { useAppStore } from '../store';
 import { ExtractedPage } from '../types';
 import './QuotePreviewPage.css';
+import { logger } from '../utils/logger';
 
 export const QuotePreviewPage: React.FC = () => {
   const history = useHistory();
@@ -50,7 +51,7 @@ export const QuotePreviewPage: React.FC = () => {
   useEffect(() => {
     const init = async () => {
       if (activeProposals.length === 0) {
-        console.log('🔄 QuotePreviewPage: restoring active proposals...');
+        logger.info('🔄 QuotePreviewPage: restoring active proposals...');
         await loadRecentProposals(); // need metadata for restore
         await restoreActiveProposals();
       }
@@ -64,15 +65,15 @@ export const QuotePreviewPage: React.FC = () => {
       const merged = activeProposals.flatMap(p => p.pageImages || []);
       if (merged.length > 0) {
         setPageImages(merged);
-        console.log(`✅ QuotePreviewPage: ${merged.length} pages from ${activeProposals.length} active PDFs`);
+        logger.info(`✅ QuotePreviewPage: ${merged.length} pages from ${activeProposals.length} active PDFs`);
       }
     }
   }, [activeProposals]);
 
   // Add sample item if quote has no items
   React.useEffect(() => {
-    console.log('📄 QuotePreviewPage mounted');
-    console.log('Store state:', { 
+    logger.info('📄 QuotePreviewPage mounted');
+    logger.info('Store state:', { 
       hasQuote: !!currentQuote, 
       hasCompany: !!companyInfo, 
       hasClient: !!clientInfo,
@@ -80,7 +81,7 @@ export const QuotePreviewPage: React.FC = () => {
     });
     
     if (currentQuote && currentQuote.items.length === 0) {
-      console.log('⚠️ Quote has no items, adding sample item');
+      logger.info('⚠️ Quote has no items, adding sample item');
       const sampleItem = {
         id: '1',
         description: 'Sample Service/Product',
@@ -101,19 +102,19 @@ export const QuotePreviewPage: React.FC = () => {
   }, [currentQuote?.items?.length]);
 
   // Debug logging
-  console.log('Current Quote:', currentQuote);
-  console.log('Company Info:', companyInfo);
-  console.log('Client Info:', clientInfo);
-  console.log('Selected Template:', selectedTemplate);
-  console.log('Quote Items:', currentQuote?.items);
-  console.log('Quote Items Length:', currentQuote?.items?.length);
+  logger.info('Current Quote:', currentQuote);
+  logger.info('Company Info:', companyInfo);
+  logger.info('Client Info:', clientInfo);
+  logger.info('Selected Template:', selectedTemplate);
+  logger.info('Quote Items:', currentQuote?.items);
+  logger.info('Quote Items Length:', currentQuote?.items?.length);
 
   // Check if all required data is available
   if (!currentQuote || !companyInfo || !clientInfo) {
-    console.error('❌ Missing required data for preview');
-    console.error('Missing Quote:', !currentQuote);
-    console.error('Missing Company:', !companyInfo);
-    console.error('Missing Client:', !clientInfo);
+    logger.error('❌ Missing required data for preview');
+    logger.error('Missing Quote:', !currentQuote);
+    logger.error('Missing Company:', !companyInfo);
+    logger.error('Missing Client:', !clientInfo);
     
     return (
       <div className="preview-error">
@@ -141,7 +142,7 @@ export const QuotePreviewPage: React.FC = () => {
     proposalPageMap,
   };
   
-  console.log('🎨 Template Data:', {
+  logger.info('🎨 Template Data:', {
     hasCompany: !!templateData.company,
     hasClient: !!templateData.client,
     hasQuote: !!templateData.quote,
@@ -165,25 +166,25 @@ export const QuotePreviewPage: React.FC = () => {
   };
 
   const handleExportPDF = async () => {
-    console.log('📄 Export PDF clicked');
-    console.log('Preview ref current:', previewRef.current);
-    console.log('Current quote:', currentQuote);
-    console.log('Selected template:', selectedTemplate);
+    logger.info('📄 Export PDF clicked');
+    logger.info('Preview ref current:', previewRef.current);
+    logger.info('Current quote:', currentQuote);
+    logger.info('Selected template:', selectedTemplate);
     
     if (!previewRef.current) {
-      console.error('❌ Preview ref is not available');
+      logger.error('❌ Preview ref is not available');
       alert('Preview content not loaded. Please refresh and try again.');
       return;
     }
 
     if (!currentQuote) {
-      console.error('❌ No quote available for export');
+      logger.error('❌ No quote available for export');
       alert('No quote data available. Please go back and create a quote.');
       return;
     }
 
     setIsExporting(true);
-    console.log('🔄 Starting PDF export...');
+    logger.info('🔄 Starting PDF export...');
     
     try {
       await exportToPDF(
@@ -192,14 +193,14 @@ export const QuotePreviewPage: React.FC = () => {
         selectedTemplate,
         clientInfo?.name
       );
-      console.log('✅ PDF exported successfully');
+      logger.info('✅ PDF exported successfully');
       // Success message is shown by the service itself (different for mobile vs web)
     } catch (error) {
-      console.error('❌ PDF export error:', error);
+      logger.error('❌ PDF export error:', error);
       alert(`Failed to export PDF: ${error instanceof Error ? error.message : 'Unknown error'}`);
     } finally {
       setIsExporting(false);
-      console.log('🏁 PDF export process finished');
+      logger.info('🏁 PDF export process finished');
     }
   };
 
@@ -303,11 +304,11 @@ export const QuotePreviewPage: React.FC = () => {
             <TemplateSelector
               selectedTemplate={selectedTemplate}
               onSelectTemplate={(template) => {
-                console.log('🎨 Template selected in preview:', template);
+                logger.info('🎨 Template selected in preview:', template);
                 setSelectedTemplate(template);
                 // Ensure localStorage is updated
                 localStorage.setItem('selectedTemplate', template);
-                console.log('✅ Template saved and modal closing');
+                logger.info('✅ Template saved and modal closing');
                 setShowTemplateSelector(false);
               }}
             />

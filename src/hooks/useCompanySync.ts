@@ -1,6 +1,7 @@
 import { useEffect } from 'react';
 
 import { useAppStore } from '../store';
+import { logger } from '../utils/logger';
 
 /**
  * Hook to initialize company database sync
@@ -17,13 +18,13 @@ export const useCompanySync = (enableRealtime: boolean = false) => {
 
   useEffect(() => {
     // Initial sync from database
-    console.log('🔄 Initializing company database sync...');
+    logger.info('🔄 Initializing company database sync...');
     syncCompanyFromDatabase();
 
     // Enable real-time updates if requested
     let subscription: any = null;
     if (enableRealtime) {
-      console.log('📡 Enabling real-time company sync...');
+      logger.info('📡 Enabling real-time company sync...');
       subscription = enableCompanySync();
     }
 

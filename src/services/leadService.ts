@@ -1,6 +1,7 @@
 import { Lead, LeadSearchResult } from '../types/lead';
 
 import { supabase } from './supabaseClient';
+import { logger } from '../utils/logger';
 
 /**
  * Search leads by name, phone, or company
@@ -17,7 +18,7 @@ export const searchLeads = async (
       return [];
     }
 
-    console.log('🗄️ LeadService: Searching database for:', searchTerm);
+    logger.info('🗄️ LeadService: Searching database for:', searchTerm);
     
     const { data, error } = await supabase
       .from('Lead')
@@ -26,17 +27,17 @@ export const searchLeads = async (
       .limit(limit)
       .order('name', { ascending: true });
 
-    console.log('🔍 Query result - Error:', error, 'Data:', data);
+    logger.info('🔍 Query result - Error:', error, 'Data:', data);
 
     if (error) {
-      console.error('❌ LeadService: Database error:', error);
+      logger.error('❌ LeadService: Database error:', error);
       return [];
     }
 
-    console.log('✅ LeadService: Found leads:', data?.length || 0, data);
+    logger.info('✅ LeadService: Found leads:', data?.length || 0, data);
     return data || [];
   } catch (error) {
-    console.error('❌ LeadService: Exception:', error);
+    logger.error('❌ LeadService: Exception:', error);
     return [];
   }
 };
@@ -55,13 +56,13 @@ export const getLeadById = async (id: string): Promise<Lead | null> => {
       .single();
 
     if (error) {
-      console.error('Error fetching lead:', error);
+      logger.error('Error fetching lead:', error);
       return null;
     }
 
     return data;
   } catch (error) {
-    console.error('Error in getLeadById:', error);
+    logger.error('Error in getLeadById:', error);
     return null;
   }
 };
@@ -80,13 +81,13 @@ export const getAllLeads = async (limit: number = 100): Promise<Lead[]> => {
       .order('created_at', { ascending: false });
 
     if (error) {
-      console.error('Error fetching leads:', error);
+      logger.error('Error fetching leads:', error);
       return [];
     }
 
     return data || [];
   } catch (error) {
-    console.error('Error in getAllLeads:', error);
+    logger.error('Error in getAllLeads:', error);
     return [];
   }
 };

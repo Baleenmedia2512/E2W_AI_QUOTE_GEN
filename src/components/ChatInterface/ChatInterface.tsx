@@ -29,6 +29,7 @@ import { Message } from '../../types/chat';
 import { Quote, QuoteItem } from '../../types/quote';
 import { saveChatHistory, loadChatHistory } from '../../utils/localStorage';
 import { DEFAULT_GENERAL_TERMS } from '../../utils/quoteGrouping';
+import { logger } from '../../utils/logger';
 
 
 
@@ -108,7 +109,7 @@ const ChatInterface: React.FC = () => {
         KNOWN_CITY_LIST.some(city => part.startsWith(city))
       );
       if (allPartsHaveCity) {
-        console.log('✅ Client-side detection: Multi-city request detected, treating as EXACT_MATCH');
+        logger.info('✅ Client-side detection: Multi-city request detected, treating as EXACT_MATCH');
         return true;
       }
     }
@@ -132,7 +133,7 @@ const ChatInterface: React.FC = () => {
     const hasFullServiceName = fullServicePatterns.some(pattern => pattern.test(request));
     
     if (hasFullServiceName) {
-      console.log('✅ Client-side detection: Request contains full service names, will skip MULTIPLE_MATCH');
+      logger.info('✅ Client-side detection: Request contains full service names, will skip MULTIPLE_MATCH');
       return true;
     }
     
@@ -246,7 +247,7 @@ const ChatInterface: React.FC = () => {
         .replace(/\s+/g, ' ').trim();
       const dupKey = `${(s.detectedCity || '').toLowerCase()}|${svcKey}`;
       if (svcKey.length > 0 && seen.has(dupKey)) {
-        console.log(`🧹 [Dedup] dropping duplicate segment: "${s.raw}"`);
+        logger.info(`🧹 [Dedup] dropping duplicate segment: "${s.raw}"`);
         continue;
       }
       seen.add(dupKey);
@@ -299,11 +300,11 @@ const ChatInterface: React.FC = () => {
   ): { result: 'found' | 'not_found' | 'registry_unavailable'; matchedService?: string; qty?: ServiceQuantity } => {
     const entry = cityServiceRegistry.current.get(cityKey);
     if (!entry || entry.status !== 'ready' || entry.services.length === 0) {
-      console.log(`📋 [Registry] "${cityKey}" — not ready or empty`);
+      logger.info(`📋 [Registry] "${cityKey}" — not ready or empty`);
       return { result: 'registry_unavailable' };
     }
 
-    console.log(`📋 [Registry] "${cityKey}" services (${entry.services.length}):`, entry.services);
+    logger.info(`📋 [Registry] "${cityKey}" services (${entry.services.length}):`, entry.services);
 
     // Clean query: strip city name, numbers, filler words
     const cleaned = querySegment
@@ -338,8 +339,8 @@ const ChatInterface: React.FC = () => {
 
     const matches = forwardMatches.length > 0 ? forwardMatches : reverseMatches;
 
-    console.log(`🔍 [Registry] query="${querySegment}" → cleaned words: [${userWords.join(', ')}]`);
-    console.log(`🔍 [Registry] forwardMatches: [${forwardMatches.join(', ')}] | reverseMatches: [${reverseMatches.join(', ')}]`);
+    logger.info(`🔍 [Registry] query="${querySegment}" → cleaned words: [${userWords.join(', ')}]`);
+    logger.info(`🔍 [Registry] forwardMatches: [${forwardMatches.join(', ')}] | reverseMatches: [${reverseMatches.join(', ')}]`);
 
     if (matches.length === 0) return { result: 'not_found' };
 
@@ -405,7 +406,7 @@ const ChatInterface: React.FC = () => {
       }
       return true;
     });
-    console.log(`🧮 [Classify] city="${cityKey}" userWords=[${userWords.join(',')}] joined=[${joinedPairs.join(',')}] → ${matches.length} match(es): [${matches.join(' | ')}]`);
+    logger.info(`🧮 [Classify] city="${cityKey}" userWords=[${userWords.join(',')}] joined=[${joinedPairs.join(',')}] → ${matches.length} match(es): [${matches.join(' | ')}]`);
     if (matches.length === 0) return { state: 'not_found' };
     if (matches.length === 1) return { state: 'specific', matches, qty: entry.quantities[matches[0]] };
     return { state: 'vague', matches };
@@ -485,7 +486,7 @@ const ChatInterface: React.FC = () => {
           });
 
           if (citiesWithService.length === 1) {
-            console.log(`🏙️ Registry auto-assigned "${seg.raw}" → ${citiesWithService[0]}`);
+            logger.info(`🏙️ Registry auto-assigned "${seg.raw}" → ${citiesWithService[0]}`);
             return {
               ...seg,
               cityNeeded: false,
@@ -756,14 +757,14 @@ const ChatInterface: React.FC = () => {
         proposalContexts = activeProposals
           .filter(p => p.textContent && p.textContent.trim().length > 50)
           .map(p => ({ fileName: p.fileName, content: p.textContent }));
-        console.log(`🎯 Multi-location mode: using ${proposalContexts.length} user-selected proposals`);
+        logger.info(`🎯 Multi-location mode: using ${proposalContexts.length} user-selected proposals`);
       } else {
         // Default: Load all proposals from cloud for multi-document search
         let allProposals: any[] = [];
         try {
           allProposals = await loadAllProposalsFromCloud(100);
         } catch (err) {
-          console.warn('Could not load proposals from cloud, using current proposal only:', err);
+          logger.warn('Could not load proposals from cloud, using current proposal only:', err);
         }
 
         if (allProposals && allProposals.length > 0) {
@@ -774,7 +775,7 @@ const ChatInterface: React.FC = () => {
               fileName: p.file_name,
               content: p.text_content
             }));
-          console.log(`📚 Multi-document search enabled: ${proposalContexts.length} documents available`);
+          logger.info(`📚 Multi-document search enabled: ${proposalContexts.length} documents available`);
         }
       }
 
@@ -785,7 +786,7 @@ const ChatInterface: React.FC = () => {
       if (isFullySpecified) {
         // Add instruction to AI to treat this as EXACT_MATCH
         enhancedUserMessage = `[EXACT_MATCH_HINT: This request contains full service names] ${enhancedUserMessage}`;
-        console.log('🔧 Added EXACT_MATCH hint to prevent re-analysis');
+        logger.info('🔧 Added EXACT_MATCH hint to prevent re-analysis');
       }
 
       // Add city→PDF mapping hint when multiple PDFs are loaded so AI knows which
@@ -798,7 +799,7 @@ const ChatInterface: React.FC = () => {
           })
           .join('; ');
         enhancedUserMessage = `[CITY_PDF_MAP: ${cityMappingHint}] ${enhancedUserMessage}`;
-        console.log('🗺️ Added city→PDF mapping hint:', cityMappingHint);
+        logger.info('🗺️ Added city→PDF mapping hint:', cityMappingHint);
       }
 
       const response = await sendMessageToGemini({
@@ -842,11 +843,11 @@ const ChatInterface: React.FC = () => {
       
       // MULTIPLE_MATCH - Ask user to clarify
       if (response.isMultipleMatch && response.groupedServices) {
-        console.log('🔀 MULTIPLE_MATCH detected - Showing service options');
-        console.log('📋 Services by vehicle type:');
+        logger.info('🔀 MULTIPLE_MATCH detected - Showing service options');
+        logger.info('📋 Services by vehicle type:');
         response.groupedServices.forEach(group => {
-          console.log(`  - ${group.vehicleType}: ${group.services.length} services found`);
-          group.services.forEach(svc => console.log(`    • ${svc.name}`));
+          logger.info(`  - ${group.vehicleType}: ${group.services.length} services found`);
+          group.services.forEach(svc => logger.info(`    • ${svc.name}`));
         });
         setMessages(prev => [...prev, assistantMessage]);
         setIsLoading(false);
@@ -895,7 +896,7 @@ const ChatInterface: React.FC = () => {
           isRateCardImage = ['jpg', 'jpeg', 'png', 'webp'].includes(fileExtension);
         }
         
-        console.log('🔍 Rate card detection:', { isRateCardImage, fileName: proposal.fileName, multiDoc: !!proposalContexts });
+        logger.info('🔍 Rate card detection:', { isRateCardImage, fileName: proposal.fileName, multiDoc: !!proposalContexts });
         
         // Flatten lineItems into individual QuoteItems
         const quoteItems: QuoteItem[] = response.quoteData.items.flatMap((section: any, sectionIndex: number) => {
@@ -959,14 +960,14 @@ const ChatInterface: React.FC = () => {
         const uniqueQuoteItems = quoteItems.filter(item => {
           const key = item.description.toLowerCase().trim();
           if (_seenDescriptions.has(key)) {
-            console.log(`⚠️ Duplicate item removed: "${item.description}"`);
+            logger.info(`⚠️ Duplicate item removed: "${item.description}"`);
             return false;
           }
           _seenDescriptions.add(key);
           return true;
         });
         if (uniqueQuoteItems.length < quoteItems.length) {
-          console.log(`🧹 Deduplication: ${quoteItems.length} → ${uniqueQuoteItems.length} items`);
+          logger.info(`🧹 Deduplication: ${quoteItems.length} → ${uniqueQuoteItems.length} items`);
           // Replace reference so all downstream code uses deduplicated list
           quoteItems.length = 0;
           quoteItems.push(...uniqueQuoteItems);
@@ -978,7 +979,7 @@ const ChatInterface: React.FC = () => {
           if (item.minimumQuantity) {
             const serviceKey = item.description.split(' - ')[0].toLowerCase().trim();
             minQtyCacheRef.current.set(serviceKey, item.minimumQuantity);
-            console.log(`📦 Cached min qty: "${serviceKey}" → ${item.minimumQuantity}`);
+            logger.info(`📦 Cached min qty: "${serviceKey}" → ${item.minimumQuantity}`);
           }
         });
 
@@ -992,7 +993,7 @@ const ChatInterface: React.FC = () => {
         if (isRateCardImage) {
           // Detected JPEG/image rate card - use standard terms
           finalTermsAndConditions = DEFAULT_GENERAL_TERMS.join('\n');
-          console.log('✅ Using DEFAULT_GENERAL_TERMS for image rate card');
+          logger.info('✅ Using DEFAULT_GENERAL_TERMS for image rate card');
         } else {
           // For Excel/PDF proposals, use extracted terms but filter out rate card artifacts
           const geminiTerms = response.quoteData.termsAndConditions || '';
@@ -1009,12 +1010,12 @@ const ChatInterface: React.FC = () => {
           if (isRateCardFootnote) {
             // Gemini extracted rate card notes, not real T&C - use defaults
             finalTermsAndConditions = DEFAULT_GENERAL_TERMS.join('\n');
-            console.log('⚠️ Detected rate card footnotes in T&C, using DEFAULT_GENERAL_TERMS instead');
+            logger.info('⚠️ Detected rate card footnotes in T&C, using DEFAULT_GENERAL_TERMS instead');
           } else {
             // Looks like legitimate T&C from a proposal
             // If empty (common in multi-city responses), fall back to defaults
             finalTermsAndConditions = geminiTerms || DEFAULT_GENERAL_TERMS.join('\n');
-            console.log(geminiTerms ? '✅ Using extracted T&C from proposal document' : '✅ Using DEFAULT_GENERAL_TERMS (AI returned empty T&C)');
+            logger.info(geminiTerms ? '✅ Using extracted T&C from proposal document' : '✅ Using DEFAULT_GENERAL_TERMS (AI returned empty T&C)');
           }
         }
         
@@ -1045,7 +1046,7 @@ const ChatInterface: React.FC = () => {
             const serviceKey = item.description.split(' - ')[0].toLowerCase().trim();
             const effectiveMin = item.minimumQuantity || minQtyCacheRef.current.get(serviceKey);
             if (effectiveMin) {
-              console.log(`🔍 Min qty check: "${serviceKey}" qty=${item.quantity} min=${effectiveMin} (source: ${item.minimumQuantity ? 'AI' : 'cache'})`);
+              logger.info(`🔍 Min qty check: "${serviceKey}" qty=${item.quantity} min=${effectiveMin} (source: ${item.minimumQuantity ? 'AI' : 'cache'})`);
             }
             return effectiveMin !== undefined && item.quantity < effectiveMin;
           })
@@ -1088,7 +1089,7 @@ const ChatInterface: React.FC = () => {
         }, 1500);
       }
     } catch (err: any) {
-      console.error('Chat error:', err);
+      logger.error('Chat error:', err);
       setError(err.message || 'Failed to send message');
       const errorMessage: Message = {
         id: (Date.now() + 1).toString(),
@@ -1234,7 +1235,7 @@ const ChatInterface: React.FC = () => {
         // User was precise OR only one option exists — skip checkboxes, send directly
         const svcTitleCase = matchedSvc.split(' ').map(w => w.charAt(0).toUpperCase() + w.slice(1)).join(' ');
         directParts.push(`${pair.qty} ${svcTitleCase} ${cityLabel}`);
-        console.log(`⚡ ${isUnique ? 'Unique' : 'Specific'} match: "${pair.raw}" → "${matchedSvc}" (${cityLabel}) — skipping checkboxes`);
+        logger.info(`⚡ ${isUnique ? 'Unique' : 'Specific'} match: "${pair.raw}" → "${matchedSvc}" (${cityLabel}) — skipping checkboxes`);
         continue;
       }
 
@@ -1260,7 +1261,7 @@ const ChatInterface: React.FC = () => {
       const durationMatch = cityPickerState.originalMessage.match(/(\d+)\s*(days?|months?)/i);
       const durationSuffix = durationMatch ? ` for ${durationMatch[0]}` : '';
       const combined = `Generate quote for ${directParts.join(' and ')}${durationSuffix} [User has already specified complete service names from checkboxes]`;
-      console.log('⚡ All specific — sending direct to Gemini:', combined);
+      logger.info('⚡ All specific — sending direct to Gemini:', combined);
       sendMessageWithContent(combined);
       return;
     }
@@ -1516,7 +1517,7 @@ const ChatInterface: React.FC = () => {
 
     // directParts are already included in rows (added by handleShowConfirmation)
     const combinedRequest = `Generate quote for ${parts.join(' and ')}${durationSuffix} [User has already specified complete service names from checkboxes]`;
-    console.log('🔧 Confirmation → Gemini request:', combinedRequest);
+    logger.info('🔧 Confirmation → Gemini request:', combinedRequest);
 
     const clearedMsgId = confirmationTable.messageId;
     setConfirmationTable(null);
@@ -1536,7 +1537,7 @@ const ChatInterface: React.FC = () => {
     // Request permission on component mount for mobile
     if (Capacitor.isNativePlatform()) {
       SpeechRecognition.requestPermissions().catch(err => {
-        console.warn('Microphone permission denied:', err);
+        logger.warn('Microphone permission denied:', err);
       });
     }
 
@@ -1557,7 +1558,7 @@ const ChatInterface: React.FC = () => {
         try {
           await SpeechRecognition.stop();
         } catch (err) {
-          console.error('Error stopping voice recognition:', err);
+          logger.error('Error stopping voice recognition:', err);
         }
       } else if (recognitionRef.current) {
         recognitionRef.current.stop();
@@ -1593,20 +1594,20 @@ const ChatInterface: React.FC = () => {
             popup: true,
           });
 
-          console.log('Speech recognition result:', result);
+          logger.info('Speech recognition result:', result);
 
           // Extract the recognized text from the result
           if (result && result.matches && result.matches.length > 0) {
             const transcript = result.matches[0];
-            console.log('Recognized text:', transcript);
+            logger.info('Recognized text:', transcript);
             setInputValue(prev => prev + (prev ? ' ' : '') + transcript);
           } else {
-            console.warn('No speech recognized');
+            logger.warn('No speech recognized');
           }
           
           setIsRecording(false);
         } catch (err: any) {
-          console.error('Voice recognition error:', err);
+          logger.error('Voice recognition error:', err);
           setIsRecording(false);
           
           // Only show error if it's not a user cancellation
@@ -1637,7 +1638,7 @@ const ChatInterface: React.FC = () => {
           };
 
           recognition.onerror = (event: any) => {
-            console.error('Speech recognition error:', event.error);
+            logger.error('Speech recognition error:', event.error);
             setIsRecording(false);
           };
 

@@ -3,6 +3,7 @@ import { GoogleGenerativeAI } from '@google/generative-ai';
 import { Message } from '../types/chat';
 import { isBulletedLine } from '../utils/bulletNormalization';
 import { CHAT_SYSTEM_PROMPT } from '../utils/promptTemplates';
+import { logger } from '../utils/logger';
 
 // Rate limiting
 const RATE_LIMIT_DELAY = 1000; // 1 second between requests
@@ -67,7 +68,7 @@ const validateAndFixQuoteDescriptions = (quoteData: any): any => {
     return quoteData;
   }
 
-  console.log('🔧 Validating and fixing quote descriptions...');
+  logger.info('🔧 Validating and fixing quote descriptions...');
   
   const fixedItems = quoteData.items.map((item: any) => {
     if (!item.lineItems || !Array.isArray(item.lineItems)) {
@@ -89,7 +90,7 @@ const validateAndFixQuoteDescriptions = (quoteData: any): any => {
       if (!description.startsWith(serviceTypeName) && !alreadyContainsName && serviceTypeName) {
         // Fix: Prepend the service type name
         const fixedDescription = `${serviceTypeName} - ${description}`;
-        console.log(`  ✅ Fixed: "${description}" → "${fixedDescription}"`);
+        logger.info(`  ✅ Fixed: "${description}" → "${fixedDescription}"`);
         
         return {
           ...lineItem,
@@ -135,7 +136,7 @@ const cleanupTermsAndConditions = (terms: string): string => {
     return terms;
   }
 
-  console.log('🔧 Cleaning up Terms & Conditions formatting...');
+  logger.info('🔧 Cleaning up Terms & Conditions formatting...');
   
   const lines = terms.split('\n');
   const cleanedTerms: string[] = [];
@@ -156,14 +157,14 @@ const cleanupTermsAndConditions = (terms: string): string => {
       // This is a new bullet point
       if (currentTerm) {
         cleanedTerms.push(currentTerm);
-        console.log(`  ✅ Term: "${currentTerm.substring(0, 60)}..."`);
+        logger.info(`  ✅ Term: "${currentTerm.substring(0, 60)}..."`);
       }
       currentTerm = line;
     } else {
       // This is an orphan line without bullet - merge with current term
       if (currentTerm) {
         currentTerm += ' ' + line;
-        console.log(`  🔀 Merged orphan line: "${line.substring(0, 40)}..."`);
+        logger.info(`  🔀 Merged orphan line: "${line.substring(0, 40)}..."`);
       } else {
         // Edge case: orphan line at the start, treat as new term with bullet
         currentTerm = '• ' + line;
@@ -174,11 +175,11 @@ const cleanupTermsAndConditions = (terms: string): string => {
   // Don't forget the last term
   if (currentTerm) {
     cleanedTerms.push(currentTerm);
-    console.log(`  ✅ Term: "${currentTerm.substring(0, 60)}..."`);
+    logger.info(`  ✅ Term: "${currentTerm.substring(0, 60)}..."`);
   }
   
   const result = cleanedTerms.join('\n');
-  console.log(`🎯 Cleaned ${cleanedTerms.length} terms total`);
+  logger.info(`🎯 Cleaned ${cleanedTerms.length} terms total`);
   
   return result;
 };
@@ -282,7 +283,7 @@ export const sendMessageToGemini = async ({
     
     contextPrompt += `USER REQUEST: ${userMessage}`;
 
-    console.log('🔍 Sending to AI:', {
+    logger.info('🔍 Sending to AI:', {
       hasExactMatchHint: userMessage.includes('[EXACT_MATCH_HINT'),
       requestLength: userMessage.length,
       documentCount: proposalTexts?.length || (proposalText ? 1 : 0)
@@ -290,20 +291,20 @@ export const sendMessageToGemini = async ({
     
     // Debug: Log proposal content preview to see what AI is receiving
     if (proposalTexts && proposalTexts.length > 0) {
-      console.log('📄 Proposal documents sent to AI:');
+      logger.info('📄 Proposal documents sent to AI:');
       proposalTexts.forEach((doc, idx) => {
         const preview = doc.content.substring(0, 500);
-        console.log(`  Document ${idx + 1} (${doc.fileName}): ${preview.substring(0, 200)}...`);
+        logger.info(`  Document ${idx + 1} (${doc.fileName}): ${preview.substring(0, 200)}...`);
       });
     } else if (proposalText) {
-      console.log('📄 Single proposal sent to AI:', proposalText.substring(0, 300));
+      logger.info('📄 Single proposal sent to AI:', proposalText.substring(0, 300));
     }
 
     const result = await model.generateContent(contextPrompt);
     const response = await result.response;
     const text = response.text();
 
-    console.log('🤖 AI Response received:', {
+    logger.info('🤖 AI Response received:', {
       length: text.length,
       hasJSON: text.includes('{'),
       hasQuoteGenerated: text.includes('quoteGenerated'),
@@ -311,7 +312,7 @@ export const sendMessageToGemini = async ({
     });
     
     // Debug: Log AI's raw response to see what it actually found
-    console.log('🤖 AI Raw Response (first 1000 chars):', text.substring(0, 1000));
+    logger.info('🤖 AI Raw Response (first 1000 chars):', text.substring(0, 1000));
 
     // Detect if AI has generated a complete quote (must contain JSON with quoteGenerated flag)
     // @ts-ignore: variables used for state tracking in quote detection flow
@@ -392,7 +393,7 @@ export const sendMessageToGemini = async ({
         
         // 1️⃣ EXACT_MATCH - Quote generated
         if (parsed.quoteGenerated && parsed.items && Array.isArray(parsed.items)) {
-          console.log('✅ AI detected: EXACT_MATCH - Generating quote');
+          logger.info('✅ AI detected: EXACT_MATCH - Generating quote');
           // 🔴 POST-PROCESSING FIX #1: Validate and correct line item descriptions
           // The AI sometimes ignores instructions and generates descriptions without the service type prefix
           // This ensures EVERY description starts with the full service type name
@@ -425,12 +426,12 @@ export const sendMessageToGemini = async ({
           }
           
           // Debug: Log T&C extraction results
-          console.log('📋 T&C Extraction Summary:');
-          console.log('  - General T&C (top-level):', fixedQuoteData.termsAndConditions ? `✅ ${fixedQuoteData.termsAndConditions.split('\n').length} lines` : '❌ MISSING');
+          logger.info('📋 T&C Extraction Summary:');
+          logger.info('  - General T&C (top-level):', fixedQuoteData.termsAndConditions ? `✅ ${fixedQuoteData.termsAndConditions.split('\n').length} lines` : '❌ MISSING');
           if (fixedQuoteData.items && fixedQuoteData.items.length > 0) {
             fixedQuoteData.items.forEach((item: any, idx: number) => {
               const serviceName = item.title || `Item ${idx + 1}`;
-              console.log(`  - Service-specific T&C (${serviceName}):`, item.termsAndConditions ? `✅ ${item.termsAndConditions.split('\n').length} lines` : '⚠️ Empty');
+              logger.info(`  - Service-specific T&C (${serviceName}):`, item.termsAndConditions ? `✅ ${item.termsAndConditions.split('\n').length} lines` : '⚠️ Empty');
             });
           }
           
@@ -446,8 +447,8 @@ export const sendMessageToGemini = async ({
         
         // 2️⃣ MULTIPLE_MATCH - Ambiguous request, ask user to clarify
         if (parsed.multipleMatch && parsed.groupedServices) {
-          console.log('🔀 AI detected: MULTIPLE_MATCH - Showing service options');
-          console.log('📋 Grouped services returned by AI:', JSON.stringify(parsed.groupedServices, null, 2));
+          logger.info('🔀 AI detected: MULTIPLE_MATCH - Showing service options');
+          logger.info('📋 Grouped services returned by AI:', JSON.stringify(parsed.groupedServices, null, 2));
           return {
             message: text,
             isQuoteGeneration: false,
@@ -459,7 +460,7 @@ export const sendMessageToGemini = async ({
         
         // 3️⃣ PARTIAL_MATCH - Service not found, suggest closest alternatives
         if (parsed.partialMatch && parsed.closestServices) {
-          console.log('⚠️ AI detected: PARTIAL_MATCH - Suggesting alternatives');
+          logger.info('⚠️ AI detected: PARTIAL_MATCH - Suggesting alternatives');
           return {
             message: text,
             isQuoteGeneration: false,
@@ -474,7 +475,7 @@ export const sendMessageToGemini = async ({
         
         // 4️⃣ NO_MATCH - Nothing matches, show all services
         if (parsed.noMatch && parsed.allServicesGrouped) {
-          console.log('❌ AI detected: NO_MATCH - Showing all services');
+          logger.info('❌ AI detected: NO_MATCH - Showing all services');
           return {
             message: text,
             isQuoteGeneration: false,
@@ -500,7 +501,7 @@ export const sendMessageToGemini = async ({
       }
     } catch (e) {
       // No complete quote JSON found in response (this is normal during Q&A)
-      console.log('JSON parse attempt completed, treating as conversational response:', e);
+      logger.info('JSON parse attempt completed, treating as conversational response:', e);
     }
 
     // Return conversational response if no structured data was found
@@ -510,7 +511,7 @@ export const sendMessageToGemini = async ({
       quoteData: null,
     };
   } catch (error: any) {
-    console.error('Gemini API error:', error);
+    logger.error('Gemini API error:', error);
     
     if (error.message?.includes('API key')) {
       throw new Error('Invalid API key. Please check your Gemini API configuration.');
@@ -540,7 +541,7 @@ export const parseQuoteFromResponse = (response: string): any | null => {
     }
     return null;
   } catch (error) {
-    console.error('Failed to parse quote data:', error);
+    logger.error('Failed to parse quote data:', error);
     return null;
   }
 };

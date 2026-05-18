@@ -17,6 +17,7 @@ import UnauthorizedPage from './pages/UnauthorizedPage';
 // import { UpdateNotification } from './components/UpdateNotification'; // Disabled
 import { useAppStore } from './store';
 import { registerServiceWorker } from './utils/pwa';
+import { logger } from './utils/logger';
 
 const App: React.FC = () => {
   // Initialize database sync for company info (syncs across devices)
@@ -29,7 +30,7 @@ const App: React.FC = () => {
   useEffect(() => {
     // Register service worker for PWA support (now enabled in all environments)
     registerServiceWorker().catch(err => {
-      console.error('Failed to register service worker:', err);
+      logger.error('Failed to register service worker:', err);
     });
 
     // Restore active proposals from IndexedDB/localStorage on every app startup

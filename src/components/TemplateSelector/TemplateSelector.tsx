@@ -1,4 +1,4 @@
-﻿import React from 'react';
+import React from 'react';
 
 import { Template, TemplateType } from '../../types';
 import { ClassicBusiness } from '../Templates/ClassicBusiness';
@@ -6,6 +6,7 @@ import { CorporateMinimal } from '../Templates/CorporateMinimal';
 import { ModernSales } from '../Templates/ModernSales';
 import { PremiumAgency } from '../Templates/PremiumAgency';
 import './TemplateSelector.css';
+import { logger } from '../../utils/logger';
 
 interface TemplateSelectorProps {
   selectedTemplate: TemplateType;
@@ -16,8 +17,8 @@ export const TemplateSelector: React.FC<TemplateSelectorProps> = ({
   selectedTemplate,
   onSelectTemplate
 }) => {
-  console.log('ðŸŽ¨ TemplateSelector rendered');
-  console.log('Selected template:', selectedTemplate);
+  logger.info('🎨 TemplateSelector rendered');
+  logger.info('Selected template:', selectedTemplate);
   
   // Template preview SVGs
   const createTemplatePreview = (id: string) => {
@@ -120,7 +121,7 @@ export const TemplateSelector: React.FC<TemplateSelectorProps> = ({
     }
   ];
 
-  console.log('ðŸ“‹ Total templates:', templates.length);
+  logger.info('📋 Total templates:', templates.length);
 
   return (
     <div className="template-selector">
@@ -143,13 +144,13 @@ export const TemplateSelector: React.FC<TemplateSelectorProps> = ({
         }}
       >
         {templates.map((template) => {
-          console.log('ðŸ–¼ï¸ Rendering template card:', template.name);
+          logger.info('🖼️ Rendering template card:', template.name);
           return (
             <div
               key={template.id}
               className={`template-card ${selectedTemplate === template.id ? 'selected' : ''}`}
               onClick={() => {
-                console.log('ðŸ–±ï¸ Template card clicked:', template.id);
+                logger.info('🖱️ Template card clicked:', template.id);
                 onSelectTemplate(template.id);
               }}
             >
@@ -181,7 +182,7 @@ export const TemplateSelector: React.FC<TemplateSelectorProps> = ({
                 className={`select-button ${selectedTemplate === template.id ? 'selected' : ''}`}
                 onClick={(e) => {
                   e.stopPropagation();
-                  console.log('ðŸ–±ï¸ Select button clicked:', template.id);
+                  logger.info('🖱️ Select button clicked:', template.id);
                   onSelectTemplate(template.id);
                 }}
               >

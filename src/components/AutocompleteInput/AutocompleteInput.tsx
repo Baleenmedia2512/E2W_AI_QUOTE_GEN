@@ -12,6 +12,7 @@ import {
 import React, { useState, useEffect, useRef } from 'react';
 
 import { LeadSearchResult } from '../../types/lead';
+import { logger } from '../../utils/logger';
 
 interface AutocompleteInputProps {
   value: string;
@@ -54,11 +55,11 @@ export const AutocompleteInput: React.FC<AutocompleteInputProps> = ({
   useEffect(() => {
     const timer = setTimeout(async () => {
       if (value.length >= 2) {
-        console.log('🔍 Autocomplete: Searching for:', value);
+        logger.info('🔍 Autocomplete: Searching for:', value);
         setIsLoading(true);
         setHasSearched(false);
         const results = await onSearch(value);
-        console.log('✅ Autocomplete: Got results:', results.length, results);
+        logger.info('✅ Autocomplete: Got results:', results.length, results);
         setSuggestions(results);
         setIsOpen(true); // Always open to show results or "no results" message
         setHasSearched(true);

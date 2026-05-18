@@ -1,12 +1,13 @@
 import { GoogleGenerativeAI } from '@google/generative-ai';
 import * as pdfjsLib from 'pdfjs-dist';
+import { logger } from './logger';
 
 // Configure PDF.js worker - Use unpkg CDN as fallback with proper configuration
 // Try multiple CDN sources for better reliability
 const workerSrc = `https://unpkg.com/pdfjs-dist@${pdfjsLib.version}/build/pdf.worker.min.mjs`;
 pdfjsLib.GlobalWorkerOptions.workerSrc = workerSrc;
 
-console.log('PDF.js worker configured:', workerSrc);
+logger.info('PDF.js worker configured:', workerSrc);
 
 export interface ExtractedPage {
   pageNumber: number;
@@ -80,7 +81,7 @@ If no product images or photos are found on this page, return exactly: []`;
     const response = await result.response;
     const text = response.text().trim();
 
-    console.log(`📦 Gemini Vision response for page ${pageNumber}:`, text.substring(0, 200));
+    logger.info(`📦 Gemini Vision response for page ${pageNumber}:`, text.substring(0, 200));
 
     let jsonStr = text;
     const codeBlockMatch = text.match(/```(?:json)?\s*([\s\S]*?)\s*```/);
@@ -135,10 +136,10 @@ If no product images or photos are found on this page, return exactly: []`;
       });
       if (!overlaps) deduped.push(box);
     }
-    console.log(`📦 Boxes after IoU dedup: ${deduped.length} (was ${validBoxes.length})`);
+    logger.info(`📦 Boxes after IoU dedup: ${deduped.length} (was ${validBoxes.length})`);
     return deduped;
   } catch (error) {
-    console.warn(`⚠️ Gemini Vision detection failed for page ${pageNumber}:`, error);
+    logger.warn(`⚠️ Gemini Vision detection failed for page ${pageNumber}:`, error);
     return [];
   }
 }
@@ -179,7 +180,7 @@ function cropImageRegions(imageDataUrl: string, boxes: ImageBoundingBox[]): Prom
           ctx.drawImage(img, sx, sy, sw, sh, 0, 0, sw, sh);
           croppedImages.push(cropCanvas.toDataURL('image/jpeg', 0.85));
         } catch (err) {
-          console.warn('⚠️ Failed to crop region:', err);
+          logger.warn('⚠️ Failed to crop region:', err);
         }
       }
 
@@ -448,7 +449,7 @@ If you cannot find any review content, return exactly: null`;
     const response = await result.response;
     const text = response.text().trim();
 
-    console.log('🔍 Gemini review OCR response:', text.substring(0, 300));
+    logger.info('🔍 Gemini review OCR response:', text.substring(0, 300));
 
     if (text === 'null' || text === '') return null;
 
@@ -467,7 +468,7 @@ If you cannot find any review content, return exactly: null`;
       reviewText: String(parsed.reviewText || '').trim(),
     };
   } catch (error) {
-    console.warn('⚠️ Gemini review OCR failed:', error);
+    logger.warn('⚠️ Gemini review OCR failed:', error);
     return null;
   }
 }
@@ -483,13 +484,13 @@ export interface PDFExtractionResult {
 
 export const extractPDFContent = async (file: File, maxImagePages?: number): Promise<PDFExtractionResult> => {
   try {
-    console.log('Starting PDF extraction for:', file.name, maxImagePages ? `(images: smart-select from first ${maxImagePages} pages or reference pages)` : '');
+    logger.info('Starting PDF extraction for:', file.name, maxImagePages ? `(images: smart-select from first ${maxImagePages} pages or reference pages)` : '');
     const arrayBuffer = await file.arrayBuffer();
-    console.log('ArrayBuffer loaded, size:', arrayBuffer.byteLength);
+    logger.info('ArrayBuffer loaded, size:', arrayBuffer.byteLength);
     
     const pdf = await pdfjsLib.getDocument({ data: arrayBuffer }).promise;
     const pageCount = pdf.numPages;
-    console.log('PDF loaded successfully, pages:', pageCount);
+    logger.info('PDF loaded successfully, pages:', pageCount);
     
     let textContent = '';
     const images: string[] = [];
@@ -528,12 +529,12 @@ export const extractPDFContent = async (file: File, maxImagePages?: number): Pro
       }
 
       textContent += pageText + '\n\n';
-      console.log(`Page ${i}/${pageCount} extracted, text length:`, pageText.length);
+      logger.info(`Page ${i}/${pageCount} extracted, text length:`, pageText.length);
       allPageTexts.push({ pageNumber: i, text: pageText, pdfPage: page });
     }
 
     // Phase 2: Render ALL pages as images so the full PDF is browsable in the UI
-    console.log(`🖼️ Rendering all ${allPageTexts.length} pages as images`);
+    logger.info(`🖼️ Rendering all ${allPageTexts.length} pages as images`);
 
     // Phase 3: Render all pages as images
     for (const { pageNumber, text, pdfPage } of allPageTexts) {
@@ -547,18 +548,18 @@ export const extractPDFContent = async (file: File, maxImagePages?: number): Pro
           await pdfPage.render({ canvasContext: ctx, viewport }).promise;
           const imageDataUrl = canvas.toDataURL('image/jpeg', 0.92);
           pageImages.push({ pageNumber, text, imageDataUrl });
-          console.log(`Page ${pageNumber}/${pageCount} rendered as image`);
+          logger.info(`Page ${pageNumber}/${pageCount} rendered as image`);
         }
       } catch (imgErr) {
-        console.warn(`Failed to render page ${pageNumber} as image:`, imgErr);
+        logger.warn(`Failed to render page ${pageNumber} as image:`, imgErr);
       }
     }
 
     const finalText = textContent.trim();
-    console.log('PDF extraction complete. Total text length:', finalText.length);
+    logger.info('PDF extraction complete. Total text length:', finalText.length);
     
     if (finalText.length === 0) {
-      console.warn('WARNING: PDF text extraction resulted in empty content');
+      logger.warn('WARNING: PDF text extraction resulted in empty content');
       throw new Error('PDF appears to be empty or contains only images. Please use a PDF with selectable text.');
     }
 
@@ -566,21 +567,21 @@ export const extractPDFContent = async (file: File, maxImagePages?: number): Pro
     try {
       const pagesToCrop = pageImages.filter(p => shouldAttemptCropping(p.text));
       if (pagesToCrop.length > 0) {
-        console.log(`🔍 Auto-cropping ${pagesToCrop.length} of ${pageImages.length} pages using Gemini Vision...`);
+        logger.info(`🔍 Auto-cropping ${pagesToCrop.length} of ${pageImages.length} pages using Gemini Vision...`);
 
         for (let i = 0; i < pagesToCrop.length; i += 3) {
           const chunk = pagesToCrop.slice(i, i + 3);
           await Promise.all(chunk.map(async (page) => {
             const boxes = await detectImageRegions(page.imageDataUrl, page.pageNumber);
             if (boxes.length > 0) {
-              console.log(`✅ Page ${page.pageNumber}: Detected ${boxes.length} image regions`);
+              logger.info(`✅ Page ${page.pageNumber}: Detected ${boxes.length} image regions`);
               const cropped = await cropImageRegions(page.imageDataUrl, boxes);
               if (cropped.length > 0) {
                 page.croppedImages = cropped;
-                console.log(`✅ Page ${page.pageNumber}: Cropped ${cropped.length} images successfully`);
+                logger.info(`✅ Page ${page.pageNumber}: Cropped ${cropped.length} images successfully`);
               }
             } else {
-              console.log(`ℹ️ Page ${page.pageNumber}: No product images detected`);
+              logger.info(`ℹ️ Page ${page.pageNumber}: No product images detected`);
             }
           }));
 
@@ -590,10 +591,10 @@ export const extractPDFContent = async (file: File, maxImagePages?: number): Pro
         }
 
         const croppedCount = pageImages.filter(p => p.croppedImages && p.croppedImages.length > 0).length;
-        console.log(`🎯 Auto-crop complete: ${croppedCount} pages have cropped images`);
+        logger.info(`🎯 Auto-crop complete: ${croppedCount} pages have cropped images`);
       }
     } catch (err) {
-      console.warn('⚠️ Auto-crop processing failed, continuing with full page images:', err);
+      logger.warn('⚠️ Auto-crop processing failed, continuing with full page images:', err);
     }
 
     return {
@@ -603,7 +604,7 @@ export const extractPDFContent = async (file: File, maxImagePages?: number): Pro
       pageImages,
     };
   } catch (error: any) {
-    console.error('Error extracting PDF content:', error);
+    logger.error('Error extracting PDF content:', error);
     if (error.message?.includes('empty') || error.message?.includes('images')) {
       throw error;
     }
