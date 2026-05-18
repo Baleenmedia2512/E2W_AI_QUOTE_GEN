@@ -2,7 +2,7 @@ name: PR Validation & Checks
 
 on:
   pull_request:
-    branches: [develop, staging, main]
+    branches: [Developemnt, develop, staging, main]
     types: [opened, synchronize, reopened]
 
 jobs:
