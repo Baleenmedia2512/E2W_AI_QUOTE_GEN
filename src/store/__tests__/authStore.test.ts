@@ -1,6 +1,8 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest';
 
+import { authService } from '../../services/authService';
 import { AuthUser } from '../../types/auth';
+import { useAuthStore } from '../authStore';
 
 vi.mock('../../services/authService', () => ({
   authService: {
@@ -11,28 +13,25 @@ vi.mock('../../services/authService', () => ({
   },
 }));
 
-import { authService } from '../../services/authService';
-import { useAuthStore } from '../authStore';
-
 const adminUser: AuthUser = {
-  id: 1,
+  id: '1',
   email: 'admin@acme.com',
   full_name: 'Admin User',
   role: {
     role_name: 'Admin',
     permissions: { canEditQuotes: true, canDeleteQuotes: false },
   },
-} as AuthUser;
+};
 
 const regularUser: AuthUser = {
-  id: 2,
+  id: '2',
   email: 'user@acme.com',
   full_name: 'Regular User',
   role: {
     role_name: 'user',
     permissions: {},
   },
-} as AuthUser;
+};
 
 function resetStore(): void {
   useAuthStore.setState({

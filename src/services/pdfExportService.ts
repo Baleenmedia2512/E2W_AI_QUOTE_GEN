@@ -93,7 +93,6 @@ const captureSectionAtA4 = async (containerId: string): Promise<{ canvas: HTMLCa
     console.log(`🔗 Collected ${links.length} link annotations from ${containerId}`);
 
     // Capture with html2canvas at fixed A4 dimensions
-    const captureHeight = Math.max(clone.scrollHeight, A4_HEIGHT_PX);
     const canvas = await html2canvas(clone, {
       scale: 2,
       width: A4_WIDTH_PX,

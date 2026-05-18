@@ -48,7 +48,7 @@ const ProposalUpload: React.FC = () => {
   const [processingFileType, setProcessingFileType] = useState<string>('file');
   const [batchProgress, setBatchProgress] = useState<{ current: number; total: number } | null>(null);
   const [showRecent, setShowRecent] = useState(false);
-  const { proposal, setProposal, recentProposals, loadRecentProposals, selectProposal, deleteProposalFromLibrary, activeProposals, addActiveProposal, removeActiveProposal } = useAppStore();
+  const { proposal, setProposal, recentProposals, loadRecentProposals, deleteProposalFromLibrary, activeProposals, addActiveProposal, removeActiveProposal } = useAppStore();
 
   // Load recent proposals on mount and check cloud storage availability
   

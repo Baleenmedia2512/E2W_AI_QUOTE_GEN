@@ -16,9 +16,9 @@ const sampleCompany: CompanyInfo = {
   phone: '+91-9999999999',
   address: '1 Main St',
   logo: '',
-  gstNumber: '29ABCDE1234F2Z5',
+  gst: '29ABCDE1234F2Z5',
   website: 'https://acme.com',
-} as CompanyInfo;
+};
 
 describe('localStorage utilities — company info', () => {
   beforeEach(() => {
@@ -44,7 +44,7 @@ describe('localStorage utilities — company info', () => {
 
   it('returns null when stored value is corrupt JSON', () => {
     localStorage.setItem('ai_quote_gen_company_info', '{not valid json');
-    const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+    const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => undefined);
     expect(loadCompanyInfo()).toBeNull();
     expect(errorSpy).toHaveBeenCalled();
   });
@@ -53,7 +53,7 @@ describe('localStorage utilities — company info', () => {
     vi.spyOn(Storage.prototype, 'setItem').mockImplementation(() => {
       throw new Error('quota exceeded');
     });
-    vi.spyOn(console, 'error').mockImplementation(() => {});
+    vi.spyOn(console, 'error').mockImplementation(() => undefined);
     expect(() => saveCompanyInfo(sampleCompany)).not.toThrow();
   });
 });

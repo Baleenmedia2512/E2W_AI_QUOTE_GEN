@@ -1,7 +1,7 @@
 import React, { useMemo, useState, useEffect } from 'react';
 
 import './ReferenceImages.css';
-import { extractReviewViaGemini, cropReferencePageImage, cropPageStrippingHeaderFooter, cropSpecAboveReference, cropSpecDiagram, cropPageHalf, cropPageFromPercent } from '../../utils/pdfUtils';
+import { extractReviewViaGemini, cropReferencePageImage, cropPageStrippingHeaderFooter, cropSpecDiagram, cropPageHalf, cropPageFromPercent } from '../../utils/pdfUtils';
 
 interface ExtractedPage {
   pageNumber: number;

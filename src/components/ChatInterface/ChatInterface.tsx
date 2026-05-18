@@ -1543,7 +1543,7 @@ const ChatInterface: React.FC = () => {
     return () => {
       // Cleanup: stop any ongoing recognition
       if (Capacitor.isNativePlatform() && isRecording) {
-        SpeechRecognition.stop().catch(() => {});
+        SpeechRecognition.stop().catch(() => undefined);
       }
     };
   }, []);

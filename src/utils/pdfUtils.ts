@@ -495,13 +495,6 @@ export const extractPDFContent = async (file: File, maxImagePages?: number): Pro
     const images: string[] = [];
     const pageImages: ExtractedPage[] = [];
 
-    // Keywords that indicate a page has reference images or specs worth rendering
-    const referenceKeywords = [
-      'reference image', 'reference images', 'sample image', 'display area',
-      'design specification', 'design specifications', 'specification',
-      '(2/', '(3/', '(4/', '(5/',  // page numbering like (2/3) = second page of section
-    ];
-
     // Phase 1: Extract text from ALL pages
     const allPageTexts: { pageNumber: number; text: string; pdfPage: any }[] = [];
     for (let i = 1; i <= pageCount; i++) {
