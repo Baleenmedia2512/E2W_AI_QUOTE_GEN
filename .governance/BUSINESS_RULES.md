@@ -411,3 +411,144 @@ All business rules must be:
 **No business logic outside service layer.**
 
 **No rule changes without governance approval.**
+
+---
+
+# PART 2 — VERIFIED RULES (Code Audit, May 18 2026)
+
+Rules below are **observed in the current codebase** (not planned). Each entry cites the file and line where the rule lives. Add tests to lock these down before they regress.
+
+## File Upload Rules
+
+### Rule: FILE_UPLOAD_MAX_SIZE
+| Attribute | Value |
+|-----------|-------|
+| **Implementation** | [src/utils/fileUtils.ts](../src/utils/fileUtils.ts) L15, L34 |
+| **Rule** | `maxSizeMB = Number(import.meta.env.VITE_MAX_FILE_SIZE_MB) \|\| 10` |
+| **Default** | 10 MB if env var unset |
+| **Applies To** | Image uploads (logo, signature) and Excel uploads |
+| **Tests** | [src/utils/__tests__/fileUtils.test.ts](../src/utils/__tests__/fileUtils.test.ts) ✅ |
+
+### Rule: IMAGE_MIME_WHITELIST
+| Attribute | Value |
+|-----------|-------|
+| **Implementation** | [src/utils/fileUtils.ts](../src/utils/fileUtils.ts) `validateImageFile()` |
+| **Rule** | Only `image/jpeg` and `image/jpg` MIME types accepted |
+| **Error** | "Only JPEG/JPG image files are allowed" |
+| **Tests** | ✅ Covered (PNG, GIF, SVG rejected) |
+
+### Rule: EXCEL_MIME_WHITELIST
+| Attribute | Value |
+|-----------|-------|
+| **Implementation** | [src/utils/fileUtils.ts](../src/utils/fileUtils.ts) `validateExcelFile()` |
+| **Rule** | Accepts `.xlsx` / `.xls` MIME types, with extension fallback |
+| **Error** | "Only Excel files (.xlsx, .xls) are allowed" |
+| **Tests** | ✅ Covered |
+
+## Authentication & Authorization Rules
+
+### Rule: ROLE_NAME_CASE_INSENSITIVE
+| Attribute | Value |
+|-----------|-------|
+| **Implementation** | [src/services/authService.ts](../src/services/authService.ts) L140-144 `hasRole()` |
+| **Rule** | Role match is case-insensitive (`'Admin'` == `'admin'`) |
+| **Default Role** | `'user'` when role lookup returns null (L81) |
+| **Tests** | [src/store/__tests__/authStore.test.ts](../src/store/__tests__/authStore.test.ts) ✅ |
+
+### Rule: PERMISSION_BOOLEAN_STRICT
+| Attribute | Value |
+|-----------|-------|
+| **Implementation** | [src/services/authService.ts](../src/services/authService.ts) L131-135 `hasPermission()` |
+| **Rule** | Permission granted only when `permissions[name] === true` (strict boolean) |
+| **Falsy values** | Treated as denied (undefined, null, 0, 'true' string all → deny) |
+| **Tests** | ✅ Covered |
+
+## Cache & Storage Rules
+
+### Rule: CACHE_CLEAR_PRESERVES_AUTH
+| Attribute | Value |
+|-----------|-------|
+| **Implementation** | [src/utils/cacheVersion.ts](../src/utils/cacheVersion.ts) `clearCacheAndReload()` |
+| **Rule** | When clearing cache, `auth-storage` and `supabase.auth.token` keys MUST survive |
+| **Why** | User stays logged in across cache-bust reloads |
+| **Tests** | ⚠️ Not yet covered — high-priority gap |
+
+### Rule: APP_VERSION_DETECTION
+| Attribute | Value |
+|-----------|-------|
+| **Implementation** | [src/utils/cacheVersion.ts](../src/utils/cacheVersion.ts) `checkForUpdates()` |
+| **Rule** | Update detected when `currentVersion.buildTimestamp > storedVersion.buildTimestamp` |
+| **First Run** | No update reported, current version stored |
+| **Tests** | [src/utils/__tests__/cacheVersion.test.ts](../src/utils/__tests__/cacheVersion.test.ts) ✅ (storage helpers) |
+
+### Rule: PROPOSAL_LIBRARY_CAP
+| Attribute | Value |
+|-----------|-------|
+| **Implementation** | [src/utils/proposalStorage.ts](../src/utils/proposalStorage.ts) `MAX_PROPOSALS = 10` |
+| **Rule** | IndexedDB proposal library retains only the 10 most-recently-uploaded proposals |
+| **Cleanup Trigger** | After each save (`cleanupOldProposals()`) |
+| **Tests** | ⚠️ Not yet covered |
+
+### Rule: PROPOSAL_DUPLICATE_DETECTION
+| Attribute | Value |
+|-----------|-------|
+| **Implementation** | [src/utils/proposalStorage.ts](../src/utils/proposalStorage.ts) `findDuplicateProposal()` |
+| **Rule** | Duplicate = same `fileName` + `fileType` + `fileSize` (exact match) |
+| **Tests** | ⚠️ Not yet covered |
+
+## Quote Domain Rules
+
+### Rule: BULLET_PREFIX_NORMALIZATION
+| Attribute | Value |
+|-----------|-------|
+| **Implementation** | [src/utils/quoteGrouping.ts](../src/utils/quoteGrouping.ts) L138, L206, L237 |
+| **Rule** | Term lines stripped of leading `•`, `-`, or `*` (and surrounding whitespace) before display |
+| **Regex** | `/^[•\-*]\s*/` |
+| **Also Applied In** | All 4 quote templates ([ClassicBusiness.tsx](../src/components/Templates/ClassicBusiness.tsx), [CorporateMinimal.tsx](../src/components/Templates/CorporateMinimal.tsx), [ModernSales.tsx](../src/components/Templates/ModernSales.tsx), [PremiumAgency.tsx](../src/components/Templates/PremiumAgency.tsx)) |
+| **Risk** | Pattern duplicated 7 times across codebase — candidate for extraction to shared util |
+
+### Rule: SERVICE_GROUPING_BY_TYPE
+| Attribute | Value |
+|-----------|-------|
+| **Implementation** | [src/utils/quoteGrouping.ts](../src/utils/quoteGrouping.ts) `groupItemsByServiceType()` L89 |
+| **Rule** | Quote items grouped by `serviceType` field (Bus, Auto, Tempo, etc.) |
+| **Multi-Service Detection** | `isMultiServiceQuote()` L112 — true if >1 distinct service type |
+| **General Terms Heuristic** | Term considered "general" if its number-stripped pattern appears only once (L206-237) |
+| **Tests** | ⚠️ Not yet covered — complex grouping logic, high regression risk |
+
+### Rule: TERMS_AND_CONDITIONS_SINGLE_SERVICE
+| Attribute | Value |
+|-----------|-------|
+| **Implementation** | [src/utils/promptTemplates.ts](../src/utils/promptTemplates.ts) L508 (Gemini prompt) |
+| **Rule** | For single-service quotes (1 item), per-item `termsAndConditions` MUST be empty string |
+| **Enforcement** | AI prompt instruction (not code-enforced) |
+| **Risk** | AI may not always comply — needs post-generation validation |
+
+## AI / Gemini Rules
+
+### Rule: BULLET_DETECTION_REGEX
+| Attribute | Value |
+|-----------|-------|
+| **Implementation** | [src/services/geminiService.ts](../src/services/geminiService.ts) L152 |
+| **Rule** | Line is bulleted if matches `/^[•\-*]/` OR `/^\d+\./` |
+| **Used For** | Parsing Gemini's bulleted output back into structured terms |
+
+## Known Rule Gaps (Untested Critical Logic)
+
+These rules exist in code but have **NO test coverage**. Adding tests is the highest priority:
+
+1. ❌ `groupItemsByServiceType()` — complex, no tests
+2. ❌ `getGeneralTerms()` — pattern-based heuristic, no tests
+3. ❌ `filterTermsByServiceType()` — no tests
+4. ❌ `clearCacheAndReload()` — preserves auth, no tests
+5. ❌ `findDuplicateProposal()` — exact-match logic, no tests
+6. ❌ `cleanupOldProposals()` — retention policy, no tests
+7. ❌ Gemini prompt → JSON parsing pipeline — no tests
+8. ❌ PDF export rendering — no tests
+
+---
+
+**Audit Date:** May 18, 2026  
+**Auditor:** Automated code scan + verification  
+**Next Audit:** When new business rule added OR quarterly
+
