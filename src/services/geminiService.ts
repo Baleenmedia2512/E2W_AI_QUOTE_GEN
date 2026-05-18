@@ -1,6 +1,7 @@
 import { GoogleGenerativeAI } from '@google/generative-ai';
 
 import { Message } from '../types/chat';
+import { isBulletedLine } from '../utils/bulletNormalization';
 import { CHAT_SYSTEM_PROMPT } from '../utils/promptTemplates';
 
 // Rate limiting
@@ -149,7 +150,7 @@ const cleanupTermsAndConditions = (terms: string): string => {
     }
     
     // Check if line starts with a bullet point (•, -, *, or number.)
-    const hasBullet = /^[•\-*]/.test(line) || /^\d+\./.test(line);
+    const hasBullet = isBulletedLine(line);
     
     if (hasBullet) {
       // This is a new bullet point

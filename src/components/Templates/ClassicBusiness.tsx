@@ -1,6 +1,7 @@
 import React from 'react';
 
 import { TemplateProps } from '../../types';
+import { normalizeTermsBlob } from '../../utils/bulletNormalization';
 import { isMultiServiceQuote, groupItemsByServiceType, filterTermsByServiceType, DEFAULT_GENERAL_TERMS, getServiceGroupHeading, extractServiceType } from '../../utils/quoteGrouping';
 
 import { ReferenceImages } from './ReferenceImages';
@@ -369,7 +370,7 @@ export const ClassicBusiness: React.FC<TemplateProps> = ({ data, editable: _edit
                     </h3>
                     <ol className="terms-list">
                       {(group.termsAndConditions
-                        ? group.termsAndConditions.split('\n').map((t: string) => t.trim().replace(/^[•\-*]\s*/, '').trim()).filter(Boolean)
+                        ? normalizeTermsBlob(group.termsAndConditions)
                         : filterTermsByServiceType(quote.termsAndConditions, group.serviceType)
                       ).map((term, j) => <li key={j}>{renderTermWithLinks(term)}</li>)}
                     </ol>

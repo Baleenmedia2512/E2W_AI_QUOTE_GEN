@@ -1,6 +1,7 @@
 import React from 'react';
 
 import { TemplateProps } from '../../types';
+import { normalizeTermsBlob } from '../../utils/bulletNormalization';
 import { isMultiServiceQuote, groupItemsByServiceType, filterTermsByServiceType, DEFAULT_GENERAL_TERMS, getServiceGroupHeading, extractServiceType } from '../../utils/quoteGrouping';
 
 import { ReferenceImages } from './ReferenceImages';
@@ -245,7 +246,7 @@ export const CorporateMinimal: React.FC<TemplateProps> = ({ data, editable: _edi
               <ul>
                 {filterGSTTerms(
                   quote.items[0]?.termsAndConditions
-                    ? quote.items[0].termsAndConditions.split('\n').map(t => t.trim().replace(/^[•\-*]\s*/, '').trim()).filter(Boolean)
+                    ? normalizeTermsBlob(quote.items[0].termsAndConditions)
                     : filterTermsByServiceType(quote.termsAndConditions, extractServiceType(quote.items[0]?.description || ''))
                 ).map((term, i) => <li key={i}>{renderTermWithLinks(term)}</li>)}
               </ul>
@@ -359,7 +360,7 @@ export const CorporateMinimal: React.FC<TemplateProps> = ({ data, editable: _edi
                     </h3>
                     <ul>
                       {filterGSTTerms(group.termsAndConditions
-                        ? group.termsAndConditions.split('\n').map((t: string) => t.trim().replace(/^[•\-*]\s*/, '').trim()).filter(Boolean)
+                        ? normalizeTermsBlob(group.termsAndConditions)
                         : filterTermsByServiceType(quote.termsAndConditions, group.serviceType)
                       ).map((term, j) => <li key={j}>{renderTermWithLinks(term)}</li>)}
                     </ul>

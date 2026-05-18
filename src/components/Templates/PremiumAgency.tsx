@@ -1,6 +1,7 @@
 import React from 'react';
 
 import { TemplateProps } from '../../types';
+import { normalizeTermsBlob } from '../../utils/bulletNormalization';
 import { isMultiServiceQuote, groupItemsByServiceType, filterTermsByServiceType, DEFAULT_GENERAL_TERMS, getServiceGroupHeading, extractServiceType } from '../../utils/quoteGrouping';
 
 import { ReferenceImages } from './ReferenceImages';
@@ -357,7 +358,7 @@ export const PremiumAgency: React.FC<TemplateProps> = ({ data, editable: _editab
                 </h3>
                 <div className="pa-terms-grid">
                   {(group.termsAndConditions
-                    ? group.termsAndConditions.split('\n').map((t: string) => t.trim().replace(/^[•\-*]\s*/, '').trim()).filter(Boolean)
+                    ? normalizeTermsBlob(group.termsAndConditions)
                     : filterTermsByServiceType(quote.termsAndConditions, group.serviceType)
                   ).map((term, j) => (
                     <div className="pa-term-item" key={j}>
