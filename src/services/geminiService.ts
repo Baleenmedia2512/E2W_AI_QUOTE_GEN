@@ -149,7 +149,7 @@ const cleanupTermsAndConditions = (terms: string): string => {
     }
     
     // Check if line starts with a bullet point (•, -, *, or number.)
-    const hasBullet = /^[•\-\*]/.test(line) || /^\d+\./.test(line);
+    const hasBullet = /^[•\-*]/.test(line) || /^\d+\./.test(line);
     
     if (hasBullet) {
       // This is a new bullet point

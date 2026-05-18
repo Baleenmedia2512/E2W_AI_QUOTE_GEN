@@ -357,7 +357,7 @@ export const PremiumAgency: React.FC<TemplateProps> = ({ data, editable: _editab
                 </h3>
                 <div className="pa-terms-grid">
                   {(group.termsAndConditions
-                    ? group.termsAndConditions.split('\n').map((t: string) => t.trim().replace(/^[•\-\*]\s*/, '').trim()).filter(Boolean)
+                    ? group.termsAndConditions.split('\n').map((t: string) => t.trim().replace(/^[•\-*]\s*/, '').trim()).filter(Boolean)
                     : filterTermsByServiceType(quote.termsAndConditions, group.serviceType)
                   ).map((term, j) => (
                     <div className="pa-term-item" key={j}>

@@ -245,7 +245,7 @@ export const CorporateMinimal: React.FC<TemplateProps> = ({ data, editable: _edi
               <ul>
                 {filterGSTTerms(
                   quote.items[0]?.termsAndConditions
-                    ? quote.items[0].termsAndConditions.split('\n').map(t => t.trim().replace(/^[•\-\*]\s*/, '').trim()).filter(Boolean)
+                    ? quote.items[0].termsAndConditions.split('\n').map(t => t.trim().replace(/^[•\-*]\s*/, '').trim()).filter(Boolean)
                     : filterTermsByServiceType(quote.termsAndConditions, extractServiceType(quote.items[0]?.description || ''))
                 ).map((term, i) => <li key={i}>{renderTermWithLinks(term)}</li>)}
               </ul>
@@ -359,7 +359,7 @@ export const CorporateMinimal: React.FC<TemplateProps> = ({ data, editable: _edi
                     </h3>
                     <ul>
                       {filterGSTTerms(group.termsAndConditions
-                        ? group.termsAndConditions.split('\n').map((t: string) => t.trim().replace(/^[•\-\*]\s*/, '').trim()).filter(Boolean)
+                        ? group.termsAndConditions.split('\n').map((t: string) => t.trim().replace(/^[•\-*]\s*/, '').trim()).filter(Boolean)
                         : filterTermsByServiceType(quote.termsAndConditions, group.serviceType)
                       ).map((term, j) => <li key={j}>{renderTermWithLinks(term)}</li>)}
                     </ul>

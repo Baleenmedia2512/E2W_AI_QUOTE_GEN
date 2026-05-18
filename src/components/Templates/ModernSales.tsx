@@ -357,7 +357,7 @@ export const ModernSales: React.FC<TemplateProps> = ({ data, editable: _editable
                 </h3>
                 <div className="ms-terms-grid">
                   {(group.termsAndConditions
-                    ? group.termsAndConditions.split('\n').map((t: string) => t.trim().replace(/^[•\-\*]\s*/, '').trim()).filter(Boolean)
+                    ? group.termsAndConditions.split('\n').map((t: string) => t.trim().replace(/^[•\-*]\s*/, '').trim()).filter(Boolean)
                     : filterTermsByServiceType(quote.termsAndConditions, group.serviceType)
                   ).map((term, j) => (
                     <div className="ms-term-item" key={j}>

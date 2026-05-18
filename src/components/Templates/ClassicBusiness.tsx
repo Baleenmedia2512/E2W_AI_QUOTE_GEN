@@ -369,7 +369,7 @@ export const ClassicBusiness: React.FC<TemplateProps> = ({ data, editable: _edit
                     </h3>
                     <ol className="terms-list">
                       {(group.termsAndConditions
-                        ? group.termsAndConditions.split('\n').map((t: string) => t.trim().replace(/^[•\-\*]\s*/, '').trim()).filter(Boolean)
+                        ? group.termsAndConditions.split('\n').map((t: string) => t.trim().replace(/^[•\-*]\s*/, '').trim()).filter(Boolean)
                         : filterTermsByServiceType(quote.termsAndConditions, group.serviceType)
                       ).map((term, j) => <li key={j}>{renderTermWithLinks(term)}</li>)}
                     </ol>

@@ -113,7 +113,7 @@ function filterPagesByCategory(pages: ExtractedPage[], category: string): Extrac
   const allWords = serviceTypeOnly
     .toLowerCase()
     .replace(/[()]/g, ' ')  // Replace parentheses with spaces
-    .split(/[\s,\-\/&_]+/)  // underscore also treated as separator (INSERTION_A4 → insertion, a4)
+    .split(/[\s,\-/&_]+/)  // underscore also treated as separator (INSERTION_A4 → insertion, a4)
     .filter((w) => w.length >= 1);
 
   // Pricing/filler words to always discard

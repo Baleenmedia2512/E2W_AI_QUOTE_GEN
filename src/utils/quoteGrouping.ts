@@ -135,7 +135,7 @@ export function filterTermsByServiceType(termsAndConditions: string, serviceType
   // Split by newlines and bullets to get individual lines
   const lines = termsAndConditions
     .split(/\n/)
-    .map(t => t.trim().replace(/^[•\-\*]\s*/, '').trim())
+    .map(t => t.trim().replace(/^[•\-*]\s*/, '').trim())
     .filter(Boolean);
 
   const filteredTerms: string[] = [];
@@ -203,7 +203,7 @@ export function getGeneralTerms(termsAndConditions: string): string[] {
   
   for (const line of lines) {
     // Remove leading bullets/numbers for analysis
-    const cleanLine = line.replace(/^[•\-\*\d+\.\s]+/, '').trim();
+    const cleanLine = line.replace(/^[•\-*\d+.\s]+/, '').trim();
     const cleanLineLower = cleanLine.toLowerCase();
     
     // Skip if this line is a service section header (has keyword + colon)
@@ -234,7 +234,7 @@ export function getGeneralTerms(termsAndConditions: string): string[] {
   
   // Now filter: exclude terms whose pattern appears multiple times (service-specific variations)
   for (const line of lines) {
-    const cleanLine = line.replace(/^[•\-\*\d+\.\s]+/, '').trim();
+    const cleanLine = line.replace(/^[•\-*\d+.\s]+/, '').trim();
     const cleanLineLower = cleanLine.toLowerCase();
     
     // Skip service headers

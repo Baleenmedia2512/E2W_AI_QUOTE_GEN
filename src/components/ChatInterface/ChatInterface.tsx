@@ -153,7 +153,7 @@ const ChatInterface: React.FC = () => {
     // Fallback: if no known city matched, use cleaned file names as city labels
     if (cities.length === 0) {
       activeProposals.forEach(p => {
-        const name = p.fileName.replace(/\.(pdf|xlsx?)$/i, '').replace(/[_\-]+/g, ' ').trim();
+        const name = p.fileName.replace(/\.(pdf|xlsx?)$/i, '').replace(/[_-]+/g, ' ').trim();
         if (!cities.includes(name)) cities.push(name);
       });
     }
