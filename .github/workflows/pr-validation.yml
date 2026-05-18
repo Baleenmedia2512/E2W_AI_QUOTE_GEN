@@ -88,11 +88,12 @@ jobs:
 
       # 12. Upload Coverage to Codecov
       - name: Upload Coverage to Codecov
-        uses: codecov/codecov-action@v3
+        uses: codecov/codecov-action@v4
         if: always()
         with:
           fail_ci_if_error: false
           verbose: true
+          token: ${{ secrets.CODECOV_TOKEN }}
 
       # 13. Security Audit
       - name: NPM Security Audit
@@ -130,7 +131,7 @@ jobs:
 
       # 17. Upload Build Artifact
       - name: Upload Build Artifact
-        uses: actions/upload-artifact@v3
+        uses: actions/upload-artifact@v4
         if: always()
         with:
           name: build-output-${{ github.run_number }}
