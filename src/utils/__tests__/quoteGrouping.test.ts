@@ -29,9 +29,9 @@ describe('extractServiceType', () => {
   });
 
   it('strips display price suffix with duration', () => {
-    expect(
-      extractServiceType('Bus Shelter Panel - Lit - Display Price (for 30 days)'),
-    ).toBe('Bus Shelter Panel - Lit');
+    expect(extractServiceType('Bus Shelter Panel - Lit - Display Price (for 30 days)')).toBe(
+      'Bus Shelter Panel - Lit',
+    );
   });
 
   it('strips printing & fixing price suffix', () => {

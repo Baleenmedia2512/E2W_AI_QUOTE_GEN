@@ -30,7 +30,7 @@ export async function uploadProposalToCloud(
   textContent: string,
   pageCount: number,
   userId?: string,
-  userName?: string
+  userName?: string,
 ): Promise<{ success: boolean; proposal?: CloudProposal; error?: string }> {
   try {
     // Get current user if not provided (optional - works without auth)
@@ -39,8 +39,10 @@ export async function uploadProposalToCloud(
 
     // Try to get authenticated user, but don't fail if not authenticated
     try {
-      const { data: { user } } = await supabase.auth.getUser();
-      
+      const {
+        data: { user },
+      } = await supabase.auth.getUser();
+
       if (user) {
         currentUserId = user.id;
         currentUserName = user.email || 'Authenticated User';
@@ -73,9 +75,7 @@ export async function uploadProposalToCloud(
     }
 
     // Get public URL for the file
-    const { data: urlData } = supabase.storage
-      .from('proposals')
-      .getPublicUrl(storagePath);
+    const { data: urlData } = supabase.storage.from('proposals').getPublicUrl(storagePath);
 
     const fileUrl = urlData.publicUrl;
 
@@ -91,7 +91,7 @@ export async function uploadProposalToCloud(
         storage_path: storagePath,
         text_content: textContent,
         page_count: pageCount,
-        uploaded_by_user_id: currentUserId,  // TEXT column accepts any string
+        uploaded_by_user_id: currentUserId, // TEXT column accepts any string
         uploaded_by_name: currentUserName,
       })
       .select()
@@ -115,9 +115,7 @@ export async function uploadProposalToCloud(
 /**
  * Load all proposals from cloud (visible to all users)
  */
-export async function loadAllProposalsFromCloud(
-  limit: number = 20
-): Promise<CloudProposal[]> {
+export async function loadAllProposalsFromCloud(limit: number = 20): Promise<CloudProposal[]> {
   try {
     logger.info('📂 Loading proposals from cloud...');
     const { data, error } = await supabase
@@ -144,11 +142,7 @@ export async function loadAllProposalsFromCloud(
  */
 export async function loadProposalFromCloud(id: string): Promise<CloudProposal | null> {
   try {
-    const { data, error } = await supabase
-      .from('proposals')
-      .select('*')
-      .eq('id', id)
-      .single();
+    const { data, error } = await supabase.from('proposals').select('*').eq('id', id).single();
 
     if (error) {
       logger.error('❌ Error loading proposal:', error);
@@ -190,10 +184,7 @@ export async function deleteProposalFromCloud(id: string): Promise<boolean> {
     }
 
     // Delete from database
-    const { error: dbError } = await supabase
-      .from('proposals')
-      .delete()
-      .eq('id', id);
+    const { error: dbError } = await supabase.from('proposals').delete().eq('id', id);
 
     if (dbError) {
       logger.error('❌ Database delete error:', dbError);
@@ -213,7 +204,7 @@ export async function deleteProposalFromCloud(id: string): Promise<boolean> {
  */
 export async function findCloudDuplicate(
   fileName: string,
-  fileSize: number
+  fileSize: number,
 ): Promise<CloudProposal | null> {
   try {
     const { data, error } = await supabase
@@ -246,9 +237,7 @@ export async function findCloudDuplicate(
  */
 export async function downloadProposalFile(storagePath: string): Promise<Blob | null> {
   try {
-    const { data, error } = await supabase.storage
-      .from('proposals')
-      .download(storagePath);
+    const { data, error } = await supabase.storage.from('proposals').download(storagePath);
 
     if (error) {
       logger.error('❌ Error downloading file:', error);
@@ -269,10 +258,8 @@ export async function checkCloudStorageAvailability(): Promise<boolean> {
   try {
     // Instead of listing all buckets (requires admin), try to list files in proposals bucket
     // This will succeed if bucket exists and user has access
-    const { error } = await supabase.storage
-      .from('proposals')
-      .list('', { limit: 1 });
-    
+    const { error } = await supabase.storage.from('proposals').list('', { limit: 1 });
+
     if (error) {
       // Check if error is due to bucket not existing vs permission issue
       logger.warn('⚠️ Cloud storage check:', error.message);

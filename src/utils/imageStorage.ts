@@ -82,7 +82,10 @@ export async function clearPageImages(): Promise<void> {
 // ── Per-proposal ID storage (Fix: no overwrite) ──────────────────────────
 
 /** Save pages for a specific proposal by its ID */
-export async function savePageImagesById(proposalId: string, pageImages: ExtractedPage[]): Promise<void> {
+export async function savePageImagesById(
+  proposalId: string,
+  pageImages: ExtractedPage[],
+): Promise<void> {
   try {
     const db = await openDB();
     const tx = db.transaction(STORE_NAME, 'readwrite');
@@ -180,7 +183,7 @@ interface ActiveProposalMeta {
 export function saveActiveProposalMeta(proposals: ActiveProposalMeta[]): void {
   try {
     // Strip pageImages — only save lightweight metadata
-    const meta = proposals.map(p => ({
+    const meta = proposals.map((p) => ({
       id: p.id,
       fileName: p.fileName,
       fileType: p.fileType,

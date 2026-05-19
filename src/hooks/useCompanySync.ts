@@ -6,7 +6,7 @@ import { logger } from '../utils/logger';
 /**
  * Hook to initialize company database sync
  * Call this in your App.tsx or main component
- * 
+ *
  * This will:
  * 1. Load company info from database on app start
  * 2. Keep localStorage as fallback if database fails

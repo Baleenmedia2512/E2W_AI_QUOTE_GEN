@@ -29,7 +29,7 @@ const App: React.FC = () => {
 
   useEffect(() => {
     // Register service worker for PWA support (now enabled in all environments)
-    registerServiceWorker().catch(err => {
+    registerServiceWorker().catch((err) => {
       logger.error('Failed to register service worker:', err);
     });
 
@@ -46,7 +46,7 @@ const App: React.FC = () => {
       <Box minH="100vh" bg="white">
         {/* Update Notification Component - Disabled */}
         {/* <UpdateNotification /> */}
-        
+
         <Router>
           <Route
             render={({ location }) => {
@@ -59,13 +59,13 @@ const App: React.FC = () => {
                     {/* Auth Routes - Public */}
                     <Route exact path="/login" component={LoginPage} />
                     <Route exact path="/unauthorized" component={UnauthorizedPage} />
-                    
+
                     {/* Protected Routes - Requires Authentication */}
                     <PrivateRoute exact path="/" component={HomePage} />
                     <PrivateRoute exact path="/documents" component={DocumentsPage} />
                     <PrivateRoute exact path="/quote" component={QuotePage} />
                     <PrivateRoute exact path="/preview" component={QuotePreviewPage} />
-                    
+
                     {/* Fallback */}
                     <Route render={() => <Redirect to="/" />} />
                   </Switch>

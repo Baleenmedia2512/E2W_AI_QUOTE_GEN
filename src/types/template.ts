@@ -27,7 +27,11 @@ export interface TemplateProps {
   onDataChange?: (data: TemplateData) => void;
 }
 
-export type TemplateType = 'corporate-minimal' | 'premium-agency' | 'modern-sales' | 'classic-business';
+export type TemplateType =
+  | 'corporate-minimal'
+  | 'premium-agency'
+  | 'modern-sales'
+  | 'classic-business';
 
 export interface Template {
   id: TemplateType;

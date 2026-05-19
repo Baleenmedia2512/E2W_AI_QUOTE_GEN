@@ -11,7 +11,7 @@ export interface ExtractedPage {
   imageDataUrl: string;
   croppedImages?: string[];
   // Source tracking for multi-PDF isolation
-  sourceId?: string;   // proposalId this page came from
+  sourceId?: string; // proposalId this page came from
   sourceName?: string; // fileName this page came from
 }
 
@@ -92,7 +92,7 @@ export interface AppState {
   loadRecentProposals: () => Promise<void>;
   selectProposal: (id: string) => Promise<void>;
   deleteProposalFromLibrary: (id: string) => Promise<void>;
-  
+
   // Cloud storage state (NEW - additive)
   cloudStorageEnabled: boolean;
   checkCloudStorage: () => Promise<void>;
@@ -104,4 +104,18 @@ export interface AppState {
   restoreActiveProposals: () => Promise<void>;
 }
 
-export type { Message, Quote, QuoteItem, LineItem, CompanyInfo, ClientInfo, TemplateData, TemplateProps, TemplateType, Template, TemplateMetadata, Lead, LeadSearchResult };
+export type {
+  Message,
+  Quote,
+  QuoteItem,
+  LineItem,
+  CompanyInfo,
+  ClientInfo,
+  TemplateData,
+  TemplateProps,
+  TemplateType,
+  Template,
+  TemplateMetadata,
+  Lead,
+  LeadSearchResult,
+};

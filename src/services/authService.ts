@@ -48,7 +48,7 @@ class AuthService {
 
     // Verify password with bcrypt
     const isValidPassword = await bcrypt.compare(password, user.password);
-    
+
     if (!isValidPassword) {
       throw new Error('Invalid email or password');
     }
@@ -61,19 +61,20 @@ class AuthService {
 
     // Return user data without password
     const roleData = Array.isArray(user.Role) ? user.Role[0] : user.Role;
-    
+
     // Parse permissions if it's a JSON string
     let permissions = {};
     if (roleData?.permissions) {
       try {
-        permissions = typeof roleData.permissions === 'string' 
-          ? JSON.parse(roleData.permissions) 
-          : roleData.permissions;
+        permissions =
+          typeof roleData.permissions === 'string'
+            ? JSON.parse(roleData.permissions)
+            : roleData.permissions;
       } catch (e) {
         logger.error('Failed to parse permissions:', e);
       }
     }
-    
+
     const authUser: AuthUser = {
       id: user.id,
       email: user.email,

@@ -31,7 +31,11 @@ describe('cacheVersion - storage helpers', () => {
 
     it('overwrites previous version on save', () => {
       saveVersion(sampleVersion);
-      const newer: AppVersion = { ...sampleVersion, version: '1.2.4', buildTimestamp: 1_700_000_999_999 };
+      const newer: AppVersion = {
+        ...sampleVersion,
+        version: '1.2.4',
+        buildTimestamp: 1_700_000_999_999,
+      };
       saveVersion(newer);
       expect(getStoredVersion()).toEqual(newer);
     });

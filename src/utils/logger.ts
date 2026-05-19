@@ -25,9 +25,7 @@ const LEVEL_RANK: Record<LogLevel, number> = {
   error: 40,
 };
 
-const isProd =
-  typeof import.meta !== 'undefined' &&
-  Boolean((import.meta as ImportMeta).env?.PROD);
+const isProd = typeof import.meta !== 'undefined' && Boolean((import.meta as ImportMeta).env?.PROD);
 
 const envLevel = (() => {
   try {

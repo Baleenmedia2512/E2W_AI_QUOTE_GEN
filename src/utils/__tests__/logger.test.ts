@@ -62,9 +62,7 @@ describe('logger', () => {
     });
 
     it('redactString leaves benign text alone', () => {
-      expect(__internal.redactString('quote total is $1,234')).toBe(
-        'quote total is $1,234',
-      );
+      expect(__internal.redactString('quote total is $1,234')).toBe('quote total is $1,234');
     });
   });
 });

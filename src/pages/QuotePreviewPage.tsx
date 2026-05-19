@@ -28,14 +28,13 @@ export const QuotePreviewPage: React.FC = () => {
   } = useAppStore();
 
   // Build flat merged pages (all active PDFs combined, each page has sourceId/sourceName)
-  const mergedActiveImages: ExtractedPage[] = activeProposals.length > 0
-    ? activeProposals.flatMap(p => p.pageImages || [])
-    : [];
+  const mergedActiveImages: ExtractedPage[] =
+    activeProposals.length > 0 ? activeProposals.flatMap((p) => p.pageImages || []) : [];
 
   // Build city→pages map for per-PDF isolation in ReferenceImages
   // Key = lowercased fileName (e.g. "coimbatore rate card.pdf") → pages from that PDF
   const proposalPageMap: Record<string, ExtractedPage[]> = {};
-  activeProposals.forEach(p => {
+  activeProposals.forEach((p) => {
     proposalPageMap[p.fileName.toLowerCase()] = p.pageImages || [];
   });
 
@@ -43,7 +42,7 @@ export const QuotePreviewPage: React.FC = () => {
   const [isExporting, setIsExporting] = useState(false);
   const [zoom, setZoom] = useState(100);
   const [pageImages, setPageImages] = useState<ExtractedPage[]>(
-    mergedActiveImages.length > 0 ? mergedActiveImages : (proposal.pageImages || [])
+    mergedActiveImages.length > 0 ? mergedActiveImages : proposal.pageImages || [],
   );
   const previewRef = useRef<HTMLDivElement>(null);
 
@@ -62,10 +61,12 @@ export const QuotePreviewPage: React.FC = () => {
   // Sync pageImages state when activeProposals change (after restore)
   useEffect(() => {
     if (activeProposals.length > 0) {
-      const merged = activeProposals.flatMap(p => p.pageImages || []);
+      const merged = activeProposals.flatMap((p) => p.pageImages || []);
       if (merged.length > 0) {
         setPageImages(merged);
-        logger.info(`✅ QuotePreviewPage: ${merged.length} pages from ${activeProposals.length} active PDFs`);
+        logger.info(
+          `✅ QuotePreviewPage: ${merged.length} pages from ${activeProposals.length} active PDFs`,
+        );
       }
     }
   }, [activeProposals]);
@@ -73,13 +74,13 @@ export const QuotePreviewPage: React.FC = () => {
   // Add sample item if quote has no items
   React.useEffect(() => {
     logger.info('📄 QuotePreviewPage mounted');
-    logger.info('Store state:', { 
-      hasQuote: !!currentQuote, 
-      hasCompany: !!companyInfo, 
+    logger.info('Store state:', {
+      hasQuote: !!currentQuote,
+      hasCompany: !!companyInfo,
       hasClient: !!clientInfo,
-      template: selectedTemplate 
+      template: selectedTemplate,
     });
-    
+
     if (currentQuote && currentQuote.items.length === 0) {
       logger.info('⚠️ Quote has no items, adding sample item');
       const sampleItem = {
@@ -88,14 +89,14 @@ export const QuotePreviewPage: React.FC = () => {
         details: 'Add your items by going back to the quote editor',
         quantity: 1,
         rate: 1000,
-        total: 1000
+        total: 1000,
       };
       const updatedQuote = {
         ...currentQuote,
         items: [sampleItem],
         subtotal: 1000,
         gstAmount: currentQuote.gstEnabled ? 1000 * (currentQuote.gstPercentage / 100) : 0,
-        total: 1000 + (currentQuote.gstEnabled ? 1000 * (currentQuote.gstPercentage / 100) : 0)
+        total: 1000 + (currentQuote.gstEnabled ? 1000 * (currentQuote.gstPercentage / 100) : 0),
       };
       setCurrentQuote(updatedQuote);
     }
@@ -115,15 +116,17 @@ export const QuotePreviewPage: React.FC = () => {
     logger.error('Missing Quote:', !currentQuote);
     logger.error('Missing Company:', !companyInfo);
     logger.error('Missing Client:', !clientInfo);
-    
+
     return (
       <div className="preview-error">
         <div className="error-content">
           <h2>Missing Information</h2>
           <p>Please complete all required steps before previewing your quote.</p>
           <p style={{ fontSize: '14px', marginTop: '16px', color: '#666' }}>
-            {!currentQuote && '• Quote data is missing'}<br />
-            {!companyInfo && '• Company information is missing'}<br />
+            {!currentQuote && '• Quote data is missing'}
+            <br />
+            {!companyInfo && '• Company information is missing'}
+            <br />
             {!clientInfo && '• Client information is missing'}
           </p>
           <button onClick={() => history.push('/quote')} className="back-button">
@@ -141,7 +144,7 @@ export const QuotePreviewPage: React.FC = () => {
     proposalPages: pageImages,
     proposalPageMap,
   };
-  
+
   logger.info('🎨 Template Data:', {
     hasCompany: !!templateData.company,
     hasClient: !!templateData.client,
@@ -170,7 +173,7 @@ export const QuotePreviewPage: React.FC = () => {
     logger.info('Preview ref current:', previewRef.current);
     logger.info('Current quote:', currentQuote);
     logger.info('Selected template:', selectedTemplate);
-    
+
     if (!previewRef.current) {
       logger.error('❌ Preview ref is not available');
       alert('Preview content not loaded. Please refresh and try again.');
@@ -185,13 +188,13 @@ export const QuotePreviewPage: React.FC = () => {
 
     setIsExporting(true);
     logger.info('🔄 Starting PDF export...');
-    
+
     try {
       await exportToPDF(
         previewRef.current,
         currentQuote.quoteNumber,
         selectedTemplate,
-        clientInfo?.name
+        clientInfo?.name,
       );
       logger.info('✅ PDF exported successfully');
       // Success message is shown by the service itself (different for mobile vs web)
@@ -205,11 +208,11 @@ export const QuotePreviewPage: React.FC = () => {
   };
 
   const handleZoomIn = () => {
-    setZoom(prev => Math.min(prev + 10, 150));
+    setZoom((prev) => Math.min(prev + 10, 150));
   };
 
   const handleZoomOut = () => {
-    setZoom(prev => Math.max(prev - 10, 50));
+    setZoom((prev) => Math.max(prev - 10, 50));
   };
 
   const handleResetZoom = () => {
@@ -221,12 +224,14 @@ export const QuotePreviewPage: React.FC = () => {
       {/* Toolbar */}
       <div className="preview-toolbar">
         <div className="toolbar-section">
-          <button
-            onClick={() => history.push('/quote')}
-            className="toolbar-button back-btn"
-          >
+          <button onClick={() => history.push('/quote')} className="toolbar-button back-btn">
             <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor">
-              <path d="M19 12H5M12 19l-7-7 7-7" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
+              <path
+                d="M19 12H5M12 19l-7-7 7-7"
+                strokeWidth="2"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+              />
             </svg>
             Back
           </button>
@@ -237,15 +242,15 @@ export const QuotePreviewPage: React.FC = () => {
           <div className="zoom-controls">
             <button onClick={handleZoomOut} className="zoom-button" disabled={zoom <= 50}>
               <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor">
-                <circle cx="11" cy="11" r="8" strokeWidth="2"/>
-                <path d="M21 21l-4.35-4.35M8 11h6" strokeWidth="2" strokeLinecap="round"/>
+                <circle cx="11" cy="11" r="8" strokeWidth="2" />
+                <path d="M21 21l-4.35-4.35M8 11h6" strokeWidth="2" strokeLinecap="round" />
               </svg>
             </button>
             <span className="zoom-level">{zoom}%</span>
             <button onClick={handleZoomIn} className="zoom-button" disabled={zoom >= 150}>
               <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor">
-                <circle cx="11" cy="11" r="8" strokeWidth="2"/>
-                <path d="M21 21l-4.35-4.35M11 8v6M8 11h6" strokeWidth="2" strokeLinecap="round"/>
+                <circle cx="11" cy="11" r="8" strokeWidth="2" />
+                <path d="M21 21l-4.35-4.35M11 8v6M8 11h6" strokeWidth="2" strokeLinecap="round" />
               </svg>
             </button>
             <button onClick={handleResetZoom} className="toolbar-button-small">
@@ -258,10 +263,10 @@ export const QuotePreviewPage: React.FC = () => {
             className="toolbar-button"
           >
             <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor">
-              <rect x="3" y="3" width="7" height="7" strokeWidth="2"/>
-              <rect x="14" y="3" width="7" height="7" strokeWidth="2"/>
-              <rect x="3" y="14" width="7" height="7" strokeWidth="2"/>
-              <rect x="14" y="14" width="7" height="7" strokeWidth="2"/>
+              <rect x="3" y="3" width="7" height="7" strokeWidth="2" />
+              <rect x="14" y="3" width="7" height="7" strokeWidth="2" />
+              <rect x="3" y="14" width="7" height="7" strokeWidth="2" />
+              <rect x="14" y="14" width="7" height="7" strokeWidth="2" />
             </svg>
             Change Template
           </button>
@@ -279,7 +284,12 @@ export const QuotePreviewPage: React.FC = () => {
             ) : (
               <>
                 <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor">
-                  <path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4M7 10l5 5 5-5M12 15V3" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
+                  <path
+                    d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4M7 10l5 5 5-5M12 15V3"
+                    strokeWidth="2"
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                  />
                 </svg>
                 Export PDF
               </>
@@ -293,12 +303,9 @@ export const QuotePreviewPage: React.FC = () => {
         <div className="template-selector-modal">
           <div className="modal-overlay" onClick={() => setShowTemplateSelector(false)}></div>
           <div className="modal-content">
-            <button
-              className="modal-close"
-              onClick={() => setShowTemplateSelector(false)}
-            >
+            <button className="modal-close" onClick={() => setShowTemplateSelector(false)}>
               <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor">
-                <path d="M18 6L6 18M6 6l12 12" strokeWidth="2" strokeLinecap="round"/>
+                <path d="M18 6L6 18M6 6l12 12" strokeWidth="2" strokeLinecap="round" />
               </svg>
             </button>
             <TemplateSelector
@@ -330,7 +337,11 @@ export const QuotePreviewPage: React.FC = () => {
         <button onClick={() => setShowTemplateSelector(true)} className="mobile-action-btn">
           Templates
         </button>
-        <button onClick={handleExportPDF} className="mobile-action-btn primary" disabled={isExporting}>
+        <button
+          onClick={handleExportPDF}
+          className="mobile-action-btn primary"
+          disabled={isExporting}
+        >
           {isExporting ? 'Exporting...' : 'Export PDF'}
         </button>
       </div>

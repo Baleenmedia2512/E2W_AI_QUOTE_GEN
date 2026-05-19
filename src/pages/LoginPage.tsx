@@ -30,7 +30,7 @@ const LoginPage: React.FC = () => {
   const [password, setPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
-  
+
   const toast = useToast();
   const history = useHistory();
   const location = useLocation<{ from?: string }>();
@@ -46,7 +46,7 @@ const LoginPage: React.FC = () => {
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    
+
     // Validation
     if (!email || !password) {
       toast({
@@ -64,7 +64,7 @@ const LoginPage: React.FC = () => {
 
     try {
       await login({ email, password });
-      
+
       toast({
         title: 'Login successful',
         description: 'Welcome back!',
@@ -72,7 +72,7 @@ const LoginPage: React.FC = () => {
         duration: 2000,
         isClosable: true,
       });
-      
+
       // Redirect to the page they tried to visit or home
       const from = location.state?.from || '/';
       history.push(from);
@@ -90,16 +90,11 @@ const LoginPage: React.FC = () => {
   };
 
   return (
-    <Box
-      minH="100vh"
-      bg="white"
-      position="relative"
-      overflow="hidden"
-    >
+    <Box minH="100vh" bg="white" position="relative" overflow="hidden">
       {/* White Header Bar - Status Bar Area */}
       <Box
         bg="white"
-        h={{ base: "44px", md: "60px" }}
+        h={{ base: '44px', md: '60px' }}
         borderBottom="1px solid"
         borderColor="gray.100"
       />
@@ -171,9 +166,9 @@ const LoginPage: React.FC = () => {
                   />
                 </Icon>
               </Box>
-              <Heading 
-                size="lg" 
-                color="white" 
+              <Heading
+                size="lg"
+                color="white"
                 fontWeight="800"
                 letterSpacing="tight"
                 textShadow="0 2px 10px rgba(0, 0, 0, 0.2)"
@@ -224,8 +219,8 @@ const LoginPage: React.FC = () => {
                   back
                 </Text>
               </Box>
-              <Text 
-                color="whiteAlpha.900" 
+              <Text
+                color="whiteAlpha.900"
                 fontSize="sm"
                 fontWeight="500"
                 lineHeight="1.6"
@@ -322,7 +317,7 @@ const LoginPage: React.FC = () => {
                 />
               </InputRightElement>
             </InputGroup>
-            
+
             {/* Error Message or Forgot Password */}
             {error ? (
               <FormErrorMessage mt={2} fontSize="sm">
@@ -379,11 +374,7 @@ const LoginPage: React.FC = () => {
         <Box textAlign="center" mt={12} pb={8}>
           <Text fontSize="sm" color="gray.600">
             Don't have an account?{' '}
-            <Text
-              as="span"
-              color="gray.500"
-              fontWeight="600"
-            >
+            <Text as="span" color="gray.500" fontWeight="600">
               Contact admin
             </Text>
           </Text>

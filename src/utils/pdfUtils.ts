@@ -24,15 +24,26 @@ interface ImageBoundingBox {
 }
 
 function shouldAttemptCropping(pageText: string): boolean {
-  const text = pageText.toLowerCase().replace(/\s*\|\s*/g, '').replace(/\s+/g, ' ');
+  const text = pageText
+    .toLowerCase()
+    .replace(/\s*\|\s*/g, '')
+    .replace(/\s+/g, ' ');
 
-  if (text.includes('reference image') || text.includes('reference images') ||
-      text.includes('design specification') || text.includes('design specifications') ||
-      text.includes('design specs') || text.includes('specification') ||
-      text.includes('customer review') || text.includes('client review') ||
-      text.includes('reference photo') || text.includes('example image') ||
-      text.includes('sample photo') ||
-      text.includes('sample image') || text.includes('display area')) {
+  if (
+    text.includes('reference image') ||
+    text.includes('reference images') ||
+    text.includes('design specification') ||
+    text.includes('design specifications') ||
+    text.includes('design specs') ||
+    text.includes('specification') ||
+    text.includes('customer review') ||
+    text.includes('client review') ||
+    text.includes('reference photo') ||
+    text.includes('example image') ||
+    text.includes('sample photo') ||
+    text.includes('sample image') ||
+    text.includes('display area')
+  ) {
     return true;
   }
 
@@ -48,7 +59,10 @@ function shouldAttemptCropping(pageText: string): boolean {
   return false;
 }
 
-async function detectImageRegions(imageDataUrl: string, pageNumber: number): Promise<ImageBoundingBox[]> {
+async function detectImageRegions(
+  imageDataUrl: string,
+  pageNumber: number,
+): Promise<ImageBoundingBox[]> {
   try {
     const apiKey = import.meta.env.VITE_GEMINI_API_KEY;
     if (!apiKey || apiKey.trim() === '') return [];
@@ -75,7 +89,7 @@ If no product images or photos are found on this page, return exactly: []`;
 
     const result = await model.generateContent([
       prompt,
-      { inlineData: { mimeType: 'image/jpeg', data: base64Data } }
+      { inlineData: { mimeType: 'image/jpeg', data: base64Data } },
     ]);
 
     const response = await result.response;
@@ -100,11 +114,16 @@ If no product images or photos are found on this page, return exactly: []`;
       box: (b.box_2d || b.box) as [number, number, number, number],
     }));
 
-    const validBoxes = boxes.filter(b => {
+    const validBoxes = boxes.filter((b) => {
       if (!b.box || !Array.isArray(b.box) || b.box.length !== 4) return false;
       const [yMin, xMin, yMax, xMax] = b.box;
-      if (typeof yMin !== 'number' || typeof xMin !== 'number' ||
-          typeof yMax !== 'number' || typeof xMax !== 'number') return false;
+      if (
+        typeof yMin !== 'number' ||
+        typeof xMin !== 'number' ||
+        typeof yMax !== 'number' ||
+        typeof xMax !== 'number'
+      )
+        return false;
       if (yMin >= yMax || xMin >= xMax) return false;
       if (yMin < 0 || xMin < 0 || yMax > 1000 || xMax > 1000) return false;
       const area = ((yMax - yMin) * (xMax - xMin)) / (1000 * 1000);
@@ -124,7 +143,7 @@ If no product images or photos are found on this page, return exactly: []`;
     for (const box of sorted) {
       const [yMin, xMin, yMax, xMax] = box.box;
       const boxArea = (yMax - yMin) * (xMax - xMin);
-      const overlaps = deduped.some(k => {
+      const overlaps = deduped.some((k) => {
         const [kyMin, kxMin, kyMax, kxMax] = k.box;
         const kArea = (kyMax - kyMin) * (kxMax - kxMin);
         const interY = Math.max(0, Math.min(yMax, kyMax) - Math.max(yMin, kyMin));
@@ -132,7 +151,7 @@ If no product images or photos are found on this page, return exactly: []`;
         const interArea = interY * interX;
         const unionArea = boxArea + kArea - interArea;
         const iou = unionArea > 0 ? interArea / unionArea : 0;
-        return iou > 0.40; // 40% overlap → treat as duplicate
+        return iou > 0.4; // 40% overlap → treat as duplicate
       });
       if (!overlaps) deduped.push(box);
     }
@@ -196,7 +215,10 @@ function cropImageRegions(imageDataUrl: string, boxes: ImageBoundingBox[]): Prom
  * Called lazily at render time when upload-time cropping was skipped or returned empty.
  * Does NOT affect the main extractPDFContent upload flow.
  */
-export async function cropReferencePageImage(imageDataUrl: string, pageNumber: number): Promise<string[]> {
+export async function cropReferencePageImage(
+  imageDataUrl: string,
+  pageNumber: number,
+): Promise<string[]> {
   const boxes = await detectImageRegions(imageDataUrl, pageNumber);
   if (boxes.length === 0) return [];
   return cropImageRegions(imageDataUrl, boxes);
@@ -214,15 +236,21 @@ export function cropPageStrippingHeaderFooter(imageDataUrl: string): Promise<str
     img.onload = () => {
       const w = img.naturalWidth;
       const h = img.naturalHeight;
-      const topCut = Math.round(h * 0.18);   // strip top 18% (heading + whitespace)
+      const topCut = Math.round(h * 0.18); // strip top 18% (heading + whitespace)
       const bottomCut = Math.round(h * 0.08); // strip bottom 8% (footer/nav buttons)
       const newH = h - topCut - bottomCut;
-      if (newH < 50) { resolve(imageDataUrl); return; }
+      if (newH < 50) {
+        resolve(imageDataUrl);
+        return;
+      }
       const canvas = document.createElement('canvas');
       canvas.width = w;
       canvas.height = newH;
       const ctx = canvas.getContext('2d');
-      if (!ctx) { resolve(imageDataUrl); return; }
+      if (!ctx) {
+        resolve(imageDataUrl);
+        return;
+      }
       ctx.drawImage(img, 0, topCut, w, newH, 0, 0, w, newH);
       resolve(canvas.toDataURL('image/jpeg', 0.85));
     };
@@ -249,7 +277,10 @@ export function cropSpecDiagram(imageDataUrl: string): Promise<string> {
       scanCanvas.width = w;
       scanCanvas.height = h;
       const scanCtx = scanCanvas.getContext('2d');
-      if (!scanCtx) { resolve(imageDataUrl); return; }
+      if (!scanCtx) {
+        resolve(imageDataUrl);
+        return;
+      }
       scanCtx.drawImage(img, 0, 0, w, h);
       const pixels = scanCtx.getImageData(0, 0, w, h).data;
 
@@ -281,10 +312,16 @@ export function cropSpecDiagram(imageDataUrl: string): Promise<string> {
       let contentBottom = -1;
 
       for (let y = scanStart; y < scanEnd; y++) {
-        if (rowHasContent(y)) { contentTop = y; break; }
+        if (rowHasContent(y)) {
+          contentTop = y;
+          break;
+        }
       }
       for (let y = scanEnd; y >= scanStart; y--) {
-        if (rowHasContent(y)) { contentBottom = y; break; }
+        if (rowHasContent(y)) {
+          contentBottom = y;
+          break;
+        }
       }
 
       // Fallback to fixed crop if scan found nothing
@@ -292,12 +329,18 @@ export function cropSpecDiagram(imageDataUrl: string): Promise<string> {
         const topCut = Math.round(h * 0.38);
         const bottomCut = Math.round(h * 0.05);
         const newH = h - topCut - bottomCut;
-        if (newH < 50) { resolve(imageDataUrl); return; }
+        if (newH < 50) {
+          resolve(imageDataUrl);
+          return;
+        }
         const fallbackCanvas = document.createElement('canvas');
         fallbackCanvas.width = w;
         fallbackCanvas.height = newH;
         const fc = fallbackCanvas.getContext('2d');
-        if (!fc) { resolve(imageDataUrl); return; }
+        if (!fc) {
+          resolve(imageDataUrl);
+          return;
+        }
         fc.drawImage(img, 0, topCut, w, newH, 0, 0, w, newH);
         resolve(fallbackCanvas.toDataURL('image/jpeg', 0.85));
         return;
@@ -309,13 +352,19 @@ export function cropSpecDiagram(imageDataUrl: string): Promise<string> {
       const cropBottom = Math.min(h, contentBottom + pad);
       const cropH = cropBottom - cropTop;
 
-      if (cropH < 50) { resolve(imageDataUrl); return; }
+      if (cropH < 50) {
+        resolve(imageDataUrl);
+        return;
+      }
 
       const outCanvas = document.createElement('canvas');
       outCanvas.width = w;
       outCanvas.height = cropH;
       const outCtx = outCanvas.getContext('2d');
-      if (!outCtx) { resolve(imageDataUrl); return; }
+      if (!outCtx) {
+        resolve(imageDataUrl);
+        return;
+      }
       outCtx.drawImage(img, 0, cropTop, w, cropH, 0, 0, w, cropH);
       resolve(outCanvas.toDataURL('image/jpeg', 0.85));
     };
@@ -342,7 +391,10 @@ export function cropPageHalf(imageDataUrl: string, half: 'top' | 'bottom'): Prom
       canvas.width = w;
       canvas.height = halfH;
       const ctx = canvas.getContext('2d');
-      if (!ctx) { resolve(imageDataUrl); return; }
+      if (!ctx) {
+        resolve(imageDataUrl);
+        return;
+      }
       ctx.drawImage(img, 0, sy, w, halfH, 0, 0, w, halfH);
       resolve(canvas.toDataURL('image/jpeg', 0.85));
     };
@@ -364,12 +416,18 @@ export function cropSpecAboveReference(imageDataUrl: string): Promise<string> {
       const w = img.naturalWidth;
       const h = img.naturalHeight;
       const cropH = Math.round(h * 0.55);
-      if (cropH < 50) { resolve(imageDataUrl); return; }
+      if (cropH < 50) {
+        resolve(imageDataUrl);
+        return;
+      }
       const canvas = document.createElement('canvas');
       canvas.width = w;
       canvas.height = cropH;
       const ctx = canvas.getContext('2d');
-      if (!ctx) { resolve(imageDataUrl); return; }
+      if (!ctx) {
+        resolve(imageDataUrl);
+        return;
+      }
       ctx.drawImage(img, 0, 0, w, cropH, 0, 0, w, cropH);
       resolve(canvas.toDataURL('image/jpeg', 0.85));
     };
@@ -391,12 +449,18 @@ export function cropPageFromPercent(imageDataUrl: string, fromTopPercent: number
       const h = img.naturalHeight;
       const sy = Math.round(h * fromTopPercent);
       const newH = h - sy;
-      if (newH < 50) { resolve(imageDataUrl); return; }
+      if (newH < 50) {
+        resolve(imageDataUrl);
+        return;
+      }
       const canvas = document.createElement('canvas');
       canvas.width = w;
       canvas.height = newH;
       const ctx = canvas.getContext('2d');
-      if (!ctx) { resolve(imageDataUrl); return; }
+      if (!ctx) {
+        resolve(imageDataUrl);
+        return;
+      }
       ctx.drawImage(img, 0, sy, w, newH, 0, 0, w, newH);
       resolve(canvas.toDataURL('image/jpeg', 0.85));
     };
@@ -419,7 +483,9 @@ export interface GeminiReviewData {
  * Uses Gemini Vision to OCR the customer review card embedded as an image inside a PDF page.
  * Only called when pdfjs text extraction could not find reviewer name / review body.
  */
-export async function extractReviewViaGemini(imageDataUrl: string): Promise<GeminiReviewData | null> {
+export async function extractReviewViaGemini(
+  imageDataUrl: string,
+): Promise<GeminiReviewData | null> {
   try {
     const apiKey = import.meta.env.VITE_GEMINI_API_KEY;
     if (!apiKey || apiKey.trim() === '') return null;
@@ -443,7 +509,7 @@ If you cannot find any review content, return exactly: null`;
 
     const result = await model.generateContent([
       prompt,
-      { inlineData: { mimeType: 'image/jpeg', data: base64Data } }
+      { inlineData: { mimeType: 'image/jpeg', data: base64Data } },
     ]);
 
     const response = await result.response;
@@ -482,16 +548,25 @@ export interface PDFExtractionResult {
   pageImages: ExtractedPage[];
 }
 
-export const extractPDFContent = async (file: File, maxImagePages?: number): Promise<PDFExtractionResult> => {
+export const extractPDFContent = async (
+  file: File,
+  maxImagePages?: number,
+): Promise<PDFExtractionResult> => {
   try {
-    logger.info('Starting PDF extraction for:', file.name, maxImagePages ? `(images: smart-select from first ${maxImagePages} pages or reference pages)` : '');
+    logger.info(
+      'Starting PDF extraction for:',
+      file.name,
+      maxImagePages
+        ? `(images: smart-select from first ${maxImagePages} pages or reference pages)`
+        : '',
+    );
     const arrayBuffer = await file.arrayBuffer();
     logger.info('ArrayBuffer loaded, size:', arrayBuffer.byteLength);
-    
+
     const pdf = await pdfjsLib.getDocument({ data: arrayBuffer }).promise;
     const pageCount = pdf.numPages;
     logger.info('PDF loaded successfully, pages:', pageCount);
-    
+
     let textContent = '';
     const images: string[] = [];
     const pageImages: ExtractedPage[] = [];
@@ -508,11 +583,13 @@ export const extractPDFContent = async (file: File, maxImagePages?: number): Pro
         continue;
       }
 
-      const sortedItems = [...items].filter(item => item.str && item.str.trim()).sort((a, b) => {
-        const yDiff = b.transform[5] - a.transform[5];
-        if (Math.abs(yDiff) > 5) return yDiff;
-        return a.transform[4] - b.transform[4];
-      });
+      const sortedItems = [...items]
+        .filter((item) => item.str && item.str.trim())
+        .sort((a, b) => {
+          const yDiff = b.transform[5] - a.transform[5];
+          if (Math.abs(yDiff) > 5) return yDiff;
+          return a.transform[4] - b.transform[4];
+        });
 
       let pageText = '';
       let lastY = -1;
@@ -521,7 +598,8 @@ export const extractPDFContent = async (file: File, maxImagePages?: number): Pro
         if (lastY !== -1 && Math.abs(currentY - lastY) > 5) {
           pageText += '\n';
         } else if (lastY !== -1) {
-          const gap = item.transform[4] - (sortedItems[sortedItems.indexOf(item) - 1]?.transform[4] || 0);
+          const gap =
+            item.transform[4] - (sortedItems[sortedItems.indexOf(item) - 1]?.transform[4] || 0);
           pageText += gap > 50 ? '\t|\t' : ' ';
         }
         pageText += item.str;
@@ -557,40 +635,50 @@ export const extractPDFContent = async (file: File, maxImagePages?: number): Pro
 
     const finalText = textContent.trim();
     logger.info('PDF extraction complete. Total text length:', finalText.length);
-    
+
     if (finalText.length === 0) {
       logger.warn('WARNING: PDF text extraction resulted in empty content');
-      throw new Error('PDF appears to be empty or contains only images. Please use a PDF with selectable text.');
+      throw new Error(
+        'PDF appears to be empty or contains only images. Please use a PDF with selectable text.',
+      );
     }
 
     // Auto-crop reference images using Gemini Vision
     try {
-      const pagesToCrop = pageImages.filter(p => shouldAttemptCropping(p.text));
+      const pagesToCrop = pageImages.filter((p) => shouldAttemptCropping(p.text));
       if (pagesToCrop.length > 0) {
-        logger.info(`🔍 Auto-cropping ${pagesToCrop.length} of ${pageImages.length} pages using Gemini Vision...`);
+        logger.info(
+          `🔍 Auto-cropping ${pagesToCrop.length} of ${pageImages.length} pages using Gemini Vision...`,
+        );
 
         for (let i = 0; i < pagesToCrop.length; i += 3) {
           const chunk = pagesToCrop.slice(i, i + 3);
-          await Promise.all(chunk.map(async (page) => {
-            const boxes = await detectImageRegions(page.imageDataUrl, page.pageNumber);
-            if (boxes.length > 0) {
-              logger.info(`✅ Page ${page.pageNumber}: Detected ${boxes.length} image regions`);
-              const cropped = await cropImageRegions(page.imageDataUrl, boxes);
-              if (cropped.length > 0) {
-                page.croppedImages = cropped;
-                logger.info(`✅ Page ${page.pageNumber}: Cropped ${cropped.length} images successfully`);
+          await Promise.all(
+            chunk.map(async (page) => {
+              const boxes = await detectImageRegions(page.imageDataUrl, page.pageNumber);
+              if (boxes.length > 0) {
+                logger.info(`✅ Page ${page.pageNumber}: Detected ${boxes.length} image regions`);
+                const cropped = await cropImageRegions(page.imageDataUrl, boxes);
+                if (cropped.length > 0) {
+                  page.croppedImages = cropped;
+                  logger.info(
+                    `✅ Page ${page.pageNumber}: Cropped ${cropped.length} images successfully`,
+                  );
+                }
+              } else {
+                logger.info(`ℹ️ Page ${page.pageNumber}: No product images detected`);
               }
-            } else {
-              logger.info(`ℹ️ Page ${page.pageNumber}: No product images detected`);
-            }
-          }));
+            }),
+          );
 
           if (i + 3 < pagesToCrop.length) {
-            await new Promise(resolve => setTimeout(resolve, 1000));
+            await new Promise((resolve) => setTimeout(resolve, 1000));
           }
         }
 
-        const croppedCount = pageImages.filter(p => p.croppedImages && p.croppedImages.length > 0).length;
+        const croppedCount = pageImages.filter(
+          (p) => p.croppedImages && p.croppedImages.length > 0,
+        ).length;
         logger.info(`🎯 Auto-crop complete: ${croppedCount} pages have cropped images`);
       }
     } catch (err) {

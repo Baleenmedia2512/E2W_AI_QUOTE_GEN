@@ -92,21 +92,19 @@ export const companyService = {
         return true;
       } else {
         // Insert new record
-        const { error } = await supabase
-          .from('company_settings')
-          .insert({
-            name: companyInfo.name,
-            address: companyInfo.address,
-            gst: companyInfo.gst,
-            abn: companyInfo.abn,
-            phone: companyInfo.phone,
-            email: companyInfo.email,
-            logo: companyInfo.logo,
-            website: companyInfo.website,
-            signature: companyInfo.signature,
-            designation: companyInfo.designation,
-            is_active: true,
-          });
+        const { error } = await supabase.from('company_settings').insert({
+          name: companyInfo.name,
+          address: companyInfo.address,
+          gst: companyInfo.gst,
+          abn: companyInfo.abn,
+          phone: companyInfo.phone,
+          email: companyInfo.email,
+          logo: companyInfo.logo,
+          website: companyInfo.website,
+          signature: companyInfo.signature,
+          designation: companyInfo.designation,
+          is_active: true,
+        });
 
         if (error) {
           logger.warn('⚠️ Database insert failed, using localStorage only:', error.message);
@@ -139,7 +137,7 @@ export const companyService = {
         (payload) => {
           logger.info('🔄 Company settings updated:', payload);
           const data = payload.new as any;
-          
+
           if (data && data.is_active) {
             const companyInfo: CompanyInfo = {
               name: data.name || '',
@@ -155,7 +153,7 @@ export const companyService = {
             };
             callback(companyInfo);
           }
-        }
+        },
       )
       .subscribe();
 

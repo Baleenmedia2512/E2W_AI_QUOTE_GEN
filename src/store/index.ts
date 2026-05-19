@@ -10,7 +10,17 @@ import {
   downloadProposalFile,
   cloudProposalToStored,
 } from '../services/supabaseProposalService';
-import { AppState, ProposalData, Message, Quote, CompanyInfo, ClientInfo, TemplateType, StoredProposal, ActiveProposal } from '../types';
+import {
+  AppState,
+  ProposalData,
+  Message,
+  Quote,
+  CompanyInfo,
+  ClientInfo,
+  TemplateType,
+  StoredProposal,
+  ActiveProposal,
+} from '../types';
 import {
   savePageImages as savePageImagesToDB,
   clearPageImages,
@@ -22,7 +32,10 @@ import {
   saveActiveProposalMeta,
   loadActiveProposalMeta,
 } from '../utils/imageStorage';
-import { loadCompanyInfo, saveCompanyInfo as saveCompanyInfoToStorage } from '../utils/localStorage';
+import {
+  loadCompanyInfo,
+  saveCompanyInfo as saveCompanyInfoToStorage,
+} from '../utils/localStorage';
 import { extractPDFContent } from '../utils/pdfUtils';
 import {
   loadRecentProposals as loadProposalsFromDB,
@@ -50,7 +63,10 @@ const initialProposalState: ProposalData = {
 const loadSelectedTemplate = (): TemplateType => {
   try {
     const saved = localStorage.getItem('selectedTemplate');
-    if (saved && ['corporate-minimal', 'premium-agency', 'modern-sales', 'classic-business'].includes(saved)) {
+    if (
+      saved &&
+      ['corporate-minimal', 'premium-agency', 'modern-sales', 'classic-business'].includes(saved)
+    ) {
       return saved as TemplateType;
     }
   } catch (error) {
@@ -99,7 +115,7 @@ export const useAppStore = create<AppState>((set) => ({
       if (proposal.pageImages) {
         savePageImagesToDB(proposal.pageImages);
       }
-      
+
       // CLOUD-ONLY AUTO-SAVE: Save to cloud if available, fallback to local IndexedDB
       if (proposal.file && proposal.textContent && proposal.fileName) {
         const fullProposal = { ...state.proposal, ...proposal };
@@ -114,15 +130,15 @@ export const useAppStore = create<AppState>((set) => ({
                 const authState = useAuthStore.getState();
                 const userId = authState.user?.id;
                 const userName = authState.user?.full_name;
-                
+
                 const result = await uploadProposalToCloud(
                   fullProposal.file!,
                   fullProposal.textContent,
                   fullProposal.pageCount,
                   userId,
-                  userName
+                  userName,
                 );
-                
+
                 if (result.success && result.proposal) {
                   logger.info('☁️ Proposal uploaded to cloud successfully:', result.proposal.id);
                 } else {
@@ -131,7 +147,7 @@ export const useAppStore = create<AppState>((set) => ({
               } catch (cloudError) {
                 logger.warn('⚠️ Cloud upload failed:', cloudError);
               }
-              
+
               // Reload recent proposals from cloud
               const currentState = useAppStore.getState();
               await currentState.loadRecentProposals();
@@ -148,19 +164,21 @@ export const useAppStore = create<AppState>((set) => ({
               extractedImages: fullProposal.extractedImages,
               pageImages: fullProposal.pageImages,
               uploadedAt: fullProposal.uploadedAt || new Date(),
-            }).then(async (localId) => {
-              logger.info('💾 Auto-saved proposal to IndexedDB:', localId);
-              
-              // Reload recent proposals from local
-              const currentState = useAppStore.getState();
-              await currentState.loadRecentProposals();
-            }).catch((err) => {
-              logger.warn('⚠️ Failed to auto-save proposal:', err);
-            });
+            })
+              .then(async (localId) => {
+                logger.info('💾 Auto-saved proposal to IndexedDB:', localId);
+
+                // Reload recent proposals from local
+                const currentState = useAppStore.getState();
+                await currentState.loadRecentProposals();
+              })
+              .catch((err) => {
+                logger.warn('⚠️ Failed to auto-save proposal:', err);
+              });
           }
         }
       }
-      
+
       return { proposal: { ...state.proposal, ...proposal } };
     }),
   resetProposal: () => {
@@ -213,7 +231,7 @@ export const useAppStore = create<AppState>((set) => ({
       logger.error('Failed to save company info to localStorage:', error);
     }
     // Also persist to database (syncs across devices)
-    companyService.saveCompanySettings(info).catch(err => {
+    companyService.saveCompanySettings(info).catch((err) => {
       logger.warn('Database sync failed, localStorage still working:', err);
     });
   },
@@ -245,17 +263,16 @@ export const useAppStore = create<AppState>((set) => ({
     return subscription;
   },
 
-
   // Proposal Library state (NEW - purely additive, doesn't affect existing code)
   recentProposals: [],
-  
+
   loadRecentProposals: async () => {
     try {
       // Check if cloud storage is available first
       const state = useAppStore.getState();
       let cloudProposals: StoredProposal[] = [];
       let useCloudOnly = false;
-      
+
       if (state.cloudStorageEnabled) {
         try {
           const rawCloudProposals = await loadAllProposalsFromCloud();
@@ -267,21 +284,25 @@ export const useAppStore = create<AppState>((set) => ({
           useCloudOnly = false;
         }
       }
-      
+
       let finalProposals: StoredProposal[];
-      
+
       if (useCloudOnly) {
         // Use ONLY cloud proposals when cloud is available
-        finalProposals = cloudProposals.sort((a, b) => b.uploadedAt.getTime() - a.uploadedAt.getTime());
+        finalProposals = cloudProposals.sort(
+          (a, b) => b.uploadedAt.getTime() - a.uploadedAt.getTime(),
+        );
         logger.info(`📚 Showing ${finalProposals.length} cloud proposals only`);
       } else {
         // Fall back to local proposals if cloud is unavailable
         const localProposals = await loadProposalsFromDB();
         logger.info(`💾 Loaded ${localProposals.length} local proposals from IndexedDB`);
-        finalProposals = localProposals.sort((a, b) => b.uploadedAt.getTime() - a.uploadedAt.getTime());
+        finalProposals = localProposals.sort(
+          (a, b) => b.uploadedAt.getTime() - a.uploadedAt.getTime(),
+        );
         logger.info(`📚 Showing ${finalProposals.length} local proposals (cloud unavailable)`);
       }
-      
+
       set({ recentProposals: finalProposals });
     } catch (error) {
       logger.error('Failed to load recent proposals:', error);
@@ -294,13 +315,13 @@ export const useAppStore = create<AppState>((set) => ({
       // HYBRID APPROACH: Try loading from IndexedDB first, then cloud if not found
       let storedProposal = await loadProposalById(id);
       let fileBlob: Blob | null = null;
-      
+
       if (!storedProposal) {
         // Not in IndexedDB, try downloading from cloud
         logger.info('💾 Proposal not found locally, checking cloud...');
         const state = useAppStore.getState();
-        const cloudProposal = state.recentProposals.find(p => p.id === id && p.isCloudStored);
-        
+        const cloudProposal = state.recentProposals.find((p) => p.id === id && p.isCloudStored);
+
         if (cloudProposal && cloudProposal.storagePath) {
           try {
             fileBlob = await downloadProposalFile(cloudProposal.storagePath);
@@ -315,15 +336,15 @@ export const useAppStore = create<AppState>((set) => ({
           return;
         }
       }
-      
+
       // Get file blob (either from IndexedDB or downloaded from cloud)
       if (!fileBlob && !storedProposal.fileBlob) {
         logger.error('No file blob available for proposal');
         return;
       }
-      
+
       const blob = fileBlob || storedProposal.fileBlob!;
-      
+
       // Convert Blob back to File
       const file = new File([blob], storedProposal.fileName, {
         type: storedProposal.fileType,
@@ -332,7 +353,7 @@ export const useAppStore = create<AppState>((set) => ({
       // If downloaded from cloud, extract PDF content to get page images
       let pageImages = storedProposal.pageImages;
       let extractedImages = storedProposal.extractedImages;
-      
+
       if (fileBlob && storedProposal.fileType === 'application/pdf') {
         logger.info('📄 Extracting images from cloud PDF...');
         try {
@@ -363,7 +384,7 @@ export const useAppStore = create<AppState>((set) => ({
       };
 
       set({ proposal: proposalData });
-      
+
       // Save page images for viewer
       if (pageImages && pageImages.length > 0) {
         savePageImagesToDB(pageImages);
@@ -380,8 +401,8 @@ export const useAppStore = create<AppState>((set) => ({
     try {
       // HYBRID APPROACH: Delete from both local and cloud if applicable
       const state = useAppStore.getState();
-      const proposal = state.recentProposals.find(p => p.id === id);
-      
+      const proposal = state.recentProposals.find((p) => p.id === id);
+
       // Delete from local IndexedDB (if exists locally)
       try {
         await deleteProposalFromDB(id);
@@ -389,7 +410,7 @@ export const useAppStore = create<AppState>((set) => ({
       } catch (error) {
         logger.warn('⚠️ Not in local storage or already deleted:', error);
       }
-      
+
       // Delete from cloud if it's a cloud-stored proposal
       if (proposal?.isCloudStored && proposal.storagePath && state.cloudStorageEnabled) {
         try {
@@ -402,7 +423,7 @@ export const useAppStore = create<AppState>((set) => ({
           // Continue even if cloud delete fails
         }
       }
-      
+
       // Reload recent proposals after deletion (will merge local + cloud)
       await state.loadRecentProposals();
       logger.info('✅ Deleted proposal and refreshed library');
@@ -457,13 +478,13 @@ export const useAppStore = create<AppState>((set) => ({
     try {
       const state = useAppStore.getState();
       // Already in active list → no-op
-      if (state.activeProposals.find(p => p.id === id)) return;
+      if (state.activeProposals.find((p) => p.id === id)) return;
 
       let storedProposal = await loadProposalById(id);
       let fileBlob: Blob | null = null;
 
       if (!storedProposal) {
-        const cloudProposal = state.recentProposals.find(p => p.id === id && p.isCloudStored);
+        const cloudProposal = state.recentProposals.find((p) => p.id === id && p.isCloudStored);
         if (cloudProposal && cloudProposal.storagePath) {
           try {
             fileBlob = await downloadProposalFile(cloudProposal.storagePath);
@@ -488,11 +509,15 @@ export const useAppStore = create<AppState>((set) => ({
 
       if (fileBlob && storedProposal.fileType === 'application/pdf') {
         try {
-          logger.info(`🖼️ Extracting images for "${storedProposal.fileName}" (${storedProposal.pageCount} pages, limit: 10)...`);
+          logger.info(
+            `🖼️ Extracting images for "${storedProposal.fileName}" (${storedProposal.pageCount} pages, limit: 10)...`,
+          );
           const pdfResult = await extractPDFContent(file, 10);
           pageImages = pdfResult.pageImages;
           extractedImages = pdfResult.images;
-          logger.info(`✅ "${storedProposal.fileName}": extracted ${pageImages?.length || 0} page images`);
+          logger.info(
+            `✅ "${storedProposal.fileName}": extracted ${pageImages?.length || 0} page images`,
+          );
         } catch (error) {
           logger.warn('⚠️ Failed to extract images for active proposal:', error);
         }
@@ -518,7 +543,12 @@ export const useAppStore = create<AppState>((set) => ({
       };
 
       // Deduplicate: replace any existing entry with same id, then append
-      set(state => ({ activeProposals: [...state.activeProposals.filter(p => p.id !== activeProposal.id), activeProposal] }));
+      set((state) => ({
+        activeProposals: [
+          ...state.activeProposals.filter((p) => p.id !== activeProposal.id),
+          activeProposal,
+        ],
+      }));
 
       // Persist pages by proposalId (no overwrite of other PDFs)
       if (stampedPageImages.length > 0) {
@@ -527,16 +557,23 @@ export const useAppStore = create<AppState>((set) => ({
 
       // Persist active IDs list + metadata to localStorage so refresh restores them
       const updatedProposals = useAppStore.getState().activeProposals;
-      saveActiveProposalIds(updatedProposals.map(p => p.id));
-      saveActiveProposalMeta(updatedProposals.map(p => ({
-        id: p.id,
-        fileName: p.fileName,
-        fileType: p.fileType,
-        pageCount: p.pageCount,
-        textContent: p.textContent,
-      })));
+      saveActiveProposalIds(updatedProposals.map((p) => p.id));
+      saveActiveProposalMeta(
+        updatedProposals.map((p) => ({
+          id: p.id,
+          fileName: p.fileName,
+          fileType: p.fileType,
+          pageCount: p.pageCount,
+          textContent: p.textContent,
+        })),
+      );
 
-      logger.info(`📦 activeProposals now: ${useAppStore.getState().activeProposals.map(p => `${p.fileName}(${p.pageImages.length}imgs)`).join(', ')}`);
+      logger.info(
+        `📦 activeProposals now: ${useAppStore
+          .getState()
+          .activeProposals.map((p) => `${p.fileName}(${p.pageImages.length}imgs)`)
+          .join(', ')}`,
+      );
 
       // Also update the single proposal state for backward compatibility
       set({
@@ -550,7 +587,7 @@ export const useAppStore = create<AppState>((set) => ({
           extractedImages,
           pageImages: stampedPageImages,
           uploadedAt: storedProposal.uploadedAt,
-        }
+        },
       });
       logger.info('✅ Added to active proposals:', storedProposal.fileName);
     } catch (error) {
@@ -560,21 +597,23 @@ export const useAppStore = create<AppState>((set) => ({
 
   removeActiveProposal: (id: string) => {
     // Remove from memory
-    set(state => ({
-      activeProposals: state.activeProposals.filter(p => p.id !== id),
+    set((state) => ({
+      activeProposals: state.activeProposals.filter((p) => p.id !== id),
     }));
     // Clear that PDF's IndexedDB entry
     clearPageImagesById(id);
     // Update persisted ID list and metadata
     const updatedProposals = useAppStore.getState().activeProposals;
-    saveActiveProposalIds(updatedProposals.map(p => p.id));
-    saveActiveProposalMeta(updatedProposals.map(p => ({
-      id: p.id,
-      fileName: p.fileName,
-      fileType: p.fileType,
-      pageCount: p.pageCount,
-      textContent: p.textContent,
-    })));
+    saveActiveProposalIds(updatedProposals.map((p) => p.id));
+    saveActiveProposalMeta(
+      updatedProposals.map((p) => ({
+        id: p.id,
+        fileName: p.fileName,
+        fileType: p.fileType,
+        pageCount: p.pageCount,
+        textContent: p.textContent,
+      })),
+    );
     logger.info(`🗑️ Removed active proposal ${id}. Remaining: ${updatedProposals.length}`);
   },
 
@@ -589,7 +628,7 @@ export const useAppStore = create<AppState>((set) => ({
 
       for (const id of savedIds) {
         // Skip if already in memory
-        if (state.activeProposals.find(p => p.id === id)) continue;
+        if (state.activeProposals.find((p) => p.id === id)) continue;
 
         // Load pages from IndexedDB by ID
         const pages = await loadPageImagesById(id);
@@ -599,8 +638,8 @@ export const useAppStore = create<AppState>((set) => ({
         }
 
         // Get metadata: first try recentProposals, then fall back to saved meta
-        const recentMeta = useAppStore.getState().recentProposals.find(p => p.id === id);
-        const savedMeta = loadActiveProposalMeta().find(m => m.id === id);
+        const recentMeta = useAppStore.getState().recentProposals.find((p) => p.id === id);
+        const savedMeta = loadActiveProposalMeta().find((m) => m.id === id);
         const meta = recentMeta || savedMeta;
         if (!meta) {
           logger.warn(`⚠️ No metadata for proposal ${id}, skipping restore`);
@@ -620,10 +659,10 @@ export const useAppStore = create<AppState>((set) => ({
       }
 
       if (restoredProposals.length > 0) {
-        set(state => ({
+        set((state) => ({
           activeProposals: [
             ...state.activeProposals,
-            ...restoredProposals.filter(r => !state.activeProposals.find(p => p.id === r.id)),
+            ...restoredProposals.filter((r) => !state.activeProposals.find((p) => p.id === r.id)),
           ],
         }));
         logger.info(`📦 Restored ${restoredProposals.length} active proposals`);

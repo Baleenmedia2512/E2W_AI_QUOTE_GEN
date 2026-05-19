@@ -5,7 +5,7 @@ export const registerServiceWorker = async (): Promise<void> => {
   if ('serviceWorker' in navigator) {
     try {
       const registration = await navigator.serviceWorker.register('/service-worker.js', {
-        scope: '/'
+        scope: '/',
       });
 
       logger.info('✅ Service Worker registered successfully:', registration);
@@ -19,13 +19,13 @@ export const registerServiceWorker = async (): Promise<void> => {
       // Handle updates - DISABLED to prevent notifications
       // registration.addEventListener('updatefound', () => {
       //   const newWorker = registration.installing;
-      //   
+      //
       //   if (newWorker) {
       //     newWorker.addEventListener('statechange', () => {
       //       if (newWorker.state === 'installed' && navigator.serviceWorker.controller) {
       //         // New service worker available
       //         logger.info('🔄 New version available!');
-      //         
+      //
       //         // Show update notification
       //         showUpdateNotification(() => {
       //           // Tell new service worker to skip waiting
@@ -40,7 +40,7 @@ export const registerServiceWorker = async (): Promise<void> => {
       // navigator.serviceWorker.addEventListener('message', (event) => {
       //   if (event.data && event.data.type === 'SW_ACTIVATED') {
       //     logger.info(`✅ Service Worker activated (v${event.data.version})`);
-      //     
+      //
       //     // Show success notification
       //     const notification = document.createElement('div');
       //     notification.style.cssText = `
@@ -57,7 +57,7 @@ export const registerServiceWorker = async (): Promise<void> => {
       //     `;
       //     notification.textContent = `✅ Updated to v${event.data.version}`;
       //     document.body.appendChild(notification);
-      //     
+      //
       //     setTimeout(() => notification.remove(), 3000);
       //   }
       // });
@@ -91,7 +91,7 @@ const _showUpdateNotification = (onUpdate: () => void): void => {
     max-width: 350px;
     animation: slideIn 0.3s ease-out;
   `;
-  
+
   notification.innerHTML = `
     <div style="display: flex; align-items: center; gap: 12px;">
       <div style="font-size: 24px;">🔄</div>
@@ -122,7 +122,7 @@ const _showUpdateNotification = (onUpdate: () => void): void => {
       ">Later</button>
     </div>
   `;
-  
+
   // Add animation
   const style = document.createElement('style');
   style.textContent = `
@@ -138,9 +138,9 @@ const _showUpdateNotification = (onUpdate: () => void): void => {
     }
   `;
   document.head.appendChild(style);
-  
+
   document.body.appendChild(notification);
-  
+
   // Handle update button
   document.getElementById('update-now-btn')?.addEventListener('click', () => {
     onUpdate();
@@ -157,12 +157,12 @@ const _showUpdateNotification = (onUpdate: () => void): void => {
     document.body.appendChild(loading);
     setTimeout(() => window.location.reload(), 500);
   });
-  
+
   // Handle later button
   document.getElementById('update-later-btn')?.addEventListener('click', () => {
     notification.remove();
   });
-  
+
   // Auto-dismiss after 30 seconds
   setTimeout(() => {
     if (document.body.contains(notification)) {
@@ -188,8 +188,10 @@ export const unregisterServiceWorker = async (): Promise<void> => {
 
 // Check if app is installed as PWA
 export const isPWA = (): boolean => {
-  return window.matchMedia('(display-mode: standalone)').matches ||
-         (window.navigator as any).standalone === true;
+  return (
+    window.matchMedia('(display-mode: standalone)').matches ||
+    (window.navigator as any).standalone === true
+  );
 };
 
 // Prompt user to install PWA
@@ -202,7 +204,7 @@ export const promptInstall = (): void => {
 
     // Show install button or prompt
     logger.info('PWA install prompt available');
-    
+
     // You can trigger this from a button click
     const installButton = document.getElementById('pwa-install-button');
     if (installButton) {
@@ -239,15 +241,21 @@ export const requestPersistentStorage = async (): Promise<boolean> => {
 };
 
 // Check storage quota
-export const checkStorageQuota = async (): Promise<{ usage: number; quota: number; percentage: number }> => {
+export const checkStorageQuota = async (): Promise<{
+  usage: number;
+  quota: number;
+  percentage: number;
+}> => {
   if (navigator.storage && navigator.storage.estimate) {
     const estimate = await navigator.storage.estimate();
     const usage = estimate.usage || 0;
     const quota = estimate.quota || 0;
     const percentage = quota > 0 ? (usage / quota) * 100 : 0;
-    
-    logger.info(`Storage used: ${(usage / 1024 / 1024).toFixed(2)} MB of ${(quota / 1024 / 1024).toFixed(2)} MB (${percentage.toFixed(2)}%)`);
-    
+
+    logger.info(
+      `Storage used: ${(usage / 1024 / 1024).toFixed(2)} MB of ${(quota / 1024 / 1024).toFixed(2)} MB (${percentage.toFixed(2)}%)`,
+    );
+
     return { usage, quota, percentage };
   }
   return { usage: 0, quota: 0, percentage: 0 };

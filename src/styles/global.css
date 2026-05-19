@@ -6,15 +6,15 @@
   --safe-area-bottom: env(safe-area-inset-bottom, 0px);
   --safe-area-left: env(safe-area-inset-left, 0px);
   --safe-area-right: env(safe-area-inset-right, 0px);
-  
+
   /* Dynamic viewport height for mobile keyboard handling */
   --visual-viewport-height: 100vh;
-  
+
   /* Modern color variables - Burgundy Theme */
-  --primary-gradient: linear-gradient(135deg, #C91F3D 0%, #A50D29 100%);
-  --primary-color: #C91F3D;
-  --primary-dark: #A50D29;
-  --dark-accent: #1A1D20;
+  --primary-gradient: linear-gradient(135deg, #c91f3d 0%, #a50d29 100%);
+  --primary-color: #c91f3d;
+  --primary-dark: #a50d29;
+  --dark-accent: #1a1d20;
   --dark-bg: #212529;
   --surface-shadow: 0 2px 8px rgba(0, 0, 0, 0.06);
   --hover-shadow: 0 8px 24px rgba(0, 0, 0, 0.12);
@@ -51,7 +51,7 @@ body {
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
   overscroll-behavior-y: none;
-  background: #FFFFFF !important;
+  background: #ffffff !important;
   height: 100%;
   overflow-x: hidden;
   position: fixed;
@@ -63,7 +63,7 @@ body {
   overflow-x: hidden;
   overflow-y: auto;
   height: 100vh;
-  background: #FFFFFF;
+  background: #ffffff;
   padding-bottom: 64px; /* Space for bottom nav on mobile */
 }
 
@@ -93,10 +93,10 @@ body {
 /* Touch-friendly tap targets */
 @media (max-width: 768px) {
   button,
-  [role="button"],
+  [role='button'],
   a,
-  input[type="submit"],
-  input[type="button"] {
+  input[type='submit'],
+  input[type='button'] {
     min-height: 44px;
     min-width: 44px;
   }
@@ -138,7 +138,7 @@ body {
   .preview-toolbar,
   .mobile-actions,
   button,
-  [role="button"] {
+  [role='button'] {
     -webkit-user-select: none;
     user-select: none;
   }
@@ -168,7 +168,7 @@ body {
 
 /* Native-like button press effect */
 button:active,
-[role="button"]:active {
+[role='button']:active {
   transform: scale(0.96);
 }
 
@@ -180,7 +180,7 @@ button:active,
   width: 56px;
   height: 56px;
   border-radius: 28px;
-  background: linear-gradient(135deg, #C91F3D 0%, #A50D29 100%);
+  background: linear-gradient(135deg, #c91f3d 0%, #a50d29 100%);
   box-shadow: 0 8px 24px rgba(201, 31, 61, 0.4);
   z-index: 999;
   transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
@@ -203,7 +203,7 @@ button:active,
 
 /* Dark Accent Cards */
 .dark-card {
-  background: linear-gradient(135deg, #212529 0%, #1A1D20 100%);
+  background: linear-gradient(135deg, #212529 0%, #1a1d20 100%);
   color: white;
   border-radius: 20px;
   padding: 24px;
@@ -211,7 +211,7 @@ button:active,
 }
 
 .dark-card-emphasis {
-  background: #0D0E10;
+  background: #0d0e10;
   color: white;
   border-radius: 20px;
   padding: 32px 24px;
@@ -227,7 +227,7 @@ button:active,
   left: 0;
   right: 0;
   height: 3px;
-  background: linear-gradient(90deg, #C91F3D 0%, #FF6B8A 100%);
+  background: linear-gradient(90deg, #c91f3d 0%, #ff6b8a 100%);
 }
 
 /* Professional stat cards */
@@ -265,14 +265,14 @@ img {
   .react-pdf__Page__textContent {
     display: none !important;
   }
-  
+
   /* Ensure canvas renders properly on mobile */
   .react-pdf__Page__canvas {
     max-width: 100%;
     height: auto !important;
     width: 100% !important;
   }
-  
+
   /* Make PDF page container fit mobile screen */
   .react-pdf__Page {
     max-width: 100%;

@@ -25,7 +25,7 @@ PRICING FORMULA: Rate per 10sec x (ad duration sec / 10) x spots per day x numbe
 GST: 18% extra
 Non-prime time: 10am - 6pm only
 Terms: Ad slots must be booked in advance. Lead time 2 working days after payment and jingle confirmation. Rate varies for prime time.
-  `
+  `,
 };
 // ============================================================
 // END TEMPORARY HARDCODE
@@ -34,7 +34,9 @@ Terms: Ad slots must be booked in advance. Lead time 2 working days after paymen
 const getApiKey = (): string => {
   const apiKey = import.meta.env.VITE_GEMINI_API_KEY;
   if (!apiKey || apiKey.trim() === '') {
-    throw new Error('Gemini API key not configured. Please add VITE_GEMINI_API_KEY to your .env file. Get your key from https://aistudio.google.com/app/apikey');
+    throw new Error(
+      'Gemini API key not configured. Please add VITE_GEMINI_API_KEY to your .env file. Get your key from https://aistudio.google.com/app/apikey',
+    );
   }
   return apiKey.trim();
 };
@@ -43,23 +45,23 @@ const enforceRateLimit = async (): Promise<void> => {
   const now = Date.now();
   const timeSinceLastRequest = now - lastRequestTime;
   if (timeSinceLastRequest < RATE_LIMIT_DELAY) {
-    await new Promise(resolve => setTimeout(resolve, RATE_LIMIT_DELAY - timeSinceLastRequest));
+    await new Promise((resolve) => setTimeout(resolve, RATE_LIMIT_DELAY - timeSinceLastRequest));
   }
   lastRequestTime = Date.now();
 };
 
 /**
  * 🔴 POST-PROCESSING FIX: Validate and correct quote line item descriptions
- * 
+ *
  * Problem: The AI (Gemini) sometimes ignores prompt instructions and generates descriptions
  * without the service type prefix, causing incorrect reference image filtering.
- * 
+ *
  * Example of AI mistake:
  *   ❌ "Rental Price (per Bus month)"  <-- Missing "Bus Semi Branding" prefix
- * 
+ *
  * Expected correct format:
  *   ✅ "Bus Semi Branding - Rental Price (per bus month)"
- * 
+ *
  * This function ensures ALL descriptions start with the full service type name (item title)
  * by checking and prepending the title if missing.
  */
@@ -69,17 +71,17 @@ const validateAndFixQuoteDescriptions = (quoteData: any): any => {
   }
 
   logger.info('🔧 Validating and fixing quote descriptions...');
-  
+
   const fixedItems = quoteData.items.map((item: any) => {
     if (!item.lineItems || !Array.isArray(item.lineItems)) {
       return item;
     }
 
     const serviceTypeName = item.title?.trim() || '';
-    
+
     const fixedLineItems = item.lineItems.map((lineItem: any) => {
       const description = lineItem.description || '';
-      
+
       // Check if description already starts with the service type name,
       // OR already contains it anywhere (e.g. "Chennai - Auto Back Stickers - Display Price").
       // Without the contains-check we'd produce doubled prefixes like
@@ -91,43 +93,43 @@ const validateAndFixQuoteDescriptions = (quoteData: any): any => {
         // Fix: Prepend the service type name
         const fixedDescription = `${serviceTypeName} - ${description}`;
         logger.info(`  ✅ Fixed: "${description}" → "${fixedDescription}"`);
-        
+
         return {
           ...lineItem,
-          description: fixedDescription
+          description: fixedDescription,
         };
       }
-      
+
       // Already correct
       return lineItem;
     });
 
     return {
       ...item,
-      lineItems: fixedLineItems
+      lineItems: fixedLineItems,
     };
   });
 
   return {
     ...quoteData,
-    items: fixedItems
+    items: fixedItems,
   };
 };
 
 /**
  * 🔴 POST-PROCESSING FIX: Clean up Terms & Conditions formatting
- * 
+ *
  * Problem: AI sometimes extracts terms with broken formatting where lines without
  * bullets (orphan lines) appear, causing alignment issues in preview/PDF.
- * 
+ *
  * Example of AI mistake:
  *   ❌ "• GST 18% Extra\n• Prior notice required...\nMaximum 2 visitors allowed"
  *      The "Maximum 2 visitors allowed" line has NO bullet, appears as orphan line
- * 
+ *
  * Expected correct format:
  *   ✅ "• GST 18% Extra\n• Prior notice required...Maximum 2 visitors allowed"
  *      All text merged into proper bullet points
- * 
+ *
  * This function ensures ALL terms are properly bulleted by merging orphan lines
  * with the previous bullet point.
  */
@@ -137,22 +139,22 @@ const cleanupTermsAndConditions = (terms: string): string => {
   }
 
   logger.info('🔧 Cleaning up Terms & Conditions formatting...');
-  
+
   const lines = terms.split('\n');
   const cleanedTerms: string[] = [];
   let currentTerm = '';
-  
+
   for (let line of lines) {
     line = line.trim();
-    
+
     // Skip empty lines
     if (line.length === 0) {
       continue;
     }
-    
+
     // Check if line starts with a bullet point (•, -, *, or number.)
     const hasBullet = isBulletedLine(line);
-    
+
     if (hasBullet) {
       // This is a new bullet point
       if (currentTerm) {
@@ -171,24 +173,23 @@ const cleanupTermsAndConditions = (terms: string): string => {
       }
     }
   }
-  
+
   // Don't forget the last term
   if (currentTerm) {
     cleanedTerms.push(currentTerm);
     logger.info(`  ✅ Term: "${currentTerm.substring(0, 60)}..."`);
   }
-  
+
   const result = cleanedTerms.join('\n');
   logger.info(`🎯 Cleaned ${cleanedTerms.length} terms total`);
-  
+
   return result;
 };
-
 
 export interface SendMessageParams {
   userMessage: string;
   proposalText?: string; // Single document (backward compatibility)
-  proposalTexts?: Array<{fileName: string, content: string}>; // Multi-document support
+  proposalTexts?: Array<{ fileName: string; content: string }>; // Multi-document support
   chatHistory?: Message[];
 }
 
@@ -214,22 +215,22 @@ export interface GeminiResponse {
   isQuoteGeneration: boolean;
   quoteData?: any;
   matchType?: string; // "exact", "multiple", "partial", "none"
-  
+
   // MULTIPLE_MATCH
   isMultipleMatch?: boolean;
   groupedServices?: GroupedServices[];
-  
+
   // PARTIAL_MATCH
   isPartialMatch?: boolean;
   requestedService?: string;
   requestedQuantity?: number;
   closestServices?: ServiceSuggestion[];
   alternativeServices?: ServiceSuggestion[];
-  
+
   // NO_MATCH
   isNoMatch?: boolean;
   allServicesGrouped?: CategoryServices[];
-  
+
   // DEPRECATED (kept for backward compatibility)
   isServiceNotFound?: boolean;
   serviceNotFoundMessage?: string;
@@ -280,15 +281,15 @@ export const sendMessageToGemini = async ({
     // to auto-generate quotes. This ensures consistent, predictable behavior where "40 auto"
     // always shows checkboxes regardless of previous conversation context.
     // Trade-off: Q&A follow-ups may be less contextual, but quote generation is now 100% reliable.
-    
+
     contextPrompt += `USER REQUEST: ${userMessage}`;
 
     logger.info('🔍 Sending to AI:', {
       hasExactMatchHint: userMessage.includes('[EXACT_MATCH_HINT'),
       requestLength: userMessage.length,
-      documentCount: proposalTexts?.length || (proposalText ? 1 : 0)
+      documentCount: proposalTexts?.length || (proposalText ? 1 : 0),
     });
-    
+
     // Debug: Log proposal content preview to see what AI is receiving
     if (proposalTexts && proposalTexts.length > 0) {
       logger.info('📄 Proposal documents sent to AI:');
@@ -308,9 +309,9 @@ export const sendMessageToGemini = async ({
       length: text.length,
       hasJSON: text.includes('{'),
       hasQuoteGenerated: text.includes('quoteGenerated'),
-      hasMultipleMatch: text.includes('multipleMatch')
+      hasMultipleMatch: text.includes('multipleMatch'),
     });
-    
+
     // Debug: Log AI's raw response to see what it actually found
     logger.info('🤖 AI Raw Response (first 1000 chars):', text.substring(0, 1000));
 
@@ -323,19 +324,24 @@ export const sendMessageToGemini = async ({
     try {
       // Look for JSON block in markdown code fence first (most reliable)
       let jsonMatch = text.match(/```json\s*([\s\S]*?)```/);
-      
+
       // If no code fence, try to extract JSON object by finding balanced braces
       if (!jsonMatch) {
         // Find the start of a JSON object containing our expected keys
         // Search for BOTH quoted and unquoted key names (AI sometimes omits quotes)
         const matchKeys = [
-          '"quoteGenerated"', 'quoteGenerated:',
-          '"multipleMatch"', 'multipleMatch:',
-          '"partialMatch"', 'partialMatch:',
-          '"noMatch"', 'noMatch:',
-          '"serviceNotFound"', 'serviceNotFound:' // backward compatibility
+          '"quoteGenerated"',
+          'quoteGenerated:',
+          '"multipleMatch"',
+          'multipleMatch:',
+          '"partialMatch"',
+          'partialMatch:',
+          '"noMatch"',
+          'noMatch:',
+          '"serviceNotFound"',
+          'serviceNotFound:', // backward compatibility
         ];
-        
+
         let keyIdx = -1;
         for (const key of matchKeys) {
           const idx = text.indexOf(key);
@@ -343,14 +349,17 @@ export const sendMessageToGemini = async ({
             keyIdx = idx;
           }
         }
-        
+
         if (keyIdx !== -1) {
           // Search backward from the key to find the opening {
           let braceStart = -1;
           for (let i = keyIdx; i >= 0; i--) {
-            if (text[i] === '{') { braceStart = i; break; }
+            if (text[i] === '{') {
+              braceStart = i;
+              break;
+            }
           }
-          
+
           if (braceStart !== -1) {
             // Count balanced braces from the opening { to find the matching }
             let depth = 0;
@@ -359,38 +368,43 @@ export const sendMessageToGemini = async ({
               if (text[i] === '{') depth++;
               else if (text[i] === '}') {
                 depth--;
-                if (depth === 0) { braceEnd = i; break; }
+                if (depth === 0) {
+                  braceEnd = i;
+                  break;
+                }
               }
             }
-            
+
             if (braceEnd !== -1) {
               jsonMatch = [text.substring(braceStart, braceEnd + 1)] as any;
             }
           }
         }
       }
-      
+
       if (jsonMatch) {
         let jsonStr = jsonMatch[1] || jsonMatch[0];
-        
+
         // Fix: The AI often returns JSON with literal newlines in string values
         // We need to escape them properly for valid JSON parsing
         // This regex finds all string values and escapes newlines/tabs within them
         jsonStr = jsonStr.replace(/"([^"]*(?:\\.[^"]*)*)"/g, (match) => {
           // Don't modify the outer quotes, only escape newlines inside the string
-          return match
-            .replace(/\n/g, '\\n')
-            .replace(/\r/g, '')
-            .replace(/\t/g, '\\t')
-            // Fix invalid escape sequences: backslash followed by any char
-            // that is NOT a valid JSON escape character
-            .replace(/\\(?!["\\/bfnrtu])/g, '\\\\');
+          return (
+            match
+              .replace(/\n/g, '\\n')
+              .replace(/\r/g, '')
+              .replace(/\t/g, '\\t')
+              // Fix invalid escape sequences: backslash followed by any char
+              // that is NOT a valid JSON escape character
+              .replace(/\\(?!["\\/bfnrtu])/g, '\\\\')
+          );
         });
-        
+
         const parsed = JSON.parse(jsonStr);
-        
+
         // Handle 4-tier matching system responses
-        
+
         // 1️⃣ EXACT_MATCH - Quote generated
         if (parsed.quoteGenerated && parsed.items && Array.isArray(parsed.items)) {
           logger.info('✅ AI detected: EXACT_MATCH - Generating quote');
@@ -398,17 +412,17 @@ export const sendMessageToGemini = async ({
           // The AI sometimes ignores instructions and generates descriptions without the service type prefix
           // This ensures EVERY description starts with the full service type name
           let fixedQuoteData = validateAndFixQuoteDescriptions(parsed);
-          
+
           // 🔴 POST-PROCESSING FIX #2: Clean up Terms & Conditions formatting
           // The AI sometimes extracts terms with orphan lines (no bullets), causing alignment issues
           // This merges orphan lines into proper bullet points for consistent display
           if (fixedQuoteData.termsAndConditions) {
             fixedQuoteData = {
               ...fixedQuoteData,
-              termsAndConditions: cleanupTermsAndConditions(fixedQuoteData.termsAndConditions)
+              termsAndConditions: cleanupTermsAndConditions(fixedQuoteData.termsAndConditions),
             };
           }
-          
+
           // Also cleanup item-level terms if present
           if (fixedQuoteData.items) {
             fixedQuoteData = {
@@ -417,47 +431,60 @@ export const sendMessageToGemini = async ({
                 if (item.termsAndConditions) {
                   return {
                     ...item,
-                    termsAndConditions: cleanupTermsAndConditions(item.termsAndConditions)
+                    termsAndConditions: cleanupTermsAndConditions(item.termsAndConditions),
                   };
                 }
                 return item;
-              })
+              }),
             };
           }
-          
+
           // Debug: Log T&C extraction results
           logger.info('📋 T&C Extraction Summary:');
-          logger.info('  - General T&C (top-level):', fixedQuoteData.termsAndConditions ? `✅ ${fixedQuoteData.termsAndConditions.split('\n').length} lines` : '❌ MISSING');
+          logger.info(
+            '  - General T&C (top-level):',
+            fixedQuoteData.termsAndConditions
+              ? `✅ ${fixedQuoteData.termsAndConditions.split('\n').length} lines`
+              : '❌ MISSING',
+          );
           if (fixedQuoteData.items && fixedQuoteData.items.length > 0) {
             fixedQuoteData.items.forEach((item: any, idx: number) => {
               const serviceName = item.title || `Item ${idx + 1}`;
-              logger.info(`  - Service-specific T&C (${serviceName}):`, item.termsAndConditions ? `✅ ${item.termsAndConditions.split('\n').length} lines` : '⚠️ Empty');
+              logger.info(
+                `  - Service-specific T&C (${serviceName}):`,
+                item.termsAndConditions
+                  ? `✅ ${item.termsAndConditions.split('\n').length} lines`
+                  : '⚠️ Empty',
+              );
             });
           }
-          
+
           _quoteData = fixedQuoteData;
           _isQuoteGeneration = true;
           return {
             message: text,
             isQuoteGeneration: true,
             quoteData: fixedQuoteData,
-            matchType: 'exact'
+            matchType: 'exact',
           };
         }
-        
+
         // 2️⃣ MULTIPLE_MATCH - Ambiguous request, ask user to clarify
         if (parsed.multipleMatch && parsed.groupedServices) {
           logger.info('🔀 AI detected: MULTIPLE_MATCH - Showing service options');
-          logger.info('📋 Grouped services returned by AI:', JSON.stringify(parsed.groupedServices, null, 2));
+          logger.info(
+            '📋 Grouped services returned by AI:',
+            JSON.stringify(parsed.groupedServices, null, 2),
+          );
           return {
             message: text,
             isQuoteGeneration: false,
             isMultipleMatch: true,
             matchType: 'multiple',
-            groupedServices: parsed.groupedServices
+            groupedServices: parsed.groupedServices,
           };
         }
-        
+
         // 3️⃣ PARTIAL_MATCH - Service not found, suggest closest alternatives
         if (parsed.partialMatch && parsed.closestServices) {
           logger.info('⚠️ AI detected: PARTIAL_MATCH - Suggesting alternatives');
@@ -469,10 +496,10 @@ export const sendMessageToGemini = async ({
             requestedService: parsed.requestedService || '',
             requestedQuantity: parsed.requestedQuantity,
             closestServices: parsed.closestServices,
-            alternativeServices: parsed.alternativeServices || []
+            alternativeServices: parsed.alternativeServices || [],
           };
         }
-        
+
         // 4️⃣ NO_MATCH - Nothing matches, show all services
         if (parsed.noMatch && parsed.allServicesGrouped) {
           logger.info('❌ AI detected: NO_MATCH - Showing all services');
@@ -482,10 +509,10 @@ export const sendMessageToGemini = async ({
             isNoMatch: true,
             matchType: 'none',
             requestedService: parsed.requestedService || '',
-            allServicesGrouped: parsed.allServicesGrouped
+            allServicesGrouped: parsed.allServicesGrouped,
           };
         }
-        
+
         // DEPRECATED: Handle old serviceNotFound format for backward compatibility
         if (parsed.serviceNotFound && parsed.availableServices) {
           return {
@@ -493,9 +520,10 @@ export const sendMessageToGemini = async ({
             isQuoteGeneration: false,
             isServiceNotFound: true,
             requestedService: parsed.requestedService || '',
-            serviceNotFoundMessage: parsed.message || 'The requested service is not available in the proposal.',
+            serviceNotFoundMessage:
+              parsed.message || 'The requested service is not available in the proposal.',
             availableServices: parsed.availableServices,
-            matchType: 'partial' // Map old format to partial match
+            matchType: 'partial', // Map old format to partial match
           };
         }
       }
@@ -512,23 +540,23 @@ export const sendMessageToGemini = async ({
     };
   } catch (error: any) {
     logger.error('Gemini API error:', error);
-    
+
     if (error.message?.includes('API key')) {
       throw new Error('Invalid API key. Please check your Gemini API configuration.');
     }
-    
+
     if (error.message?.includes('quota')) {
       throw new Error('API quota exceeded. Please try again later.');
     }
-    
+
     // Handle model not found errors
     if (error.message?.includes('not found') || error.message?.includes('models/gemini')) {
       throw new Error(
         'Gemini model not available. Please verify your API key has access to the gemini-2.5-flash-lite model. ' +
-        'Visit https://aistudio.google.com to check your API key permissions.'
+          'Visit https://aistudio.google.com to check your API key permissions.',
       );
     }
-    
+
     throw new Error('Failed to communicate with AI service. Please try again.');
   }
 };

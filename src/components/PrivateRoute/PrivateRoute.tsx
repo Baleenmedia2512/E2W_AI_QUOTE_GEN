@@ -12,7 +12,7 @@ interface PrivateRouteProps extends RouteProps {
 /**
  * PrivateRoute wrapper component
  * Protects routes from unauthorized access
- * 
+ *
  * Usage:
  * <PrivateRoute path="/admin" component={AdminPage} requiredRole="admin" />
  * <PrivateRoute path="/quotes" component={QuotesPage} requiredPermission="view_quotes" />

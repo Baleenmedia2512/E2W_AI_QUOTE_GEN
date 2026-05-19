@@ -78,7 +78,9 @@ const QuotePreview: React.FC<QuotePreviewProps> = ({ quote, onUpdate, onSave }) 
       return item.total;
     }
     // Handle old structure (with lineItems)
-    return item.lineItems?.reduce((sum, lineItem) => sum + calculateLineItemTotal(lineItem), 0) || 0;
+    return (
+      item.lineItems?.reduce((sum, lineItem) => sum + calculateLineItemTotal(lineItem), 0) || 0
+    );
   };
 
   // Helper to get line items for rendering - handles both old and new structure
@@ -88,15 +90,17 @@ const QuotePreview: React.FC<QuotePreviewProps> = ({ quote, onUpdate, onSave }) 
       return item.lineItems;
     }
     // Otherwise, treat the item itself as a single line item (new structure)
-    return [{
-      id: item.id,
-      description: item.description,
-      quantity: item.quantity,
-      unitPrice: item.rate,
-      duration: item.duration,
-      total: item.total,
-      remark: item.remark
-    }];
+    return [
+      {
+        id: item.id,
+        description: item.description,
+        quantity: item.quantity,
+        unitPrice: item.rate,
+        duration: item.duration,
+        total: item.total,
+        remark: item.remark,
+      },
+    ];
   };
 
   const calculateQuoteSubtotal = (): number => {
@@ -111,12 +115,17 @@ const QuotePreview: React.FC<QuotePreviewProps> = ({ quote, onUpdate, onSave }) 
     return subtotal + gst;
   };
 
-  const updateLineItem = (itemIndex: number, lineItemIndex: number, field: keyof LineItem, value: any) => {
+  const updateLineItem = (
+    itemIndex: number,
+    lineItemIndex: number,
+    field: keyof LineItem,
+    value: any,
+  ) => {
     if (!localQuote) return;
 
     const updatedQuote = { ...localQuote };
     const item = updatedQuote.items[itemIndex];
-    
+
     // Handle old structure with lineItems array
     if (item.lineItems && item.lineItems.length > 0) {
       const lineItem = item.lineItems[lineItemIndex];
@@ -148,7 +157,7 @@ const QuotePreview: React.FC<QuotePreviewProps> = ({ quote, onUpdate, onSave }) 
         item.remark = value;
       }
     }
-    
+
     updatedQuote.subtotal = calculateQuoteSubtotal();
     updatedQuote.gstAmount = calculateGST(updatedQuote.subtotal);
     updatedQuote.total = calculateTotal(updatedQuote.subtotal, updatedQuote.gstAmount);
@@ -199,7 +208,7 @@ const QuotePreview: React.FC<QuotePreviewProps> = ({ quote, onUpdate, onSave }) 
     const updatedQuote = { ...localQuote };
     const item = updatedQuote.items[itemIndex];
     if (!item.lineItems) return;
-    
+
     item.lineItems.splice(lineItemIndex, 1);
     if (item.subtotal !== undefined) {
       item.subtotal = calculateItemSubtotal(item);
@@ -289,7 +298,7 @@ const QuotePreview: React.FC<QuotePreviewProps> = ({ quote, onUpdate, onSave }) 
     if (!localQuote) return;
     const updatedQuote = { ...localQuote };
     updatedQuote.items = updatedQuote.items.map((item, i) =>
-      i === itemIndex ? { ...item, termsAndConditions: value } : item
+      i === itemIndex ? { ...item, termsAndConditions: value } : item,
     );
     updatedQuote.updatedAt = new Date();
     setLocalQuote(updatedQuote);
@@ -300,17 +309,23 @@ const QuotePreview: React.FC<QuotePreviewProps> = ({ quote, onUpdate, onSave }) 
   const gst = calculateGST(subtotal);
   const total = calculateTotal(subtotal, gst);
 
-  const formatCurrency = (amount: number) => amount.toLocaleString('en-IN', { style: 'currency', currency: 'INR', minimumFractionDigits: 2, maximumFractionDigits: 2 });
+  const formatCurrency = (amount: number) =>
+    amount.toLocaleString('en-IN', {
+      style: 'currency',
+      currency: 'INR',
+      minimumFractionDigits: 2,
+      maximumFractionDigits: 2,
+    });
 
   return (
     <Box className="quote-preview" py={{ base: 4, md: 8 }}>
       {/* Header with Title and Save Button */}
       <HStack justify="space-between" flexWrap="wrap" gap={3} mb={8}>
         <Box>
-          <Heading 
+          <Heading
             size="xl"
-            fontWeight="800" 
-            bgGradient="linear(135deg, #C91F3D, #B31B3E, #7A1030)" 
+            fontWeight="800"
+            bgGradient="linear(135deg, #C91F3D, #B31B3E, #7A1030)"
             bgClip="text"
             letterSpacing="tight"
             mb={1}
@@ -331,11 +346,11 @@ const QuotePreview: React.FC<QuotePreviewProps> = ({ quote, onUpdate, onSave }) 
             onClick={onSave}
             borderRadius="12px"
             px={6}
-            _hover={{ 
+            _hover={{
               bg: 'red.50',
               borderColor: 'red.400',
               transform: 'translateY(-2px)',
-              boxShadow: '0 4px 12px rgba(201, 31, 61, 0.2)'
+              boxShadow: '0 4px 12px rgba(201, 31, 61, 0.2)',
             }}
           >
             Save Info
@@ -346,7 +361,7 @@ const QuotePreview: React.FC<QuotePreviewProps> = ({ quote, onUpdate, onSave }) 
       {/* Quote Items - Each Section in a Card */}
       <VStack spacing={6} align="stretch">
         {localQuote.items.map((item, itemIndex) => (
-          <Card 
+          <Card
             key={item.id}
             bg="white"
             borderRadius="16px"
@@ -356,7 +371,7 @@ const QuotePreview: React.FC<QuotePreviewProps> = ({ quote, onUpdate, onSave }) 
             transition="all 0.3s"
             _hover={{
               boxShadow: '0 8px 24px rgba(201, 31, 61, 0.12)',
-              borderColor: 'red.200'
+              borderColor: 'red.200',
             }}
           >
             <CardBody p={{ base: 3, md: 6 }}>
@@ -377,13 +392,13 @@ const QuotePreview: React.FC<QuotePreviewProps> = ({ quote, onUpdate, onSave }) 
                     _hover={{ bg: 'red.50', color: 'red.600' }}
                     cursor="text"
                   />
-                  <EditableInput 
-                    px={3} 
+                  <EditableInput
+                    px={3}
                     py={2}
                     borderRadius="8px"
-                    _focus={{ 
+                    _focus={{
                       borderColor: 'red.500',
-                      boxShadow: '0 0 0 3px rgba(201, 31, 61, 0.15)'
+                      boxShadow: '0 0 0 3px rgba(201, 31, 61, 0.15)',
                     }}
                   />
                 </Editable>
@@ -414,7 +429,13 @@ const QuotePreview: React.FC<QuotePreviewProps> = ({ quote, onUpdate, onSave }) 
                       >
                         {/* Description label + Delete button in one row */}
                         <Flex justify="space-between" align="center" mb={1}>
-                          <Text fontSize="11px" fontWeight="600" color="gray.500" textTransform="uppercase" letterSpacing="0.5px">
+                          <Text
+                            fontSize="11px"
+                            fontWeight="600"
+                            color="gray.500"
+                            textTransform="uppercase"
+                            letterSpacing="0.5px"
+                          >
                             Description
                           </Text>
                           {item.lineItems && item.lineItems.length > 0 && (
@@ -433,9 +454,17 @@ const QuotePreview: React.FC<QuotePreviewProps> = ({ quote, onUpdate, onSave }) 
                           <Textarea
                             value={lineItem.description || ''}
                             onChange={(e) =>
-                              updateLineItem(itemIndex, lineItemIndex, 'description', e.target.value)
+                              updateLineItem(
+                                itemIndex,
+                                lineItemIndex,
+                                'description',
+                                e.target.value,
+                              )
                             }
-                            onFocus={(e) => { const t = e.target; setTimeout(() => t.select(), 300); }}
+                            onFocus={(e) => {
+                              const t = e.target;
+                              setTimeout(() => t.select(), 300);
+                            }}
                             placeholder="Enter description"
                             size="sm"
                             bg="white"
@@ -446,9 +475,9 @@ const QuotePreview: React.FC<QuotePreviewProps> = ({ quote, onUpdate, onSave }) 
                             resize="none"
                             fontWeight="500"
                             _hover={{ borderColor: 'red.300' }}
-                            _focus={{ 
-                              borderColor: 'red.500', 
-                              boxShadow: '0 0 0 3px rgba(201, 31, 61, 0.15)'
+                            _focus={{
+                              borderColor: 'red.500',
+                              boxShadow: '0 0 0 3px rgba(201, 31, 61, 0.15)',
                             }}
                           />
                         </Box>
@@ -456,7 +485,14 @@ const QuotePreview: React.FC<QuotePreviewProps> = ({ quote, onUpdate, onSave }) 
                         {/* Quantity & Rate side by side */}
                         <Flex gap={3} mb={3}>
                           <Box flex={1}>
-                            <Text fontSize="11px" fontWeight="600" color="gray.500" textTransform="uppercase" letterSpacing="0.5px" mb={1}>
+                            <Text
+                              fontSize="11px"
+                              fontWeight="600"
+                              color="gray.500"
+                              textTransform="uppercase"
+                              letterSpacing="0.5px"
+                              mb={1}
+                            >
                               Quantity
                             </Text>
                             <NumberInput
@@ -474,25 +510,43 @@ const QuotePreview: React.FC<QuotePreviewProps> = ({ quote, onUpdate, onSave }) 
                                 borderRadius="6px"
                                 inputMode="numeric"
                                 pattern="[0-9]*"
-                                onFocus={(e) => { const t = e.target; setTimeout(() => t.select(), 300); }}
+                                onFocus={(e) => {
+                                  const t = e.target;
+                                  setTimeout(() => t.select(), 300);
+                                }}
                                 _focus={{ borderColor: '#750926', boxShadow: '0 0 0 1px #750926' }}
                               />
                             </NumberInput>
                           </Box>
                           <Box flex={1}>
-                            <Text fontSize="11px" fontWeight="600" color="gray.500" textTransform="uppercase" letterSpacing="0.5px" mb={1}>
+                            <Text
+                              fontSize="11px"
+                              fontWeight="600"
+                              color="gray.500"
+                              textTransform="uppercase"
+                              letterSpacing="0.5px"
+                              mb={1}
+                            >
                               Rate
                             </Text>
                             <NumberInput
                               value={rateInputValues[lineItem.id] ?? String(lineItem.unitPrice)}
                               onChange={(valueString, valueNumber) => {
-                                setRateInputValues(prev => ({ ...prev, [lineItem.id]: valueString }));
+                                setRateInputValues((prev) => ({
+                                  ...prev,
+                                  [lineItem.id]: valueString,
+                                }));
                                 if (!isNaN(valueNumber)) {
-                                  updateLineItem(itemIndex, lineItemIndex, 'unitPrice', valueNumber);
+                                  updateLineItem(
+                                    itemIndex,
+                                    lineItemIndex,
+                                    'unitPrice',
+                                    valueNumber,
+                                  );
                                 }
                               }}
                               onBlur={() =>
-                                setRateInputValues(prev => {
+                                setRateInputValues((prev) => {
                                   const next = { ...prev };
                                   delete next[lineItem.id];
                                   return next;
@@ -509,20 +563,35 @@ const QuotePreview: React.FC<QuotePreviewProps> = ({ quote, onUpdate, onSave }) 
                                 borderRadius="6px"
                                 inputMode="decimal"
                                 pattern="[0-9.]*"
-                                onFocus={(e) => { const t = e.target; setTimeout(() => t.select(), 300); }}
+                                onFocus={(e) => {
+                                  const t = e.target;
+                                  setTimeout(() => t.select(), 300);
+                                }}
                                 _focus={{ borderColor: '#750926', boxShadow: '0 0 0 1px #750926' }}
                               />
                             </NumberInput>
                           </Box>
                           {lineItem.duration && lineItem.duration > 1 && (
                             <Box flex={1}>
-                              <Text fontSize="11px" fontWeight="600" color="gray.500" textTransform="uppercase" letterSpacing="0.5px" mb={1}>
+                              <Text
+                                fontSize="11px"
+                                fontWeight="600"
+                                color="gray.500"
+                                textTransform="uppercase"
+                                letterSpacing="0.5px"
+                                mb={1}
+                              >
                                 Months
                               </Text>
                               <NumberInput
                                 value={lineItem.duration}
                                 onChange={(_, value) =>
-                                  updateLineItem(itemIndex, lineItemIndex, 'duration' as keyof LineItem, value)
+                                  updateLineItem(
+                                    itemIndex,
+                                    lineItemIndex,
+                                    'duration' as keyof LineItem,
+                                    value,
+                                  )
                                 }
                                 min={1}
                                 size="sm"
@@ -534,8 +603,14 @@ const QuotePreview: React.FC<QuotePreviewProps> = ({ quote, onUpdate, onSave }) 
                                   borderRadius="6px"
                                   inputMode="numeric"
                                   pattern="[0-9]*"
-                                  onFocus={(e) => { const t = e.target; setTimeout(() => t.select(), 300); }}
-                                  _focus={{ borderColor: '#750926', boxShadow: '0 0 0 1px #750926' }}
+                                  onFocus={(e) => {
+                                    const t = e.target;
+                                    setTimeout(() => t.select(), 300);
+                                  }}
+                                  _focus={{
+                                    borderColor: '#750926',
+                                    boxShadow: '0 0 0 1px #750926',
+                                  }}
                                 />
                               </NumberInput>
                             </Box>
@@ -544,22 +619,40 @@ const QuotePreview: React.FC<QuotePreviewProps> = ({ quote, onUpdate, onSave }) 
 
                         {/* Remark */}
                         <Box mt={2}>
-                          <Text fontSize="11px" fontWeight="600" color="gray.500" textTransform="uppercase" letterSpacing="0.5px" mb={1}>
+                          <Text
+                            fontSize="11px"
+                            fontWeight="600"
+                            color="gray.500"
+                            textTransform="uppercase"
+                            letterSpacing="0.5px"
+                            mb={1}
+                          >
                             Remark (Optional)
                           </Text>
                           <Input
                             value={lineItem.remark || ''}
                             onChange={(e) =>
-                              updateLineItem(itemIndex, lineItemIndex, 'remark' as keyof LineItem, e.target.value)
+                              updateLineItem(
+                                itemIndex,
+                                lineItemIndex,
+                                'remark' as keyof LineItem,
+                                e.target.value,
+                              )
                             }
-                            onFocus={(e) => { const t = e.target; setTimeout(() => t.select(), 300); }}
+                            onFocus={(e) => {
+                              const t = e.target;
+                              setTimeout(() => t.select(), 300);
+                            }}
                             placeholder="e.g. Per cab/month, One time fee..."
                             size="sm"
                             bg="white"
                             borderColor="gray.200"
                             borderRadius="6px"
                             _hover={{ borderColor: 'red.300' }}
-                            _focus={{ borderColor: 'red.500', boxShadow: '0 0 0 3px rgba(201, 31, 61, 0.15)' }}
+                            _focus={{
+                              borderColor: 'red.500',
+                              boxShadow: '0 0 0 3px rgba(201, 31, 61, 0.15)',
+                            }}
                           />
                         </Box>
 
@@ -572,7 +665,9 @@ const QuotePreview: React.FC<QuotePreviewProps> = ({ quote, onUpdate, onSave }) 
                           borderTop="1px dashed"
                           borderColor="gray.200"
                         >
-                          <Text fontSize="12px" fontWeight="600" color="gray.500" mr={2}>Amount:</Text>
+                          <Text fontSize="12px" fontWeight="600" color="gray.500" mr={2}>
+                            Amount:
+                          </Text>
                           <Text fontSize="15px" fontWeight="700" color="gray.800">
                             {formatCurrency(calculateLineItemTotal(lineItem))}
                           </Text>
@@ -586,24 +681,72 @@ const QuotePreview: React.FC<QuotePreviewProps> = ({ quote, onUpdate, onSave }) 
                     <Table variant="simple" size="sm">
                       <Thead>
                         <Tr bg="gray.50">
-                          <Th color="gray.600" fontWeight="600" fontSize="xs" textTransform="uppercase" width={getLineItemsForDisplay(item).some(li => li.duration && li.duration > 1) ? "35%" : "40%"}>
+                          <Th
+                            color="gray.600"
+                            fontWeight="600"
+                            fontSize="xs"
+                            textTransform="uppercase"
+                            width={
+                              getLineItemsForDisplay(item).some(
+                                (li) => li.duration && li.duration > 1,
+                              )
+                                ? '35%'
+                                : '40%'
+                            }
+                          >
                             Item Description
                           </Th>
-                          <Th color="gray.600" fontWeight="600" fontSize="xs" textTransform="uppercase" isNumeric width="12%">
+                          <Th
+                            color="gray.600"
+                            fontWeight="600"
+                            fontSize="xs"
+                            textTransform="uppercase"
+                            isNumeric
+                            width="12%"
+                          >
                             Quantity
                           </Th>
-                          <Th color="gray.600" fontWeight="600" fontSize="xs" textTransform="uppercase" isNumeric width="15%">
+                          <Th
+                            color="gray.600"
+                            fontWeight="600"
+                            fontSize="xs"
+                            textTransform="uppercase"
+                            isNumeric
+                            width="15%"
+                          >
                             Rate
                           </Th>
-                          {getLineItemsForDisplay(item).some(li => li.duration && li.duration > 1) && (
-                            <Th color="gray.600" fontWeight="600" fontSize="xs" textTransform="uppercase" isNumeric width="12%">
+                          {getLineItemsForDisplay(item).some(
+                            (li) => li.duration && li.duration > 1,
+                          ) && (
+                            <Th
+                              color="gray.600"
+                              fontWeight="600"
+                              fontSize="xs"
+                              textTransform="uppercase"
+                              isNumeric
+                              width="12%"
+                            >
                               Months
                             </Th>
                           )}
-                          <Th color="gray.600" fontWeight="600" fontSize="xs" textTransform="uppercase" isNumeric width="18%">
+                          <Th
+                            color="gray.600"
+                            fontWeight="600"
+                            fontSize="xs"
+                            textTransform="uppercase"
+                            isNumeric
+                            width="18%"
+                          >
                             Amount
                           </Th>
-                          <Th color="gray.600" fontWeight="600" fontSize="xs" textTransform="uppercase" width="18%">
+                          <Th
+                            color="gray.600"
+                            fontWeight="600"
+                            fontSize="xs"
+                            textTransform="uppercase"
+                            width="18%"
+                          >
                             Remark
                           </Th>
                           <Th width="5%"></Th>
@@ -616,9 +759,17 @@ const QuotePreview: React.FC<QuotePreviewProps> = ({ quote, onUpdate, onSave }) 
                               <Textarea
                                 value={lineItem.description || ''}
                                 onChange={(e) =>
-                                  updateLineItem(itemIndex, lineItemIndex, 'description', e.target.value)
+                                  updateLineItem(
+                                    itemIndex,
+                                    lineItemIndex,
+                                    'description',
+                                    e.target.value,
+                                  )
                                 }
-                                onFocus={(e) => { const t = e.target; setTimeout(() => t.select(), 300); }}
+                                onFocus={(e) => {
+                                  const t = e.target;
+                                  setTimeout(() => t.select(), 300);
+                                }}
                                 placeholder="Enter description"
                                 size="sm"
                                 minH="40px"
@@ -628,7 +779,12 @@ const QuotePreview: React.FC<QuotePreviewProps> = ({ quote, onUpdate, onSave }) 
                                 border="1px solid transparent"
                                 borderRadius="6px"
                                 _hover={{ bg: 'gray.50', borderColor: 'gray.200' }}
-                                _focus={{ bg: 'white', border: '1px solid', borderColor: '#750926', boxShadow: '0 0 0 1px #750926' }}
+                                _focus={{
+                                  bg: 'white',
+                                  border: '1px solid',
+                                  borderColor: '#750926',
+                                  boxShadow: '0 0 0 1px #750926',
+                                }}
                                 px={2}
                                 py={2}
                               />
@@ -646,8 +802,15 @@ const QuotePreview: React.FC<QuotePreviewProps> = ({ quote, onUpdate, onSave }) 
                                   textAlign="right"
                                   inputMode="numeric"
                                   pattern="[0-9]*"
-                                  onFocus={(e) => { const t = e.target; setTimeout(() => t.select(), 300); }}
-                                  _focus={{ bg: 'white', border: '1px solid', borderColor: '#750926' }}
+                                  onFocus={(e) => {
+                                    const t = e.target;
+                                    setTimeout(() => t.select(), 300);
+                                  }}
+                                  _focus={{
+                                    bg: 'white',
+                                    border: '1px solid',
+                                    borderColor: '#750926',
+                                  }}
                                   px={2}
                                 />
                               </NumberInput>
@@ -656,13 +819,21 @@ const QuotePreview: React.FC<QuotePreviewProps> = ({ quote, onUpdate, onSave }) 
                               <NumberInput
                                 value={rateInputValues[lineItem.id] ?? String(lineItem.unitPrice)}
                                 onChange={(valueString, valueNumber) => {
-                                  setRateInputValues(prev => ({ ...prev, [lineItem.id]: valueString }));
+                                  setRateInputValues((prev) => ({
+                                    ...prev,
+                                    [lineItem.id]: valueString,
+                                  }));
                                   if (!isNaN(valueNumber)) {
-                                    updateLineItem(itemIndex, lineItemIndex, 'unitPrice', valueNumber);
+                                    updateLineItem(
+                                      itemIndex,
+                                      lineItemIndex,
+                                      'unitPrice',
+                                      valueNumber,
+                                    );
                                   }
                                 }}
                                 onBlur={() =>
-                                  setRateInputValues(prev => {
+                                  setRateInputValues((prev) => {
                                     const next = { ...prev };
                                     delete next[lineItem.id];
                                     return next;
@@ -676,18 +847,32 @@ const QuotePreview: React.FC<QuotePreviewProps> = ({ quote, onUpdate, onSave }) 
                                   textAlign="right"
                                   inputMode="decimal"
                                   pattern="[0-9.]*"
-                                  onFocus={(e) => { const t = e.target; setTimeout(() => t.select(), 300); }}
-                                  _focus={{ bg: 'white', border: '1px solid', borderColor: '#750926' }}
+                                  onFocus={(e) => {
+                                    const t = e.target;
+                                    setTimeout(() => t.select(), 300);
+                                  }}
+                                  _focus={{
+                                    bg: 'white',
+                                    border: '1px solid',
+                                    borderColor: '#750926',
+                                  }}
                                   px={2}
                                 />
                               </NumberInput>
                             </Td>
-                            {getLineItemsForDisplay(item).some(li => li.duration && li.duration > 1) && (
+                            {getLineItemsForDisplay(item).some(
+                              (li) => li.duration && li.duration > 1,
+                            ) && (
                               <Td isNumeric>
                                 <NumberInput
                                   value={lineItem.duration || 1}
                                   onChange={(_, value) =>
-                                    updateLineItem(itemIndex, lineItemIndex, 'duration' as keyof LineItem, value)
+                                    updateLineItem(
+                                      itemIndex,
+                                      lineItemIndex,
+                                      'duration' as keyof LineItem,
+                                      value,
+                                    )
                                   }
                                   min={1}
                                   size="sm"
@@ -696,8 +881,15 @@ const QuotePreview: React.FC<QuotePreviewProps> = ({ quote, onUpdate, onSave }) 
                                     textAlign="right"
                                     inputMode="numeric"
                                     pattern="[0-9]*"
-                                    onFocus={(e) => { const t = e.target; setTimeout(() => t.select(), 300); }}
-                                    _focus={{ bg: 'white', border: '1px solid', borderColor: '#750926' }}
+                                    onFocus={(e) => {
+                                      const t = e.target;
+                                      setTimeout(() => t.select(), 300);
+                                    }}
+                                    _focus={{
+                                      bg: 'white',
+                                      border: '1px solid',
+                                      borderColor: '#750926',
+                                    }}
                                     px={2}
                                   />
                                 </NumberInput>
@@ -710,16 +902,29 @@ const QuotePreview: React.FC<QuotePreviewProps> = ({ quote, onUpdate, onSave }) 
                               <Input
                                 value={lineItem.remark || ''}
                                 onChange={(e) =>
-                                  updateLineItem(itemIndex, lineItemIndex, 'remark' as keyof LineItem, e.target.value)
+                                  updateLineItem(
+                                    itemIndex,
+                                    lineItemIndex,
+                                    'remark' as keyof LineItem,
+                                    e.target.value,
+                                  )
                                 }
-                                onFocus={(e) => { const t = e.target; setTimeout(() => t.select(), 300); }}
+                                onFocus={(e) => {
+                                  const t = e.target;
+                                  setTimeout(() => t.select(), 300);
+                                }}
                                 placeholder="Optional"
                                 size="sm"
                                 bg="transparent"
                                 border="1px solid transparent"
                                 borderRadius="6px"
                                 _hover={{ bg: 'gray.50', borderColor: 'gray.200' }}
-                                _focus={{ bg: 'white', border: '1px solid', borderColor: '#750926', boxShadow: '0 0 0 1px #750926' }}
+                                _focus={{
+                                  bg: 'white',
+                                  border: '1px solid',
+                                  borderColor: '#750926',
+                                  boxShadow: '0 0 0 1px #750926',
+                                }}
                                 px={2}
                               />
                             </Td>
@@ -761,11 +966,11 @@ const QuotePreview: React.FC<QuotePreviewProps> = ({ quote, onUpdate, onSave }) 
           px={8}
           borderRadius="12px"
           onClick={addQuoteItem}
-          _hover={{ 
+          _hover={{
             bg: 'red.50',
             borderColor: 'red.400',
             transform: 'translateY(-2px)',
-            boxShadow: '0 4px 12px rgba(201, 31, 61, 0.2)'
+            boxShadow: '0 4px 12px rgba(201, 31, 61, 0.2)',
           }}
           _active={{ transform: 'scale(0.98)' }}
         >
@@ -774,9 +979,9 @@ const QuotePreview: React.FC<QuotePreviewProps> = ({ quote, onUpdate, onSave }) 
       </VStack>
 
       {/* Totals Summary Block */}
-      <Box 
-        mt={{ base: 6, md: 8 }} 
-        p={{ base: 5, md: 6 }} 
+      <Box
+        mt={{ base: 6, md: 8 }}
+        p={{ base: 5, md: 6 }}
         bgGradient="linear(135deg, #FFF5F7, #FFECF0)"
         borderRadius="16px"
         border="2px solid"
@@ -786,8 +991,12 @@ const QuotePreview: React.FC<QuotePreviewProps> = ({ quote, onUpdate, onSave }) 
         <VStack spacing={4} align="stretch">
           {/* Subtotal */}
           <Flex justify="space-between" fontSize="lg">
-            <Text fontWeight="600" color="gray.800">Subtotal:</Text>
-            <Text fontWeight="700" color="gray.900">{formatCurrency(subtotal)}</Text>
+            <Text fontWeight="600" color="gray.800">
+              Subtotal:
+            </Text>
+            <Text fontWeight="700" color="gray.900">
+              {formatCurrency(subtotal)}
+            </Text>
           </Flex>
 
           {/* GST Section */}
@@ -800,13 +1009,17 @@ const QuotePreview: React.FC<QuotePreviewProps> = ({ quote, onUpdate, onSave }) 
                   colorScheme="red"
                   size="md"
                 >
-                  <Text fontSize="md" fontWeight="600" color="gray.800">Include GST</Text>
+                  <Text fontSize="md" fontWeight="600" color="gray.800">
+                    Include GST
+                  </Text>
                 </Checkbox>
               </HStack>
 
               {localQuote.gstEnabled && (
                 <HStack flexWrap="wrap" gap={2}>
-                  <Text fontSize="sm" fontWeight="500">GST Percentage (%):</Text>
+                  <Text fontSize="sm" fontWeight="500">
+                    GST Percentage (%):
+                  </Text>
                   <NumberInput
                     value={localQuote.gstPercentage}
                     onChange={(_, value) => {
@@ -814,7 +1027,10 @@ const QuotePreview: React.FC<QuotePreviewProps> = ({ quote, onUpdate, onSave }) 
                       const updatedQuote = { ...localQuote };
                       updatedQuote.gstPercentage = value;
                       updatedQuote.gstAmount = calculateGST(updatedQuote.subtotal);
-                      updatedQuote.total = calculateTotal(updatedQuote.subtotal, updatedQuote.gstAmount);
+                      updatedQuote.total = calculateTotal(
+                        updatedQuote.subtotal,
+                        updatedQuote.gstAmount,
+                      );
                       updatedQuote.updatedAt = new Date();
                       setLocalQuote(updatedQuote);
                       onUpdate(updatedQuote);
@@ -826,7 +1042,14 @@ const QuotePreview: React.FC<QuotePreviewProps> = ({ quote, onUpdate, onSave }) 
                     maxW="120px"
                     defaultValue={18}
                   >
-                    <NumberInputField inputMode="decimal" pattern="[0-9.]*" onFocus={(e) => { const t = e.target; setTimeout(() => t.select(), 300); }} />
+                    <NumberInputField
+                      inputMode="decimal"
+                      pattern="[0-9.]*"
+                      onFocus={(e) => {
+                        const t = e.target;
+                        setTimeout(() => t.select(), 300);
+                      }}
+                    />
                   </NumberInput>
                 </HStack>
               )}
@@ -836,52 +1059,63 @@ const QuotePreview: React.FC<QuotePreviewProps> = ({ quote, onUpdate, onSave }) 
           {/* GST Amount */}
           {localQuote.gstEnabled && (
             <Flex justify="space-between" fontSize="lg">
-              <Text fontWeight="600" color="gray.800">GST ({localQuote.gstPercentage}%):</Text>
-              <Text fontWeight="700" color="gray.900">{formatCurrency(gst)}</Text>
+              <Text fontWeight="600" color="gray.800">
+                GST ({localQuote.gstPercentage}%):
+              </Text>
+              <Text fontWeight="700" color="gray.900">
+                {formatCurrency(gst)}
+              </Text>
             </Flex>
           )}
 
           {/* Total */}
-          <Flex 
-            justify="space-between" 
-            pt={4} 
-            borderTop="3px solid" 
+          <Flex
+            justify="space-between"
+            pt={4}
+            borderTop="3px solid"
             borderColor="red.400"
             fontSize="2xl"
           >
-            <Text fontWeight="800" color="gray.900">Total:</Text>
-            <Text fontWeight="800" color="red.600">{formatCurrency(total)}</Text>
+            <Text fontWeight="800" color="gray.900">
+              Total:
+            </Text>
+            <Text fontWeight="800" color="red.600">
+              {formatCurrency(total)}
+            </Text>
           </Flex>
         </VStack>
       </Box>
 
       {/* Delivery Timeline - Only show if specified */}
-      {localQuote.deliveryTimeline && 
-       !localQuote.deliveryTimeline.toLowerCase().includes('not specified') && (
-        <Box mt={{ base: 6, md: 8 }}>
-          <Text fontSize="md" fontWeight="700" color="gray.800" mb={3}>
-            📅 Delivery Timeline
-          </Text>
-          <Input
-            value={localQuote.deliveryTimeline || ''}
-            onChange={(e) => updateDeliveryTimeline(e.target.value)}
-            onFocus={(e) => { const t = e.target; setTimeout(() => t.select(), 300); }}
-            placeholder="e.g., 7 working days from receipt"
-            size="lg"
-            bg="white"
-            borderWidth="2px"
-            borderColor="gray.300"
-            borderRadius="12px"
-            fontWeight="500"
-            _hover={{ borderColor: 'red.300', boxShadow: '0 0 0 1px rgba(201, 31, 61, 0.1)' }}
-            _focus={{ 
-              borderColor: 'red.500', 
-              boxShadow: '0 0 0 3px rgba(201, 31, 61, 0.15)',
-              bg: 'white'
-            }}
-          />
-        </Box>
-      )}
+      {localQuote.deliveryTimeline &&
+        !localQuote.deliveryTimeline.toLowerCase().includes('not specified') && (
+          <Box mt={{ base: 6, md: 8 }}>
+            <Text fontSize="md" fontWeight="700" color="gray.800" mb={3}>
+              📅 Delivery Timeline
+            </Text>
+            <Input
+              value={localQuote.deliveryTimeline || ''}
+              onChange={(e) => updateDeliveryTimeline(e.target.value)}
+              onFocus={(e) => {
+                const t = e.target;
+                setTimeout(() => t.select(), 300);
+              }}
+              placeholder="e.g., 7 working days from receipt"
+              size="lg"
+              bg="white"
+              borderWidth="2px"
+              borderColor="gray.300"
+              borderRadius="12px"
+              fontWeight="500"
+              _hover={{ borderColor: 'red.300', boxShadow: '0 0 0 1px rgba(201, 31, 61, 0.1)' }}
+              _focus={{
+                borderColor: 'red.500',
+                boxShadow: '0 0 0 3px rgba(201, 31, 61, 0.15)',
+                bg: 'white',
+              }}
+            />
+          </Box>
+        )}
 
       {/* Terms and Conditions */}
       <Box mt={6}>
@@ -917,13 +1151,13 @@ const QuotePreview: React.FC<QuotePreviewProps> = ({ quote, onUpdate, onSave }) 
           sx={{
             field: {
               overflow: 'hidden !important',
-            }
+            },
           }}
           _hover={{ borderColor: 'red.300', boxShadow: '0 0 0 1px rgba(201, 31, 61, 0.1)' }}
-          _focus={{ 
-            borderColor: 'red.500', 
+          _focus={{
+            borderColor: 'red.500',
             boxShadow: '0 0 0 3px rgba(201, 31, 61, 0.15)',
-            bg: 'white'
+            bg: 'white',
           }}
         />
       </Box>
@@ -964,17 +1198,17 @@ const QuotePreview: React.FC<QuotePreviewProps> = ({ quote, onUpdate, onSave }) 
               sx={{
                 field: {
                   overflow: 'hidden !important',
-                }
+                },
               }}
               _hover={{ borderColor: 'red.300', boxShadow: '0 0 0 1px rgba(201, 31, 61, 0.1)' }}
-              _focus={{ 
-                borderColor: 'red.500', 
+              _focus={{
+                borderColor: 'red.500',
                 boxShadow: '0 0 0 3px rgba(201, 31, 61, 0.15)',
-                bg: 'white'
+                bg: 'white',
               }}
             />
           </Box>
-        ) : null
+        ) : null,
       )}
     </Box>
   );

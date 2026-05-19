@@ -11,7 +11,7 @@ import { logger } from '../utils/logger';
  */
 export const searchLeads = async (
   searchTerm: string,
-  limit: number = 15
+  limit: number = 15,
 ): Promise<LeadSearchResult[]> => {
   try {
     if (searchTerm.length < 2) {
@@ -19,10 +19,12 @@ export const searchLeads = async (
     }
 
     logger.info('🗄️ LeadService: Searching database for:', searchTerm);
-    
+
     const { data, error } = await supabase
       .from('Lead')
-      .select('id, name, phone, email, address, alternatePhone, city, state, pincode, campaign, source')
+      .select(
+        'id, name, phone, email, address, alternatePhone, city, state, pincode, campaign, source',
+      )
       .or(`name.ilike.%${searchTerm}%,phone.ilike.%${searchTerm}%,email.ilike.%${searchTerm}%`)
       .limit(limit)
       .order('name', { ascending: true });
@@ -49,11 +51,7 @@ export const searchLeads = async (
  */
 export const getLeadById = async (id: string): Promise<Lead | null> => {
   try {
-    const { data, error } = await supabase
-      .from('Lead')
-      .select('*')
-      .eq('id', id)
-      .single();
+    const { data, error } = await supabase.from('Lead').select('*').eq('id', id).single();
 
     if (error) {
       logger.error('Error fetching lead:', error);

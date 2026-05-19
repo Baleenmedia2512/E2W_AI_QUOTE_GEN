@@ -36,11 +36,11 @@ export async function saveDataUnified<T>(
     localStorage?: boolean;
     indexedDB?: boolean;
     cloud?: boolean;
-  } = { localStorage: true, indexedDB: false, cloud: true }
+  } = { localStorage: true, indexedDB: false, cloud: true },
 ): Promise<{ success: boolean; source: string[] }> {
   const timestamp = Date.now();
   const sources: string[] = [];
-  
+
   const wrappedData: DataWithTimestamp<T> = {
     data,
     timestamp,
@@ -64,7 +64,7 @@ export async function saveDataUnified<T>(
     try {
       // Add to sync queue
       syncQueue.push({ key, data: wrappedData, timestamp });
-      
+
       // Try to sync immediately
       const cloudSuccess = await syncToCloud(key, wrappedData);
       if (cloudSuccess) {
@@ -89,7 +89,7 @@ export async function loadDataUnified<T>(
   options: {
     preferCloud?: boolean;
     maxAge?: number; // milliseconds
-  } = {}
+  } = {},
 ): Promise<T | null> {
   const sources: Array<{ data: DataWithTimestamp<T>; source: string }> = [];
 
@@ -123,13 +123,13 @@ export async function loadDataUnified<T>(
 
   if (sources.length === 1) {
     const result = sources[0].data;
-    
+
     // Check if data is too old
     if (options.maxAge && Date.now() - result.timestamp > options.maxAge) {
       logger.warn(`Data expired (age: ${Date.now() - result.timestamp}ms)`);
       return null;
     }
-    
+
     return result.data;
   }
 
@@ -142,13 +142,13 @@ export async function loadDataUnified<T>(
  */
 function resolveConflict<T>(
   sources: Array<{ data: DataWithTimestamp<T>; source: string }>,
-  maxAge?: number
+  maxAge?: number,
 ): T | null {
   // Sort by timestamp (newest first)
   const sorted = sources.sort((a, b) => b.data.timestamp - a.data.timestamp);
-  
+
   const newest = sorted[0];
-  
+
   // Check if too old
   if (maxAge && Date.now() - newest.data.timestamp > maxAge) {
     logger.warn('All data sources expired');
@@ -157,9 +157,13 @@ function resolveConflict<T>(
 
   // Log conflict resolution
   if (sorted.length > 1) {
-    logger.info(`🔄 Conflict resolved: Using ${newest.source} (timestamp: ${new Date(newest.data.timestamp).toLocaleString()})`);
-    sorted.slice(1).forEach(s => {
-      logger.info(`   Ignored ${s.source} (older by ${(newest.data.timestamp - s.data.timestamp) / 1000}s)`);
+    logger.info(
+      `🔄 Conflict resolved: Using ${newest.source} (timestamp: ${new Date(newest.data.timestamp).toLocaleString()})`,
+    );
+    sorted.slice(1).forEach((s) => {
+      logger.info(
+        `   Ignored ${s.source} (older by ${(newest.data.timestamp - s.data.timestamp) / 1000}s)`,
+      );
     });
   }
 
@@ -245,13 +249,13 @@ export function getSyncStatus(): SyncStatus {
  */
 export async function forceSyncAll(): Promise<void> {
   logger.info('🔄 Starting full sync...');
-  
+
   // Sync pending changes
   await syncPendingChanges();
-  
+
   // Update last sync timestamp
   localStorage.setItem('__last_sync__', Date.now().toString());
-  
+
   logger.info('✅ Full sync completed');
 }
 
@@ -260,25 +264,25 @@ export async function forceSyncAll(): Promise<void> {
  */
 export async function clearAllCache(): Promise<void> {
   logger.info('🗑️ Clearing all cached data...');
-  
+
   // Clear localStorage
   const keysToKeep = ['auth-storage', 'supabase.auth.token'];
   const allKeys = Object.keys(localStorage);
-  allKeys.forEach(key => {
+  allKeys.forEach((key) => {
     if (!keysToKeep.includes(key)) {
       localStorage.removeItem(key);
     }
   });
-  
+
   // Clear service worker caches
   if ('caches' in window) {
     const cacheNames = await caches.keys();
-    await Promise.all(cacheNames.map(name => caches.delete(name)));
+    await Promise.all(cacheNames.map((name) => caches.delete(name)));
   }
-  
+
   // Clear sync queue
   syncQueue.length = 0;
-  
+
   logger.info('✅ All cache cleared');
 }
 
@@ -305,7 +309,7 @@ if (typeof window !== 'undefined') {
     logger.info('🌐 Network reconnected, syncing...');
     syncPendingChanges();
   });
-  
+
   window.addEventListener('offline', () => {
     logger.info('📴 Network disconnected, queuing changes');
   });

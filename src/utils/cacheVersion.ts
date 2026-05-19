@@ -31,7 +31,7 @@ export async function getCurrentVersion(): Promise<AppVersion | null> {
     // Ask service worker for version info
     return new Promise((resolve) => {
       const messageChannel = new MessageChannel();
-      
+
       messageChannel.port1.onmessage = (event) => {
         if (event.data) {
           resolve({
@@ -45,10 +45,7 @@ export async function getCurrentVersion(): Promise<AppVersion | null> {
       };
 
       if (registration.active) {
-        registration.active.postMessage(
-          { type: 'CHECK_VERSION' },
-          [messageChannel.port2]
-        );
+        registration.active.postMessage({ type: 'CHECK_VERSION' }, [messageChannel.port2]);
       } else {
         resolve(null);
       }
@@ -114,9 +111,13 @@ export async function checkForUpdates(): Promise<{
 
   if (hasUpdate) {
     logger.info('🔄 Update detected!');
-    logger.info(`   Previous: v${stored.version} (${new Date(stored.buildTimestamp).toLocaleString()})`);
-    logger.info(`   Current:  v${current.version} (${new Date(current.buildTimestamp).toLocaleString()})`);
-    
+    logger.info(
+      `   Previous: v${stored.version} (${new Date(stored.buildTimestamp).toLocaleString()})`,
+    );
+    logger.info(
+      `   Current:  v${current.version} (${new Date(current.buildTimestamp).toLocaleString()})`,
+    );
+
     // Update stored version
     saveVersion(current);
   }
@@ -137,15 +138,17 @@ export async function clearCacheAndReload(): Promise<void> {
   // Clear service worker caches
   if ('caches' in window) {
     const cacheNames = await caches.keys();
-    await Promise.all(cacheNames.map(name => {
-      logger.info(`Deleting cache: ${name}`);
-      return caches.delete(name);
-    }));
+    await Promise.all(
+      cacheNames.map((name) => {
+        logger.info(`Deleting cache: ${name}`);
+        return caches.delete(name);
+      }),
+    );
   }
 
   // Clear localStorage (except auth)
   const keysToKeep = ['auth-storage', 'supabase.auth.token'];
-  Object.keys(localStorage).forEach(key => {
+  Object.keys(localStorage).forEach((key) => {
     if (!keysToKeep.includes(key)) {
       localStorage.removeItem(key);
     }
@@ -157,7 +160,7 @@ export async function clearCacheAndReload(): Promise<void> {
   // Unregister service worker
   if ('serviceWorker' in navigator) {
     const registrations = await navigator.serviceWorker.getRegistrations();
-    await Promise.all(registrations.map(reg => reg.unregister()));
+    await Promise.all(registrations.map((reg) => reg.unregister()));
   }
 
   // Hard reload (bypass cache)
@@ -233,7 +236,7 @@ export function formatVersion(version: AppVersion): string {
  */
 export async function debugCache(): Promise<void> {
   console.group('🔍 Cache Debug Info');
-  
+
   const current = await getCurrentVersion();
   const stored = getStoredVersion();
   const stats = await getCacheStats();
@@ -245,19 +248,19 @@ export async function debugCache(): Promise<void> {
   logger.info('Cache Names:', stats.cacheNames);
   logger.info('Cache Items:', stats.itemCount);
   logger.info('Cache Size:', (stats.totalSize / 1024 / 1024).toFixed(2), 'MB');
-  
+
   // Check storage quota
   if (navigator.storage && navigator.storage.estimate) {
     const estimate = await navigator.storage.estimate();
     const usage = estimate.usage || 0;
     const quota = estimate.quota || 0;
     const percentage = quota > 0 ? (usage / quota) * 100 : 0;
-    
+
     logger.info('Storage Used:', (usage / 1024 / 1024).toFixed(2), 'MB');
     logger.info('Storage Quota:', (quota / 1024 / 1024).toFixed(2), 'MB');
     logger.info('Storage %:', percentage.toFixed(2) + '%');
   }
-  
+
   console.groupEnd();
 }
 

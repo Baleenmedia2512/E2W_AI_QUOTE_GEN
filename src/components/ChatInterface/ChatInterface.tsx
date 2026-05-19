@@ -31,8 +31,6 @@ import { saveChatHistory, loadChatHistory } from '../../utils/localStorage';
 import { DEFAULT_GENERAL_TERMS } from '../../utils/quoteGrouping';
 import { logger } from '../../utils/logger';
 
-
-
 const SUGGESTION_PROMPTS = [
   'Generate quote for 100 auto full branding',
   'Create quote for banner printing 10x5 feet, qty 50',
@@ -42,11 +40,11 @@ const SUGGESTION_PROMPTS = [
 ];
 
 interface CityPickerSegment {
-  raw: string;                    // Original segment text (e.g. "100 bus")
-  cityNeeded: boolean;            // true if no city was detected in this segment
-  detectedCity: string | null;    // City found in segment text (if any)
-  selectedCities: string[];       // Cities chosen by user (multi-select)
-  matchedCities?: string[];       // Cities where service is confirmed available (from registry)
+  raw: string; // Original segment text (e.g. "100 bus")
+  cityNeeded: boolean; // true if no city was detected in this segment
+  detectedCity: string | null; // City found in segment text (if any)
+  selectedCities: string[]; // Cities chosen by user (multi-select)
+  matchedCities?: string[]; // Cities where service is confirmed available (from registry)
 }
 
 const ChatInterface: React.FC = () => {
@@ -70,7 +68,9 @@ const ChatInterface: React.FC = () => {
 
   // Multi-select state for MULTIPLE_MATCH scenarios
   // Map: messageId -> { groupKey (vehicleType|city) -> string[] of selected service names }
-  const [selectedServices, setSelectedServices] = useState<Record<string, Record<string, string[]>>>({});
+  const [selectedServices, setSelectedServices] = useState<
+    Record<string, Record<string, string[]>>
+  >({});
 
   // Confirmation table state: shown after service selection, before final Gemini call
   const [confirmationTable, setConfirmationTable] = useState<{
@@ -94,26 +94,33 @@ const ChatInterface: React.FC = () => {
   } | null>(null);
 
   // Unavailable service alert state: shown when a service doesn't exist in a city's rate card
-  const [unavailableServices, setUnavailableServices] = useState<Array<{ city: string; service: string }>>([]);
+  const [unavailableServices, setUnavailableServices] = useState<
+    Array<{ city: string; service: string }>
+  >([]);
   // Pending valid message to send to Gemini after user dismisses the unavailable-service alert
   const [pendingValidMessage, setPendingValidMessage] = useState<string | null>(null);
   const isFullySpecifiedRequest = (userRequest: string): boolean => {
     const request = userRequest.toLowerCase();
-    
+
     // Check for multi-city pattern: "CityName qty service, CityName qty service"
     // e.g. "Chennai 50 auto full branding, Madurai 100 auto semi branding"
     // Uses KNOWN_CITY_LIST to stay in sync with the rest of the app
-    const commaParts = request.split(',').map(p => p.trim()).filter(p => p.length > 0);
+    const commaParts = request
+      .split(',')
+      .map((p) => p.trim())
+      .filter((p) => p.length > 0);
     if (commaParts.length > 1) {
-      const allPartsHaveCity = commaParts.every(part =>
-        KNOWN_CITY_LIST.some(city => part.startsWith(city))
+      const allPartsHaveCity = commaParts.every((part) =>
+        KNOWN_CITY_LIST.some((city) => part.startsWith(city)),
       );
       if (allPartsHaveCity) {
-        logger.info('✅ Client-side detection: Multi-city request detected, treating as EXACT_MATCH');
+        logger.info(
+          '✅ Client-side detection: Multi-city request detected, treating as EXACT_MATCH',
+        );
         return true;
       }
     }
-    
+
     // Check if request contains complete service specifications
     // These patterns indicate the user has already specified the full service name
     const fullServicePatterns = [
@@ -128,33 +135,38 @@ const ChatInterface: React.FC = () => {
       /apartment\s+lift/i,
       /traffic\s+(?:awareness|signal)/i,
     ];
-    
+
     // If request matches any full service pattern, it's fully specified
-    const hasFullServiceName = fullServicePatterns.some(pattern => pattern.test(request));
-    
+    const hasFullServiceName = fullServicePatterns.some((pattern) => pattern.test(request));
+
     if (hasFullServiceName) {
-      logger.info('✅ Client-side detection: Request contains full service names, will skip MULTIPLE_MATCH');
+      logger.info(
+        '✅ Client-side detection: Request contains full service names, will skip MULTIPLE_MATCH',
+      );
       return true;
     }
-    
+
     return false;
   };
 
   // Extract city names from activeProposals file names (matched against KNOWN_CITY_LIST)
   const getAvailableCities = (): string[] => {
     const cities: string[] = [];
-    activeProposals.forEach(p => {
+    activeProposals.forEach((p) => {
       const nameLower = p.fileName.toLowerCase();
-      KNOWN_CITY_LIST.forEach(city => {
-        if (nameLower.includes(city) && !cities.find(c => c.toLowerCase() === city)) {
+      KNOWN_CITY_LIST.forEach((city) => {
+        if (nameLower.includes(city) && !cities.find((c) => c.toLowerCase() === city)) {
           cities.push(city.charAt(0).toUpperCase() + city.slice(1));
         }
       });
     });
     // Fallback: if no known city matched, use cleaned file names as city labels
     if (cities.length === 0) {
-      activeProposals.forEach(p => {
-        const name = p.fileName.replace(/\.(pdf|xlsx?)$/i, '').replace(/[_-]+/g, ' ').trim();
+      activeProposals.forEach((p) => {
+        const name = p.fileName
+          .replace(/\.(pdf|xlsx?)$/i, '')
+          .replace(/[_-]+/g, ' ')
+          .trim();
         if (!cities.includes(name)) cities.push(name);
       });
     }
@@ -164,7 +176,7 @@ const ChatInterface: React.FC = () => {
   // Return first city from the list that appears in the text segment (case-insensitive)
   const detectCityInText = (text: string, cities: string[]): string | null => {
     const lower = text.toLowerCase();
-    return cities.find(c => lower.includes(c.toLowerCase())) || null;
+    return cities.find((c) => lower.includes(c.toLowerCase())) || null;
   };
 
   // Split message by "and" or ",", then check each segment for a city keyword.
@@ -178,8 +190,11 @@ const ChatInterface: React.FC = () => {
       .replace(/(\S\s+)i\s+(need|want)\s+/gi, '$1and ')
       .replace(/(\S\s+)also\s+(need|want)\s+/gi, '$1and ');
 
-    const parts = normalized.split(/\band\b|,/i).map(p => p.trim()).filter(p => p.length > 0);
-    const segments = parts.map(raw => {
+    const parts = normalized
+      .split(/\band\b|,/i)
+      .map((p) => p.trim())
+      .filter((p) => p.length > 0);
+    const segments = parts.map((raw) => {
       const detectedCity = detectCityInText(raw, cities);
       return {
         raw,
@@ -196,13 +211,12 @@ const ChatInterface: React.FC = () => {
       const strippedRaw = seg.raw
         .replace(new RegExp(cities.join('|'), 'gi'), '')
         .replace(/\d+/g, '')
-        .replace(/\s+/g, ' ').trim();
+        .replace(/\s+/g, ' ')
+        .trim();
       if (strippedRaw.length === 0 && seg.detectedCity) {
         // Only a city — inherit previous segment's service
         const prev = segments[i - 1];
-        const prevService = prev.raw
-          .replace(new RegExp(cities.join('|'), 'gi'), '')
-          .trim();
+        const prevService = prev.raw.replace(new RegExp(cities.join('|'), 'gi'), '').trim();
         segments[i] = {
           ...seg,
           raw: `${prevService} ${seg.detectedCity}`.trim(),
@@ -215,9 +229,9 @@ const ChatInterface: React.FC = () => {
     // Seg 1 ("auto") has no city, Seg 2 ("bus branding in chennai") does → Seg 1 inherits Chennai.
     // Only inherits when exactly one distinct city appears in the whole message
     // (otherwise we genuinely don't know which city the cityless segment belongs to).
-    const distinctCities = Array.from(new Set(
-      segments.map(s => s.detectedCity).filter((c): c is string => !!c)
-    ));
+    const distinctCities = Array.from(
+      new Set(segments.map((s) => s.detectedCity).filter((c): c is string => !!c)),
+    );
     if (distinctCities.length === 1) {
       const onlyCity = distinctCities[0];
       for (let i = 0; i < segments.length; i++) {
@@ -244,7 +258,8 @@ const ChatInterface: React.FC = () => {
         .replace(new RegExp(cities.join('|'), 'gi'), '')
         .replace(/\d+/g, '')
         .replace(/\b(i|need|want|the|a|an|for|in|at|of|and|please)\b/gi, '')
-        .replace(/\s+/g, ' ').trim();
+        .replace(/\s+/g, ' ')
+        .trim();
       const dupKey = `${(s.detectedCity || '').toLowerCase()}|${svcKey}`;
       if (svcKey.length > 0 && seen.has(dupKey)) {
         logger.info(`🧹 [Dedup] dropping duplicate segment: "${s.raw}"`);
@@ -261,10 +276,12 @@ const ChatInterface: React.FC = () => {
   useEffect(() => {
     const history = loadChatHistory();
     if (history && history.length > 0) {
-      setMessages(history.map(msg => ({
-        ...msg,
-        timestamp: new Date(msg.timestamp),
-      })));
+      setMessages(
+        history.map((msg) => ({
+          ...msg,
+          timestamp: new Date(msg.timestamp),
+        })),
+      );
     }
   }, []);
 
@@ -283,7 +300,7 @@ const ChatInterface: React.FC = () => {
   // Sync minQtyCacheRef from the global registry on mount (registry may already
   // be populated by useCityServiceRegistry in App.tsx before this component mounts)
   useEffect(() => {
-    getCityServiceRegistry().forEach(entry => {
+    getCityServiceRegistry().forEach((entry) => {
       if (entry.status === 'ready') {
         Object.entries(entry.quantities).forEach(([svc, q]) => {
           if (q.min > 1) minQtyCacheRef.current.set(svc, q.min);
@@ -296,8 +313,12 @@ const ChatInterface: React.FC = () => {
   // Returns 'found' | 'not_found' | 'registry_unavailable'
   const checkServiceInRegistry = (
     cityKey: string,
-    querySegment: string
-  ): { result: 'found' | 'not_found' | 'registry_unavailable'; matchedService?: string; qty?: ServiceQuantity } => {
+    querySegment: string,
+  ): {
+    result: 'found' | 'not_found' | 'registry_unavailable';
+    matchedService?: string;
+    qty?: ServiceQuantity;
+  } => {
     const entry = cityServiceRegistry.current.get(cityKey);
     if (!entry || entry.status !== 'ready' || entry.services.length === 0) {
       logger.info(`📋 [Registry] "${cityKey}" — not ready or empty`);
@@ -310,11 +331,14 @@ const ChatInterface: React.FC = () => {
     const cleaned = querySegment
       .replace(new RegExp(`\\b${cityKey}\\b`, 'gi'), '')
       .replace(/\d+/g, '')
-      .replace(/\b(need|for|the|a|an|in|at|of|and|months?|days?|weeks?|years?|i|want|please|generate|quote|services?|ads?|advertising|outdoor|campaign|some|any)\b/gi, '')
+      .replace(
+        /\b(need|for|the|a|an|in|at|of|and|months?|days?|weeks?|years?|i|want|please|generate|quote|services?|ads?|advertising|outdoor|campaign|some|any)\b/gi,
+        '',
+      )
       .toLowerCase()
       .trim();
 
-    const userWords = cleaned.split(/\s+/).filter(w => w.length >= 2);
+    const userWords = cleaned.split(/\s+/).filter((w) => w.length >= 2);
     if (userWords.length === 0) return { result: 'registry_unavailable' };
 
     // Normalize a word to its base (strip trailing 's') for singular/plural matching
@@ -322,25 +346,28 @@ const ChatInterface: React.FC = () => {
     const baseWord = (w: string) => w.replace(/s$/, '');
 
     // Forward match: ALL user words appear in registry service name
-    const forwardMatches = entry.services.filter(svc =>
-      userWords.every(word => new RegExp(`\\b${baseWord(word)}s?\\b`, 'i').test(svc))
+    const forwardMatches = entry.services.filter((svc) =>
+      userWords.every((word) => new RegExp(`\\b${baseWord(word)}s?\\b`, 'i').test(svc)),
     );
 
     // Reverse match: ALL registry service words appear in user query (user typed more than needed)
     // e.g. "newspaper insertion paper size" → registry "newspaper insertion" → reverse match ✓
-    const reverseMatches = forwardMatches.length === 0
-      ? entry.services.filter(svc => {
-          const svcWords = svc.split(/\s+/).filter(w => w.length >= 2);
-          return svcWords.every(sw =>
-            userWords.some(uw => new RegExp(`\\b${baseWord(sw)}s?\\b`, 'i').test(uw))
-          );
-        })
-      : [];
+    const reverseMatches =
+      forwardMatches.length === 0
+        ? entry.services.filter((svc) => {
+            const svcWords = svc.split(/\s+/).filter((w) => w.length >= 2);
+            return svcWords.every((sw) =>
+              userWords.some((uw) => new RegExp(`\\b${baseWord(sw)}s?\\b`, 'i').test(uw)),
+            );
+          })
+        : [];
 
     const matches = forwardMatches.length > 0 ? forwardMatches : reverseMatches;
 
     logger.info(`🔍 [Registry] query="${querySegment}" → cleaned words: [${userWords.join(', ')}]`);
-    logger.info(`🔍 [Registry] forwardMatches: [${forwardMatches.join(', ')}] | reverseMatches: [${reverseMatches.join(', ')}]`);
+    logger.info(
+      `🔍 [Registry] forwardMatches: [${forwardMatches.join(', ')}] | reverseMatches: [${reverseMatches.join(', ')}]`,
+    );
 
     if (matches.length === 0) return { result: 'not_found' };
 
@@ -373,9 +400,13 @@ const ChatInterface: React.FC = () => {
     const cleaned = segText
       .replace(new RegExp(`\\b${cityKey}\\b`, 'gi'), '')
       .replace(/\d+/g, '')
-      .replace(/\b(need|for|the|a|an|in|at|of|and|months?|days?|weeks?|years?|i|want|please|generate|quote|services?|ads?|advertising|outdoor|campaign|some|any)\b/gi, '')
-      .toLowerCase().trim();
-    const userWords = cleaned.split(/\s+/).filter(w => w.length >= 2);
+      .replace(
+        /\b(need|for|the|a|an|in|at|of|and|months?|days?|weeks?|years?|i|want|please|generate|quote|services?|ads?|advertising|outdoor|campaign|some|any)\b/gi,
+        '',
+      )
+      .toLowerCase()
+      .trim();
+    const userWords = cleaned.split(/\s+/).filter((w) => w.length >= 2);
     if (userWords.length === 0) return { state: 'empty' };
 
     // Generic spelling-variant tolerance (NO hardcoded service names):
@@ -392,23 +423,33 @@ const ChatInterface: React.FC = () => {
     const wordMatchesService = (word: string, svc: string) =>
       new RegExp(`\\b${baseWord(word)}s?\\b`, 'i').test(svc);
 
-    const matches = entry.services.filter(svc => {
+    const matches = entry.services.filter((svc) => {
       // Forward match: every user word appears (singular/plural) in service name.
-      if (userWords.every(w => wordMatchesService(w, svc))) return true;
+      if (userWords.every((w) => wordMatchesService(w, svc))) return true;
       // Joined-pair tolerance: walk userWords, allowing adjacent pairs to merge.
       let i = 0;
       while (i < userWords.length) {
         const single = wordMatchesService(userWords[i], svc);
-        const pair = i < userWords.length - 1 && new RegExp(`\\b${joinedPairs[i]}s?\\b`, 'i').test(svc);
-        if (single) { i += 1; continue; }
-        if (pair) { i += 2; continue; }
+        const pair =
+          i < userWords.length - 1 && new RegExp(`\\b${joinedPairs[i]}s?\\b`, 'i').test(svc);
+        if (single) {
+          i += 1;
+          continue;
+        }
+        if (pair) {
+          i += 2;
+          continue;
+        }
         return false;
       }
       return true;
     });
-    logger.info(`🧮 [Classify] city="${cityKey}" userWords=[${userWords.join(',')}] joined=[${joinedPairs.join(',')}] → ${matches.length} match(es): [${matches.join(' | ')}]`);
+    logger.info(
+      `🧮 [Classify] city="${cityKey}" userWords=[${userWords.join(',')}] joined=[${joinedPairs.join(',')}] → ${matches.length} match(es): [${matches.join(' | ')}]`,
+    );
     if (matches.length === 0) return { state: 'not_found' };
-    if (matches.length === 1) return { state: 'specific', matches, qty: entry.quantities[matches[0]] };
+    if (matches.length === 1)
+      return { state: 'specific', matches, qty: entry.quantities[matches[0]] };
     return { state: 'vague', matches };
   };
   // ─────────────────────────────────────────────────────────────────────────
@@ -421,7 +462,7 @@ const ChatInterface: React.FC = () => {
         const viewportHeight = viewport.height;
         document.documentElement.style.setProperty(
           '--visual-viewport-height',
-          `${viewportHeight}px`
+          `${viewportHeight}px`,
         );
       };
 
@@ -473,14 +514,15 @@ const ChatInterface: React.FC = () => {
         // Auto-assign city for segments whose service exists in exactly ONE city's registry.
         // Falls back to raw PDF text scan if registry not yet built for a city.
         // Only segments present in 2+ cities remain cityNeeded=true and appear in the picker.
-        const segments: CityPickerSegment[] = rawSegments.map(seg => {
+        const segments: CityPickerSegment[] = rawSegments.map((seg) => {
           if (!seg.cityNeeded) return seg; // already has city in the text
 
           // Bug 4 (strict): ONLY list cities whose registry actually contains the service.
           // No text-scan fallback — if a registry isn't ready yet, that city is excluded
           // rather than guessed in (which previously let Madurai leak under "lamp post").
-          const citiesWithService = availCities.filter(city => {
-            const cityKey = KNOWN_CITY_LIST.find(c => city.toLowerCase().includes(c)) || city.toLowerCase();
+          const citiesWithService = availCities.filter((city) => {
+            const cityKey =
+              KNOWN_CITY_LIST.find((c) => city.toLowerCase().includes(c)) || city.toLowerCase();
             const cls = classifySegmentByRegistry(cityKey, seg.raw);
             return cls.state === 'specific' || cls.state === 'vague';
           });
@@ -502,19 +544,20 @@ const ChatInterface: React.FC = () => {
 
         // Show city picker only when a segment needs a city AND the service was found in 2+ cities.
         // If service is found in 0 cities (unknown query) let Gemini handle it directly.
-        const hasServiceRequest = segments.some(s =>
-          s.cityNeeded && s.matchedCities !== undefined && s.matchedCities.length >= 2
+        const hasServiceRequest = segments.some(
+          (s) => s.cityNeeded && s.matchedCities !== undefined && s.matchedCities.length >= 2,
         );
         if (hasServiceRequest) {
           const pickerMsgId = (Date.now() + 1).toString();
           const pickerMsg: Message = {
             id: pickerMsgId,
             role: 'assistant',
-            content: '🏙️ Multiple city rate cards are loaded. Please select the city for each service below:',
+            content:
+              '🏙️ Multiple city rate cards are loaded. Please select the city for each service below:',
             timestamp: new Date(),
             isCityPicker: true,
           };
-          setMessages(prev => [...prev, userMessage, pickerMsg]);
+          setMessages((prev) => [...prev, userMessage, pickerMsg]);
           setInputValue('');
           setCityPickerState({
             messageId: pickerMsgId,
@@ -532,7 +575,9 @@ const ChatInterface: React.FC = () => {
     // Replaces the old strict-parser check. Uses cityServiceRegistry built from
     // Gemini's one-time PDF read to verify service availability + quantity constraints.
     // SKIP: checkbox-confirmed messages are already verified upstream.
-    const isCheckboxConfirmed = userMessage.content.includes('[User has already specified complete service names from checkboxes]');
+    const isCheckboxConfirmed = userMessage.content.includes(
+      '[User has already specified complete service names from checkboxes]',
+    );
     if (activeProposals.length > 1 && !isCheckboxConfirmed) {
       const availCitiesPre = getAvailableCities();
       if (availCitiesPre.length > 1) {
@@ -542,31 +587,42 @@ const ChatInterface: React.FC = () => {
         // Parallel display labels (friendly: `{qty} {Service} ({City})`) — shown in the
         // "Already confirmed" panel. Falls back to the raw segment when service is unknown.
         const validSegmentLabels: string[] = [];
-        const titleCaseSvc = (s: string) => s.split(' ').map(w => w.charAt(0).toUpperCase() + w.slice(1).toLowerCase()).join(' ');
+        const titleCaseSvc = (s: string) =>
+          s
+            .split(' ')
+            .map((w) => w.charAt(0).toUpperCase() + w.slice(1).toLowerCase())
+            .join(' ');
         // vague segment now carries the FULL matches list straight from the classifier,
         // so the checkbox group is built from real registry data (works for any category).
-        const vagueSegments: Array<{ seg: typeof preSegments[0]; cityKey: string; matches: string[]; qty: number }> = [];
+        const vagueSegments: Array<{
+          seg: (typeof preSegments)[0];
+          cityKey: string;
+          matches: string[];
+          qty: number;
+        }> = [];
 
         for (const seg of preSegments) {
           const segLower = seg.raw.toLowerCase();
 
           if (!seg.detectedCity) {
             // No city in this segment — check if it names a known-but-unloaded city
-            const unloadedCity = KNOWN_CITY_LIST.find(city =>
-              new RegExp(`\\b${city}\\b`).test(segLower) &&
-              !activeProposals.some(p => p.fileName.toLowerCase().includes(city))
+            const unloadedCity = KNOWN_CITY_LIST.find(
+              (city) =>
+                new RegExp(`\\b${city}\\b`).test(segLower) &&
+                !activeProposals.some((p) => p.fileName.toLowerCase().includes(city)),
             );
             if (unloadedCity) {
               const cityLabel = unloadedCity.charAt(0).toUpperCase() + unloadedCity.slice(1);
-              const svcLabel = seg.raw
-                .replace(new RegExp(unloadedCity, 'gi'), '')
-                .replace(/\d+/g, '')
-                .replace(/\b(need|for|the|a|an|in|at|of|months?|days?|weeks?|years?)\b/gi, '')
-                .replace(/\s+/g, ' ')
-                .trim()
-                .split(' ')
-                .map(w => w.charAt(0).toUpperCase() + w.slice(1).toLowerCase())
-                .join(' ') || cityLabel;
+              const svcLabel =
+                seg.raw
+                  .replace(new RegExp(unloadedCity, 'gi'), '')
+                  .replace(/\d+/g, '')
+                  .replace(/\b(need|for|the|a|an|in|at|of|months?|days?|weeks?|years?)\b/gi, '')
+                  .replace(/\s+/g, ' ')
+                  .trim()
+                  .split(' ')
+                  .map((w) => w.charAt(0).toUpperCase() + w.slice(1).toLowerCase())
+                  .join(' ') || cityLabel;
               preAlerts.push({ city: cityLabel, service: svcLabel });
               continue;
             }
@@ -577,19 +633,29 @@ const ChatInterface: React.FC = () => {
           }
 
           // City detected — classify via registry (single decision point)
-          const cityKey = KNOWN_CITY_LIST.find(c => seg.detectedCity!.toLowerCase().includes(c)) || seg.detectedCity.toLowerCase();
+          const cityKey =
+            KNOWN_CITY_LIST.find((c) => seg.detectedCity!.toLowerCase().includes(c)) ||
+            seg.detectedCity.toLowerCase();
           const cls = classifySegmentByRegistry(cityKey, seg.raw);
           const cityLabel = seg.detectedCity.charAt(0).toUpperCase() + seg.detectedCity.slice(1);
 
           // — registry not built yet: try a generic price-line text scan as a stop-gap —
           if (cls.state === 'registry_unavailable') {
-            const cityProposal = activeProposals.find(p => p.fileName.toLowerCase().includes(cityKey));
+            const cityProposal = activeProposals.find((p) =>
+              p.fileName.toLowerCase().includes(cityKey),
+            );
             const userWords = seg.raw
               .replace(/\d+/g, '')
               .replace(new RegExp(`\\b${cityKey}\\b`, 'gi'), '')
-              .replace(/\b(i|need|a|an|the|for|in|at|of|and|want|please|generate|quote|services?|ads?|advertising|outdoor|some|any)\b/gi, '')
-              .toLowerCase().replace(/\s+/g, ' ').trim()
-              .split(/\s+/).filter(w => w.length >= 2);
+              .replace(
+                /\b(i|need|a|an|the|for|in|at|of|and|want|please|generate|quote|services?|ads?|advertising|outdoor|some|any)\b/gi,
+                '',
+              )
+              .toLowerCase()
+              .replace(/\s+/g, ' ')
+              .trim()
+              .split(/\s+/)
+              .filter((w) => w.length >= 2);
 
             if (cityProposal?.textContent && userWords.length > 0) {
               // Generic heuristic: short line containing all user words AND a price/qty hint nearby
@@ -599,12 +665,16 @@ const ChatInterface: React.FC = () => {
                 const t = line.trim();
                 if (t.length < 4 || t.length > 100) continue;
                 const tLower = t.toLowerCase();
-                const hasAllUserWords = userWords.every(w => tLower.includes(w));
-                const looksLikeServiceLine = /(rs\.?|₹|\/-|\bsq\.?cm\b|\bsec\b|\bspot\b|\bday\b|\bmonth\b|\bper\b|\d{2,})/i.test(t);
+                const hasAllUserWords = userWords.every((w) => tLower.includes(w));
+                const looksLikeServiceLine =
+                  /(rs\.?|₹|\/-|\bsq\.?cm\b|\bsec\b|\bspot\b|\bday\b|\bmonth\b|\bper\b|\d{2,})/i.test(
+                    t,
+                  );
                 if (hasAllUserWords && looksLikeServiceLine) {
                   const cleaned = t
                     .replace(/[:\-–—]\s*[\d₹,. ]+.*$/, '')
-                    .replace(/\s+/g, ' ').trim();
+                    .replace(/\s+/g, ' ')
+                    .trim();
                   if (cleaned.length > 3 && !found.includes(cleaned)) found.push(cleaned);
                 }
               }
@@ -629,15 +699,16 @@ const ChatInterface: React.FC = () => {
 
           // — empty or not_found → alert —
           if (cls.state === 'empty' || cls.state === 'not_found') {
-            const svcLabel = seg.raw
-              .replace(new RegExp(seg.detectedCity, 'gi'), '')
-              .replace(/\d+/g, '')
-              .replace(/\b(need|for|the|a|an|in|at|of|months?|days?|weeks?|years?)\b/gi, '')
-              .replace(/\s+/g, ' ')
-              .trim()
-              .split(' ')
-              .map(w => w.charAt(0).toUpperCase() + w.slice(1).toLowerCase())
-              .join(' ') || cityLabel;
+            const svcLabel =
+              seg.raw
+                .replace(new RegExp(seg.detectedCity, 'gi'), '')
+                .replace(/\d+/g, '')
+                .replace(/\b(need|for|the|a|an|in|at|of|months?|days?|weeks?|years?)\b/gi, '')
+                .replace(/\s+/g, ' ')
+                .trim()
+                .split(' ')
+                .map((w) => w.charAt(0).toUpperCase() + w.slice(1).toLowerCase())
+                .join(' ') || cityLabel;
             preAlerts.push({ city: cityLabel, service: svcLabel });
             continue;
           }
@@ -661,18 +732,33 @@ const ChatInterface: React.FC = () => {
             if (cls.qty && requestedQty !== null) {
               const { min, max } = cls.qty;
               if (!isQtyOverride && requestedQty < min) {
-                const svcLabel = matchedSvc.split(' ').map(w => w.charAt(0).toUpperCase() + w.slice(1)).join(' ');
-                setMessages(prev => [...prev, userMessage]);
+                const svcLabel = matchedSvc
+                  .split(' ')
+                  .map((w) => w.charAt(0).toUpperCase() + w.slice(1))
+                  .join(' ');
+                setMessages((prev) => [...prev, userMessage]);
                 setMinQtyWarning({
-                  items: [{ description: `${svcLabel} - ${cityLabel}`, requested: requestedQty, minimum: min }],
+                  items: [
+                    {
+                      description: `${svcLabel} - ${cityLabel}`,
+                      requested: requestedQty,
+                      minimum: min,
+                    },
+                  ],
                   pendingQuote: null as any,
                 });
                 setPendingValidMessage(seg.raw);
                 return;
               }
               if (max !== null && requestedQty > max) {
-                const svcLabel = matchedSvc.split(' ').map(w => w.charAt(0).toUpperCase() + w.slice(1)).join(' ');
-                preAlerts.push({ city: cityLabel, service: `${svcLabel} (max ${max} units — you requested ${requestedQty})` });
+                const svcLabel = matchedSvc
+                  .split(' ')
+                  .map((w) => w.charAt(0).toUpperCase() + w.slice(1))
+                  .join(' ');
+                preAlerts.push({
+                  city: cityLabel,
+                  service: `${svcLabel} (max ${max} units — you requested ${requestedQty})`,
+                });
                 continue;
               }
             }
@@ -691,16 +777,22 @@ const ChatInterface: React.FC = () => {
           }> = [];
 
           vagueSegments.forEach(({ seg, matches, qty }) => {
-            const cityLabel = seg.detectedCity!.charAt(0).toUpperCase() + seg.detectedCity!.slice(1);
+            const cityLabel =
+              seg.detectedCity!.charAt(0).toUpperCase() + seg.detectedCity!.slice(1);
             // Use the FIRST matched service's leading word as the group label
             // (e.g. "Lamp Post Branding" → "Lamp Post"; "Newspaper Insertion - RE" → "Newspaper")
             const groupLabel = matches[0]
               .split(/[-–—]/)[0]
-              .split(' ').slice(0, 2)
-              .map(w => w.charAt(0).toUpperCase() + w.slice(1))
-              .join(' ').trim();
-            const relatedServices = matches.map(s => ({
-              name: s.split(' ').map(w => w.charAt(0).toUpperCase() + w.slice(1)).join(' '),
+              .split(' ')
+              .slice(0, 2)
+              .map((w) => w.charAt(0).toUpperCase() + w.slice(1))
+              .join(' ')
+              .trim();
+            const relatedServices = matches.map((s) => ({
+              name: s
+                .split(' ')
+                .map((w) => w.charAt(0).toUpperCase() + w.slice(1))
+                .join(' '),
               category: groupLabel,
             }));
 
@@ -723,7 +815,7 @@ const ChatInterface: React.FC = () => {
               groupedServices,
               directParts: validSegmentLabels.length > 0 ? validSegmentLabels : undefined,
             };
-            setMessages(prev => [...prev, userMessage, assistantMsg]);
+            setMessages((prev) => [...prev, userMessage, assistantMsg]);
             setInputValue('');
             return;
           }
@@ -732,10 +824,10 @@ const ChatInterface: React.FC = () => {
         if (preAlerts.length > 0) {
           setUnavailableServices(preAlerts);
           if (validSegmentRaws.length === 0) {
-            setMessages(prev => [...prev, userMessage]);
+            setMessages((prev) => [...prev, userMessage]);
             return;
           }
-          setMessages(prev => [...prev, userMessage]);
+          setMessages((prev) => [...prev, userMessage]);
           setPendingValidMessage(validSegmentRaws.join(' and '));
           return;
         }
@@ -743,21 +835,22 @@ const ChatInterface: React.FC = () => {
     }
     // ─────────────────────────────────────────────────────────────────────────
 
-    setMessages(prev => [...prev, userMessage]);
+    setMessages((prev) => [...prev, userMessage]);
     setIsLoading(true);
     setError(null);
 
-
     try {
       // Prepare proposal contexts for AI
-      let proposalContexts: Array<{fileName: string, content: string}> | undefined;
+      let proposalContexts: Array<{ fileName: string; content: string }> | undefined;
 
       if (activeProposals.length > 0) {
         // Multi-location mode: use only user-selected active proposals
         proposalContexts = activeProposals
-          .filter(p => p.textContent && p.textContent.trim().length > 50)
-          .map(p => ({ fileName: p.fileName, content: p.textContent }));
-        logger.info(`🎯 Multi-location mode: using ${proposalContexts.length} user-selected proposals`);
+          .filter((p) => p.textContent && p.textContent.trim().length > 50)
+          .map((p) => ({ fileName: p.fileName, content: p.textContent }));
+        logger.info(
+          `🎯 Multi-location mode: using ${proposalContexts.length} user-selected proposals`,
+        );
       } else {
         // Default: Load all proposals from cloud for multi-document search
         let allProposals: any[] = [];
@@ -770,12 +863,14 @@ const ChatInterface: React.FC = () => {
         if (allProposals && allProposals.length > 0) {
           // Multi-document mode: Send ALL uploaded proposals to AI
           proposalContexts = allProposals
-            .filter(p => p.text_content && p.text_content.trim().length > 50)
-            .map(p => ({
+            .filter((p) => p.text_content && p.text_content.trim().length > 50)
+            .map((p) => ({
               fileName: p.file_name,
-              content: p.text_content
+              content: p.text_content,
             }));
-          logger.info(`📚 Multi-document search enabled: ${proposalContexts.length} documents available`);
+          logger.info(
+            `📚 Multi-document search enabled: ${proposalContexts.length} documents available`,
+          );
         }
       }
 
@@ -793,8 +888,11 @@ const ChatInterface: React.FC = () => {
       // document to draw prices from for each city section
       if (activeProposals.length > 1) {
         const cityMappingHint = activeProposals
-          .map(p => {
-            const name = p.fileName.replace(/\.(pdf|xlsx?)$/i, '').replace(/[_-]+/g, ' ').trim();
+          .map((p) => {
+            const name = p.fileName
+              .replace(/\.(pdf|xlsx?)$/i, '')
+              .replace(/[_-]+/g, ' ')
+              .trim();
             return `"${p.fileName}" → ${name} pricing`;
           })
           .join('; ');
@@ -815,23 +913,23 @@ const ChatInterface: React.FC = () => {
         content: response.message,
         timestamp: new Date(),
         matchType: response.matchType,
-        
+
         // MULTIPLE_MATCH
         isMultipleMatch: response.isMultipleMatch,
         groupedServices: response.groupedServices,
         originalUserInput: userMessage.content, // Preserve original input to carry forward duration/days
-        
+
         // PARTIAL_MATCH
         isPartialMatch: response.isPartialMatch,
         requestedService: response.requestedService,
         requestedQuantity: response.requestedQuantity,
         closestServices: response.closestServices,
         alternativeServices: response.alternativeServices,
-        
+
         // NO_MATCH
         isNoMatch: response.isNoMatch,
         allServicesGrouped: response.allServicesGrouped,
-        
+
         // DEPRECATED (backward compatibility)
         isServiceNotFound: response.isServiceNotFound,
         availableServices: response.availableServices,
@@ -840,44 +938,45 @@ const ChatInterface: React.FC = () => {
       };
 
       // Handle 4-tier matching system responses
-      
+
       // MULTIPLE_MATCH - Ask user to clarify
       if (response.isMultipleMatch && response.groupedServices) {
         logger.info('🔀 MULTIPLE_MATCH detected - Showing service options');
         logger.info('📋 Services by vehicle type:');
-        response.groupedServices.forEach(group => {
+        response.groupedServices.forEach((group) => {
           logger.info(`  - ${group.vehicleType}: ${group.services.length} services found`);
-          group.services.forEach(svc => logger.info(`    • ${svc.name}`));
+          group.services.forEach((svc) => logger.info(`    • ${svc.name}`));
         });
-        setMessages(prev => [...prev, assistantMessage]);
-        setIsLoading(false);
-        return;
-      }
-      
-      // PARTIAL_MATCH - Suggest alternatives
-      if (response.isPartialMatch && response.closestServices) {
-        setMessages(prev => [...prev, assistantMessage]);
-        setIsLoading(false);
-        return;
-      }
-      
-      // NO_MATCH - Show all services
-      if (response.isNoMatch && response.allServicesGrouped) {
-        setMessages(prev => [...prev, assistantMessage]);
-        setIsLoading(false);
-        return;
-      }
-      
-      // DEPRECATED: Handle old serviceNotFound format
-      if (response.isServiceNotFound && response.availableServices) {
-        assistantMessage.content = response.serviceNotFoundMessage || 
-          `The requested service is not available in the proposal. Please select from the available services below:`;
-        setMessages(prev => [...prev, assistantMessage]);
+        setMessages((prev) => [...prev, assistantMessage]);
         setIsLoading(false);
         return;
       }
 
-      setMessages(prev => [...prev, assistantMessage]);
+      // PARTIAL_MATCH - Suggest alternatives
+      if (response.isPartialMatch && response.closestServices) {
+        setMessages((prev) => [...prev, assistantMessage]);
+        setIsLoading(false);
+        return;
+      }
+
+      // NO_MATCH - Show all services
+      if (response.isNoMatch && response.allServicesGrouped) {
+        setMessages((prev) => [...prev, assistantMessage]);
+        setIsLoading(false);
+        return;
+      }
+
+      // DEPRECATED: Handle old serviceNotFound format
+      if (response.isServiceNotFound && response.availableServices) {
+        assistantMessage.content =
+          response.serviceNotFoundMessage ||
+          `The requested service is not available in the proposal. Please select from the available services below:`;
+        setMessages((prev) => [...prev, assistantMessage]);
+        setIsLoading(false);
+        return;
+      }
+
+      setMessages((prev) => [...prev, assistantMessage]);
 
       // EXACT_MATCH - Quote generated, process and navigate
       if (response.isQuoteGeneration && response.quoteData) {
@@ -886,7 +985,7 @@ const ChatInterface: React.FC = () => {
         let isRateCardImage = false;
         if (proposalContexts && proposalContexts.length > 0) {
           // Multi-document mode: check if ALL documents are images
-          isRateCardImage = proposalContexts.every(p => {
+          isRateCardImage = proposalContexts.every((p) => {
             const ext = p.fileName.toLowerCase().split('.').pop() || '';
             return ['jpg', 'jpeg', 'png', 'webp'].includes(ext);
           });
@@ -895,69 +994,89 @@ const ChatInterface: React.FC = () => {
           const fileExtension = proposal.fileName.toLowerCase().split('.').pop() || '';
           isRateCardImage = ['jpg', 'jpeg', 'png', 'webp'].includes(fileExtension);
         }
-        
-        logger.info('🔍 Rate card detection:', { isRateCardImage, fileName: proposal.fileName, multiDoc: !!proposalContexts });
-        
-        // Flatten lineItems into individual QuoteItems
-        const quoteItems: QuoteItem[] = response.quoteData.items.flatMap((section: any, sectionIndex: number) => {
-          const sectionTitle = section.title || '';
-          return section.lineItems.map((item: any, lineIndex: number) => {
-            // Use original description from AI - don't prepend generic section title
-            // The AI already provides specific service names (e.g., "BUS SEMI BRANDING - Rental Price")
-            let description = item.description;
-            
-            // Check if description is too generic (missing specific service details)
-            // Only prepend section title if description doesn't contain specific service keywords
-            const hasSpecificService = /\b(BUS|AUTO|CAB|TAXI|TEMPO|TRUCK|VAN|VEHICLE|SHOP|BANNER|SIGNAGE|BOARD|HOARDING|DISPLAY|PRINTING|FIXING|RENTAL|BRANDING|FULL|SEMI|BACK|FRONT|SIDE)\b/i.test(description);
-            const containsSectionTitle = description.toLowerCase().includes(sectionTitle.toLowerCase());
-            
-            // Only prepend if description is generic AND doesn't already have section title
-            if (sectionTitle && !containsSectionTitle && !hasSpecificService) {
-              description = `${sectionTitle} - ${description}`;
-            }
-            
-            // Extract specific service title from description for display in T&C section
-            // This ensures we show "Bus Full Branding" instead of generic "Vehicle Branding"
-            let specificTitle = '';
-            const descParts = description.split(' - ');
-            if (descParts.length >= 2 && sectionTitle && 
-                descParts[0].toLowerCase().trim() === sectionTitle.toLowerCase().trim()) {
-              // First part is generic section title, use second part as specific title
-              specificTitle = descParts[1].trim();
-            } else {
-              // Use first part as title
-              specificTitle = descParts[0].trim();
-            }
-            // Clean up extra details (e.g., "(per bus month)") to get just the service name
-            specificTitle = specificTitle
-              .replace(/\s*\(.*?\)\s*/g, '') // Remove parenthetical notes
-              .replace(/\s*-\s*(Display|Rental|Printing|Fixing|Price).*$/i, '') // Remove price type suffixes
-              .trim();
-            
-            const duration = item.duration && item.duration > 1 ? item.duration : undefined;
-            const durationUnit: 'months' | 'days' | undefined = item.durationUnit || (duration ? 'months' : undefined);
-            return {
-              id: `${sectionIndex}-${lineIndex}`,
-              title: specificTitle, // Store specific service title for T&C display
-              description: description,
-              quantity: item.quantity || 1,
-              rate: item.unitPrice || 0,
-              duration: duration,
-              durationUnit: durationUnit,
-              total: (item.quantity || 1) * (item.unitPrice || 0) * (duration || 1),
-              minimumQuantity: item.minimumQuantity || undefined,
-              // Only store terms on the first line item of each section to avoid duplicate textareas
-              // For rate card images, clear per-item terms; for proposals, keep them
-              termsAndConditions: lineIndex === 0 ? (isRateCardImage ? undefined : (section.termsAndConditions || undefined)) : undefined
-            };
-          });
+
+        logger.info('🔍 Rate card detection:', {
+          isRateCardImage,
+          fileName: proposal.fileName,
+          multiDoc: !!proposalContexts,
         });
+
+        // Flatten lineItems into individual QuoteItems
+        const quoteItems: QuoteItem[] = response.quoteData.items.flatMap(
+          (section: any, sectionIndex: number) => {
+            const sectionTitle = section.title || '';
+            return section.lineItems.map((item: any, lineIndex: number) => {
+              // Use original description from AI - don't prepend generic section title
+              // The AI already provides specific service names (e.g., "BUS SEMI BRANDING - Rental Price")
+              let description = item.description;
+
+              // Check if description is too generic (missing specific service details)
+              // Only prepend section title if description doesn't contain specific service keywords
+              const hasSpecificService =
+                /\b(BUS|AUTO|CAB|TAXI|TEMPO|TRUCK|VAN|VEHICLE|SHOP|BANNER|SIGNAGE|BOARD|HOARDING|DISPLAY|PRINTING|FIXING|RENTAL|BRANDING|FULL|SEMI|BACK|FRONT|SIDE)\b/i.test(
+                  description,
+                );
+              const containsSectionTitle = description
+                .toLowerCase()
+                .includes(sectionTitle.toLowerCase());
+
+              // Only prepend if description is generic AND doesn't already have section title
+              if (sectionTitle && !containsSectionTitle && !hasSpecificService) {
+                description = `${sectionTitle} - ${description}`;
+              }
+
+              // Extract specific service title from description for display in T&C section
+              // This ensures we show "Bus Full Branding" instead of generic "Vehicle Branding"
+              let specificTitle = '';
+              const descParts = description.split(' - ');
+              if (
+                descParts.length >= 2 &&
+                sectionTitle &&
+                descParts[0].toLowerCase().trim() === sectionTitle.toLowerCase().trim()
+              ) {
+                // First part is generic section title, use second part as specific title
+                specificTitle = descParts[1].trim();
+              } else {
+                // Use first part as title
+                specificTitle = descParts[0].trim();
+              }
+              // Clean up extra details (e.g., "(per bus month)") to get just the service name
+              specificTitle = specificTitle
+                .replace(/\s*\(.*?\)\s*/g, '') // Remove parenthetical notes
+                .replace(/\s*-\s*(Display|Rental|Printing|Fixing|Price).*$/i, '') // Remove price type suffixes
+                .trim();
+
+              const duration = item.duration && item.duration > 1 ? item.duration : undefined;
+              const durationUnit: 'months' | 'days' | undefined =
+                item.durationUnit || (duration ? 'months' : undefined);
+              return {
+                id: `${sectionIndex}-${lineIndex}`,
+                title: specificTitle, // Store specific service title for T&C display
+                description: description,
+                quantity: item.quantity || 1,
+                rate: item.unitPrice || 0,
+                duration: duration,
+                durationUnit: durationUnit,
+                total: (item.quantity || 1) * (item.unitPrice || 0) * (duration || 1),
+                minimumQuantity: item.minimumQuantity || undefined,
+                // Only store terms on the first line item of each section to avoid duplicate textareas
+                // For rate card images, clear per-item terms; for proposals, keep them
+                termsAndConditions:
+                  lineIndex === 0
+                    ? isRateCardImage
+                      ? undefined
+                      : section.termsAndConditions || undefined
+                    : undefined,
+              };
+            });
+          },
+        );
 
         // Deduplicate: Gemini sometimes extracts the same service section twice when the
         // PDF mentions it in both a pricing summary table AND a detailed section.
         // Keep only the first occurrence of each unique description (case-insensitive).
         const _seenDescriptions = new Set<string>();
-        const uniqueQuoteItems = quoteItems.filter(item => {
+        const uniqueQuoteItems = quoteItems.filter((item) => {
           const key = item.description.toLowerCase().trim();
           if (_seenDescriptions.has(key)) {
             logger.info(`⚠️ Duplicate item removed: "${item.description}"`);
@@ -975,7 +1094,7 @@ const ChatInterface: React.FC = () => {
 
         // Populate minimum-quantity cache from AI response so that future requests in the
         // same session can validate against known minimums even if the AI omits minimumQuantity.
-        quoteItems.forEach(item => {
+        quoteItems.forEach((item) => {
           if (item.minimumQuantity) {
             const serviceKey = item.description.split(' - ')[0].toLowerCase().trim();
             minQtyCacheRef.current.set(serviceKey, item.minimumQuantity);
@@ -986,10 +1105,10 @@ const ChatInterface: React.FC = () => {
         const subtotal = quoteItems.reduce((sum, item) => sum + item.total, 0);
         const gstPercentage = 18;
         const gstAmount = subtotal * (gstPercentage / 100);
-        
+
         // Use standard business terms for rate card images, extracted terms for Excel/PDF proposals
         let finalTermsAndConditions: string;
-        
+
         if (isRateCardImage) {
           // Detected JPEG/image rate card - use standard terms
           finalTermsAndConditions = DEFAULT_GENERAL_TERMS.join('\n');
@@ -997,28 +1116,34 @@ const ChatInterface: React.FC = () => {
         } else {
           // For Excel/PDF proposals, use extracted terms but filter out rate card artifacts
           const geminiTerms = response.quoteData.termsAndConditions || '';
-          
+
           // Additional safety check: detect if Gemini extracted rate card footnotes instead of real T&C
-          const isRateCardFootnote = 
+          const isRateCardFootnote =
             geminiTerms.includes('மூக்க்கம்கககம்க்') || // Tamil text
             geminiTerms.includes('சர்வீஸ்') || // Tamil text
             geminiTerms.toLowerCase().includes('no explicit general terms') ||
             geminiTerms.toLowerCase().includes('no classified display ad') ||
             geminiTerms.toLowerCase().includes('srilanka edition') ||
             geminiTerms.toLowerCase().includes('rate card');
-          
+
           if (isRateCardFootnote) {
             // Gemini extracted rate card notes, not real T&C - use defaults
             finalTermsAndConditions = DEFAULT_GENERAL_TERMS.join('\n');
-            logger.info('⚠️ Detected rate card footnotes in T&C, using DEFAULT_GENERAL_TERMS instead');
+            logger.info(
+              '⚠️ Detected rate card footnotes in T&C, using DEFAULT_GENERAL_TERMS instead',
+            );
           } else {
             // Looks like legitimate T&C from a proposal
             // If empty (common in multi-city responses), fall back to defaults
             finalTermsAndConditions = geminiTerms || DEFAULT_GENERAL_TERMS.join('\n');
-            logger.info(geminiTerms ? '✅ Using extracted T&C from proposal document' : '✅ Using DEFAULT_GENERAL_TERMS (AI returned empty T&C)');
+            logger.info(
+              geminiTerms
+                ? '✅ Using extracted T&C from proposal document'
+                : '✅ Using DEFAULT_GENERAL_TERMS (AI returned empty T&C)',
+            );
           }
         }
-        
+
         const quote: Quote = {
           id: Date.now().toString(),
           quoteNumber: `QT-${Date.now().toString().slice(-6)}`,
@@ -1034,37 +1159,39 @@ const ChatInterface: React.FC = () => {
           termsAndConditions: finalTermsAndConditions,
           notes: response.quoteData.notes,
           createdAt: new Date(),
-          updatedAt: new Date()
+          updatedAt: new Date(),
         };
-        
+
         // Check if any items are below minimum quantity — deduplicate by service name
         // Uses both the AI-returned minimumQuantity AND the session cache (so that
         // continued messages in the same chat are validated even when the AI omits minimumQuantity).
         const seenServices = new Set<string>();
         const belowMinItems = quoteItems
-          .filter(item => {
+          .filter((item) => {
             const serviceKey = item.description.split(' - ')[0].toLowerCase().trim();
             const effectiveMin = item.minimumQuantity || minQtyCacheRef.current.get(serviceKey);
             if (effectiveMin) {
-              logger.info(`🔍 Min qty check: "${serviceKey}" qty=${item.quantity} min=${effectiveMin} (source: ${item.minimumQuantity ? 'AI' : 'cache'})`);
+              logger.info(
+                `🔍 Min qty check: "${serviceKey}" qty=${item.quantity} min=${effectiveMin} (source: ${item.minimumQuantity ? 'AI' : 'cache'})`,
+              );
             }
             return effectiveMin !== undefined && item.quantity < effectiveMin;
           })
-          .map(item => {
+          .map((item) => {
             const serviceKey = item.description.split(' - ')[0].toLowerCase().trim();
             const effectiveMin = item.minimumQuantity || minQtyCacheRef.current.get(serviceKey)!;
             return {
               description: item.description.split(' - ')[0],
               requested: item.quantity,
-              minimum: effectiveMin
+              minimum: effectiveMin,
             };
           })
-          .filter(item => {
+          .filter((item) => {
             if (seenServices.has(item.description)) return false;
             seenServices.add(item.description);
             return true;
           });
-        
+
         if (belowMinItems.length > 0) {
           // Set quote but pause navigation — show warning dialog
           setCurrentQuote(quote);
@@ -1073,7 +1200,7 @@ const ChatInterface: React.FC = () => {
         }
 
         setCurrentQuote(quote);
-        
+
         // Show success message before navigating
         const quoteReadyMessage: Message = {
           id: (Date.now() + 2).toString(),
@@ -1081,8 +1208,8 @@ const ChatInterface: React.FC = () => {
           content: '✓ Quote generated successfully! Redirecting to quote preview...',
           timestamp: new Date(),
         };
-        setMessages(prev => [...prev, quoteReadyMessage]);
-        
+        setMessages((prev) => [...prev, quoteReadyMessage]);
+
         // Auto-navigate to quote page after a brief delay
         setTimeout(() => {
           history.push('/quote');
@@ -1098,7 +1225,7 @@ const ChatInterface: React.FC = () => {
         timestamp: new Date(),
         isError: true,
       };
-      setMessages(prev => [...prev, errorMessage]);
+      setMessages((prev) => [...prev, errorMessage]);
     } finally {
       setIsLoading(false);
     }
@@ -1107,7 +1234,7 @@ const ChatInterface: React.FC = () => {
   // Find the activeProposal whose fileName contains the given city name
   // Toggle a city on/off for a segment (multi-select)
   const handleCitySelection = (segmentIdx: number, city: string) => {
-    setCityPickerState(prev => {
+    setCityPickerState((prev) => {
       if (!prev) return prev;
       const newSegments = [...prev.segments];
       const seg = newSegments[segmentIdx];
@@ -1115,7 +1242,7 @@ const ChatInterface: React.FC = () => {
       newSegments[segmentIdx] = {
         ...seg,
         selectedCities: alreadySelected
-          ? seg.selectedCities.filter(c => c !== city)
+          ? seg.selectedCities.filter((c) => c !== city)
           : [...seg.selectedCities, city],
       };
       return { ...prev, segments: newSegments };
@@ -1124,11 +1251,11 @@ const ChatInterface: React.FC = () => {
 
   // Select-all / Clear-all toggle for a city-picker segment
   const handleCitySelectAll = (segmentIdx: number, cities: string[]) => {
-    setCityPickerState(prev => {
+    setCityPickerState((prev) => {
       if (!prev) return prev;
       const newSegments = [...prev.segments];
       const seg = newSegments[segmentIdx];
-      const allSelected = cities.length > 0 && cities.every(c => seg.selectedCities.includes(c));
+      const allSelected = cities.length > 0 && cities.every((c) => seg.selectedCities.includes(c));
       newSegments[segmentIdx] = {
         ...seg,
         selectedCities: allSelected ? [] : [...cities],
@@ -1139,10 +1266,10 @@ const ChatInterface: React.FC = () => {
 
   // Select-all / Clear-all toggle for a service group inside the multi-match UI
   const handleServiceSelectAll = (messageId: string, groupKey: string, serviceNames: string[]) => {
-    setSelectedServices(prev => {
+    setSelectedServices((prev) => {
       const messageMap = { ...(prev[messageId] || {}) };
       const current = messageMap[groupKey] || [];
-      const allSelected = serviceNames.length > 0 && serviceNames.every(n => current.includes(n));
+      const allSelected = serviceNames.length > 0 && serviceNames.every((n) => current.includes(n));
       if (allSelected) {
         // Clear all in this group
         const next = { ...messageMap };
@@ -1161,14 +1288,16 @@ const ChatInterface: React.FC = () => {
 
     // Build one pair per { segment, city } combination
     const pairs: Array<{ raw: string; city: string; qty: number }> = [];
-    cityPickerState.segments.forEach(seg => {
+    cityPickerState.segments.forEach((seg) => {
       if (seg.cityNeeded && seg.selectedCities.length === 0) return;
       const cities = seg.cityNeeded
         ? seg.selectedCities
-        : (seg.detectedCity ? [seg.detectedCity] : [cityPickerState.availableCities[0]]);
+        : seg.detectedCity
+          ? [seg.detectedCity]
+          : [cityPickerState.availableCities[0]];
       const qtyMatch = seg.raw.match(/(\d+)/);
       const qty = qtyMatch ? parseInt(qtyMatch[1]) : 1;
-      cities.forEach(city => pairs.push({ raw: seg.raw, city, qty }));
+      cities.forEach((city) => pairs.push({ raw: seg.raw, city, qty }));
     });
 
     const groupedServices: Array<{
@@ -1182,7 +1311,8 @@ const ChatInterface: React.FC = () => {
     let needsGemini = false;
 
     for (const pair of pairs) {
-      const cityKey = KNOWN_CITY_LIST.find(c => pair.city.toLowerCase().includes(c)) || pair.city.toLowerCase();
+      const cityKey =
+        KNOWN_CITY_LIST.find((c) => pair.city.toLowerCase().includes(c)) || pair.city.toLowerCase();
       const regCheck = checkServiceInRegistry(cityKey, pair.raw);
       const cityLabel = pair.city.charAt(0).toUpperCase() + pair.city.slice(1);
 
@@ -1190,8 +1320,11 @@ const ChatInterface: React.FC = () => {
         const svcLabel = pair.raw
           .replace(/\d+/g, '')
           .replace(/\b(need|for|the|a|an|in|at|of)\b/gi, '')
-          .replace(/\s+/g, ' ').trim()
-          .split(' ').map(w => w.charAt(0).toUpperCase() + w.slice(1).toLowerCase()).join(' ');
+          .replace(/\s+/g, ' ')
+          .trim()
+          .split(' ')
+          .map((w) => w.charAt(0).toUpperCase() + w.slice(1).toLowerCase())
+          .join(' ');
         missingServiceAlerts.push({ city: cityLabel, service: svcLabel });
         continue;
       }
@@ -1209,12 +1342,26 @@ const ChatInterface: React.FC = () => {
       const baseWord = matchedSvc.toLowerCase().split(' ')[0];
       const relatedServices = registryEntry
         ? registryEntry.services
-            .filter(s => new RegExp(`\\b${baseWord}\\b`, 'i').test(s))
-            .map(s => ({
-              name: s.split(' ').map(w => w.charAt(0).toUpperCase() + w.slice(1)).join(' '),
-              category: matchedSvc.split(' ').map(w => w.charAt(0).toUpperCase() + w.slice(1)).join(' '),
+            .filter((s) => new RegExp(`\\b${baseWord}\\b`, 'i').test(s))
+            .map((s) => ({
+              name: s
+                .split(' ')
+                .map((w) => w.charAt(0).toUpperCase() + w.slice(1))
+                .join(' '),
+              category: matchedSvc
+                .split(' ')
+                .map((w) => w.charAt(0).toUpperCase() + w.slice(1))
+                .join(' '),
             }))
-        : [{ name: matchedSvc.split(' ').map(w => w.charAt(0).toUpperCase() + w.slice(1)).join(' '), category: matchedSvc }];
+        : [
+            {
+              name: matchedSvc
+                .split(' ')
+                .map((w) => w.charAt(0).toUpperCase() + w.slice(1))
+                .join(' '),
+              category: matchedSvc,
+            },
+          ];
 
       // Specific if: only ONE service matches in this city (unambiguous) OR user typed enough words
       const matchedWords = matchedSvc.toLowerCase().split(/\s+/);
@@ -1222,25 +1369,41 @@ const ChatInterface: React.FC = () => {
         .toLowerCase()
         .replace(new RegExp(`\\b${cityKey}\\b`, 'gi'), '')
         .replace(/\d+/g, '')
-        .replace(/\b(need|for|the|a|an|in|at|of|and|i|want|please|services?|ads?|advertising|outdoor|some|any)\b/gi, '')
-        .replace(/\s+/g, ' ').trim()
-        .split(/\s+/).filter(w => w.length >= 2);
+        .replace(
+          /\b(need|for|the|a|an|in|at|of|and|i|want|please|services?|ads?|advertising|outdoor|some|any)\b/gi,
+          '',
+        )
+        .replace(/\s+/g, ' ')
+        .trim()
+        .split(/\s+/)
+        .filter((w) => w.length >= 2);
 
       const isUnique = relatedServices.length === 1; // only one service with this base word in the city
-      const isWordSpecific = userServiceWords.length >= matchedWords.length &&
-        userServiceWords.every(w => matchedWords.some(mw => mw.startsWith(w) || w.startsWith(mw)));
+      const isWordSpecific =
+        userServiceWords.length >= matchedWords.length &&
+        userServiceWords.every((w) =>
+          matchedWords.some((mw) => mw.startsWith(w) || w.startsWith(mw)),
+        );
       const isSpecific = isUnique || isWordSpecific;
 
       if (isSpecific) {
         // User was precise OR only one option exists — skip checkboxes, send directly
-        const svcTitleCase = matchedSvc.split(' ').map(w => w.charAt(0).toUpperCase() + w.slice(1)).join(' ');
+        const svcTitleCase = matchedSvc
+          .split(' ')
+          .map((w) => w.charAt(0).toUpperCase() + w.slice(1))
+          .join(' ');
         directParts.push(`${pair.qty} ${svcTitleCase} ${cityLabel}`);
-        logger.info(`⚡ ${isUnique ? 'Unique' : 'Specific'} match: "${pair.raw}" → "${matchedSvc}" (${cityLabel}) — skipping checkboxes`);
+        logger.info(
+          `⚡ ${isUnique ? 'Unique' : 'Specific'} match: "${pair.raw}" → "${matchedSvc}" (${cityLabel}) — skipping checkboxes`,
+        );
         continue;
       }
 
       // Vague — multiple services match, show checkboxes
-      const vehicleLabel = matchedSvc.split(' ').map(w => w.charAt(0).toUpperCase() + w.slice(1)).join(' ');
+      const vehicleLabel = matchedSvc
+        .split(' ')
+        .map((w) => w.charAt(0).toUpperCase() + w.slice(1))
+        .join(' ');
 
       groupedServices.push({
         vehicleType: `${vehicleLabel}|${cityLabel}`,
@@ -1268,7 +1431,9 @@ const ChatInterface: React.FC = () => {
 
     // Mix of specific + vague OR registry unavailable → send specific ones as Gemini parts too
     if (needsGemini || (groupedServices.length === 0 && missingServiceAlerts.length === 0)) {
-      const reconstructed = pairs.map(p => `${p.city} ${p.qty > 1 ? p.qty + ' ' : ''}${p.raw.replace(/\d+/g, '').trim()}`).join(' and ');
+      const reconstructed = pairs
+        .map((p) => `${p.city} ${p.qty > 1 ? p.qty + ' ' : ''}${p.raw.replace(/\d+/g, '').trim()}`)
+        .join(' and ');
       sendMessageWithContent(reconstructed);
       return;
     }
@@ -1294,7 +1459,7 @@ const ChatInterface: React.FC = () => {
         availableCities: cityPickerState.availableCities,
       },
     };
-    setMessages(prev => [...prev, assistantMsg]);
+    setMessages((prev) => [...prev, assistantMsg]);
   };
 
   const handleSuggestionClick = (suggestion: string) => {
@@ -1304,12 +1469,12 @@ const ChatInterface: React.FC = () => {
   // Back button on the multi-match checkbox UI: re-open the city picker
   // using the snapshot saved on the message, and remove the checkbox message.
   const handleBackToCityPicker = (messageId: string) => {
-    const msg = messages.find(m => m.id === messageId);
+    const msg = messages.find((m) => m.id === messageId);
     if (!msg?.cityPickerSnapshot) return;
     // Remove the multiple-match message and any prior assistant city-picker
     // message that triggered it (we'll show a fresh picker)
-    setMessages(prev => prev.filter(m => m.id !== messageId && !m.isCityPicker));
-    setSelectedServices(prev => {
+    setMessages((prev) => prev.filter((m) => m.id !== messageId && !m.isCityPicker));
+    setSelectedServices((prev) => {
       const next = { ...prev };
       delete next[messageId];
       return next;
@@ -1318,11 +1483,12 @@ const ChatInterface: React.FC = () => {
     const pickerMsg: Message = {
       id: pickerMsgId,
       role: 'assistant',
-      content: '🏙️ Multiple city rate cards are loaded. Please select the city for each service below:',
+      content:
+        '🏙️ Multiple city rate cards are loaded. Please select the city for each service below:',
       timestamp: new Date(),
       isCityPicker: true,
     };
-    setMessages(prev => [...prev, pickerMsg]);
+    setMessages((prev) => [...prev, pickerMsg]);
     setCityPickerState({
       messageId: pickerMsgId,
       originalMessage: msg.cityPickerSnapshot.originalMessage,
@@ -1354,8 +1520,10 @@ const ChatInterface: React.FC = () => {
       content: '✓ Quote generated successfully! Redirecting to quote preview...',
       timestamp: new Date(),
     };
-    setMessages(prev => [...prev, quoteReadyMessage]);
-    setTimeout(() => { history.push('/quote'); }, 1500);
+    setMessages((prev) => [...prev, quoteReadyMessage]);
+    setTimeout(() => {
+      history.push('/quote');
+    }, 1500);
   };
 
   // Handle min qty warning: user chooses to use minimum quantities
@@ -1378,7 +1546,7 @@ const ChatInterface: React.FC = () => {
 
     // Post-Gemini path: update quote item quantities to their minimums
     const updatedQuote = { ...minQtyWarning.pendingQuote };
-    updatedQuote.items = updatedQuote.items.map(item => {
+    updatedQuote.items = updatedQuote.items.map((item) => {
       if (item.minimumQuantity && item.quantity < item.minimumQuantity) {
         const newQty = item.minimumQuantity;
         const duration = item.duration || 1;
@@ -1399,37 +1567,43 @@ const ChatInterface: React.FC = () => {
       content: '✓ Quote generated with minimum quantities! Redirecting to quote preview...',
       timestamp: new Date(),
     };
-    setMessages(prev => [...prev, quoteReadyMessage]);
-    setTimeout(() => { history.push('/quote'); }, 1500);
+    setMessages((prev) => [...prev, quoteReadyMessage]);
+    setTimeout(() => {
+      history.push('/quote');
+    }, 1500);
   };
 
   // Handle clicking a service suggestion button (auto-sends as new message)
-  const handleServiceSuggestionClick = (serviceName: string, isPartialMatch?: boolean, validServices?: string[]) => {
+  const handleServiceSuggestionClick = (
+    serviceName: string,
+    isPartialMatch?: boolean,
+    validServices?: string[],
+  ) => {
     // Extract the original quantity from the last user message if possible
-    const lastUserMsg = [...messages].reverse().find(m => m.role === 'user');
+    const lastUserMsg = [...messages].reverse().find((m) => m.role === 'user');
     let quantity = '';
     if (lastUserMsg) {
       const qtyMatch = lastUserMsg.content.match(/(\d+)\s/);
       if (qtyMatch) quantity = qtyMatch[1] + ' ';
     }
-    
+
     // For partial match: combine valid services + replacement
     if (isPartialMatch && validServices && validServices.length > 0 && lastUserMsg) {
       // Extract ALL quantities from the original user message
-      const allQtys = [...lastUserMsg.content.matchAll(/(\d+)/g)].map(m => m[1]);
+      const allQtys = [...lastUserMsg.content.matchAll(/(\d+)/g)].map((m) => m[1]);
       // Build combined quote: valid services from original + replacement for missing
       const validParts = validServices.map((svc, idx) => {
         const qty = allQtys[idx] || allQtys[0] || '';
         return `${qty} ${svc}`.trim();
       });
       // Use second quantity for replacement if available, otherwise first
-      const replacementQty = allQtys.length > 1 ? allQtys[allQtys.length - 1] : (allQtys[0] || '');
+      const replacementQty = allQtys.length > 1 ? allQtys[allQtys.length - 1] : allQtys[0] || '';
       validParts.push(`${replacementQty} ${serviceName}`.trim());
       setInputValue(`Generate quote for ${validParts.join(' and ')}`);
     } else {
       setInputValue(`Generate quote for ${quantity}${serviceName}`);
     }
-    
+
     // Auto-send after a brief tick so the input updates
     setTimeout(() => {
       const sendBtn = document.querySelector('[data-send-btn]') as HTMLButtonElement;
@@ -1438,15 +1612,20 @@ const ChatInterface: React.FC = () => {
   };
 
   // Handle checkbox selection for MULTIPLE_MATCH multi-select (now supports multiple per group)
-  const handleServiceCheckbox = (messageId: string, groupKey: string, serviceName: string, isChecked: boolean) => {
-    setSelectedServices(prev => {
+  const handleServiceCheckbox = (
+    messageId: string,
+    groupKey: string,
+    serviceName: string,
+    isChecked: boolean,
+  ) => {
+    setSelectedServices((prev) => {
       const newState = { ...prev };
       if (!newState[messageId]) newState[messageId] = {};
       const current = newState[messageId][groupKey] || [];
       if (isChecked) {
         newState[messageId][groupKey] = [...current, serviceName];
       } else {
-        const updated = current.filter(s => s !== serviceName);
+        const updated = current.filter((s) => s !== serviceName);
         if (updated.length === 0) {
           delete newState[messageId][groupKey];
         } else {
@@ -1461,7 +1640,7 @@ const ChatInterface: React.FC = () => {
   // Build confirmation table rows from selected services, then show table (don't send yet)
   const handleShowConfirmation = (messageId: string, groupedServices: any[]) => {
     const selected = selectedServices[messageId];
-    const assistantMsg = messages.find(m => m.id === messageId);
+    const assistantMsg = messages.find((m) => m.id === messageId);
     const hasSelected = selected && Object.keys(selected).length > 0;
     const hasDirectParts = !!assistantMsg?.directParts?.length;
     // Allow confirmation when EITHER checkboxes are ticked OR directParts (auto-confirmed
@@ -1473,9 +1652,9 @@ const ChatInterface: React.FC = () => {
     const originalUserMsg = assistantMsg?.originalUserInput || '';
     const rows: Array<{ service: string; qty: number | string; city: string }> = [];
 
-    groupedServices.forEach(group => {
+    groupedServices.forEach((group) => {
       const services = (selected && selected[group.vehicleType]) || [];
-      services.forEach(svcName => {
+      services.forEach((svcName) => {
         // Extract city from vehicleType key if present (format: "Bus|Chennai")
         const [, city] = group.vehicleType.includes('|')
           ? group.vehicleType.split('|')
@@ -1486,7 +1665,7 @@ const ChatInterface: React.FC = () => {
 
     // Also add directParts (auto-confirmed services) to the confirmation table
     if (assistantMsg?.directParts?.length) {
-      (assistantMsg.directParts as string[]).forEach(part => {
+      (assistantMsg.directParts as string[]).forEach((part) => {
         // Format: "1 Cab Branding Chennai" → parse service + city
         const match = part.match(/^(\d+)\s+(.+?)\s+(\w+)$/);
         if (match) {
@@ -1509,10 +1688,8 @@ const ChatInterface: React.FC = () => {
     const durationMatch = originalUserInput.match(/(\d+)\s*(days?|months?)/i);
     const durationSuffix = durationMatch ? ` for ${durationMatch[0]}` : '';
 
-    const parts = rows.map(r =>
-      r.city && r.city !== '—'
-        ? `${r.qty} ${r.service} ${r.city}`
-        : `${r.qty} ${r.service}`
+    const parts = rows.map((r) =>
+      r.city && r.city !== '—' ? `${r.qty} ${r.service} ${r.city}` : `${r.qty} ${r.service}`,
     );
 
     // directParts are already included in rows (added by handleShowConfirmation)
@@ -1521,7 +1698,7 @@ const ChatInterface: React.FC = () => {
 
     const clearedMsgId = confirmationTable.messageId;
     setConfirmationTable(null);
-    setSelectedServices(prev => {
+    setSelectedServices((prev) => {
       const newState = { ...prev };
       delete newState[clearedMsgId];
       return newState;
@@ -1530,13 +1707,11 @@ const ChatInterface: React.FC = () => {
     sendMessageWithContent(combinedRequest);
   };
 
-
-
   // Initialize speech recognition for mobile using Capacitor plugin
   useEffect(() => {
     // Request permission on component mount for mobile
     if (Capacitor.isNativePlatform()) {
-      SpeechRecognition.requestPermissions().catch(err => {
+      SpeechRecognition.requestPermissions().catch((err) => {
         logger.warn('Microphone permission denied:', err);
       });
     }
@@ -1566,7 +1741,7 @@ const ChatInterface: React.FC = () => {
     } else {
       // Start recording
       setIsRecording(true);
-      
+
       if (Capacitor.isNativePlatform()) {
         // Mobile: Use Capacitor Speech Recognition plugin
         try {
@@ -1600,16 +1775,16 @@ const ChatInterface: React.FC = () => {
           if (result && result.matches && result.matches.length > 0) {
             const transcript = result.matches[0];
             logger.info('Recognized text:', transcript);
-            setInputValue(prev => prev + (prev ? ' ' : '') + transcript);
+            setInputValue((prev) => prev + (prev ? ' ' : '') + transcript);
           } else {
             logger.warn('No speech recognized');
           }
-          
+
           setIsRecording(false);
         } catch (err: any) {
           logger.error('Voice recognition error:', err);
           setIsRecording(false);
-          
+
           // Only show error if it's not a user cancellation
           if (err.message && !err.message.toLowerCase().includes('cancel')) {
             const errorMessage: Message = {
@@ -1619,13 +1794,14 @@ const ChatInterface: React.FC = () => {
               timestamp: new Date(),
               isError: true,
             };
-            setMessages(prev => [...prev, errorMessage]);
+            setMessages((prev) => [...prev, errorMessage]);
           }
         }
       } else {
         // Web fallback: Use Web Speech API
         if ('webkitSpeechRecognition' in window || 'SpeechRecognition' in window) {
-          const SpeechRecognitionAPI = (window as any).webkitSpeechRecognition || (window as any).SpeechRecognition;
+          const SpeechRecognitionAPI =
+            (window as any).webkitSpeechRecognition || (window as any).SpeechRecognition;
           const recognition = new SpeechRecognitionAPI();
           recognition.continuous = false;
           recognition.interimResults = false;
@@ -1633,7 +1809,7 @@ const ChatInterface: React.FC = () => {
 
           recognition.onresult = (event: any) => {
             const transcript = event.results[0][0].transcript;
-            setInputValue(prev => prev + (prev ? ' ' : '') + transcript);
+            setInputValue((prev) => prev + (prev ? ' ' : '') + transcript);
             setIsRecording(false);
           };
 
@@ -1657,7 +1833,7 @@ const ChatInterface: React.FC = () => {
             timestamp: new Date(),
             isError: true,
           };
-          setMessages(prev => [...prev, errorMessage]);
+          setMessages((prev) => [...prev, errorMessage]);
         }
       }
     }
@@ -1703,10 +1879,10 @@ const ChatInterface: React.FC = () => {
           </Text>
         </HStack>
         <HStack spacing={1}>
-          <Box 
-            w="8px" 
-            h="8px" 
-            borderRadius="full" 
+          <Box
+            w="8px"
+            h="8px"
+            borderRadius="full"
             bg="teal.400"
             sx={{
               animation: 'pulse 2s infinite',
@@ -1769,8 +1945,8 @@ const ChatInterface: React.FC = () => {
           p={{ base: 3, md: 3 }}
           overflowY="auto"
           minH="0"
-          sx={{ 
-            '::-webkit-scrollbar': { 
+          sx={{
+            '::-webkit-scrollbar': {
               width: '6px',
             },
             '::-webkit-scrollbar-track': {
@@ -1792,7 +1968,7 @@ const ChatInterface: React.FC = () => {
             </Flex>
           ) : (
             <VStack align="stretch" spacing={5}>
-              {messages.map(message => {
+              {messages.map((message) => {
                 // Parse message content for special formatting
                 const lines = message.content.split('\n');
                 const hasQuoteHeader = lines[0]?.toLowerCase().includes('quote generated');
@@ -1800,7 +1976,10 @@ const ChatInterface: React.FC = () => {
                 // Helper: bold key summary values
                 function boldSummary(line: string) {
                   // Bold numbers and key phrases (e.g., 5 Mobile LED Vans, 3 months)
-                  return line.replace(/(\d+\s+Mobile LED Vans|\d+\s+months?|\d+\s+LED vans?|\d+\s+vans?)/gi, '<b>$1</b>');
+                  return line.replace(
+                    /(\d+\s+Mobile LED Vans|\d+\s+months?|\d+\s+LED vans?|\d+\s+vans?)/gi,
+                    '<b>$1</b>',
+                  );
                 }
 
                 return (
@@ -1813,9 +1992,9 @@ const ChatInterface: React.FC = () => {
                       // Special format for quote generation messages
                       <Box>
                         {/* Quote Header Badge */}
-                        <HStack 
-                          spacing={2} 
-                          mb={3} 
+                        <HStack
+                          spacing={2}
+                          mb={3}
                           align="center"
                           bg="linear-gradient(135deg, #e6f7ff 0%, #e0f2fe 100%)"
                           px={4}
@@ -1825,12 +2004,7 @@ const ChatInterface: React.FC = () => {
                           borderColor="blue.200"
                           boxShadow="0 2px 6px rgba(14, 165, 233, 0.15)"
                         >
-                          <Icon 
-                            as={FiCheck} 
-                            color="blue.600" 
-                            boxSize="16px"
-                            fontWeight="bold"
-                          />
+                          <Icon as={FiCheck} color="blue.600" boxSize="16px" fontWeight="bold" />
                           <Text
                             fontSize="13px"
                             fontWeight="700"
@@ -1856,18 +2030,24 @@ const ChatInterface: React.FC = () => {
                               // Filter out all lines inside ```json ... ``` code blocks
                               let inCodeBlock = false;
                               return lines.slice(1).map((line, idx) => {
-                                if (line.trim().startsWith('```json')) { inCodeBlock = true; return null; }
-                                if (inCodeBlock && line.trim() === '```') { inCodeBlock = false; return null; }
+                                if (line.trim().startsWith('```json')) {
+                                  inCodeBlock = true;
+                                  return null;
+                                }
+                                if (inCodeBlock && line.trim() === '```') {
+                                  inCodeBlock = false;
+                                  return null;
+                                }
                                 if (inCodeBlock) return null;
                                 if (!line.trim()) return null;
                                 return (
-                                  <Text 
-                                    key={idx} 
-                                    fontSize="14px" 
-                                    color="gray.700" 
+                                  <Text
+                                    key={idx}
+                                    fontSize="14px"
+                                    color="gray.700"
                                     lineHeight="1.7"
                                     fontWeight="500"
-                                    dangerouslySetInnerHTML={{ __html: boldSummary(line) }} 
+                                    dangerouslySetInnerHTML={{ __html: boldSummary(line) }}
                                   />
                                 );
                               });
@@ -1875,60 +2055,79 @@ const ChatInterface: React.FC = () => {
                           </VStack>
 
                           {/* Code Block - if message contains JSON */}
-                          {message.content.includes('```json') && (() => {
-                            const raw = message.content.match(/```json\n([\s\S]*?)```/)?.[1] || '';
-                            // Enhanced syntax highlighting
-                            const highlighted = raw.replace(
-                              /("(?:[^"\\]|\\.)*")\s*(:)|("(?:[^"\\]|\\.)*")|(true|false|null)|(\d+(?:\.\d+)?)/g,
-                              (match: string, key: string, colon: string, str: string, bool: string, num: string) => {
-                                if (key && colon) return `<span style="color:#fbbf24; font-weight:600">${key}</span><span style="color:#9ca3af">${colon}</span>`;
-                                if (str) return `<span style="color:#34d399">${str}</span>`;
-                                if (bool) return `<span style="color:#60a5fa; font-weight:600">${bool}</span>`;
-                                if (num) return `<span style="color:#a78bfa; font-weight:600">${num}</span>`;
-                                return match;
-                              }
-                            );
-                            return (
-                              <Box
-                                bg="linear-gradient(135deg, #1e293b 0%, #0f172a 100%)"
-                                p={4}
-                                borderRadius="12px"
-                                fontSize="12px"
-                                fontFamily="'Consolas', 'Monaco', monospace"
-                                overflowX="auto"
-                                mt={4}
-                                maxW={{ base: '100%', md: '380px' }}
-                                border="1px solid"
-                                borderColor="gray.700"
-                                boxShadow="inset 0 2px 4px rgba(0,0,0,0.3), 0 2px 8px rgba(0,0,0,0.15)"
-                                sx={{
-                                  '::-webkit-scrollbar': { height: '6px' },
-                                  '::-webkit-scrollbar-track': { bg: 'whiteAlpha.100', borderRadius: '3px' },
-                                  '::-webkit-scrollbar-thumb': { bg: 'whiteAlpha.300', borderRadius: '3px' },
-                                }}
-                              >
+                          {message.content.includes('```json') &&
+                            (() => {
+                              const raw =
+                                message.content.match(/```json\n([\s\S]*?)```/)?.[1] || '';
+                              // Enhanced syntax highlighting
+                              const highlighted = raw.replace(
+                                /("(?:[^"\\]|\\.)*")\s*(:)|("(?:[^"\\]|\\.)*")|(true|false|null)|(\d+(?:\.\d+)?)/g,
+                                (
+                                  match: string,
+                                  key: string,
+                                  colon: string,
+                                  str: string,
+                                  bool: string,
+                                  num: string,
+                                ) => {
+                                  if (key && colon)
+                                    return `<span style="color:#fbbf24; font-weight:600">${key}</span><span style="color:#9ca3af">${colon}</span>`;
+                                  if (str) return `<span style="color:#34d399">${str}</span>`;
+                                  if (bool)
+                                    return `<span style="color:#60a5fa; font-weight:600">${bool}</span>`;
+                                  if (num)
+                                    return `<span style="color:#a78bfa; font-weight:600">${num}</span>`;
+                                  return match;
+                                },
+                              );
+                              return (
                                 <Box
-                                  as="pre"
-                                  whiteSpace="pre"
+                                  bg="linear-gradient(135deg, #1e293b 0%, #0f172a 100%)"
+                                  p={4}
+                                  borderRadius="12px"
                                   fontSize="12px"
                                   fontFamily="'Consolas', 'Monaco', monospace"
-                                  color="#e5e7eb"
-                                  lineHeight="1.6"
-                                  m={0}
-                                  dangerouslySetInnerHTML={{ __html: highlighted }}
-                                />
-                              </Box>
-                            );
-                          })()}
+                                  overflowX="auto"
+                                  mt={4}
+                                  maxW={{ base: '100%', md: '380px' }}
+                                  border="1px solid"
+                                  borderColor="gray.700"
+                                  boxShadow="inset 0 2px 4px rgba(0,0,0,0.3), 0 2px 8px rgba(0,0,0,0.15)"
+                                  sx={{
+                                    '::-webkit-scrollbar': { height: '6px' },
+                                    '::-webkit-scrollbar-track': {
+                                      bg: 'whiteAlpha.100',
+                                      borderRadius: '3px',
+                                    },
+                                    '::-webkit-scrollbar-thumb': {
+                                      bg: 'whiteAlpha.300',
+                                      borderRadius: '3px',
+                                    },
+                                  }}
+                                >
+                                  <Box
+                                    as="pre"
+                                    whiteSpace="pre"
+                                    fontSize="12px"
+                                    fontFamily="'Consolas', 'Monaco', monospace"
+                                    color="#e5e7eb"
+                                    lineHeight="1.6"
+                                    m={0}
+                                    dangerouslySetInnerHTML={{ __html: highlighted }}
+                                  />
+                                </Box>
+                              );
+                            })()}
                         </Box>
                       </Box>
                     ) : (
                       // Regular message format
                       <Box>
                         <Box
-                          bgGradient={message.role === 'user' 
-                            ? 'linear(135deg, #dc2626 0%, #be123c 50%, #9f1239 100%)' 
-                            : undefined
+                          bgGradient={
+                            message.role === 'user'
+                              ? 'linear(135deg, #dc2626 0%, #be123c 50%, #9f1239 100%)'
+                              : undefined
                           }
                           bg={message.role === 'user' ? undefined : 'white'}
                           border={message.role === 'user' ? 'none' : '1px solid'}
@@ -1936,14 +2135,17 @@ const ChatInterface: React.FC = () => {
                           color={message.role === 'user' ? 'white' : 'gray.800'}
                           px={{ base: 4, md: 5 }}
                           py={{ base: 3.5, md: 4 }}
-                          borderRadius={message.role === 'user' ? '20px 20px 4px 20px' : '4px 16px 16px 16px'}
-                          boxShadow={message.role === 'user' 
-                            ? '0 8px 16px rgba(220, 38, 38, 0.25), 0 2px 4px rgba(220, 38, 38, 0.1)' 
-                            : '0 4px 12px rgba(0, 0, 0, 0.06), 0 1px 3px rgba(0, 0, 0, 0.08)'
+                          borderRadius={
+                            message.role === 'user' ? '20px 20px 4px 20px' : '4px 16px 16px 16px'
+                          }
+                          boxShadow={
+                            message.role === 'user'
+                              ? '0 8px 16px rgba(220, 38, 38, 0.25), 0 2px 4px rgba(220, 38, 38, 0.1)'
+                              : '0 4px 12px rgba(0, 0, 0, 0.06), 0 1px 3px rgba(0, 0, 0, 0.08)'
                           }
                         >
-                          <Text 
-                            fontSize="14px" 
+                          <Text
+                            fontSize="14px"
                             whiteSpace="pre-wrap"
                             lineHeight="1.6"
                             fontWeight="500"
@@ -1965,212 +2167,241 @@ const ChatInterface: React.FC = () => {
                         </Box>
 
                         {/* 2️⃣ MULTIPLE_MATCH - Show grouped services with checkboxes (multi-select per group) */}
-                        {message.isMultipleMatch && message.groupedServices && message.groupedServices.length > 0 && (
-                          <Box mt={3}>
-                            <Text fontSize="12px" fontWeight="600" color="orange.600" mb={3} px={1}>
-                              🔀 Multiple services found. Select all you need:
-                            </Text>
-
-                            {/* Back button — return to the city picker that produced this list */}
-                            {message.cityPickerSnapshot && (
-                              <Button
-                                size="sm"
-                                variant="outline"
-                                colorScheme="gray"
+                        {message.isMultipleMatch &&
+                          message.groupedServices &&
+                          message.groupedServices.length > 0 && (
+                            <Box mt={3}>
+                              <Text
+                                fontSize="12px"
+                                fontWeight="600"
+                                color="orange.600"
                                 mb={3}
-                                onClick={() => handleBackToCityPicker(message.id)}
+                                px={1}
                               >
-                                ← Back to city selection
-                              </Button>
-                            )}
+                                🔀 Multiple services found. Select all you need:
+                              </Text>
 
-                            {/* Already confirmed services (directParts) — shown as locked green items */}
-                            {message.directParts && message.directParts.length > 0 && (
-                              <Box mb={3} p={3} borderRadius="12px" bg="green.50" border="1px solid" borderColor="green.200">
-                                <Text fontSize="12px" fontWeight="700" color="green.700" mb={2}>
-                                  ✅ Already confirmed:
-                                </Text>
-                                <VStack align="stretch" spacing={1}>
-                                  {message.directParts.map((part, pIdx) => (
-                                    <Text key={pIdx} fontSize="13px" color="green.700" fontWeight="500">
-                                      • {part}
-                                    </Text>
-                                  ))}
-                                </VStack>
-                              </Box>
-                            )}
+                              {/* Back button — return to the city picker that produced this list */}
+                              {message.cityPickerSnapshot && (
+                                <Button
+                                  size="sm"
+                                  variant="outline"
+                                  colorScheme="gray"
+                                  mb={3}
+                                  onClick={() => handleBackToCityPicker(message.id)}
+                                >
+                                  ← Back to city selection
+                                </Button>
+                              )}
 
-                            <VStack align="stretch" spacing={4}>
-                              {message.groupedServices.map((group, gIdx) => {
-                                const selectedForGroup = selectedServices[message.id]?.[group.vehicleType] || [];
-                                const [vehiclePart, cityPart] = group.vehicleType.includes('|')
-                                  ? group.vehicleType.split('|')
-                                  : [group.vehicleType, null];
-                                const groupServiceNames = group.services.map(s => s.name);
-                                const allInGroupSelected = groupServiceNames.length > 0 && groupServiceNames.every(n => selectedForGroup.includes(n));
-                                return (
-                                  <Box key={gIdx}>
-                                    <HStack mb={2} px={1} spacing={2} align="center" justify="space-between">
-                                      <HStack spacing={2} align="center">
-                                        <Text fontSize="13px" fontWeight="700" color="gray.700">
-                                          {vehiclePart.split(' ')[0]} Services
-                                        </Text>
-                                        {cityPart && (
-                                          <Box
-                                            px={2}
-                                            py={0.5}
-                                            borderRadius="6px"
-                                            bg="blue.50"
-                                            border="1px solid"
-                                            borderColor="blue.200"
-                                          >
-                                            <Text fontSize="11px" fontWeight="700" color="blue.600">
-                                              📍 {cityPart}
-                                            </Text>
-                                          </Box>
-                                        )}
-                                      </HStack>
-                                      <Button
-                                        size="xs"
-                                        variant="ghost"
-                                        colorScheme="blue"
-                                        onClick={() => handleServiceSelectAll(message.id, group.vehicleType, groupServiceNames)}
+                              {/* Already confirmed services (directParts) — shown as locked green items */}
+                              {message.directParts && message.directParts.length > 0 && (
+                                <Box
+                                  mb={3}
+                                  p={3}
+                                  borderRadius="12px"
+                                  bg="green.50"
+                                  border="1px solid"
+                                  borderColor="green.200"
+                                >
+                                  <Text fontSize="12px" fontWeight="700" color="green.700" mb={2}>
+                                    ✅ Already confirmed:
+                                  </Text>
+                                  <VStack align="stretch" spacing={1}>
+                                    {message.directParts.map((part, pIdx) => (
+                                      <Text
+                                        key={pIdx}
+                                        fontSize="13px"
+                                        color="green.700"
+                                        fontWeight="500"
                                       >
-                                        {allInGroupSelected ? 'Clear all' : 'Select all'}
-                                      </Button>
-                                    </HStack>
-                                    <VStack align="stretch" spacing={2}>
-                                      {group.services.map((svc, sIdx) => {
-                                        const isChecked = selectedForGroup.includes(svc.name);
-                                        return (
-                                          <Box
-                                            key={sIdx}
-                                            p={3}
-                                            borderRadius="12px"
-                                            border="2px solid"
-                                            borderColor={isChecked ? 'blue.400' : 'gray.200'}
-                                            bg={isChecked ? 'blue.50' : 'white'}
-                                            _hover={{
-                                              borderColor: isChecked ? 'blue.500' : 'blue.300',
-                                              bg: isChecked ? 'blue.100' : 'blue.25',
-                                              transform: 'translateX(2px)',
-                                            }}
-                                            transition="all 0.2s ease"
-                                          >
-                                            <Checkbox
-                                              isChecked={isChecked}
-                                              onChange={(e) => handleServiceCheckbox(message.id, group.vehicleType, svc.name, e.target.checked)}
-                                              colorScheme="blue"
-                                              size="md"
-                                              spacing={3}
-                                              cursor="pointer"
-                                            >
-                                              <Text fontSize="13px" fontWeight="500" color={isChecked ? 'blue.700' : 'gray.700'}>
-                                                {svc.name}
-                                              </Text>
-                                            </Checkbox>
-                                          </Box>
-                                        );
-                                      })}
-                                    </VStack>
-                                  </Box>
-                                );
-                              })}
-                            </VStack>
+                                        • {part}
+                                      </Text>
+                                    ))}
+                                  </VStack>
+                                </Box>
+                              )}
 
-                            {/* Review button — show when ≥1 service selected OR directParts exist */}
-                            {(selectedServices[message.id] && Object.keys(selectedServices[message.id]).length > 0) || (message.directParts && message.directParts.length > 0) ? (
-                              <Button
-                                mt={4}
-                                w="full"
-                                size="lg"
-                                bgGradient="linear(135deg, #dc2626 0%, #be123c 50%, #9f1239 100%)"
-                                color="white"
-                                fontWeight="700"
-                                fontSize="15px"
-                                py={6}
-                                borderRadius="14px"
-                                onClick={() => handleShowConfirmation(message.id, message.groupedServices!)}
-                                isDisabled={isLoading}
-                                _hover={{
-                                  bgGradient: 'linear(135deg, #b91c1c 0%, #9f1239 50%, #881337 100%)',
-                                  transform: 'translateY(-2px)',
-                                  boxShadow: '0 12px 24px rgba(220, 38, 38, 0.3)',
-                                }}
-                                _active={{ transform: 'translateY(0)' }}
-                                transition="all 0.2s ease"
-                                leftIcon={<Icon as={FiCheck} boxSize="18px" />}
-                              >
-                                Review & Confirm ({
-                                  Object.values(selectedServices[message.id] || {}).flat().length + (message.directParts?.length || 0)
-                                } service{Object.values(selectedServices[message.id] || {}).flat().length + (message.directParts?.length || 0) !== 1 ? 's' : ''} selected)
-                              </Button>
-                            ) : null}
-                          </Box>
-                        )}
+                              <VStack align="stretch" spacing={4}>
+                                {message.groupedServices.map((group, gIdx) => {
+                                  const selectedForGroup =
+                                    selectedServices[message.id]?.[group.vehicleType] || [];
+                                  const [vehiclePart, cityPart] = group.vehicleType.includes('|')
+                                    ? group.vehicleType.split('|')
+                                    : [group.vehicleType, null];
+                                  const groupServiceNames = group.services.map((s) => s.name);
+                                  const allInGroupSelected =
+                                    groupServiceNames.length > 0 &&
+                                    groupServiceNames.every((n) => selectedForGroup.includes(n));
+                                  return (
+                                    <Box key={gIdx}>
+                                      <HStack
+                                        mb={2}
+                                        px={1}
+                                        spacing={2}
+                                        align="center"
+                                        justify="space-between"
+                                      >
+                                        <HStack spacing={2} align="center">
+                                          <Text fontSize="13px" fontWeight="700" color="gray.700">
+                                            {vehiclePart.split(' ')[0]} Services
+                                          </Text>
+                                          {cityPart && (
+                                            <Box
+                                              px={2}
+                                              py={0.5}
+                                              borderRadius="6px"
+                                              bg="blue.50"
+                                              border="1px solid"
+                                              borderColor="blue.200"
+                                            >
+                                              <Text
+                                                fontSize="11px"
+                                                fontWeight="700"
+                                                color="blue.600"
+                                              >
+                                                📍 {cityPart}
+                                              </Text>
+                                            </Box>
+                                          )}
+                                        </HStack>
+                                        <Button
+                                          size="xs"
+                                          variant="ghost"
+                                          colorScheme="blue"
+                                          onClick={() =>
+                                            handleServiceSelectAll(
+                                              message.id,
+                                              group.vehicleType,
+                                              groupServiceNames,
+                                            )
+                                          }
+                                        >
+                                          {allInGroupSelected ? 'Clear all' : 'Select all'}
+                                        </Button>
+                                      </HStack>
+                                      <VStack align="stretch" spacing={2}>
+                                        {group.services.map((svc, sIdx) => {
+                                          const isChecked = selectedForGroup.includes(svc.name);
+                                          return (
+                                            <Box
+                                              key={sIdx}
+                                              p={3}
+                                              borderRadius="12px"
+                                              border="2px solid"
+                                              borderColor={isChecked ? 'blue.400' : 'gray.200'}
+                                              bg={isChecked ? 'blue.50' : 'white'}
+                                              _hover={{
+                                                borderColor: isChecked ? 'blue.500' : 'blue.300',
+                                                bg: isChecked ? 'blue.100' : 'blue.25',
+                                                transform: 'translateX(2px)',
+                                              }}
+                                              transition="all 0.2s ease"
+                                            >
+                                              <Checkbox
+                                                isChecked={isChecked}
+                                                onChange={(e) =>
+                                                  handleServiceCheckbox(
+                                                    message.id,
+                                                    group.vehicleType,
+                                                    svc.name,
+                                                    e.target.checked,
+                                                  )
+                                                }
+                                                colorScheme="blue"
+                                                size="md"
+                                                spacing={3}
+                                                cursor="pointer"
+                                              >
+                                                <Text
+                                                  fontSize="13px"
+                                                  fontWeight="500"
+                                                  color={isChecked ? 'blue.700' : 'gray.700'}
+                                                >
+                                                  {svc.name}
+                                                </Text>
+                                              </Checkbox>
+                                            </Box>
+                                          );
+                                        })}
+                                      </VStack>
+                                    </Box>
+                                  );
+                                })}
+                              </VStack>
+
+                              {/* Review button — show when ≥1 service selected OR directParts exist */}
+                              {(selectedServices[message.id] &&
+                                Object.keys(selectedServices[message.id]).length > 0) ||
+                              (message.directParts && message.directParts.length > 0) ? (
+                                <Button
+                                  mt={4}
+                                  w="full"
+                                  size="lg"
+                                  bgGradient="linear(135deg, #dc2626 0%, #be123c 50%, #9f1239 100%)"
+                                  color="white"
+                                  fontWeight="700"
+                                  fontSize="15px"
+                                  py={6}
+                                  borderRadius="14px"
+                                  onClick={() =>
+                                    handleShowConfirmation(message.id, message.groupedServices!)
+                                  }
+                                  isDisabled={isLoading}
+                                  _hover={{
+                                    bgGradient:
+                                      'linear(135deg, #b91c1c 0%, #9f1239 50%, #881337 100%)',
+                                    transform: 'translateY(-2px)',
+                                    boxShadow: '0 12px 24px rgba(220, 38, 38, 0.3)',
+                                  }}
+                                  _active={{ transform: 'translateY(0)' }}
+                                  transition="all 0.2s ease"
+                                  leftIcon={<Icon as={FiCheck} boxSize="18px" />}
+                                >
+                                  Review & Confirm (
+                                  {Object.values(selectedServices[message.id] || {}).flat().length +
+                                    (message.directParts?.length || 0)}{' '}
+                                  service
+                                  {Object.values(selectedServices[message.id] || {}).flat().length +
+                                    (message.directParts?.length || 0) !==
+                                  1
+                                    ? 's'
+                                    : ''}{' '}
+                                  selected)
+                                </Button>
+                              ) : null}
+                            </Box>
+                          )}
 
                         {/* 3️⃣ PARTIAL_MATCH - Show closest alternatives */}
-                        {message.isPartialMatch && !message.isServiceNotFound && message.closestServices && message.closestServices.length > 0 && (
-                          <Box mt={3}>
-                            <Box mb={2} px={1}>
-                              <Text fontSize="13px" fontWeight="600" color="red.500">
-                                ❌ "{message.requestedService}" is not available
-                              </Text>
-                              <Text fontSize="12px" color="gray.600" mt={1}>
-                                Did you mean one of these similar services?
-                              </Text>
-                            </Box>
-                            <VStack align="stretch" spacing={2}>
-                              <Box>
-                                <Text fontSize="11px" fontWeight="700" color="green.600" textTransform="uppercase" letterSpacing="wider" mb={1} px={1}>
-                                  Closest Matches
+                        {message.isPartialMatch &&
+                          !message.isServiceNotFound &&
+                          message.closestServices &&
+                          message.closestServices.length > 0 && (
+                            <Box mt={3}>
+                              <Box mb={2} px={1}>
+                                <Text fontSize="13px" fontWeight="600" color="red.500">
+                                  ❌ "{message.requestedService}" is not available
                                 </Text>
-                                <VStack align="stretch" spacing={1.5}>
-                                  {message.closestServices.map((svc, idx) => (
-                                    <Button
-                                      key={idx}
-                                      variant="outline"
-                                      size="sm"
-                                      justifyContent="flex-start"
-                                      textAlign="left"
-                                      whiteSpace="normal"
-                                      h="auto"
-                                      py={2.5}
-                                      px={4}
-                                      borderRadius="12px"
-                                      fontWeight="500"
-                                      fontSize="13px"
-                                      borderColor="green.300"
-                                      color="green.700"
-                                      bg="green.50"
-                                      onClick={() => {
-                                        const qty = message.requestedQuantity || '';
-                                        const text = qty ? `${qty} ${svc.name}` : svc.name;
-                                        setInputValue(text);
-                                      }}
-                                      isDisabled={isLoading}
-                                      _hover={{
-                                        bg: 'green.100',
-                                        borderColor: 'green.500',
-                                        transform: 'translateX(4px)',
-                                        boxShadow: '0 2px 8px rgba(34, 197, 94, 0.2)',
-                                      }}
-                                      transition="all 0.2s ease"
-                                      leftIcon={<Text fontSize="14px">✓</Text>}
-                                      rightIcon={svc.similarity === 'high' ? <Text fontSize="10px" fontWeight="700" color="green.600">HIGH</Text> : undefined}
-                                    >
-                                      {svc.name}
-                                    </Button>
-                                  ))}
-                                </VStack>
+                                <Text fontSize="12px" color="gray.600" mt={1}>
+                                  Did you mean one of these similar services?
+                                </Text>
                               </Box>
-                              {message.alternativeServices && message.alternativeServices.length > 0 && (
+                              <VStack align="stretch" spacing={2}>
                                 <Box>
-                                  <Text fontSize="11px" fontWeight="700" color="blue.500" textTransform="uppercase" letterSpacing="wider" mb={1} px={1}>
-                                    Other Options
+                                  <Text
+                                    fontSize="11px"
+                                    fontWeight="700"
+                                    color="green.600"
+                                    textTransform="uppercase"
+                                    letterSpacing="wider"
+                                    mb={1}
+                                    px={1}
+                                  >
+                                    Closest Matches
                                   </Text>
                                   <VStack align="stretch" spacing={1.5}>
-                                    {message.alternativeServices.map((svc, idx) => (
+                                    {message.closestServices.map((svc, idx) => (
                                       <Button
                                         key={idx}
                                         variant="outline"
@@ -2184,9 +2415,9 @@ const ChatInterface: React.FC = () => {
                                         borderRadius="12px"
                                         fontWeight="500"
                                         fontSize="13px"
-                                        borderColor="blue.200"
-                                        color="blue.700"
-                                        bg="blue.50"
+                                        borderColor="green.300"
+                                        color="green.700"
+                                        bg="green.50"
                                         onClick={() => {
                                           const qty = message.requestedQuantity || '';
                                           const text = qty ? `${qty} ${svc.name}` : svc.name;
@@ -2194,277 +2425,118 @@ const ChatInterface: React.FC = () => {
                                         }}
                                         isDisabled={isLoading}
                                         _hover={{
-                                          bg: 'blue.100',
-                                          borderColor: 'blue.400',
+                                          bg: 'green.100',
+                                          borderColor: 'green.500',
                                           transform: 'translateX(4px)',
-                                          boxShadow: '0 2px 8px rgba(59, 130, 246, 0.2)',
+                                          boxShadow: '0 2px 8px rgba(34, 197, 94, 0.2)',
                                         }}
                                         transition="all 0.2s ease"
-                                        leftIcon={<Text fontSize="14px">→</Text>}
+                                        leftIcon={<Text fontSize="14px">✓</Text>}
+                                        rightIcon={
+                                          svc.similarity === 'high' ? (
+                                            <Text
+                                              fontSize="10px"
+                                              fontWeight="700"
+                                              color="green.600"
+                                            >
+                                              HIGH
+                                            </Text>
+                                          ) : undefined
+                                        }
                                       >
                                         {svc.name}
                                       </Button>
                                     ))}
                                   </VStack>
                                 </Box>
-                              )}
-                            </VStack>
-                          </Box>
-                        )}
+                                {message.alternativeServices &&
+                                  message.alternativeServices.length > 0 && (
+                                    <Box>
+                                      <Text
+                                        fontSize="11px"
+                                        fontWeight="700"
+                                        color="blue.500"
+                                        textTransform="uppercase"
+                                        letterSpacing="wider"
+                                        mb={1}
+                                        px={1}
+                                      >
+                                        Other Options
+                                      </Text>
+                                      <VStack align="stretch" spacing={1.5}>
+                                        {message.alternativeServices.map((svc, idx) => (
+                                          <Button
+                                            key={idx}
+                                            variant="outline"
+                                            size="sm"
+                                            justifyContent="flex-start"
+                                            textAlign="left"
+                                            whiteSpace="normal"
+                                            h="auto"
+                                            py={2.5}
+                                            px={4}
+                                            borderRadius="12px"
+                                            fontWeight="500"
+                                            fontSize="13px"
+                                            borderColor="blue.200"
+                                            color="blue.700"
+                                            bg="blue.50"
+                                            onClick={() => {
+                                              const qty = message.requestedQuantity || '';
+                                              const text = qty ? `${qty} ${svc.name}` : svc.name;
+                                              setInputValue(text);
+                                            }}
+                                            isDisabled={isLoading}
+                                            _hover={{
+                                              bg: 'blue.100',
+                                              borderColor: 'blue.400',
+                                              transform: 'translateX(4px)',
+                                              boxShadow: '0 2px 8px rgba(59, 130, 246, 0.2)',
+                                            }}
+                                            transition="all 0.2s ease"
+                                            leftIcon={<Text fontSize="14px">→</Text>}
+                                          >
+                                            {svc.name}
+                                          </Button>
+                                        ))}
+                                      </VStack>
+                                    </Box>
+                                  )}
+                              </VStack>
+                            </Box>
+                          )}
 
                         {/* 4️⃣ NO_MATCH - Show all services organized by category */}
-                        {message.isNoMatch && message.allServicesGrouped && message.allServicesGrouped.length > 0 && (
-                          <Box mt={3}>
-                            <Box mb={2} px={1}>
-                              <Text fontSize="13px" fontWeight="600" color="red.500">
-                                ❌ We don't offer {message.requestedService}
-                              </Text>
-                              <Text fontSize="12px" color="gray.600" mt={1}>
-                                Browse all our available services:
-                              </Text>
-                            </Box>
-                            <VStack align="stretch" spacing={3}>
-                              {message.allServicesGrouped.map((catGroup, cIdx) => (
-                                <Box key={cIdx}>
-                                  <Text fontSize="11px" fontWeight="700" color="gray.500" textTransform="uppercase" letterSpacing="wider" mb={1.5} px={1}>
-                                    {catGroup.category}
-                                  </Text>
-                                  <VStack align="stretch" spacing={1.5}>
-                                    {catGroup.services.map((svc, sIdx) => (
-                                      <Button
-                                        key={sIdx}
-                                        variant="outline"
-                                        size="sm"
-                                        justifyContent="flex-start"
-                                        textAlign="left"
-                                        whiteSpace="normal"
-                                        h="auto"
-                                        py={2.5}
-                                        px={4}
-                                        borderRadius="12px"
-                                        fontWeight="500"
-                                        fontSize="13px"
-                                        borderColor="gray.300"
-                                        color="gray.700"
-                                        bg="gray.50"
-                                        onClick={() => setInputValue(svc.name)}
-                                        isDisabled={isLoading}
-                                        _hover={{
-                                          bg: 'gray.100',
-                                          borderColor: 'gray.400',
-                                          transform: 'translateX(4px)',
-                                          boxShadow: '0 2px 8px rgba(107, 114, 128, 0.2)',
-                                        }}
-                                        transition="all 0.2s ease"
-                                        leftIcon={<Text fontSize="14px">→</Text>}
-                                      >
-                                        {svc.name}
-                                      </Button>
-                                    ))}
-                                  </VStack>
-                                </Box>
-                              ))}
-                            </VStack>
-                          </Box>
-                        )}
-
-                        {/* 🏙️ CITY PICKER — service-first layout */}
-                        {message.isCityPicker && cityPickerState && cityPickerState.messageId === message.id && (
-                          <Box mt={3}>
-                            <VStack align="stretch" spacing={4}>
-                              {cityPickerState.segments.map((seg, segIdx) => {
-                                // Build service label from the segment
-                                const svcLabel = seg.raw
-                                  .replace(/\d+/g, '')
-                                  .replace(/\b(need|for|the|a|an|in|at|of|and|i|want|please)\b/gi, '')
-                                  .replace(/\s+/g, ' ')
-                                  .trim()
-                                  .split(' ')
-                                  .map(w => w.charAt(0).toUpperCase() + w.slice(1).toLowerCase())
-                                  .join(' ');
-
-                                // Use pre-computed matchedCities from city gate (strict classifier).
-                                // Render-time fallback also stays strict — no registry_unavailable leak.
-                                const citiesWithService = seg.matchedCities ?? cityPickerState.availableCities.filter(city => {
-                                  const cityKey = KNOWN_CITY_LIST.find(c => city.toLowerCase().includes(c)) || city.toLowerCase();
-                                  const cls = classifySegmentByRegistry(cityKey, seg.raw);
-                                  return cls.state === 'specific' || cls.state === 'vague';
-                                });
-
-                                // Cities where registry explicitly says NOT available
-                                const citiesWithoutService = cityPickerState.availableCities.filter(city => {
-                                  if (citiesWithService.includes(city)) return false;
-                                  const cityKey = KNOWN_CITY_LIST.find(c => city.toLowerCase().includes(c)) || city.toLowerCase();
-                                  const cls = classifySegmentByRegistry(cityKey, seg.raw);
-                                  return cls.state === 'not_found' || cls.state === 'empty';
-                                });
-
-                                const allCitiesSelected = citiesWithService.length > 0 && citiesWithService.every(c => seg.selectedCities.includes(c));
-                                return (
-                                  <Box key={segIdx} p={3} borderRadius="12px" bg="gray.50" border="1px solid" borderColor="gray.200">
-                                    {/* Service header */}
-                                    <HStack justify="space-between" align="center" mb={2}>
-                                      <Text fontSize="13px" fontWeight="700" color="gray.800" textTransform="uppercase" letterSpacing="wider">
-                                        {svcLabel}
-                                      </Text>
-                                      {seg.cityNeeded && citiesWithService.length > 1 && (
-                                        <Button
-                                          size="xs"
-                                          variant="ghost"
-                                          colorScheme="blue"
-                                          onClick={() => handleCitySelectAll(segIdx, citiesWithService)}
-                                          isDisabled={isLoading}
-                                        >
-                                          {allCitiesSelected ? 'Clear all' : 'Select all'}
-                                        </Button>
-                                      )}
-                                    </HStack>
-
-                                    {seg.detectedCity && !seg.cityNeeded ? (
-                                      // Auto-assigned (only available in one city) — show as locked but visible
-                                      <Box
-                                        p={2.5}
-                                        borderRadius="10px"
-                                        border="2px solid"
-                                        borderColor="green.300"
-                                        bg="green.50"
-                                      >
-                                        <HStack justify="space-between">
-                                          <Text fontSize="13px" fontWeight="600" color="green.700">
-                                            ✅ Auto-assigned: <b>{seg.detectedCity}</b>
-                                          </Text>
-                                          <Text fontSize="11px" color="green.500">Only city available</Text>
-                                        </HStack>
-                                      </Box>
-                                    ) : citiesWithService.length === 0 && citiesWithoutService.length > 0 ? (
-                                      // All cities explicitly don't have it
-                                      <Text fontSize="12px" color="orange.600" fontWeight="500">
-                                        ⚠ Not available in any loaded city
-                                      </Text>
-                                    ) : (
-                                      <VStack align="stretch" spacing={2}>
-                                        {/* Only show cities where service is available (or registry unavailable = show with fallback) */}
-                                        {citiesWithService.map((city, cIdx) => {
-                                          const isSelected = seg.selectedCities.includes(city);
-                                          // Get min qty hint from registry (strict classifier so "min 10"
-                                          // never leaks in from an unrelated reverse-match).
-                                          const cityKey = KNOWN_CITY_LIST.find(c => city.toLowerCase().includes(c)) || city.toLowerCase();
-                                          const cls = classifySegmentByRegistry(cityKey, seg.raw);
-                                          const minQty = (cls.state === 'specific' || cls.state === 'vague')
-                                            ? cls.matches.map(m => cityServiceRegistry.current.get(cityKey)?.quantities[m]?.min)
-                                                .filter((n): n is number => typeof n === 'number' && n > 0)
-                                                .sort((a, b) => a - b)[0] ?? null
-                                            : null;
-
-                                          return (
-                                            <Box
-                                              key={cIdx}
-                                              p={2.5}
-                                              borderRadius="10px"
-                                              border="2px solid"
-                                              borderColor={isSelected ? 'blue.400' : 'gray.200'}
-                                              bg={isSelected ? 'blue.50' : 'white'}
-                                              _hover={{ borderColor: 'blue.300' }}
-                                              transition="all 0.15s ease"
-                                            >
-                                              <HStack justify="space-between" align="center">
-                                                <Checkbox
-                                                  isChecked={isSelected}
-                                                  onChange={() => handleCitySelection(segIdx, city)}
-                                                  colorScheme="blue"
-                                                  size="md"
-                                                  isDisabled={isLoading}
-                                                >
-                                                  <Text fontSize="13px" fontWeight={isSelected ? '700' : '500'} color={isSelected ? 'blue.700' : 'gray.700'}>
-                                                    {city}
-                                                  </Text>
-                                                </Checkbox>
-                                                {minQty && minQty > 1 && (
-                                                  <Text fontSize="11px" color="gray.400" fontWeight="500">
-                                                    min {minQty}
-                                                  </Text>
-                                                )}
-                                              </HStack>
-                                            </Box>
-                                          );
-                                        })}
-                                      </VStack>
-                                    )}
-                                  </Box>
-                                );
-                              })}
-                            </VStack>
-
-                            {/* Confirm button */}
-                            {cityPickerState.segments.some(s => s.cityNeeded && s.selectedCities.length > 0) && (
-                              <Button
-                                mt={4}
-                                w="full"
-                                bgGradient="linear(135deg, #dc2626 0%, #be123c 50%, #9f1239 100%)"
-                                color="white"
-                                fontWeight="700"
-                                fontSize="15px"
-                                py={6}
-                                borderRadius="14px"
-                                onClick={handleCityConfirm}
-                                isDisabled={isLoading}
-                                leftIcon={<Icon as={FiCheck} boxSize="18px" />}
-                                _hover={{
-                                  bgGradient: 'linear(135deg, #b91c1c 0%, #9f1239 50%, #881337 100%)',
-                                  transform: 'translateY(-2px)',
-                                  boxShadow: '0 12px 24px rgba(220, 38, 38, 0.3)',
-                                }}
-                                _active={{ transform: 'translateY(0)' }}
-                                transition="all 0.2s ease"
-                              >
-                                Confirm Cities & Continue
-                              </Button>
-                            )}
-                          </Box>
-                        )}
-
-                        {/* DEPRECATED: Service suggestion buttons when service not found (backward compatibility) */}
-                        {message.isServiceNotFound && message.availableServices && message.availableServices.length > 0 && (
-                          <Box mt={3}>
-                            {/* Show valid services info for partial matches */}
-                            {message.isPartialMatch && message.validServices && message.validServices.length > 0 && (
+                        {message.isNoMatch &&
+                          message.allServicesGrouped &&
+                          message.allServicesGrouped.length > 0 && (
+                            <Box mt={3}>
                               <Box mb={2} px={1}>
-                                <Text fontSize="12px" fontWeight="600" color="green.600">
-                                  ✅ {message.validServices.join(', ')} — available
+                                <Text fontSize="13px" fontWeight="600" color="red.500">
+                                  ❌ We don't offer {message.requestedService}
                                 </Text>
-                                {message.missingServices && message.missingServices.length > 0 && (
-                                  <Text fontSize="12px" fontWeight="600" color="red.500" mt={0.5}>
-                                    ❌ {message.missingServices.join(', ')} — not available
-                                  </Text>
-                                )}
-                                <Text fontSize="12px" color="gray.500" mt={1}>
-                                  Select a replacement below to generate a combined quote:
+                                <Text fontSize="12px" color="gray.600" mt={1}>
+                                  Browse all our available services:
                                 </Text>
                               </Box>
-                            )}
-                            {!message.isPartialMatch && (
-                              <Text fontSize="12px" fontWeight="600" color="gray.500" mb={2} px={1}>
-                                Available services:
-                              </Text>
-                            )}
-                            <VStack align="stretch" spacing={2}>
-                              {/* Group by category */}
-                              {(() => {
-                                const categories = new Map<string, typeof message.availableServices>();
-                                message.availableServices!.forEach(svc => {
-                                  const cat = svc.category || 'Other';
-                                  if (!categories.has(cat)) categories.set(cat, []);
-                                  categories.get(cat)!.push(svc);
-                                });
-                                return Array.from(categories.entries()).map(([category, services]) => (
-                                  <Box key={category}>
-                                    <Text fontSize="11px" fontWeight="700" color="gray.400" textTransform="uppercase" letterSpacing="wider" mb={1} px={1}>
-                                      {category}
+                              <VStack align="stretch" spacing={3}>
+                                {message.allServicesGrouped.map((catGroup, cIdx) => (
+                                  <Box key={cIdx}>
+                                    <Text
+                                      fontSize="11px"
+                                      fontWeight="700"
+                                      color="gray.500"
+                                      textTransform="uppercase"
+                                      letterSpacing="wider"
+                                      mb={1.5}
+                                      px={1}
+                                    >
+                                      {catGroup.category}
                                     </Text>
                                     <VStack align="stretch" spacing={1.5}>
-                                      {services!.map((svc, idx) => (
+                                      {catGroup.services.map((svc, sIdx) => (
                                         <Button
-                                          key={idx}
+                                          key={sIdx}
                                           variant="outline"
                                           size="sm"
                                           justifyContent="flex-start"
@@ -2476,16 +2548,16 @@ const ChatInterface: React.FC = () => {
                                           borderRadius="12px"
                                           fontWeight="500"
                                           fontSize="13px"
-                                          borderColor="blue.200"
-                                          color="blue.700"
-                                          bg="blue.50"
-                                          onClick={() => handleServiceSuggestionClick(svc.name, message.isPartialMatch, message.validServices)}
+                                          borderColor="gray.300"
+                                          color="gray.700"
+                                          bg="gray.50"
+                                          onClick={() => setInputValue(svc.name)}
                                           isDisabled={isLoading}
                                           _hover={{
-                                            bg: 'blue.100',
-                                            borderColor: 'blue.400',
+                                            bg: 'gray.100',
+                                            borderColor: 'gray.400',
                                             transform: 'translateX(4px)',
-                                            boxShadow: '0 2px 8px rgba(59, 130, 246, 0.2)',
+                                            boxShadow: '0 2px 8px rgba(107, 114, 128, 0.2)',
                                           }}
                                           transition="all 0.2s ease"
                                           leftIcon={<Text fontSize="14px">→</Text>}
@@ -2495,11 +2567,343 @@ const ChatInterface: React.FC = () => {
                                       ))}
                                     </VStack>
                                   </Box>
-                                ));
-                              })()}
-                            </VStack>
-                          </Box>
-                        )}
+                                ))}
+                              </VStack>
+                            </Box>
+                          )}
+
+                        {/* 🏙️ CITY PICKER — service-first layout */}
+                        {message.isCityPicker &&
+                          cityPickerState &&
+                          cityPickerState.messageId === message.id && (
+                            <Box mt={3}>
+                              <VStack align="stretch" spacing={4}>
+                                {cityPickerState.segments.map((seg, segIdx) => {
+                                  // Build service label from the segment
+                                  const svcLabel = seg.raw
+                                    .replace(/\d+/g, '')
+                                    .replace(
+                                      /\b(need|for|the|a|an|in|at|of|and|i|want|please)\b/gi,
+                                      '',
+                                    )
+                                    .replace(/\s+/g, ' ')
+                                    .trim()
+                                    .split(' ')
+                                    .map(
+                                      (w) => w.charAt(0).toUpperCase() + w.slice(1).toLowerCase(),
+                                    )
+                                    .join(' ');
+
+                                  // Use pre-computed matchedCities from city gate (strict classifier).
+                                  // Render-time fallback also stays strict — no registry_unavailable leak.
+                                  const citiesWithService =
+                                    seg.matchedCities ??
+                                    cityPickerState.availableCities.filter((city) => {
+                                      const cityKey =
+                                        KNOWN_CITY_LIST.find((c) =>
+                                          city.toLowerCase().includes(c),
+                                        ) || city.toLowerCase();
+                                      const cls = classifySegmentByRegistry(cityKey, seg.raw);
+                                      return cls.state === 'specific' || cls.state === 'vague';
+                                    });
+
+                                  // Cities where registry explicitly says NOT available
+                                  const citiesWithoutService =
+                                    cityPickerState.availableCities.filter((city) => {
+                                      if (citiesWithService.includes(city)) return false;
+                                      const cityKey =
+                                        KNOWN_CITY_LIST.find((c) =>
+                                          city.toLowerCase().includes(c),
+                                        ) || city.toLowerCase();
+                                      const cls = classifySegmentByRegistry(cityKey, seg.raw);
+                                      return cls.state === 'not_found' || cls.state === 'empty';
+                                    });
+
+                                  const allCitiesSelected =
+                                    citiesWithService.length > 0 &&
+                                    citiesWithService.every((c) => seg.selectedCities.includes(c));
+                                  return (
+                                    <Box
+                                      key={segIdx}
+                                      p={3}
+                                      borderRadius="12px"
+                                      bg="gray.50"
+                                      border="1px solid"
+                                      borderColor="gray.200"
+                                    >
+                                      {/* Service header */}
+                                      <HStack justify="space-between" align="center" mb={2}>
+                                        <Text
+                                          fontSize="13px"
+                                          fontWeight="700"
+                                          color="gray.800"
+                                          textTransform="uppercase"
+                                          letterSpacing="wider"
+                                        >
+                                          {svcLabel}
+                                        </Text>
+                                        {seg.cityNeeded && citiesWithService.length > 1 && (
+                                          <Button
+                                            size="xs"
+                                            variant="ghost"
+                                            colorScheme="blue"
+                                            onClick={() =>
+                                              handleCitySelectAll(segIdx, citiesWithService)
+                                            }
+                                            isDisabled={isLoading}
+                                          >
+                                            {allCitiesSelected ? 'Clear all' : 'Select all'}
+                                          </Button>
+                                        )}
+                                      </HStack>
+
+                                      {seg.detectedCity && !seg.cityNeeded ? (
+                                        // Auto-assigned (only available in one city) — show as locked but visible
+                                        <Box
+                                          p={2.5}
+                                          borderRadius="10px"
+                                          border="2px solid"
+                                          borderColor="green.300"
+                                          bg="green.50"
+                                        >
+                                          <HStack justify="space-between">
+                                            <Text
+                                              fontSize="13px"
+                                              fontWeight="600"
+                                              color="green.700"
+                                            >
+                                              ✅ Auto-assigned: <b>{seg.detectedCity}</b>
+                                            </Text>
+                                            <Text fontSize="11px" color="green.500">
+                                              Only city available
+                                            </Text>
+                                          </HStack>
+                                        </Box>
+                                      ) : citiesWithService.length === 0 &&
+                                        citiesWithoutService.length > 0 ? (
+                                        // All cities explicitly don't have it
+                                        <Text fontSize="12px" color="orange.600" fontWeight="500">
+                                          ⚠ Not available in any loaded city
+                                        </Text>
+                                      ) : (
+                                        <VStack align="stretch" spacing={2}>
+                                          {/* Only show cities where service is available (or registry unavailable = show with fallback) */}
+                                          {citiesWithService.map((city, cIdx) => {
+                                            const isSelected = seg.selectedCities.includes(city);
+                                            // Get min qty hint from registry (strict classifier so "min 10"
+                                            // never leaks in from an unrelated reverse-match).
+                                            const cityKey =
+                                              KNOWN_CITY_LIST.find((c) =>
+                                                city.toLowerCase().includes(c),
+                                              ) || city.toLowerCase();
+                                            const cls = classifySegmentByRegistry(cityKey, seg.raw);
+                                            const minQty =
+                                              cls.state === 'specific' || cls.state === 'vague'
+                                                ? (cls.matches
+                                                    .map(
+                                                      (m) =>
+                                                        cityServiceRegistry.current.get(cityKey)
+                                                          ?.quantities[m]?.min,
+                                                    )
+                                                    .filter(
+                                                      (n): n is number =>
+                                                        typeof n === 'number' && n > 0,
+                                                    )
+                                                    .sort((a, b) => a - b)[0] ?? null)
+                                                : null;
+
+                                            return (
+                                              <Box
+                                                key={cIdx}
+                                                p={2.5}
+                                                borderRadius="10px"
+                                                border="2px solid"
+                                                borderColor={isSelected ? 'blue.400' : 'gray.200'}
+                                                bg={isSelected ? 'blue.50' : 'white'}
+                                                _hover={{ borderColor: 'blue.300' }}
+                                                transition="all 0.15s ease"
+                                              >
+                                                <HStack justify="space-between" align="center">
+                                                  <Checkbox
+                                                    isChecked={isSelected}
+                                                    onChange={() =>
+                                                      handleCitySelection(segIdx, city)
+                                                    }
+                                                    colorScheme="blue"
+                                                    size="md"
+                                                    isDisabled={isLoading}
+                                                  >
+                                                    <Text
+                                                      fontSize="13px"
+                                                      fontWeight={isSelected ? '700' : '500'}
+                                                      color={isSelected ? 'blue.700' : 'gray.700'}
+                                                    >
+                                                      {city}
+                                                    </Text>
+                                                  </Checkbox>
+                                                  {minQty && minQty > 1 && (
+                                                    <Text
+                                                      fontSize="11px"
+                                                      color="gray.400"
+                                                      fontWeight="500"
+                                                    >
+                                                      min {minQty}
+                                                    </Text>
+                                                  )}
+                                                </HStack>
+                                              </Box>
+                                            );
+                                          })}
+                                        </VStack>
+                                      )}
+                                    </Box>
+                                  );
+                                })}
+                              </VStack>
+
+                              {/* Confirm button */}
+                              {cityPickerState.segments.some(
+                                (s) => s.cityNeeded && s.selectedCities.length > 0,
+                              ) && (
+                                <Button
+                                  mt={4}
+                                  w="full"
+                                  bgGradient="linear(135deg, #dc2626 0%, #be123c 50%, #9f1239 100%)"
+                                  color="white"
+                                  fontWeight="700"
+                                  fontSize="15px"
+                                  py={6}
+                                  borderRadius="14px"
+                                  onClick={handleCityConfirm}
+                                  isDisabled={isLoading}
+                                  leftIcon={<Icon as={FiCheck} boxSize="18px" />}
+                                  _hover={{
+                                    bgGradient:
+                                      'linear(135deg, #b91c1c 0%, #9f1239 50%, #881337 100%)',
+                                    transform: 'translateY(-2px)',
+                                    boxShadow: '0 12px 24px rgba(220, 38, 38, 0.3)',
+                                  }}
+                                  _active={{ transform: 'translateY(0)' }}
+                                  transition="all 0.2s ease"
+                                >
+                                  Confirm Cities & Continue
+                                </Button>
+                              )}
+                            </Box>
+                          )}
+
+                        {/* DEPRECATED: Service suggestion buttons when service not found (backward compatibility) */}
+                        {message.isServiceNotFound &&
+                          message.availableServices &&
+                          message.availableServices.length > 0 && (
+                            <Box mt={3}>
+                              {/* Show valid services info for partial matches */}
+                              {message.isPartialMatch &&
+                                message.validServices &&
+                                message.validServices.length > 0 && (
+                                  <Box mb={2} px={1}>
+                                    <Text fontSize="12px" fontWeight="600" color="green.600">
+                                      ✅ {message.validServices.join(', ')} — available
+                                    </Text>
+                                    {message.missingServices &&
+                                      message.missingServices.length > 0 && (
+                                        <Text
+                                          fontSize="12px"
+                                          fontWeight="600"
+                                          color="red.500"
+                                          mt={0.5}
+                                        >
+                                          ❌ {message.missingServices.join(', ')} — not available
+                                        </Text>
+                                      )}
+                                    <Text fontSize="12px" color="gray.500" mt={1}>
+                                      Select a replacement below to generate a combined quote:
+                                    </Text>
+                                  </Box>
+                                )}
+                              {!message.isPartialMatch && (
+                                <Text
+                                  fontSize="12px"
+                                  fontWeight="600"
+                                  color="gray.500"
+                                  mb={2}
+                                  px={1}
+                                >
+                                  Available services:
+                                </Text>
+                              )}
+                              <VStack align="stretch" spacing={2}>
+                                {/* Group by category */}
+                                {(() => {
+                                  const categories = new Map<
+                                    string,
+                                    typeof message.availableServices
+                                  >();
+                                  message.availableServices!.forEach((svc) => {
+                                    const cat = svc.category || 'Other';
+                                    if (!categories.has(cat)) categories.set(cat, []);
+                                    categories.get(cat)!.push(svc);
+                                  });
+                                  return Array.from(categories.entries()).map(
+                                    ([category, services]) => (
+                                      <Box key={category}>
+                                        <Text
+                                          fontSize="11px"
+                                          fontWeight="700"
+                                          color="gray.400"
+                                          textTransform="uppercase"
+                                          letterSpacing="wider"
+                                          mb={1}
+                                          px={1}
+                                        >
+                                          {category}
+                                        </Text>
+                                        <VStack align="stretch" spacing={1.5}>
+                                          {services!.map((svc, idx) => (
+                                            <Button
+                                              key={idx}
+                                              variant="outline"
+                                              size="sm"
+                                              justifyContent="flex-start"
+                                              textAlign="left"
+                                              whiteSpace="normal"
+                                              h="auto"
+                                              py={2.5}
+                                              px={4}
+                                              borderRadius="12px"
+                                              fontWeight="500"
+                                              fontSize="13px"
+                                              borderColor="blue.200"
+                                              color="blue.700"
+                                              bg="blue.50"
+                                              onClick={() =>
+                                                handleServiceSuggestionClick(
+                                                  svc.name,
+                                                  message.isPartialMatch,
+                                                  message.validServices,
+                                                )
+                                              }
+                                              isDisabled={isLoading}
+                                              _hover={{
+                                                bg: 'blue.100',
+                                                borderColor: 'blue.400',
+                                                transform: 'translateX(4px)',
+                                                boxShadow: '0 2px 8px rgba(59, 130, 246, 0.2)',
+                                              }}
+                                              transition="all 0.2s ease"
+                                              leftIcon={<Text fontSize="14px">→</Text>}
+                                            >
+                                              {svc.name}
+                                            </Button>
+                                          ))}
+                                        </VStack>
+                                      </Box>
+                                    ),
+                                  );
+                                })()}
+                              </VStack>
+                            </Box>
+                          )}
                       </Box>
                     )}
                   </Box>
@@ -2519,7 +2923,7 @@ const ChatInterface: React.FC = () => {
                     borderRadius="4px 14px 14px 14px"
                     boxShadow="0 4px 12px rgba(0, 0, 0, 0.06), 0 1px 3px rgba(0, 0, 0, 0.08)"
                   >
-                    {[0, 1, 2].map(i => (
+                    {[0, 1, 2].map((i) => (
                       <Box
                         key={i}
                         w="7px"
@@ -2530,7 +2934,11 @@ const ChatInterface: React.FC = () => {
                           animation: `bounce 1.2s ${i * 0.2}s infinite ease-in-out`,
                           '@keyframes bounce': {
                             '0%,100%': { transform: 'translateY(0)', opacity: 0.5 },
-                            '50%': { transform: 'translateY(-8px)', opacity: 1, boxShadow: '0 0 8px rgba(59, 130, 246, 0.5)' },
+                            '50%': {
+                              transform: 'translateY(-8px)',
+                              opacity: 1,
+                              boxShadow: '0 0 8px rgba(59, 130, 246, 0.5)',
+                            },
                           },
                         }}
                       />
@@ -2545,9 +2953,9 @@ const ChatInterface: React.FC = () => {
         </Box>
 
         {/* Bottom Chat Input Bar */}
-        <HStack 
-          spacing={3} 
-          flexShrink={0} 
+        <HStack
+          spacing={3}
+          flexShrink={0}
           px={{ base: 3, md: 4 }}
           py={{ base: 4, md: 4 }}
           pb={{ base: 'calc(1rem + env(safe-area-inset-bottom, 0px))', md: 4 }}
@@ -2573,10 +2981,10 @@ const ChatInterface: React.FC = () => {
                 // Auto-scroll input into view when keyboard appears
                 if (Capacitor.isNativePlatform() || window.innerWidth <= 768) {
                   setTimeout(() => {
-                    e.target.scrollIntoView({ 
-                      behavior: 'smooth', 
+                    e.target.scrollIntoView({
+                      behavior: 'smooth',
                       block: 'center',
-                      inline: 'nearest'
+                      inline: 'nearest',
                     });
                   }, 300);
                 }
@@ -2599,12 +3007,12 @@ const ChatInterface: React.FC = () => {
               px={{ base: 5, md: 6 }}
               fontWeight="500"
               transition="all 0.2s ease"
-              _placeholder={{ 
-                color: 'gray.500', 
+              _placeholder={{
+                color: 'gray.500',
                 fontSize: { base: '15px', md: '16px' },
                 fontWeight: '500',
               }}
-              _hover={{ 
+              _hover={{
                 borderColor: 'brand.400',
                 bg: 'white',
                 boxShadow: '0 0 0 1px rgba(201, 31, 61, 0.2), 0 4px 16px rgba(0, 0, 0, 0.08)',
@@ -2627,11 +3035,16 @@ const ChatInterface: React.FC = () => {
                   textOverflow: 'ellipsis',
                   overflow: 'hidden',
                   whiteSpace: 'nowrap',
-                }
+                },
               }}
             />
           </Box>
-          <Box position="relative" display="inline-flex" alignItems="center" justifyContent="center">
+          <Box
+            position="relative"
+            display="inline-flex"
+            alignItems="center"
+            justifyContent="center"
+          >
             {/* Listening indicator text */}
             {isRecording && (
               <Text
@@ -2659,7 +3072,7 @@ const ChatInterface: React.FC = () => {
                 🎙️ Listening...
               </Text>
             )}
-            
+
             {/* Animated rings when recording */}
             {isRecording && (
               <>
@@ -2673,11 +3086,11 @@ const ChatInterface: React.FC = () => {
                   sx={{
                     animation: 'ripple 1.5s ease-out infinite',
                     '@keyframes ripple': {
-                      '0%': { 
+                      '0%': {
                         transform: 'scale(1)',
                         opacity: 0.8,
                       },
-                      '100%': { 
+                      '100%': {
                         transform: 'scale(1.8)',
                         opacity: 0,
                       },
@@ -2694,11 +3107,11 @@ const ChatInterface: React.FC = () => {
                   sx={{
                     animation: 'ripple 1.5s ease-out infinite 0.5s',
                     '@keyframes ripple': {
-                      '0%': { 
+                      '0%': {
                         transform: 'scale(1)',
                         opacity: 0.8,
                       },
-                      '100%': { 
+                      '100%': {
                         transform: 'scale(1.8)',
                         opacity: 0,
                       },
@@ -2707,16 +3120,17 @@ const ChatInterface: React.FC = () => {
                 />
               </>
             )}
-            
+
             {/* Voice input button */}
             <IconButton
-              aria-label={isRecording ? "Stop recording" : "Voice input"}
+              aria-label={isRecording ? 'Stop recording' : 'Voice input'}
               icon={<FiMic />}
               onClick={toggleVoiceInput}
               isDisabled={isLoading}
-              bgGradient={isRecording 
-                ? "linear(to-br, red.500, red.600, pink.500)" 
-                : "linear(to-br, blue.500, blue.600, cyan.500)"
+              bgGradient={
+                isRecording
+                  ? 'linear(to-br, red.500, red.600, pink.500)'
+                  : 'linear(to-br, blue.500, blue.600, cyan.500)'
               }
               color="white"
               size="md"
@@ -2729,25 +3143,26 @@ const ChatInterface: React.FC = () => {
               position="relative"
               zIndex={1}
               border="2px solid"
-              borderColor={isRecording ? "red.300" : "blue.300"}
-              boxShadow={isRecording 
-                ? "0 4px 20px rgba(239, 68, 68, 0.5), 0 0 30px rgba(239, 68, 68, 0.3), inset 0 1px 0 rgba(255,255,255,0.3)" 
-                : "0 4px 16px rgba(59, 130, 246, 0.4), 0 0 24px rgba(59, 130, 246, 0.2), inset 0 1px 0 rgba(255,255,255,0.3)"
+              borderColor={isRecording ? 'red.300' : 'blue.300'}
+              boxShadow={
+                isRecording
+                  ? '0 4px 20px rgba(239, 68, 68, 0.5), 0 0 30px rgba(239, 68, 68, 0.3), inset 0 1px 0 rgba(255,255,255,0.3)'
+                  : '0 4px 16px rgba(59, 130, 246, 0.4), 0 0 24px rgba(59, 130, 246, 0.2), inset 0 1px 0 rgba(255,255,255,0.3)'
               }
               _hover={{
-                bgGradient: isRecording 
-                  ? "linear(to-br, red.600, red.700, pink.600)" 
-                  : "linear(to-br, blue.600, blue.700, cyan.600)",
+                bgGradient: isRecording
+                  ? 'linear(to-br, red.600, red.700, pink.600)'
+                  : 'linear(to-br, blue.600, blue.700, cyan.600)',
                 transform: 'translateY(-2px) scale(1.05)',
-                boxShadow: isRecording 
-                  ? '0 8px 28px rgba(239, 68, 68, 0.6), 0 0 40px rgba(239, 68, 68, 0.4), inset 0 1px 0 rgba(255,255,255,0.4)' 
+                boxShadow: isRecording
+                  ? '0 8px 28px rgba(239, 68, 68, 0.6), 0 0 40px rgba(239, 68, 68, 0.4), inset 0 1px 0 rgba(255,255,255,0.4)'
                   : '0 8px 24px rgba(59, 130, 246, 0.5), 0 0 32px rgba(59, 130, 246, 0.3), inset 0 1px 0 rgba(255,255,255,0.4)',
-                borderColor: isRecording ? "red.200" : "blue.200",
+                borderColor: isRecording ? 'red.200' : 'blue.200',
               }}
               _active={{
                 transform: 'scale(0.95)',
-                boxShadow: isRecording 
-                  ? '0 2px 12px rgba(239, 68, 68, 0.4), inset 0 2px 4px rgba(0,0,0,0.2)' 
+                boxShadow: isRecording
+                  ? '0 2px 12px rgba(239, 68, 68, 0.4), inset 0 2px 4px rgba(0,0,0,0.2)'
                   : '0 2px 12px rgba(59, 130, 246, 0.4), inset 0 2px 4px rgba(0,0,0,0.2)',
               }}
               _disabled={{
@@ -2758,21 +3173,25 @@ const ChatInterface: React.FC = () => {
                 boxShadow: '0 2px 8px rgba(0, 0, 0, 0.1)',
                 borderColor: 'gray.300',
               }}
-              sx={isRecording ? {
-                animation: 'micPulse 1.2s ease-in-out infinite',
-                '@keyframes micPulse': {
-                  '0%, 100%': { 
-                    transform: 'scale(1)',
-                    filter: 'brightness(1)',
-                  },
-                  '50%': { 
-                    transform: 'scale(1.08)',
-                    filter: 'brightness(1.15)',
-                  },
-                },
-              } : {
-                transition: 'all 0.3s cubic-bezier(0.4, 0, 0.2, 1)',
-              }}
+              sx={
+                isRecording
+                  ? {
+                      animation: 'micPulse 1.2s ease-in-out infinite',
+                      '@keyframes micPulse': {
+                        '0%, 100%': {
+                          transform: 'scale(1)',
+                          filter: 'brightness(1)',
+                        },
+                        '50%': {
+                          transform: 'scale(1.08)',
+                          filter: 'brightness(1.15)',
+                        },
+                      },
+                    }
+                  : {
+                      transition: 'all 0.3s cubic-bezier(0.4, 0, 0.2, 1)',
+                    }
+              }
             />
           </Box>
           <IconButton
@@ -2793,7 +3212,7 @@ const ChatInterface: React.FC = () => {
             transition="all 0.2s ease"
             boxShadow="0 4px 20px rgba(201, 31, 61, 0.4), 0 2px 8px rgba(201, 31, 61, 0.25)"
             _hover={{
-              bgGradient: "linear(to-br, brand.600, brand.700)",
+              bgGradient: 'linear(to-br, brand.600, brand.700)',
               transform: 'translateY(-2px) scale(1.05)',
               boxShadow: '0 8px 28px rgba(201, 31, 61, 0.5), 0 4px 12px rgba(201, 31, 61, 0.35)',
             }}
@@ -2817,7 +3236,10 @@ const ChatInterface: React.FC = () => {
       {confirmationTable && (
         <Box
           position="fixed"
-          top="0" left="0" right="0" bottom="0"
+          top="0"
+          left="0"
+          right="0"
+          bottom="0"
           bg="rgba(0,0,0,0.55)"
           zIndex={9999}
           display="flex"
@@ -2838,10 +3260,35 @@ const ChatInterface: React.FC = () => {
             </Text>
 
             {/* Table Header */}
-            <Box borderRadius="8px" overflow="hidden" border="1px solid" borderColor="gray.200" mb={4}>
+            <Box
+              borderRadius="8px"
+              overflow="hidden"
+              border="1px solid"
+              borderColor="gray.200"
+              mb={4}
+            >
               <HStack bg="gray.800" px={3} py={2} spacing={0}>
-                <Text flex={2} fontSize="11px" fontWeight="700" color="white" textTransform="uppercase" letterSpacing="wider">Service</Text>
-                <Text flex={1} fontSize="11px" fontWeight="700" color="white" textTransform="uppercase" letterSpacing="wider" textAlign="right">City</Text>
+                <Text
+                  flex={2}
+                  fontSize="11px"
+                  fontWeight="700"
+                  color="white"
+                  textTransform="uppercase"
+                  letterSpacing="wider"
+                >
+                  Service
+                </Text>
+                <Text
+                  flex={1}
+                  fontSize="11px"
+                  fontWeight="700"
+                  color="white"
+                  textTransform="uppercase"
+                  letterSpacing="wider"
+                  textAlign="right"
+                >
+                  City
+                </Text>
               </HStack>
               {confirmationTable.rows.map((row, idx) => (
                 <HStack
@@ -2853,14 +3300,26 @@ const ChatInterface: React.FC = () => {
                   borderTop="1px solid"
                   borderColor="gray.100"
                 >
-                  <Text flex={2} fontSize="13px" fontWeight="500" color="gray.800">{row.service}</Text>
-                  <Text flex={1} fontSize="13px" color="blue.600" fontWeight="600" textAlign="right">{row.city}</Text>
+                  <Text flex={2} fontSize="13px" fontWeight="500" color="gray.800">
+                    {row.service}
+                  </Text>
+                  <Text
+                    flex={1}
+                    fontSize="13px"
+                    color="blue.600"
+                    fontWeight="600"
+                    textAlign="right"
+                  >
+                    {row.city}
+                  </Text>
                 </HStack>
               ))}
             </Box>
 
             <Text fontSize="12px" color="gray.500" mb={5}>
-              {confirmationTable.rows.length} service{confirmationTable.rows.length !== 1 ? 's' : ''} selected. Confirm to generate the quote.
+              {confirmationTable.rows.length} service
+              {confirmationTable.rows.length !== 1 ? 's' : ''} selected. Confirm to generate the
+              quote.
             </Text>
 
             <HStack spacing={3} justify="flex-end">
@@ -2896,7 +3355,10 @@ const ChatInterface: React.FC = () => {
       {unavailableServices.length > 0 && (
         <Box
           position="fixed"
-          top="0" left="0" right="0" bottom="0"
+          top="0"
+          left="0"
+          right="0"
+          bottom="0"
           bg="rgba(0,0,0,0.45)"
           zIndex={9998}
           display="flex"
@@ -2930,17 +3392,24 @@ const ChatInterface: React.FC = () => {
                 borderLeft="3px solid #f59e0b"
               >
                 <Text fontSize="13px" color="#78350f">
-                  <b>{item.service}</b> is currently not offered in{' '}
-                  <b>{item.city}</b>.
+                  <b>{item.service}</b> is currently not offered in <b>{item.city}</b>.
                 </Text>
               </Box>
             ))}
 
             {/* Context-aware footer message */}
             {pendingValidMessage ? (
-              <Box mt={3} mb={4} p={3} bg="#f0fdf4" borderRadius="8px" borderLeft="3px solid #16a34a">
+              <Box
+                mt={3}
+                mb={4}
+                p={3}
+                bg="#f0fdf4"
+                borderRadius="8px"
+                borderLeft="3px solid #16a34a"
+              >
                 <Text fontSize="12.5px" color="#15803d" fontWeight="600">
-                  ✓ Don't worry — we'll still generate the quote for your other available service{pendingValidMessage.toLowerCase().includes(' and ') ? 's' : ''}.
+                  ✓ Don't worry — we'll still generate the quote for your other available service
+                  {pendingValidMessage.toLowerCase().includes(' and ') ? 's' : ''}.
                 </Text>
                 <Text fontSize="12px" color="#166534" mt={1}>
                   Click <b>Close</b> to proceed with the available request.
@@ -2949,7 +3418,7 @@ const ChatInterface: React.FC = () => {
             ) : (
               <Text fontSize="12px" color="gray.500" mt={3} mb={4}>
                 Please try a different service for{' '}
-                {unavailableServices.map(s => s.city).join(', ')}.
+                {unavailableServices.map((s) => s.city).join(', ')}.
               </Text>
             )}
 
@@ -2996,7 +3465,10 @@ const ChatInterface: React.FC = () => {
       {minQtyWarning && (
         <Box
           position="fixed"
-          top="0" left="0" right="0" bottom="0"
+          top="0"
+          left="0"
+          right="0"
+          bottom="0"
           bg="rgba(0,0,0,0.55)"
           zIndex={9999}
           display="flex"
@@ -3016,10 +3488,20 @@ const ChatInterface: React.FC = () => {
               ⚠️ Below Minimum Quantity
             </Text>
             {minQtyWarning.items.map((item, i) => (
-              <Box key={i} mb={3} p={3} bg="#fff5f5" borderRadius="8px" borderLeft="3px solid #c0392b">
-                <Text fontSize="13px" fontWeight="600" color="#2d3436">{item.description}</Text>
+              <Box
+                key={i}
+                mb={3}
+                p={3}
+                bg="#fff5f5"
+                borderRadius="8px"
+                borderLeft="3px solid #c0392b"
+              >
+                <Text fontSize="13px" fontWeight="600" color="#2d3436">
+                  {item.description}
+                </Text>
                 <Text fontSize="12px" color="#636e72" mt={1}>
-                  Minimum: <b>{item.minimum}</b> units &nbsp;|&nbsp; You requested: <b>{item.requested}</b> units
+                  Minimum: <b>{item.minimum}</b> units &nbsp;|&nbsp; You requested:{' '}
+                  <b>{item.requested}</b> units
                 </Text>
               </Box>
             ))}

@@ -1,13 +1,4 @@
-import {
-  Box,
-  Container,
-  HStack,
-  Text,
-  Circle,
-  Flex,
-  Progress,
-  Icon,
-} from '@chakra-ui/react';
+import { Box, Container, HStack, Text, Circle, Flex, Progress, Icon } from '@chakra-ui/react';
 import React from 'react';
 import { FiCheck } from 'react-icons/fi';
 
@@ -37,34 +28,28 @@ const QuoteStepper: React.FC<QuoteStepperProps> = ({ currentStep }) => {
                     step.number < currentStep
                       ? '#750926'
                       : step.number === currentStep
-                      ? '#750926'
-                      : 'gray.200'
+                        ? '#750926'
+                        : 'gray.200'
                   }
-                  color={
-                    step.number <= currentStep ? 'white' : 'gray.500'
-                  }
+                  color={step.number <= currentStep ? 'white' : 'gray.500'}
                   fontWeight="600"
                   fontSize={{ base: 'sm', md: 'md' }}
                   border="3px solid"
-                  borderColor={
-                    step.number <= currentStep ? '#750926' : 'gray.300'
-                  }
+                  borderColor={step.number <= currentStep ? '#750926' : 'gray.300'}
                   transition="all 0.3s"
                 >
-                  {step.number < currentStep ? (
-                    <Icon as={FiCheck} boxSize={5} />
-                  ) : (
-                    step.number
-                  )}
+                  {step.number < currentStep ? <Icon as={FiCheck} boxSize={5} /> : step.number}
                 </Circle>
                 <Box display={{ base: 'none', sm: 'block' }}>
                   <Text
                     fontSize={{ base: 'xs', md: 'sm' }}
                     fontWeight={step.number === currentStep ? '600' : '500'}
                     color={
-                      step.number === currentStep ? '#750926' : 
-                      step.number < currentStep ? '#750926' :
-                      'gray.600'
+                      step.number === currentStep
+                        ? '#750926'
+                        : step.number < currentStep
+                          ? '#750926'
+                          : 'gray.600'
                     }
                   >
                     {step.label}
