@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeEach, vi } from 'vitest';
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { authService } from '../../src/services/authService';
 
 // Mock supabase
@@ -47,6 +47,11 @@ describe('authService', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     localStorage.clear();
+  });
+
+  afterEach(() => {
+    // Restore any Storage.prototype spies so they don't leak between tests
+    vi.restoreAllMocks();
   });
 
   // ─────────────────────────────────────────────
@@ -111,6 +116,112 @@ describe('authService', () => {
         authService.login({ email: 'admin@baleenmedia.com', password: 'pw' })
       ).rejects.toThrow('Unable to fetch user role');
     });
+
+    // Covers: email.trim() called before ilike query.
+    // If someone removes trim(), ilike receives the raw spaced string and this test fails in CI.
+    it('trims whitespace from email before querying Supabase', async () => {
+      const chain = makeMockChain(mockUserRow);
+      vi.mocked(supabase.from)
+        .mockReturnValueOnce(chain as any)
+        .mockReturnValueOnce(makeMockChain(mockRole) as any);
+      vi.mocked(bcrypt.compare).mockResolvedValue(true as never);
+
+      await authService.login({ email: '  admin@baleenmedia.com  ', password: 'pw' });
+
+      expect(chain.ilike).toHaveBeenCalledWith('email', 'admin@baleenmedia.com');
+    });
+
+    // Covers: Array.isArray(user.Role) === true branch.
+    // The role query returns an array; the code must take user.Role[0].
+    it('extracts first element when user.Role is an array', async () => {
+      vi.mocked(supabase.from)
+        .mockReturnValueOnce(makeMockChain(mockUserRow) as any)
+        .mockReturnValueOnce(makeMockChain([mockRole]) as any);
+      vi.mocked(bcrypt.compare).mockResolvedValue(true as never);
+
+      const user = await authService.login({ email: 'admin@baleenmedia.com', password: 'pw' });
+      expect(user.role.role_name).toBe('Admin');
+    });
+
+    // Covers: typeof roleData.permissions !== 'string' branch.
+    // When permissions is already a parsed object the code must use it directly, not JSON.parse it.
+    it('uses permissions directly when they are already an object', async () => {
+      const roleWithObjectPerms = { ...mockRole, permissions: { canEditQuotes: true } };
+      vi.mocked(supabase.from)
+        .mockReturnValueOnce(makeMockChain(mockUserRow) as any)
+        .mockReturnValueOnce(makeMockChain(roleWithObjectPerms) as any);
+      vi.mocked(bcrypt.compare).mockResolvedValue(true as never);
+
+      const user = await authService.login({ email: 'admin@baleenmedia.com', password: 'pw' });
+      expect(user.role.permissions).toEqual({ canEditQuotes: true });
+    });
+
+    // Covers: catch(e) block inside permissions JSON.parse.
+    // Malformed string causes SyntaxError; permissions must fall back to {}.
+    it('falls back to empty permissions when permissions JSON is malformed', async () => {
+      const roleWithBadPerms = { ...mockRole, permissions: '{ broken json {{{' };
+      vi.mocked(supabase.from)
+        .mockReturnValueOnce(makeMockChain(mockUserRow) as any)
+        .mockReturnValueOnce(makeMockChain(roleWithBadPerms) as any);
+      vi.mocked(bcrypt.compare).mockResolvedValue(true as never);
+
+      const user = await authService.login({ email: 'admin@baleenmedia.com', password: 'pw' });
+      expect(user.role.permissions).toEqual({});
+    });
+
+    // Covers: if (roleData?.permissions) falsy branch.
+    // Null permissions skips the parse block entirely; permissions stays {}.
+    it('keeps empty permissions when roleData.permissions is null', async () => {
+      const roleWithNullPerms = { ...mockRole, permissions: null };
+      vi.mocked(supabase.from)
+        .mockReturnValueOnce(makeMockChain(mockUserRow) as any)
+        .mockReturnValueOnce(makeMockChain(roleWithNullPerms) as any);
+      vi.mocked(bcrypt.compare).mockResolvedValue(true as never);
+
+      const user = await authService.login({ email: 'admin@baleenmedia.com', password: 'pw' });
+      expect(user.role.permissions).toEqual({});
+    });
+
+    // Covers: roleData?.name || 'user' right-hand fallback.
+    // When the role row has no name the returned role_name must be 'user'.
+    it('falls back to "user" role name when role has no name field', async () => {
+      const roleNoName = { ...mockRole, name: undefined };
+      vi.mocked(supabase.from)
+        .mockReturnValueOnce(makeMockChain(mockUserRow) as any)
+        .mockReturnValueOnce(makeMockChain(roleNoName) as any);
+      vi.mocked(bcrypt.compare).mockResolvedValue(true as never);
+
+      const user = await authService.login({ email: 'admin@baleenmedia.com', password: 'pw' });
+      expect(user.role.role_name).toBe('user');
+    });
+
+    // Covers: bcrypt.compare() rejection propagation.
+    // login() has no try/catch around bcrypt so the error propagates raw.
+    it('propagates error when bcrypt.compare throws', async () => {
+      vi.mocked(supabase.from)
+        .mockReturnValueOnce(makeMockChain(mockUserRow) as any)
+        .mockReturnValueOnce(makeMockChain(mockRole) as any);
+      vi.mocked(bcrypt.compare).mockRejectedValue(new Error('bcrypt internal error') as never);
+
+      await expect(
+        authService.login({ email: 'admin@baleenmedia.com', password: 'pw' })
+      ).rejects.toThrow('bcrypt internal error');
+    });
+
+    // Covers: unhandled Promise rejection from a network-level Supabase failure.
+    // single() rejects entirely (no data/error shape), login() has no catch so it propagates.
+    it('propagates error when Supabase query rejects at network level', async () => {
+      vi.mocked(supabase.from).mockReturnValueOnce({
+        select: vi.fn().mockReturnThis(),
+        ilike: vi.fn().mockReturnThis(),
+        eq: vi.fn().mockReturnThis(),
+        single: vi.fn().mockRejectedValue(new Error('Network error')),
+      } as any);
+
+      await expect(
+        authService.login({ email: 'admin@baleenmedia.com', password: 'pw' })
+      ).rejects.toThrow('Network error');
+    });
   });
 
   // ─────────────────────────────────────────────
@@ -146,6 +257,16 @@ describe('authService', () => {
       localStorage.setItem('currentUser', '{{broken');
       expect(authService.getCurrentUser()).toBeNull();
     });
+
+    // Covers: catch block in getCurrentUser via a storage-level throw.
+    // Distinct from the corrupt-JSON path above — localStorage.getItem itself throws
+    // (e.g. SecurityError in a cross-origin iframe or restricted browser context).
+    it('returns null when localStorage.getItem throws in getCurrentUser', () => {
+      vi.spyOn(Storage.prototype, 'getItem').mockImplementation(() => {
+        throw new DOMException('Access denied', 'SecurityError');
+      });
+      expect(authService.getCurrentUser()).toBeNull();
+    });
   });
 
   // ─────────────────────────────────────────────
@@ -156,6 +277,16 @@ describe('authService', () => {
       const user = { id: '1', email: 'a@b.com', full_name: 'User', role: { role_name: 'admin', permissions: {} } };
       authService.saveUser(user);
       expect(JSON.parse(localStorage.getItem('currentUser')!)).toEqual(user);
+    });
+
+    // Covers: saveUser has NO try/catch — a setItem failure propagates raw.
+    // This test documents the contract: callers must handle storage errors themselves.
+    it('propagates error when localStorage.setItem throws in saveUser', () => {
+      vi.spyOn(Storage.prototype, 'setItem').mockImplementation(() => {
+        throw new Error('QuotaExceededError');
+      });
+      const user = { id: '1', email: 'a@b.com', full_name: 'User', role: { role_name: 'admin', permissions: {} } };
+      expect(() => authService.saveUser(user)).toThrow('QuotaExceededError');
     });
   });
 
@@ -195,6 +326,17 @@ describe('authService', () => {
 
     it('returns false when user has no permissions object', () => {
       expect(authService.hasPermission('canEditQuotes')).toBe(false);
+    });
+
+    // Covers: permissions[key] === undefined (key absent from object).
+    // Distinct from key-present-but-false: undefined === true is false,
+    // ensuring the guard passes but the comparison returns false.
+    it('returns false when permission key does not exist in permissions object', () => {
+      localStorage.setItem('currentUser', JSON.stringify({
+        id: '1', email: 'a@b.com', full_name: 'User',
+        role: { role_name: 'user', permissions: { canEditQuotes: true } },
+      }));
+      expect(authService.hasPermission('canDeleteQuotes')).toBe(false);
     });
   });
 
