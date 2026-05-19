@@ -168,7 +168,7 @@
 }
 
 /* Limit to 2 images per page in PDF */
-#pdf-page-2 .reference-image-item:nth-child(2n+1) {
+#pdf-page-2 .reference-image-item:nth-child(2n + 1) {
   page-break-before: avoid !important;
 }
 
@@ -177,14 +177,6 @@
 #pdf-page-2 .reference-image-item:nth-child(7) {
   page-break-before: always !important;
   break-before: page !important;
-}
-  font-size: 13px;
-  margin-top: 10px;
-  text-align: center;
-  display: block;
-  width: 100%;
-  color: #666;
-  clear: both;
 }
 
 @media print {
@@ -303,12 +295,12 @@
     overflow: hidden !important;
     background: white !important;
   }
-  
+
   .reference-image {
     margin: -50px auto 0 auto !important;
     max-height: none !important;
   }
-  
+
   .reference-image-caption {
     display: none !important;
     visibility: hidden !important;
@@ -317,7 +309,7 @@
     margin: 0 !important;
     padding: 0 !important;
   }
-  
+
   .reference-images-section .reference-image-caption,
   .reference-image-item .reference-image-caption,
   span.reference-image-caption {
@@ -331,7 +323,7 @@
     height: 350px !important;
     padding: 18px !important;
   }
-  
+
   .reference-image {
     margin: -110px auto 0 auto !important;
   }
@@ -561,23 +553,22 @@
 
 /* --- PDF export overrides for smart layout --- */
 #pdf-page-2 .smart-reference-page,
-[id^="pdf-service-ref-"] .smart-reference-page {
+[id^='pdf-service-ref-'] .smart-reference-page {
   padding: 20px 28px !important;
 }
 
 #pdf-page-2 .smart-section-heading,
-[id^="pdf-service-ref-"] .smart-section-heading {
+[id^='pdf-service-ref-'] .smart-section-heading {
   font-size: 13px !important;
 }
 
 #pdf-page-2 .ref-img,
-[id^="pdf-service-ref-"] .ref-img {
+[id^='pdf-service-ref-'] .ref-img {
   max-height: 340px !important;
 }
 
 #pdf-page-2 .review-card,
-[id^="pdf-service-ref-"] .review-card {
+[id^='pdf-service-ref-'] .review-card {
   box-shadow: none !important;
   border: 1px solid #d1d9e0 !important;
 }
-

@@ -109,7 +109,7 @@ input[type='number'] {
   .line-items-table td.line-item-delete::before {
     display: none;
   }
-  
+
   .chakra-heading {
     font-size: 24px !important;
   }
@@ -119,12 +119,9 @@ input[type='number'] {
   .quote-preview {
     padding: 0;
   }
-  
+
   .quote-preview-empty {
     padding: 20px 10px;
-  }
-}
-    padding: 32px 16px;
   }
 }
 
