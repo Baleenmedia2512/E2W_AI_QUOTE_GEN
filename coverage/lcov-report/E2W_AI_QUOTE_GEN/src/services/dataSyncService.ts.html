@@ -23,9 +23,9 @@
         <div class='clearfix'>
             
             <div class='fl pad1y space-right2'>
-                <span class="strong">56.41% </span>
+                <span class="strong">55.69% </span>
                 <span class="quiet">Statements</span>
-                <span class='fraction'>176/312</span>
+                <span class='fraction'>176/316</span>
             </div>
         
             
@@ -44,9 +44,9 @@
         
             
             <div class='fl pad1y space-right2'>
-                <span class="strong">56.41% </span>
+                <span class="strong">55.69% </span>
                 <span class="quiet">Lines</span>
-                <span class='fraction'>176/312</span>
+                <span class='fraction'>176/316</span>
             </div>
         
             
@@ -375,7 +375,11 @@
 <a name='L310'></a><a href='#L310'>310</a>
 <a name='L311'></a><a href='#L311'>311</a>
 <a name='L312'></a><a href='#L312'>312</a>
-<a name='L313'></a><a href='#L313'>313</a></td><td class="line-coverage quiet"><span class="cline-any cline-yes">1x</span>
+<a name='L313'></a><a href='#L313'>313</a>
+<a name='L314'></a><a href='#L314'>314</a>
+<a name='L315'></a><a href='#L315'>315</a>
+<a name='L316'></a><a href='#L316'>316</a>
+<a name='L317'></a><a href='#L317'>317</a></td><td class="line-coverage quiet"><span class="cline-any cline-yes">1x</span>
 <span class="cline-any cline-yes">1x</span>
 <span class="cline-any cline-yes">1x</span>
 <span class="cline-any cline-yes">1x</span>
@@ -517,6 +521,10 @@
 <span class="cline-any cline-yes">1x</span>
 <span class="cline-any cline-yes">1x</span>
 <span class="cline-any cline-yes">1x</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
 <span class="cline-any cline-no">&nbsp;</span>
 <span class="cline-any cline-no">&nbsp;</span>
 <span class="cline-any cline-no">&nbsp;</span>
@@ -725,11 +733,11 @@ export async function saveDataUnified&lt;T&gt;(
     localStorage?: boolean;
     indexedDB?: boolean;
     cloud?: boolean;
-  } = { localStorage: true, indexedDB: false, cloud: true }
+  } = { localStorage: true, indexedDB: false, cloud: true },
 ): Promise&lt;{ success: boolean; source: string[] }&gt; {
   const timestamp = Date.now();
   const sources: string[] = [];
-  
+&nbsp;
   const wrappedData: DataWithTimestamp&lt;T&gt; = {
     data,
     timestamp,
@@ -753,7 +761,7 @@ export async function saveDataUnified&lt;T&gt;(
 <span class="cstat-no" title="statement not covered" >    try {</span>
 <span class="cstat-no" title="statement not covered" >      // Add to sync queue</span>
 <span class="cstat-no" title="statement not covered" >      syncQueue.push({ key, data: wrappedData, timestamp });</span>
-<span class="cstat-no" title="statement not covered" >      </span>
+<span class="cstat-no" title="statement not covered" ></span>
 <span class="cstat-no" title="statement not covered" >      // Try to sync immediately</span>
 <span class="cstat-no" title="statement not covered" >      const cloudSuccess = await syncToCloud(key, wrappedData);</span>
 <span class="cstat-no" title="statement not covered" >      if (cloudSuccess) {</span>
@@ -778,7 +786,7 @@ export async function loadDataUnified&lt;T&gt;(
   options: {
     preferCloud?: boolean;
     maxAge?: number; // milliseconds
-  } = {}
+  } = {},
 ): Promise&lt;T | null&gt; {
   const sources: Array&lt;{ data: DataWithTimestamp&lt;T&gt;; source: string }&gt; = [];
 &nbsp;
@@ -812,13 +820,13 @@ export async function loadDataUnified&lt;T&gt;(
 &nbsp;
   if (sources.length === 1) {
     const result = sources[0].data;
-    
+&nbsp;
     // Check if data is too old
     if (options.maxAge &amp;&amp; Date.now() - result.timestamp &gt; options.maxAge) {
       logger.warn(`Data expired (age: ${Date.now() - result.timestamp}ms)`);
       return null;
     }
-    
+&nbsp;
     return result.data;
 <span class="branch-0 cbranch-no" title="branch not covered" >  }</span>
 <span class="cstat-no" title="statement not covered" ></span>
@@ -831,13 +839,13 @@ export async function loadDataUnified&lt;T&gt;(
  */
 <span class="cstat-no" title="statement not covered" ><span class="fstat-no" title="function not covered" >function resolveConflict&lt;T&gt;(</span></span>
 <span class="cstat-no" title="statement not covered" >  sources: Array&lt;{ data: DataWithTimestamp&lt;T&gt;; source: string }&gt;,</span>
-<span class="cstat-no" title="statement not covered" >  maxAge?: number</span>
+<span class="cstat-no" title="statement not covered" >  maxAge?: number,</span>
 <span class="cstat-no" title="statement not covered" >): T | null {</span>
 <span class="cstat-no" title="statement not covered" >  // Sort by timestamp (newest first)</span>
 <span class="cstat-no" title="statement not covered" >  const sorted = sources.sort((a, b) =&gt; b.data.timestamp - a.data.timestamp);</span>
-<span class="cstat-no" title="statement not covered" >  </span>
+<span class="cstat-no" title="statement not covered" ></span>
 <span class="cstat-no" title="statement not covered" >  const newest = sorted[0];</span>
-<span class="cstat-no" title="statement not covered" >  </span>
+<span class="cstat-no" title="statement not covered" ></span>
 <span class="cstat-no" title="statement not covered" >  // Check if too old</span>
 <span class="cstat-no" title="statement not covered" >  if (maxAge &amp;&amp; Date.now() - newest.data.timestamp &gt; maxAge) {</span>
 <span class="cstat-no" title="statement not covered" >    logger.warn('All data sources expired');</span>
@@ -846,9 +854,13 @@ export async function loadDataUnified&lt;T&gt;(
 <span class="cstat-no" title="statement not covered" ></span>
 <span class="cstat-no" title="statement not covered" >  // Log conflict resolution</span>
 <span class="cstat-no" title="statement not covered" >  if (sorted.length &gt; 1) {</span>
-<span class="cstat-no" title="statement not covered" >    logger.info(`🔄 Conflict resolved: Using ${newest.source} (timestamp: ${new Date(newest.data.timestamp).toLocaleString()})`);</span>
-<span class="cstat-no" title="statement not covered" >    sorted.slice(1).forEach(s =&gt; {</span>
-<span class="cstat-no" title="statement not covered" >      logger.info(`   Ignored ${s.source} (older by ${(newest.data.timestamp - s.data.timestamp) / 1000}s)`);</span>
+<span class="cstat-no" title="statement not covered" >    logger.info(</span>
+<span class="cstat-no" title="statement not covered" >      `🔄 Conflict resolved: Using ${newest.source} (timestamp: ${new Date(newest.data.timestamp).toLocaleString()})`,</span>
+<span class="cstat-no" title="statement not covered" >    );</span>
+<span class="cstat-no" title="statement not covered" >    sorted.slice(1).forEach((s) =&gt; {</span>
+<span class="cstat-no" title="statement not covered" >      logger.info(</span>
+<span class="cstat-no" title="statement not covered" >        `   Ignored ${s.source} (older by ${(newest.data.timestamp - s.data.timestamp) / 1000}s)`,</span>
+<span class="cstat-no" title="statement not covered" >      );</span>
 <span class="cstat-no" title="statement not covered" >    });</span>
 <span class="cstat-no" title="statement not covered" >  }</span>
 <span class="cstat-no" title="statement not covered" ></span>
@@ -934,13 +946,13 @@ export function getSyncStatus(): SyncStatus {
  */
 <span class="cstat-no" title="statement not covered" ><span class="fstat-no" title="function not covered" >export async function forceSyncAll(): Promise&lt;void&gt; {</span></span>
 <span class="cstat-no" title="statement not covered" >  logger.info('🔄 Starting full sync...');</span>
-<span class="cstat-no" title="statement not covered" >  </span>
+<span class="cstat-no" title="statement not covered" ></span>
 <span class="cstat-no" title="statement not covered" >  // Sync pending changes</span>
 <span class="cstat-no" title="statement not covered" >  await syncPendingChanges();</span>
-<span class="cstat-no" title="statement not covered" >  </span>
+<span class="cstat-no" title="statement not covered" ></span>
 <span class="cstat-no" title="statement not covered" >  // Update last sync timestamp</span>
 <span class="cstat-no" title="statement not covered" >  localStorage.setItem('__last_sync__', Date.now().toString());</span>
-<span class="cstat-no" title="statement not covered" >  </span>
+<span class="cstat-no" title="statement not covered" ></span>
 <span class="cstat-no" title="statement not covered" >  logger.info('✅ Full sync completed');</span>
 <span class="cstat-no" title="statement not covered" >}</span>
 &nbsp;
@@ -949,25 +961,25 @@ export function getSyncStatus(): SyncStatus {
  */
 export async function clearAllCache(): Promise&lt;void&gt; {
   logger.info('🗑️ Clearing all cached data...');
-  
+&nbsp;
   // Clear localStorage
   const keysToKeep = ['auth-storage', 'supabase.auth.token'];
   const allKeys = Object.keys(localStorage);
-  allKeys.forEach(key =&gt; {
+  allKeys.forEach((key) =&gt; {
     if (!keysToKeep.includes(key)) {
       localStorage.removeItem(key);
     }
   });
-  
+&nbsp;
   // Clear service worker caches
   if ('caches' in window) <span class="branch-0 cbranch-no" title="branch not covered" >{</span>
 <span class="cstat-no" title="statement not covered" >    const cacheNames = await caches.keys();</span>
-<span class="cstat-no" title="statement not covered" >    await Promise.all(cacheNames.map(name =&gt; caches.delete(name)));</span>
+<span class="cstat-no" title="statement not covered" >    await Promise.all(cacheNames.map((name) =&gt; caches.delete(name)));</span>
 <span class="cstat-no" title="statement not covered" >  }</span>
-  
+&nbsp;
   // Clear sync queue
   syncQueue.length = 0;
-  
+&nbsp;
   logger.info('✅ All cache cleared');
 }
 &nbsp;
@@ -994,7 +1006,7 @@ if (typeof window !== 'undefined') {
 <span class="cstat-no" title="statement not covered" >    logger.info('🌐 Network reconnected, syncing...');</span>
 <span class="cstat-no" title="statement not covered" >    syncPendingChanges();</span>
   });
-  
+&nbsp;
   window.addEventListener('offline', () =&gt; {
 <span class="cstat-no" title="statement not covered" >    logger.info('📴 Network disconnected, queuing changes');</span>
   });
@@ -1006,7 +1018,7 @@ if (typeof window !== 'undefined') {
             <div class='footer quiet pad2 space-top1 center small'>
                 Code coverage generated by
                 <a href="https://istanbul.js.org/" target="_blank" rel="noopener noreferrer">istanbul</a>
-                at 2026-05-18T12:28:44.034Z
+                at 2026-05-19T09:21:39.663Z
             </div>
         <script src="../../../prettify.js"></script>
         <script>

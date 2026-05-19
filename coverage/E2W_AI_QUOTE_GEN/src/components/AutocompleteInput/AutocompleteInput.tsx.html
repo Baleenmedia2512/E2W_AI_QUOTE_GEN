@@ -25,7 +25,7 @@
             <div class='fl pad1y space-right2'>
                 <span class="strong">0% </span>
                 <span class="quiet">Statements</span>
-                <span class='fraction'>0/242</span>
+                <span class='fraction'>0/237</span>
             </div>
         
             
@@ -46,7 +46,7 @@
             <div class='fl pad1y space-right2'>
                 <span class="strong">0% </span>
                 <span class="quiet">Lines</span>
-                <span class='fraction'>0/242</span>
+                <span class='fraction'>0/237</span>
             </div>
         
             
@@ -300,17 +300,7 @@
 <a name='L235'></a><a href='#L235'>235</a>
 <a name='L236'></a><a href='#L236'>236</a>
 <a name='L237'></a><a href='#L237'>237</a>
-<a name='L238'></a><a href='#L238'>238</a>
-<a name='L239'></a><a href='#L239'>239</a>
-<a name='L240'></a><a href='#L240'>240</a>
-<a name='L241'></a><a href='#L241'>241</a>
-<a name='L242'></a><a href='#L242'>242</a>
-<a name='L243'></a><a href='#L243'>243</a></td><td class="line-coverage quiet"><span class="cline-any cline-no">&nbsp;</span>
-<span class="cline-any cline-no">&nbsp;</span>
-<span class="cline-any cline-no">&nbsp;</span>
-<span class="cline-any cline-no">&nbsp;</span>
-<span class="cline-any cline-no">&nbsp;</span>
-<span class="cline-any cline-no">&nbsp;</span>
+<a name='L238'></a><a href='#L238'>238</a></td><td class="line-coverage quiet"><span class="cline-any cline-no">&nbsp;</span>
 <span class="cline-any cline-no">&nbsp;</span>
 <span class="cline-any cline-no">&nbsp;</span>
 <span class="cline-any cline-no">&nbsp;</span>
@@ -641,9 +631,7 @@
 <span class="cstat-no" title="statement not covered" >    switch (e.key) {</span>
 <span class="cstat-no" title="statement not covered" >      case 'ArrowDown':</span>
 <span class="cstat-no" title="statement not covered" >        e.preventDefault();</span>
-<span class="cstat-no" title="statement not covered" >        setSelectedIndex((prev) =&gt; </span>
-<span class="cstat-no" title="statement not covered" >          prev &lt; suggestions.length - 1 ? prev + 1 : prev</span>
-<span class="cstat-no" title="statement not covered" >        );</span>
+<span class="cstat-no" title="statement not covered" >        setSelectedIndex((prev) =&gt; (prev &lt; suggestions.length - 1 ? prev + 1 : prev));</span>
 <span class="cstat-no" title="statement not covered" >        break;</span>
 <span class="cstat-no" title="statement not covered" >      case 'ArrowUp':</span>
 <span class="cstat-no" title="statement not covered" >        e.preventDefault();</span>
@@ -686,14 +674,14 @@
 <span class="cstat-no" title="statement not covered" >          borderWidth="2px"</span>
 <span class="cstat-no" title="statement not covered" >          borderColor={isInvalid ? 'red.500' : 'gray.300'}</span>
 <span class="cstat-no" title="statement not covered" >          fontWeight="500"</span>
-<span class="cstat-no" title="statement not covered" >          _hover={{ </span>
-<span class="cstat-no" title="statement not covered" >            borderColor: 'red.300', </span>
-<span class="cstat-no" title="statement not covered" >            boxShadow: '0 0 0 1px rgba(201, 31, 61, 0.1)' </span>
+<span class="cstat-no" title="statement not covered" >          _hover={{</span>
+<span class="cstat-no" title="statement not covered" >            borderColor: 'red.300',</span>
+<span class="cstat-no" title="statement not covered" >            boxShadow: '0 0 0 1px rgba(201, 31, 61, 0.1)',</span>
 <span class="cstat-no" title="statement not covered" >          }}</span>
-<span class="cstat-no" title="statement not covered" >          _focus={{ </span>
-<span class="cstat-no" title="statement not covered" >            borderColor: 'red.500', </span>
+<span class="cstat-no" title="statement not covered" >          _focus={{</span>
+<span class="cstat-no" title="statement not covered" >            borderColor: 'red.500',</span>
 <span class="cstat-no" title="statement not covered" >            boxShadow: '0 0 0 3px rgba(201, 31, 61, 0.15)',</span>
-<span class="cstat-no" title="statement not covered" >            bg: 'white'</span>
+<span class="cstat-no" title="statement not covered" >            bg: 'white',</span>
 <span class="cstat-no" title="statement not covered" >          }}</span>
 <span class="cstat-no" title="statement not covered" >          borderRadius="12px"</span>
 <span class="cstat-no" title="statement not covered" >          autoComplete="off"</span>
@@ -732,19 +720,14 @@
 <span class="cstat-no" title="statement not covered" >                borderBottomWidth={index &lt; suggestions.length - 1 ? '1px' : '0'}</span>
 <span class="cstat-no" title="statement not covered" >                borderBottomColor="gray.100"</span>
 <span class="cstat-no" title="statement not covered" >                onClick={() =&gt; handleSelect(lead)}</span>
-<span class="cstat-no" title="statement not covered" >                _hover={{ </span>
+<span class="cstat-no" title="statement not covered" >                _hover={{</span>
 <span class="cstat-no" title="statement not covered" >                  bg: 'red.50',</span>
 <span class="cstat-no" title="statement not covered" >                  borderLeftWidth: '3px',</span>
 <span class="cstat-no" title="statement not covered" >                  borderLeftColor: 'red.500',</span>
 <span class="cstat-no" title="statement not covered" >                }}</span>
 <span class="cstat-no" title="statement not covered" >                transition="all 0.15s"</span>
 <span class="cstat-no" title="statement not covered" >              &gt;</span>
-<span class="cstat-no" title="statement not covered" >                &lt;Text </span>
-<span class="cstat-no" title="statement not covered" >                  fontSize="sm" </span>
-<span class="cstat-no" title="statement not covered" >                  fontWeight="600" </span>
-<span class="cstat-no" title="statement not covered" >                  color="gray.800"</span>
-<span class="cstat-no" title="statement not covered" >                  mb={1}</span>
-<span class="cstat-no" title="statement not covered" >                &gt;</span>
+<span class="cstat-no" title="statement not covered" >                &lt;Text fontSize="sm" fontWeight="600" color="gray.800" mb={1}&gt;</span>
 <span class="cstat-no" title="statement not covered" >                  {formatDisplay(lead)}</span>
 <span class="cstat-no" title="statement not covered" >                &lt;/Text&gt;</span>
 <span class="cstat-no" title="statement not covered" >                &lt;Text fontSize="xs" color="gray.600" lineHeight="1.4"&gt;</span>
@@ -756,8 +739,10 @@
 <span class="cstat-no" title="statement not covered" >                    lead.state,</span>
 <span class="cstat-no" title="statement not covered" >                    lead.pincode,</span>
 <span class="cstat-no" title="statement not covered" >                    lead.campaign,</span>
-<span class="cstat-no" title="statement not covered" >                    lead.source</span>
-<span class="cstat-no" title="statement not covered" >                  ].filter(Boolean).join(' | ')}</span>
+<span class="cstat-no" title="statement not covered" >                    lead.source,</span>
+<span class="cstat-no" title="statement not covered" >                  ]</span>
+<span class="cstat-no" title="statement not covered" >                    .filter(Boolean)</span>
+<span class="cstat-no" title="statement not covered" >                    .join(' | ')}</span>
 <span class="cstat-no" title="statement not covered" >                &lt;/Text&gt;</span>
 <span class="cstat-no" title="statement not covered" >              &lt;/ListItem&gt;</span>
 <span class="cstat-no" title="statement not covered" >            ))}</span>
@@ -796,7 +781,7 @@
             <div class='footer quiet pad2 space-top1 center small'>
                 Code coverage generated by
                 <a href="https://istanbul.js.org/" target="_blank" rel="noopener noreferrer">istanbul</a>
-                at 2026-05-18T12:28:43.855Z
+                at 2026-05-19T09:21:39.476Z
             </div>
         <script src="../../../../prettify.js"></script>
         <script>

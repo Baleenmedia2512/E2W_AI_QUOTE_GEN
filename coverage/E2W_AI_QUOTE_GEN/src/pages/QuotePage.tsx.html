@@ -25,7 +25,7 @@
             <div class='fl pad1y space-right2'>
                 <span class="strong">0% </span>
                 <span class="quiet">Statements</span>
-                <span class='fraction'>0/465</span>
+                <span class='fraction'>0/470</span>
             </div>
         
             
@@ -46,7 +46,7 @@
             <div class='fl pad1y space-right2'>
                 <span class="strong">0% </span>
                 <span class="quiet">Lines</span>
-                <span class='fraction'>0/465</span>
+                <span class='fraction'>0/470</span>
             </div>
         
             
@@ -528,7 +528,12 @@
 <a name='L463'></a><a href='#L463'>463</a>
 <a name='L464'></a><a href='#L464'>464</a>
 <a name='L465'></a><a href='#L465'>465</a>
-<a name='L466'></a><a href='#L466'>466</a></td><td class="line-coverage quiet"><span class="cline-any cline-no">&nbsp;</span>
+<a name='L466'></a><a href='#L466'>466</a>
+<a name='L467'></a><a href='#L467'>467</a>
+<a name='L468'></a><a href='#L468'>468</a>
+<a name='L469'></a><a href='#L469'>469</a>
+<a name='L470'></a><a href='#L470'>470</a>
+<a name='L471'></a><a href='#L471'>471</a></td><td class="line-coverage quiet"><span class="cline-any cline-no">&nbsp;</span>
 <span class="cline-any cline-no">&nbsp;</span>
 <span class="cline-any cline-no">&nbsp;</span>
 <span class="cline-any cline-no">&nbsp;</span>
@@ -993,15 +998,12 @@
 <span class="cline-any cline-no">&nbsp;</span>
 <span class="cline-any cline-no">&nbsp;</span>
 <span class="cline-any cline-no">&nbsp;</span>
-<span class="cline-any cline-neutral">&nbsp;</span></td><td class="text"><pre class="prettyprint lang-js"><span class="cstat-no" title="statement not covered" ><span class="fstat-no" title="function not covered" ><span class="branch-0 cbranch-no" title="branch not covered" >import {</span></span></span>
-<span class="cstat-no" title="statement not covered" >  Box,</span>
-<span class="cstat-no" title="statement not covered" >  Button,</span>
-<span class="cstat-no" title="statement not covered" >  HStack,</span>
-<span class="cstat-no" title="statement not covered" >  VStack,</span>
-<span class="cstat-no" title="statement not covered" >  Container,</span>
-<span class="cstat-no" title="statement not covered" >  Icon,</span>
-<span class="cstat-no" title="statement not covered" >  IconButton,</span>
-<span class="cstat-no" title="statement not covered" >} from '@chakra-ui/react';</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span></td><td class="text"><pre class="prettyprint lang-js"><span class="cstat-no" title="statement not covered" ><span class="fstat-no" title="function not covered" ><span class="branch-0 cbranch-no" title="branch not covered" >import { Box, Button, HStack, VStack, Container, Icon, IconButton } from '@chakra-ui/react';</span></span></span>
 <span class="cstat-no" title="statement not covered" >import React, { useState, useEffect } from 'react';</span>
 <span class="cstat-no" title="statement not covered" >import { FiArrowLeft, FiArrowRight } from 'react-icons/fi';</span>
 <span class="cstat-no" title="statement not covered" >import { useHistory } from 'react-router-dom';</span>
@@ -1023,7 +1025,17 @@
 <span class="cstat-no" title="statement not covered" ></span>
 <span class="cstat-no" title="statement not covered" >const QuotePage: React.FC = () =&gt; {</span>
 <span class="cstat-no" title="statement not covered" >  const history = useHistory();</span>
-<span class="cstat-no" title="statement not covered" >  const { currentQuote, updateQuote, setCurrentQuote, companyInfo, clientInfo, setCompanyInfo, setClientInfo, selectedTemplate, setSelectedTemplate } = useAppStore();</span>
+<span class="cstat-no" title="statement not covered" >  const {</span>
+<span class="cstat-no" title="statement not covered" >    currentQuote,</span>
+<span class="cstat-no" title="statement not covered" >    updateQuote,</span>
+<span class="cstat-no" title="statement not covered" >    setCurrentQuote,</span>
+<span class="cstat-no" title="statement not covered" >    companyInfo,</span>
+<span class="cstat-no" title="statement not covered" >    clientInfo,</span>
+<span class="cstat-no" title="statement not covered" >    setCompanyInfo,</span>
+<span class="cstat-no" title="statement not covered" >    setClientInfo,</span>
+<span class="cstat-no" title="statement not covered" >    selectedTemplate,</span>
+<span class="cstat-no" title="statement not covered" >    setSelectedTemplate,</span>
+<span class="cstat-no" title="statement not covered" >  } = useAppStore();</span>
 <span class="cstat-no" title="statement not covered" >  const [currentStep, setCurrentStep] = useState&lt;QuoteStep&gt;('company');</span>
 <span class="cstat-no" title="statement not covered" >  const [isNavigating, setIsNavigating] = useState(false);</span>
 <span class="cstat-no" title="statement not covered" ></span>
@@ -1033,7 +1045,7 @@
 <span class="cstat-no" title="statement not covered" >    logger.info('Has companyInfo:', !!companyInfo);</span>
 <span class="cstat-no" title="statement not covered" >    logger.info('Has clientInfo:', !!clientInfo);</span>
 <span class="cstat-no" title="statement not covered" >    logger.info('Has currentQuote:', !!currentQuote);</span>
-<span class="cstat-no" title="statement not covered" >    </span>
+<span class="cstat-no" title="statement not covered" ></span>
 <span class="cstat-no" title="statement not covered" >    if (!companyInfo) {</span>
 <span class="cstat-no" title="statement not covered" >      logger.info('→ Setting step to: company');</span>
 <span class="cstat-no" title="statement not covered" >      setCurrentStep('company');</span>
@@ -1046,8 +1058,6 @@
 <span class="cstat-no" title="statement not covered" >    }</span>
 <span class="cstat-no" title="statement not covered" >  }, []); // Only run on mount</span>
 <span class="cstat-no" title="statement not covered" ></span>
-<span class="cstat-no" title="statement not covered" ></span>
-<span class="cstat-no" title="statement not covered" ></span>
 <span class="cstat-no" title="statement not covered" >  const handleCompanySubmit = (info: CompanyInfo) =&gt; {</span>
 <span class="cstat-no" title="statement not covered" >    setCompanyInfo(info);</span>
 <span class="cstat-no" title="statement not covered" >    saveCompanyInfo(info);</span>
@@ -1056,7 +1066,7 @@
 <span class="cstat-no" title="statement not covered" ></span>
 <span class="cstat-no" title="statement not covered" >  const handleClientSubmit = (info: ClientInfo) =&gt; {</span>
 <span class="cstat-no" title="statement not covered" >    setClientInfo(info);</span>
-<span class="cstat-no" title="statement not covered" >    </span>
+<span class="cstat-no" title="statement not covered" ></span>
 <span class="cstat-no" title="statement not covered" >    // Create quote if it doesn't exist (for manual flow)</span>
 <span class="cstat-no" title="statement not covered" >    if (!currentQuote) {</span>
 <span class="cstat-no" title="statement not covered" >      const newQuote: Quote = {</span>
@@ -1070,8 +1080,8 @@
 <span class="cstat-no" title="statement not covered" >            description: 'Sample Service/Product (Edit in preview)',</span>
 <span class="cstat-no" title="statement not covered" >            quantity: 1,</span>
 <span class="cstat-no" title="statement not covered" >            rate: 1000,</span>
-<span class="cstat-no" title="statement not covered" >            total: 1000</span>
-<span class="cstat-no" title="statement not covered" >          }</span>
+<span class="cstat-no" title="statement not covered" >            total: 1000,</span>
+<span class="cstat-no" title="statement not covered" >          },</span>
 <span class="cstat-no" title="statement not covered" >        ],</span>
 <span class="cstat-no" title="statement not covered" >        subtotal: 1000,</span>
 <span class="cstat-no" title="statement not covered" >        gstEnabled: true,</span>
@@ -1086,7 +1096,7 @@
 <span class="cstat-no" title="statement not covered" >      setCurrentQuote(newQuote);</span>
 <span class="cstat-no" title="statement not covered" >      logger.info('✅ Created new quote with sample item:', newQuote);</span>
 <span class="cstat-no" title="statement not covered" >    }</span>
-<span class="cstat-no" title="statement not covered" >    </span>
+<span class="cstat-no" title="statement not covered" ></span>
 <span class="cstat-no" title="statement not covered" >    setCurrentStep('preview');</span>
 <span class="cstat-no" title="statement not covered" >  };</span>
 <span class="cstat-no" title="statement not covered" ></span>
@@ -1099,11 +1109,11 @@
 <span class="cstat-no" title="statement not covered" >      alert('No quote to save');</span>
 <span class="cstat-no" title="statement not covered" >      return;</span>
 <span class="cstat-no" title="statement not covered" >    }</span>
-<span class="cstat-no" title="statement not covered" >    </span>
+<span class="cstat-no" title="statement not covered" ></span>
 <span class="cstat-no" title="statement not covered" >    // Save to local storage</span>
 <span class="cstat-no" title="statement not covered" >    const savedQuotes = JSON.parse(localStorage.getItem('savedQuotes') || '[]');</span>
 <span class="cstat-no" title="statement not covered" >    const existingIndex = savedQuotes.findIndex((q: Quote) =&gt; q.id === currentQuote.id);</span>
-<span class="cstat-no" title="statement not covered" >    </span>
+<span class="cstat-no" title="statement not covered" ></span>
 <span class="cstat-no" title="statement not covered" >    if (existingIndex &gt;= 0) {</span>
 <span class="cstat-no" title="statement not covered" >      savedQuotes[existingIndex] = currentQuote;</span>
 <span class="cstat-no" title="statement not covered" >      alert('Quote updated successfully!');</span>
@@ -1111,34 +1121,34 @@
 <span class="cstat-no" title="statement not covered" >      savedQuotes.push(currentQuote);</span>
 <span class="cstat-no" title="statement not covered" >      alert('Quote saved successfully!');</span>
 <span class="cstat-no" title="statement not covered" >    }</span>
-<span class="cstat-no" title="statement not covered" >    </span>
+<span class="cstat-no" title="statement not covered" ></span>
 <span class="cstat-no" title="statement not covered" >    localStorage.setItem('savedQuotes', JSON.stringify(savedQuotes));</span>
 <span class="cstat-no" title="statement not covered" >    logger.info('Saved quote:', currentQuote);</span>
 <span class="cstat-no" title="statement not covered" >  };</span>
 <span class="cstat-no" title="statement not covered" ></span>
 <span class="cstat-no" title="statement not covered" >  const handleGeneratePDF = () =&gt; {</span>
 <span class="cstat-no" title="statement not covered" >    logger.info('🔍 Continue to Template clicked');</span>
-<span class="cstat-no" title="statement not covered" >    </span>
+<span class="cstat-no" title="statement not covered" ></span>
 <span class="cstat-no" title="statement not covered" >    if (!currentQuote) {</span>
 <span class="cstat-no" title="statement not covered" >      logger.error('❌ No quote available');</span>
 <span class="cstat-no" title="statement not covered" >      alert('Please create a quote first');</span>
 <span class="cstat-no" title="statement not covered" >      return;</span>
 <span class="cstat-no" title="statement not covered" >    }</span>
-<span class="cstat-no" title="statement not covered" >    </span>
+<span class="cstat-no" title="statement not covered" ></span>
 <span class="cstat-no" title="statement not covered" >    if (!companyInfo) {</span>
 <span class="cstat-no" title="statement not covered" >      logger.error('❌ Company info missing');</span>
 <span class="cstat-no" title="statement not covered" >      alert('Please add company information first');</span>
 <span class="cstat-no" title="statement not covered" >      setCurrentStep('company');</span>
 <span class="cstat-no" title="statement not covered" >      return;</span>
 <span class="cstat-no" title="statement not covered" >    }</span>
-<span class="cstat-no" title="statement not covered" >    </span>
+<span class="cstat-no" title="statement not covered" ></span>
 <span class="cstat-no" title="statement not covered" >    if (!clientInfo) {</span>
 <span class="cstat-no" title="statement not covered" >      logger.error('❌ Client info missing');</span>
 <span class="cstat-no" title="statement not covered" >      alert('Please add client information first');</span>
 <span class="cstat-no" title="statement not covered" >      setCurrentStep('client');</span>
 <span class="cstat-no" title="statement not covered" >      return;</span>
 <span class="cstat-no" title="statement not covered" >    }</span>
-<span class="cstat-no" title="statement not covered" >    </span>
+<span class="cstat-no" title="statement not covered" ></span>
 <span class="cstat-no" title="statement not covered" >    logger.info('✅ Validation passed - moving to template selection...');</span>
 <span class="cstat-no" title="statement not covered" >    setCurrentStep('template');</span>
 <span class="cstat-no" title="statement not covered" >  };</span>
@@ -1149,25 +1159,27 @@
 <span class="cstat-no" title="statement not covered" >    logger.info('Current quote:', currentQuote);</span>
 <span class="cstat-no" title="statement not covered" >    logger.info('Company info:', companyInfo);</span>
 <span class="cstat-no" title="statement not covered" >    logger.info('Client info:', clientInfo);</span>
-<span class="cstat-no" title="statement not covered" >    </span>
+<span class="cstat-no" title="statement not covered" ></span>
 <span class="cstat-no" title="statement not covered" >    setIsNavigating(true);</span>
-<span class="cstat-no" title="statement not covered" >    </span>
+<span class="cstat-no" title="statement not covered" ></span>
 <span class="cstat-no" title="statement not covered" >    try {</span>
 <span class="cstat-no" title="statement not covered" >      // Ensure quote has at least one item for preview</span>
 <span class="cstat-no" title="statement not covered" >      if (currentQuote &amp;&amp; currentQuote.items.length === 0) {</span>
 <span class="cstat-no" title="statement not covered" >        logger.info('⚠️ Quote has no items, adding sample item...');</span>
 <span class="cstat-no" title="statement not covered" >        const updatedQuote = {</span>
 <span class="cstat-no" title="statement not covered" >          ...currentQuote,</span>
-<span class="cstat-no" title="statement not covered" >          items: [{</span>
-<span class="cstat-no" title="statement not covered" >            id: '1',</span>
-<span class="cstat-no" title="statement not covered" >            description: 'Sample Service/Product (Edit in preview)',</span>
-<span class="cstat-no" title="statement not covered" >            quantity: 1,</span>
-<span class="cstat-no" title="statement not covered" >            rate: 1000,</span>
-<span class="cstat-no" title="statement not covered" >            total: 1000</span>
-<span class="cstat-no" title="statement not covered" >          }],</span>
+<span class="cstat-no" title="statement not covered" >          items: [</span>
+<span class="cstat-no" title="statement not covered" >            {</span>
+<span class="cstat-no" title="statement not covered" >              id: '1',</span>
+<span class="cstat-no" title="statement not covered" >              description: 'Sample Service/Product (Edit in preview)',</span>
+<span class="cstat-no" title="statement not covered" >              quantity: 1,</span>
+<span class="cstat-no" title="statement not covered" >              rate: 1000,</span>
+<span class="cstat-no" title="statement not covered" >              total: 1000,</span>
+<span class="cstat-no" title="statement not covered" >            },</span>
+<span class="cstat-no" title="statement not covered" >          ],</span>
 <span class="cstat-no" title="statement not covered" >          subtotal: 1000,</span>
 <span class="cstat-no" title="statement not covered" >          gstAmount: 180,</span>
-<span class="cstat-no" title="statement not covered" >          total: 1180</span>
+<span class="cstat-no" title="statement not covered" >          total: 1180,</span>
 <span class="cstat-no" title="statement not covered" >        };</span>
 <span class="cstat-no" title="statement not covered" >        setCurrentQuote(updatedQuote);</span>
 <span class="cstat-no" title="statement not covered" >        localStorage.setItem('currentQuote', JSON.stringify(updatedQuote));</span>
@@ -1181,27 +1193,27 @@
 <span class="cstat-no" title="statement not covered" >        setIsNavigating(false);</span>
 <span class="cstat-no" title="statement not covered" >        return;</span>
 <span class="cstat-no" title="statement not covered" >      }</span>
-<span class="cstat-no" title="statement not covered" >      </span>
+<span class="cstat-no" title="statement not covered" ></span>
 <span class="cstat-no" title="statement not covered" >      if (companyInfo) {</span>
 <span class="cstat-no" title="statement not covered" >        localStorage.setItem('companyInfo', JSON.stringify(companyInfo));</span>
 <span class="cstat-no" title="statement not covered" >        logger.info('✅ Company info saved to localStorage');</span>
 <span class="cstat-no" title="statement not covered" >      } else {</span>
 <span class="cstat-no" title="statement not covered" >        logger.error('❌ No company info to save!');</span>
 <span class="cstat-no" title="statement not covered" >      }</span>
-<span class="cstat-no" title="statement not covered" >      </span>
+<span class="cstat-no" title="statement not covered" ></span>
 <span class="cstat-no" title="statement not covered" >      if (clientInfo) {</span>
 <span class="cstat-no" title="statement not covered" >        localStorage.setItem('clientInfo', JSON.stringify(clientInfo));</span>
 <span class="cstat-no" title="statement not covered" >        logger.info('✅ Client info saved to localStorage');</span>
 <span class="cstat-no" title="statement not covered" >      } else {</span>
 <span class="cstat-no" title="statement not covered" >        logger.error('❌ No client info to save!');</span>
 <span class="cstat-no" title="statement not covered" >      }</span>
-<span class="cstat-no" title="statement not covered" >      </span>
+<span class="cstat-no" title="statement not covered" ></span>
 <span class="cstat-no" title="statement not covered" >      localStorage.setItem('selectedTemplate', selectedTemplate);</span>
 <span class="cstat-no" title="statement not covered" >      logger.info('✅ Template saved to localStorage:', selectedTemplate);</span>
-<span class="cstat-no" title="statement not covered" >      </span>
+<span class="cstat-no" title="statement not covered" ></span>
 <span class="cstat-no" title="statement not covered" >      logger.info('🔄 Navigating to /preview...');</span>
 <span class="cstat-no" title="statement not covered" >      logger.info('History object:', history);</span>
-<span class="cstat-no" title="statement not covered" >      </span>
+<span class="cstat-no" title="statement not covered" ></span>
 <span class="cstat-no" title="statement not covered" >      // Try multiple navigation methods</span>
 <span class="cstat-no" title="statement not covered" >      try {</span>
 <span class="cstat-no" title="statement not covered" >        history.push('/preview');</span>
@@ -1211,7 +1223,6 @@
 <span class="cstat-no" title="statement not covered" >        logger.info('🔄 Trying window.location fallback...');</span>
 <span class="cstat-no" title="statement not covered" >        window.location.href = '/preview';</span>
 <span class="cstat-no" title="statement not covered" >      }</span>
-<span class="cstat-no" title="statement not covered" >      </span>
 <span class="cstat-no" title="statement not covered" >    } catch (error) {</span>
 <span class="cstat-no" title="statement not covered" >      logger.error('❌ Error in handleTemplateSelected:', error);</span>
 <span class="cstat-no" title="statement not covered" >      alert('An error occurred: ' + (error as Error).message);</span>
@@ -1245,11 +1256,16 @@
 <span class="cstat-no" title="statement not covered" ></span>
 <span class="cstat-no" title="statement not covered" >  const getStepNumber = (): number =&gt; {</span>
 <span class="cstat-no" title="statement not covered" >    switch (currentStep) {</span>
-<span class="cstat-no" title="statement not covered" >      case 'company': return 1;</span>
-<span class="cstat-no" title="statement not covered" >      case 'client': return 2;</span>
-<span class="cstat-no" title="statement not covered" >      case 'preview': return 3;</span>
-<span class="cstat-no" title="statement not covered" >      case 'template': return 4;</span>
-<span class="cstat-no" title="statement not covered" >      default: return 1;</span>
+<span class="cstat-no" title="statement not covered" >      case 'company':</span>
+<span class="cstat-no" title="statement not covered" >        return 1;</span>
+<span class="cstat-no" title="statement not covered" >      case 'client':</span>
+<span class="cstat-no" title="statement not covered" >        return 2;</span>
+<span class="cstat-no" title="statement not covered" >      case 'preview':</span>
+<span class="cstat-no" title="statement not covered" >        return 3;</span>
+<span class="cstat-no" title="statement not covered" >      case 'template':</span>
+<span class="cstat-no" title="statement not covered" >        return 4;</span>
+<span class="cstat-no" title="statement not covered" >      default:</span>
+<span class="cstat-no" title="statement not covered" >        return 1;</span>
 <span class="cstat-no" title="statement not covered" >    }</span>
 <span class="cstat-no" title="statement not covered" >  };</span>
 <span class="cstat-no" title="statement not covered" ></span>
@@ -1262,10 +1278,10 @@
 <span class="cstat-no" title="statement not covered" >      &lt;QuoteStepper currentStep={getStepNumber()} /&gt;</span>
 <span class="cstat-no" title="statement not covered" ></span>
 <span class="cstat-no" title="statement not covered" >      {/* Back/Next Navigation Arrows - Modern Style */}</span>
-<span class="cstat-no" title="statement not covered" >      &lt;Box </span>
-<span class="cstat-no" title="statement not covered" >        bg="white" </span>
-<span class="cstat-no" title="statement not covered" >        borderBottom="1px solid" </span>
-<span class="cstat-no" title="statement not covered" >        borderColor="gray.100" </span>
+<span class="cstat-no" title="statement not covered" >      &lt;Box</span>
+<span class="cstat-no" title="statement not covered" >        bg="white"</span>
+<span class="cstat-no" title="statement not covered" >        borderBottom="1px solid"</span>
+<span class="cstat-no" title="statement not covered" >        borderColor="gray.100"</span>
 <span class="cstat-no" title="statement not covered" >        py={{ base: 2, md: 3 }}</span>
 <span class="cstat-no" title="statement not covered" >        boxShadow="0 1px 3px rgba(0, 0, 0, 0.04)"</span>
 <span class="cstat-no" title="statement not covered" >      &gt;</span>
@@ -1304,10 +1320,7 @@
 <span class="cstat-no" title="statement not covered" >      &lt;Container maxW="900px" py={{ base: 4, md: 8 }} px={{ base: 4, md: 6 }}&gt;</span>
 <span class="cstat-no" title="statement not covered" >        &lt;Box&gt;</span>
 <span class="cstat-no" title="statement not covered" >          {currentStep === 'company' &amp;&amp; (</span>
-<span class="cstat-no" title="statement not covered" >            &lt;CompanyInfoForm</span>
-<span class="cstat-no" title="statement not covered" >              onSubmit={handleCompanySubmit}</span>
-<span class="cstat-no" title="statement not covered" >              initialData={companyInfo}</span>
-<span class="cstat-no" title="statement not covered" >            /&gt;</span>
+<span class="cstat-no" title="statement not covered" >            &lt;CompanyInfoForm onSubmit={handleCompanySubmit} initialData={companyInfo} /&gt;</span>
 <span class="cstat-no" title="statement not covered" >          )}</span>
 <span class="cstat-no" title="statement not covered" ></span>
 <span class="cstat-no" title="statement not covered" >          {currentStep === 'client' &amp;&amp; (</span>
@@ -1325,14 +1338,14 @@
 <span class="cstat-no" title="statement not covered" >                onUpdate={handleQuoteUpdate}</span>
 <span class="cstat-no" title="statement not covered" >                onSave={handleSaveQuote}</span>
 <span class="cstat-no" title="statement not covered" >              /&gt;</span>
-<span class="cstat-no" title="statement not covered" >              &lt;HStack </span>
-<span class="cstat-no" title="statement not covered" >                spacing={4} </span>
-<span class="cstat-no" title="statement not covered" >                justify="flex-end" </span>
-<span class="cstat-no" title="statement not covered" >                bg="white" </span>
-<span class="cstat-no" title="statement not covered" >                p={{ base: 4, md: 6 }} </span>
-<span class="cstat-no" title="statement not covered" >                borderRadius="20px" </span>
-<span class="cstat-no" title="statement not covered" >                boxShadow="0 4px 12px rgba(0, 0, 0, 0.08)" </span>
-<span class="cstat-no" title="statement not covered" >                flexDir={{ base: 'column', sm: 'row' }} </span>
+<span class="cstat-no" title="statement not covered" >              &lt;HStack</span>
+<span class="cstat-no" title="statement not covered" >                spacing={4}</span>
+<span class="cstat-no" title="statement not covered" >                justify="flex-end"</span>
+<span class="cstat-no" title="statement not covered" >                bg="white"</span>
+<span class="cstat-no" title="statement not covered" >                p={{ base: 4, md: 6 }}</span>
+<span class="cstat-no" title="statement not covered" >                borderRadius="20px"</span>
+<span class="cstat-no" title="statement not covered" >                boxShadow="0 4px 12px rgba(0, 0, 0, 0.08)"</span>
+<span class="cstat-no" title="statement not covered" >                flexDir={{ base: 'column', sm: 'row' }}</span>
 <span class="cstat-no" title="statement not covered" >                w="100%"</span>
 <span class="cstat-no" title="statement not covered" >              &gt;</span>
 <span class="cstat-no" title="statement not covered" >                &lt;Button</span>
@@ -1344,11 +1357,11 @@
 <span class="cstat-no" title="statement not covered" >                  color="gray.700"</span>
 <span class="cstat-no" title="statement not covered" >                  fontWeight="600"</span>
 <span class="cstat-no" title="statement not covered" >                  px={8}</span>
-<span class="cstat-no" title="statement not covered" >                  _hover={{ </span>
-<span class="cstat-no" title="statement not covered" >                    bg: 'gray.50', </span>
+<span class="cstat-no" title="statement not covered" >                  _hover={{</span>
+<span class="cstat-no" title="statement not covered" >                    bg: 'gray.50',</span>
 <span class="cstat-no" title="statement not covered" >                    borderColor: 'gray.400',</span>
 <span class="cstat-no" title="statement not covered" >                    transform: 'translateY(-2px)',</span>
-<span class="cstat-no" title="statement not covered" >                    boxShadow: '0 4px 12px rgba(0, 0, 0, 0.1)'</span>
+<span class="cstat-no" title="statement not covered" >                    boxShadow: '0 4px 12px rgba(0, 0, 0, 0.1)',</span>
 <span class="cstat-no" title="statement not covered" >                  }}</span>
 <span class="cstat-no" title="statement not covered" >                  _active={{ transform: 'scale(0.98)' }}</span>
 <span class="cstat-no" title="statement not covered" >                  w={{ base: '100%', sm: 'auto' }}</span>
@@ -1363,10 +1376,10 @@
 <span class="cstat-no" title="statement not covered" >                  size="lg"</span>
 <span class="cstat-no" title="statement not covered" >                  fontWeight="600"</span>
 <span class="cstat-no" title="statement not covered" >                  px={{ base: 6, md: 10 }}</span>
-<span class="cstat-no" title="statement not covered" >                  _hover={{ </span>
+<span class="cstat-no" title="statement not covered" >                  _hover={{</span>
 <span class="cstat-no" title="statement not covered" >                    bgGradient: 'linear(to-r, #B31B3E, #9f1239)',</span>
 <span class="cstat-no" title="statement not covered" >                    transform: 'translateY(-2px)',</span>
-<span class="cstat-no" title="statement not covered" >                    boxShadow: '0 6px 20px rgba(201, 31, 61, 0.4)'</span>
+<span class="cstat-no" title="statement not covered" >                    boxShadow: '0 6px 20px rgba(201, 31, 61, 0.4)',</span>
 <span class="cstat-no" title="statement not covered" >                  }}</span>
 <span class="cstat-no" title="statement not covered" >                  _active={{ transform: 'scale(0.98)' }}</span>
 <span class="cstat-no" title="statement not covered" >                  isDisabled={!companyInfo || !clientInfo || !currentQuote}</span>
@@ -1374,9 +1387,11 @@
 <span class="cstat-no" title="statement not covered" >                  borderRadius="12px"</span>
 <span class="cstat-no" title="statement not covered" >                  boxShadow="0 4px 16px rgba(201, 31, 61, 0.3)"</span>
 <span class="cstat-no" title="statement not covered" >                &gt;</span>
-<span class="cstat-no" title="statement not covered" >                  {!companyInfo ? 'Add Company Info' : </span>
-<span class="cstat-no" title="statement not covered" >                   !clientInfo ? 'Add Client Info' : </span>
-<span class="cstat-no" title="statement not covered" >                   'Continue to Template'}</span>
+<span class="cstat-no" title="statement not covered" >                  {!companyInfo</span>
+<span class="cstat-no" title="statement not covered" >                    ? 'Add Company Info'</span>
+<span class="cstat-no" title="statement not covered" >                    : !clientInfo</span>
+<span class="cstat-no" title="statement not covered" >                      ? 'Add Client Info'</span>
+<span class="cstat-no" title="statement not covered" >                      : 'Continue to Template'}</span>
 <span class="cstat-no" title="statement not covered" >                &lt;/Button&gt;</span>
 <span class="cstat-no" title="statement not covered" >              &lt;/HStack&gt;</span>
 <span class="cstat-no" title="statement not covered" >            &lt;/VStack&gt;</span>
@@ -1384,25 +1399,25 @@
 <span class="cstat-no" title="statement not covered" ></span>
 <span class="cstat-no" title="statement not covered" >          {currentStep === 'template' &amp;&amp; (</span>
 <span class="cstat-no" title="statement not covered" >            &lt;VStack spacing={6} align="stretch"&gt;</span>
-<span class="cstat-no" title="statement not covered" >              &lt;Box </span>
-<span class="cstat-no" title="statement not covered" >                bg="white" </span>
-<span class="cstat-no" title="statement not covered" >                borderRadius="20px" </span>
-<span class="cstat-no" title="statement not covered" >                boxShadow="0 2px 8px rgba(0, 0, 0, 0.06)" </span>
+<span class="cstat-no" title="statement not covered" >              &lt;Box</span>
+<span class="cstat-no" title="statement not covered" >                bg="white"</span>
+<span class="cstat-no" title="statement not covered" >                borderRadius="20px"</span>
+<span class="cstat-no" title="statement not covered" >                boxShadow="0 2px 8px rgba(0, 0, 0, 0.06)"</span>
 <span class="cstat-no" title="statement not covered" >                p={{ base: 4, md: 6 }}</span>
 <span class="cstat-no" title="statement not covered" >              &gt;</span>
-<span class="cstat-no" title="statement not covered" >                &lt;TemplateSelector </span>
-<span class="cstat-no" title="statement not covered" >                  selectedTemplate={selectedTemplate} </span>
-<span class="cstat-no" title="statement not covered" >                  onSelectTemplate={setSelectedTemplate} </span>
+<span class="cstat-no" title="statement not covered" >                &lt;TemplateSelector</span>
+<span class="cstat-no" title="statement not covered" >                  selectedTemplate={selectedTemplate}</span>
+<span class="cstat-no" title="statement not covered" >                  onSelectTemplate={setSelectedTemplate}</span>
 <span class="cstat-no" title="statement not covered" >                /&gt;</span>
 <span class="cstat-no" title="statement not covered" >              &lt;/Box&gt;</span>
-<span class="cstat-no" title="statement not covered" >              &lt;HStack </span>
-<span class="cstat-no" title="statement not covered" >                spacing={4} </span>
-<span class="cstat-no" title="statement not covered" >                justify="space-between" </span>
-<span class="cstat-no" title="statement not covered" >                bg="white" </span>
-<span class="cstat-no" title="statement not covered" >                p={{ base: 4, md: 6 }} </span>
-<span class="cstat-no" title="statement not covered" >                borderRadius="20px" </span>
-<span class="cstat-no" title="statement not covered" >                boxShadow="0 4px 12px rgba(0, 0, 0, 0.08)" </span>
-<span class="cstat-no" title="statement not covered" >                flexDir={{ base: 'column', sm: 'row' }} </span>
+<span class="cstat-no" title="statement not covered" >              &lt;HStack</span>
+<span class="cstat-no" title="statement not covered" >                spacing={4}</span>
+<span class="cstat-no" title="statement not covered" >                justify="space-between"</span>
+<span class="cstat-no" title="statement not covered" >                bg="white"</span>
+<span class="cstat-no" title="statement not covered" >                p={{ base: 4, md: 6 }}</span>
+<span class="cstat-no" title="statement not covered" >                borderRadius="20px"</span>
+<span class="cstat-no" title="statement not covered" >                boxShadow="0 4px 12px rgba(0, 0, 0, 0.08)"</span>
+<span class="cstat-no" title="statement not covered" >                flexDir={{ base: 'column', sm: 'row' }}</span>
 <span class="cstat-no" title="statement not covered" >                w="100%"</span>
 <span class="cstat-no" title="statement not covered" >              &gt;</span>
 <span class="cstat-no" title="statement not covered" >                &lt;Button</span>
@@ -1414,11 +1429,11 @@
 <span class="cstat-no" title="statement not covered" >                  color="gray.700"</span>
 <span class="cstat-no" title="statement not covered" >                  fontWeight="600"</span>
 <span class="cstat-no" title="statement not covered" >                  px={8}</span>
-<span class="cstat-no" title="statement not covered" >                  _hover={{ </span>
-<span class="cstat-no" title="statement not covered" >                    bg: 'gray.50', </span>
+<span class="cstat-no" title="statement not covered" >                  _hover={{</span>
+<span class="cstat-no" title="statement not covered" >                    bg: 'gray.50',</span>
 <span class="cstat-no" title="statement not covered" >                    borderColor: 'gray.400',</span>
 <span class="cstat-no" title="statement not covered" >                    transform: 'translateY(-2px)',</span>
-<span class="cstat-no" title="statement not covered" >                    boxShadow: '0 4px 12px rgba(0, 0, 0, 0.1)'</span>
+<span class="cstat-no" title="statement not covered" >                    boxShadow: '0 4px 12px rgba(0, 0, 0, 0.1)',</span>
 <span class="cstat-no" title="statement not covered" >                  }}</span>
 <span class="cstat-no" title="statement not covered" >                  _active={{ transform: 'scale(0.98)' }}</span>
 <span class="cstat-no" title="statement not covered" >                  w={{ base: '100%', sm: 'auto' }}</span>
@@ -1433,10 +1448,10 @@
 <span class="cstat-no" title="statement not covered" >                  size="lg"</span>
 <span class="cstat-no" title="statement not covered" >                  fontWeight="600"</span>
 <span class="cstat-no" title="statement not covered" >                  px={{ base: 6, md: 10 }}</span>
-<span class="cstat-no" title="statement not covered" >                  _hover={{ </span>
+<span class="cstat-no" title="statement not covered" >                  _hover={{</span>
 <span class="cstat-no" title="statement not covered" >                    bgGradient: 'linear(to-r, #B31B3E, #9f1239)',</span>
 <span class="cstat-no" title="statement not covered" >                    transform: 'translateY(-2px)',</span>
-<span class="cstat-no" title="statement not covered" >                    boxShadow: '0 6px 20px rgba(201, 31, 61, 0.4)'</span>
+<span class="cstat-no" title="statement not covered" >                    boxShadow: '0 6px 20px rgba(201, 31, 61, 0.4)',</span>
 <span class="cstat-no" title="statement not covered" >                  }}</span>
 <span class="cstat-no" title="statement not covered" >                  _active={{ transform: 'scale(0.98)' }}</span>
 <span class="cstat-no" title="statement not covered" >                  isDisabled={!selectedTemplate}</span>
@@ -1465,7 +1480,7 @@
             <div class='footer quiet pad2 space-top1 center small'>
                 Code coverage generated by
                 <a href="https://istanbul.js.org/" target="_blank" rel="noopener noreferrer">istanbul</a>
-                at 2026-05-18T12:28:43.855Z
+                at 2026-05-19T09:21:39.476Z
             </div>
         <script src="../../../prettify.js"></script>
         <script>

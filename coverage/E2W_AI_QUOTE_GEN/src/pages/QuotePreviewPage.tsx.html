@@ -25,7 +25,7 @@
             <div class='fl pad1y space-right2'>
                 <span class="strong">0% </span>
                 <span class="quiet">Statements</span>
-                <span class='fraction'>0/339</span>
+                <span class='fraction'>0/350</span>
             </div>
         
             
@@ -46,7 +46,7 @@
             <div class='fl pad1y space-right2'>
                 <span class="strong">0% </span>
                 <span class="quiet">Lines</span>
-                <span class='fraction'>0/339</span>
+                <span class='fraction'>0/350</span>
             </div>
         
             
@@ -402,7 +402,29 @@
 <a name='L337'></a><a href='#L337'>337</a>
 <a name='L338'></a><a href='#L338'>338</a>
 <a name='L339'></a><a href='#L339'>339</a>
-<a name='L340'></a><a href='#L340'>340</a></td><td class="line-coverage quiet"><span class="cline-any cline-no">&nbsp;</span>
+<a name='L340'></a><a href='#L340'>340</a>
+<a name='L341'></a><a href='#L341'>341</a>
+<a name='L342'></a><a href='#L342'>342</a>
+<a name='L343'></a><a href='#L343'>343</a>
+<a name='L344'></a><a href='#L344'>344</a>
+<a name='L345'></a><a href='#L345'>345</a>
+<a name='L346'></a><a href='#L346'>346</a>
+<a name='L347'></a><a href='#L347'>347</a>
+<a name='L348'></a><a href='#L348'>348</a>
+<a name='L349'></a><a href='#L349'>349</a>
+<a name='L350'></a><a href='#L350'>350</a>
+<a name='L351'></a><a href='#L351'>351</a></td><td class="line-coverage quiet"><span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
 <span class="cline-any cline-no">&nbsp;</span>
 <span class="cline-any cline-no">&nbsp;</span>
 <span class="cline-any cline-no">&nbsp;</span>
@@ -771,14 +793,13 @@
 <span class="cstat-no" title="statement not covered" >  } = useAppStore();</span>
 <span class="cstat-no" title="statement not covered" ></span>
 <span class="cstat-no" title="statement not covered" >  // Build flat merged pages (all active PDFs combined, each page has sourceId/sourceName)</span>
-<span class="cstat-no" title="statement not covered" >  const mergedActiveImages: ExtractedPage[] = activeProposals.length &gt; 0</span>
-<span class="cstat-no" title="statement not covered" >    ? activeProposals.flatMap(p =&gt; p.pageImages || [])</span>
-<span class="cstat-no" title="statement not covered" >    : [];</span>
+<span class="cstat-no" title="statement not covered" >  const mergedActiveImages: ExtractedPage[] =</span>
+<span class="cstat-no" title="statement not covered" >    activeProposals.length &gt; 0 ? activeProposals.flatMap((p) =&gt; p.pageImages || []) : [];</span>
 <span class="cstat-no" title="statement not covered" ></span>
 <span class="cstat-no" title="statement not covered" >  // Build city→pages map for per-PDF isolation in ReferenceImages</span>
 <span class="cstat-no" title="statement not covered" >  // Key = lowercased fileName (e.g. "coimbatore rate card.pdf") → pages from that PDF</span>
 <span class="cstat-no" title="statement not covered" >  const proposalPageMap: Record&lt;string, ExtractedPage[]&gt; = {};</span>
-<span class="cstat-no" title="statement not covered" >  activeProposals.forEach(p =&gt; {</span>
+<span class="cstat-no" title="statement not covered" >  activeProposals.forEach((p) =&gt; {</span>
 <span class="cstat-no" title="statement not covered" >    proposalPageMap[p.fileName.toLowerCase()] = p.pageImages || [];</span>
 <span class="cstat-no" title="statement not covered" >  });</span>
 <span class="cstat-no" title="statement not covered" ></span>
@@ -786,7 +807,7 @@
 <span class="cstat-no" title="statement not covered" >  const [isExporting, setIsExporting] = useState(false);</span>
 <span class="cstat-no" title="statement not covered" >  const [zoom, setZoom] = useState(100);</span>
 <span class="cstat-no" title="statement not covered" >  const [pageImages, setPageImages] = useState&lt;ExtractedPage[]&gt;(</span>
-<span class="cstat-no" title="statement not covered" >    mergedActiveImages.length &gt; 0 ? mergedActiveImages : (proposal.pageImages || [])</span>
+<span class="cstat-no" title="statement not covered" >    mergedActiveImages.length &gt; 0 ? mergedActiveImages : proposal.pageImages || [],</span>
 <span class="cstat-no" title="statement not covered" >  );</span>
 <span class="cstat-no" title="statement not covered" >  const previewRef = useRef&lt;HTMLDivElement&gt;(null);</span>
 <span class="cstat-no" title="statement not covered" ></span>
@@ -805,10 +826,12 @@
 <span class="cstat-no" title="statement not covered" >  // Sync pageImages state when activeProposals change (after restore)</span>
 <span class="cstat-no" title="statement not covered" >  useEffect(() =&gt; {</span>
 <span class="cstat-no" title="statement not covered" >    if (activeProposals.length &gt; 0) {</span>
-<span class="cstat-no" title="statement not covered" >      const merged = activeProposals.flatMap(p =&gt; p.pageImages || []);</span>
+<span class="cstat-no" title="statement not covered" >      const merged = activeProposals.flatMap((p) =&gt; p.pageImages || []);</span>
 <span class="cstat-no" title="statement not covered" >      if (merged.length &gt; 0) {</span>
 <span class="cstat-no" title="statement not covered" >        setPageImages(merged);</span>
-<span class="cstat-no" title="statement not covered" >        logger.info(`✅ QuotePreviewPage: ${merged.length} pages from ${activeProposals.length} active PDFs`);</span>
+<span class="cstat-no" title="statement not covered" >        logger.info(</span>
+<span class="cstat-no" title="statement not covered" >          `✅ QuotePreviewPage: ${merged.length} pages from ${activeProposals.length} active PDFs`,</span>
+<span class="cstat-no" title="statement not covered" >        );</span>
 <span class="cstat-no" title="statement not covered" >      }</span>
 <span class="cstat-no" title="statement not covered" >    }</span>
 <span class="cstat-no" title="statement not covered" >  }, [activeProposals]);</span>
@@ -816,13 +839,13 @@
 <span class="cstat-no" title="statement not covered" >  // Add sample item if quote has no items</span>
 <span class="cstat-no" title="statement not covered" >  React.useEffect(() =&gt; {</span>
 <span class="cstat-no" title="statement not covered" >    logger.info('📄 QuotePreviewPage mounted');</span>
-<span class="cstat-no" title="statement not covered" >    logger.info('Store state:', { </span>
-<span class="cstat-no" title="statement not covered" >      hasQuote: !!currentQuote, </span>
-<span class="cstat-no" title="statement not covered" >      hasCompany: !!companyInfo, </span>
+<span class="cstat-no" title="statement not covered" >    logger.info('Store state:', {</span>
+<span class="cstat-no" title="statement not covered" >      hasQuote: !!currentQuote,</span>
+<span class="cstat-no" title="statement not covered" >      hasCompany: !!companyInfo,</span>
 <span class="cstat-no" title="statement not covered" >      hasClient: !!clientInfo,</span>
-<span class="cstat-no" title="statement not covered" >      template: selectedTemplate </span>
+<span class="cstat-no" title="statement not covered" >      template: selectedTemplate,</span>
 <span class="cstat-no" title="statement not covered" >    });</span>
-<span class="cstat-no" title="statement not covered" >    </span>
+<span class="cstat-no" title="statement not covered" ></span>
 <span class="cstat-no" title="statement not covered" >    if (currentQuote &amp;&amp; currentQuote.items.length === 0) {</span>
 <span class="cstat-no" title="statement not covered" >      logger.info('⚠️ Quote has no items, adding sample item');</span>
 <span class="cstat-no" title="statement not covered" >      const sampleItem = {</span>
@@ -831,14 +854,14 @@
 <span class="cstat-no" title="statement not covered" >        details: 'Add your items by going back to the quote editor',</span>
 <span class="cstat-no" title="statement not covered" >        quantity: 1,</span>
 <span class="cstat-no" title="statement not covered" >        rate: 1000,</span>
-<span class="cstat-no" title="statement not covered" >        total: 1000</span>
+<span class="cstat-no" title="statement not covered" >        total: 1000,</span>
 <span class="cstat-no" title="statement not covered" >      };</span>
 <span class="cstat-no" title="statement not covered" >      const updatedQuote = {</span>
 <span class="cstat-no" title="statement not covered" >        ...currentQuote,</span>
 <span class="cstat-no" title="statement not covered" >        items: [sampleItem],</span>
 <span class="cstat-no" title="statement not covered" >        subtotal: 1000,</span>
 <span class="cstat-no" title="statement not covered" >        gstAmount: currentQuote.gstEnabled ? 1000 * (currentQuote.gstPercentage / 100) : 0,</span>
-<span class="cstat-no" title="statement not covered" >        total: 1000 + (currentQuote.gstEnabled ? 1000 * (currentQuote.gstPercentage / 100) : 0)</span>
+<span class="cstat-no" title="statement not covered" >        total: 1000 + (currentQuote.gstEnabled ? 1000 * (currentQuote.gstPercentage / 100) : 0),</span>
 <span class="cstat-no" title="statement not covered" >      };</span>
 <span class="cstat-no" title="statement not covered" >      setCurrentQuote(updatedQuote);</span>
 <span class="cstat-no" title="statement not covered" >    }</span>
@@ -858,15 +881,17 @@
 <span class="cstat-no" title="statement not covered" >    logger.error('Missing Quote:', !currentQuote);</span>
 <span class="cstat-no" title="statement not covered" >    logger.error('Missing Company:', !companyInfo);</span>
 <span class="cstat-no" title="statement not covered" >    logger.error('Missing Client:', !clientInfo);</span>
-<span class="cstat-no" title="statement not covered" >    </span>
+<span class="cstat-no" title="statement not covered" ></span>
 <span class="cstat-no" title="statement not covered" >    return (</span>
 <span class="cstat-no" title="statement not covered" >      &lt;div className="preview-error"&gt;</span>
 <span class="cstat-no" title="statement not covered" >        &lt;div className="error-content"&gt;</span>
 <span class="cstat-no" title="statement not covered" >          &lt;h2&gt;Missing Information&lt;/h2&gt;</span>
 <span class="cstat-no" title="statement not covered" >          &lt;p&gt;Please complete all required steps before previewing your quote.&lt;/p&gt;</span>
 <span class="cstat-no" title="statement not covered" >          &lt;p style={{ fontSize: '14px', marginTop: '16px', color: '#666' }}&gt;</span>
-<span class="cstat-no" title="statement not covered" >            {!currentQuote &amp;&amp; '• Quote data is missing'}&lt;br /&gt;</span>
-<span class="cstat-no" title="statement not covered" >            {!companyInfo &amp;&amp; '• Company information is missing'}&lt;br /&gt;</span>
+<span class="cstat-no" title="statement not covered" >            {!currentQuote &amp;&amp; '• Quote data is missing'}</span>
+<span class="cstat-no" title="statement not covered" >            &lt;br /&gt;</span>
+<span class="cstat-no" title="statement not covered" >            {!companyInfo &amp;&amp; '• Company information is missing'}</span>
+<span class="cstat-no" title="statement not covered" >            &lt;br /&gt;</span>
 <span class="cstat-no" title="statement not covered" >            {!clientInfo &amp;&amp; '• Client information is missing'}</span>
 <span class="cstat-no" title="statement not covered" >          &lt;/p&gt;</span>
 <span class="cstat-no" title="statement not covered" >          &lt;button onClick={() =&gt; history.push('/quote')} className="back-button"&gt;</span>
@@ -884,7 +909,7 @@
 <span class="cstat-no" title="statement not covered" >    proposalPages: pageImages,</span>
 <span class="cstat-no" title="statement not covered" >    proposalPageMap,</span>
 <span class="cstat-no" title="statement not covered" >  };</span>
-<span class="cstat-no" title="statement not covered" >  </span>
+<span class="cstat-no" title="statement not covered" ></span>
 <span class="cstat-no" title="statement not covered" >  logger.info('🎨 Template Data:', {</span>
 <span class="cstat-no" title="statement not covered" >    hasCompany: !!templateData.company,</span>
 <span class="cstat-no" title="statement not covered" >    hasClient: !!templateData.client,</span>
@@ -913,7 +938,7 @@
 <span class="cstat-no" title="statement not covered" >    logger.info('Preview ref current:', previewRef.current);</span>
 <span class="cstat-no" title="statement not covered" >    logger.info('Current quote:', currentQuote);</span>
 <span class="cstat-no" title="statement not covered" >    logger.info('Selected template:', selectedTemplate);</span>
-<span class="cstat-no" title="statement not covered" >    </span>
+<span class="cstat-no" title="statement not covered" ></span>
 <span class="cstat-no" title="statement not covered" >    if (!previewRef.current) {</span>
 <span class="cstat-no" title="statement not covered" >      logger.error('❌ Preview ref is not available');</span>
 <span class="cstat-no" title="statement not covered" >      alert('Preview content not loaded. Please refresh and try again.');</span>
@@ -928,13 +953,13 @@
 <span class="cstat-no" title="statement not covered" ></span>
 <span class="cstat-no" title="statement not covered" >    setIsExporting(true);</span>
 <span class="cstat-no" title="statement not covered" >    logger.info('🔄 Starting PDF export...');</span>
-<span class="cstat-no" title="statement not covered" >    </span>
+<span class="cstat-no" title="statement not covered" ></span>
 <span class="cstat-no" title="statement not covered" >    try {</span>
 <span class="cstat-no" title="statement not covered" >      await exportToPDF(</span>
 <span class="cstat-no" title="statement not covered" >        previewRef.current,</span>
 <span class="cstat-no" title="statement not covered" >        currentQuote.quoteNumber,</span>
 <span class="cstat-no" title="statement not covered" >        selectedTemplate,</span>
-<span class="cstat-no" title="statement not covered" >        clientInfo?.name</span>
+<span class="cstat-no" title="statement not covered" >        clientInfo?.name,</span>
 <span class="cstat-no" title="statement not covered" >      );</span>
 <span class="cstat-no" title="statement not covered" >      logger.info('✅ PDF exported successfully');</span>
 <span class="cstat-no" title="statement not covered" >      // Success message is shown by the service itself (different for mobile vs web)</span>
@@ -948,11 +973,11 @@
 <span class="cstat-no" title="statement not covered" >  };</span>
 <span class="cstat-no" title="statement not covered" ></span>
 <span class="cstat-no" title="statement not covered" >  const handleZoomIn = () =&gt; {</span>
-<span class="cstat-no" title="statement not covered" >    setZoom(prev =&gt; Math.min(prev + 10, 150));</span>
+<span class="cstat-no" title="statement not covered" >    setZoom((prev) =&gt; Math.min(prev + 10, 150));</span>
 <span class="cstat-no" title="statement not covered" >  };</span>
 <span class="cstat-no" title="statement not covered" ></span>
 <span class="cstat-no" title="statement not covered" >  const handleZoomOut = () =&gt; {</span>
-<span class="cstat-no" title="statement not covered" >    setZoom(prev =&gt; Math.max(prev - 10, 50));</span>
+<span class="cstat-no" title="statement not covered" >    setZoom((prev) =&gt; Math.max(prev - 10, 50));</span>
 <span class="cstat-no" title="statement not covered" >  };</span>
 <span class="cstat-no" title="statement not covered" ></span>
 <span class="cstat-no" title="statement not covered" >  const handleResetZoom = () =&gt; {</span>
@@ -964,12 +989,14 @@
 <span class="cstat-no" title="statement not covered" >      {/* Toolbar */}</span>
 <span class="cstat-no" title="statement not covered" >      &lt;div className="preview-toolbar"&gt;</span>
 <span class="cstat-no" title="statement not covered" >        &lt;div className="toolbar-section"&gt;</span>
-<span class="cstat-no" title="statement not covered" >          &lt;button</span>
-<span class="cstat-no" title="statement not covered" >            onClick={() =&gt; history.push('/quote')}</span>
-<span class="cstat-no" title="statement not covered" >            className="toolbar-button back-btn"</span>
-<span class="cstat-no" title="statement not covered" >          &gt;</span>
+<span class="cstat-no" title="statement not covered" >          &lt;button onClick={() =&gt; history.push('/quote')} className="toolbar-button back-btn"&gt;</span>
 <span class="cstat-no" title="statement not covered" >            &lt;svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor"&gt;</span>
-<span class="cstat-no" title="statement not covered" >              &lt;path d="M19 12H5M12 19l-7-7 7-7" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/&gt;</span>
+<span class="cstat-no" title="statement not covered" >              &lt;path</span>
+<span class="cstat-no" title="statement not covered" >                d="M19 12H5M12 19l-7-7 7-7"</span>
+<span class="cstat-no" title="statement not covered" >                strokeWidth="2"</span>
+<span class="cstat-no" title="statement not covered" >                strokeLinecap="round"</span>
+<span class="cstat-no" title="statement not covered" >                strokeLinejoin="round"</span>
+<span class="cstat-no" title="statement not covered" >              /&gt;</span>
 <span class="cstat-no" title="statement not covered" >            &lt;/svg&gt;</span>
 <span class="cstat-no" title="statement not covered" >            Back</span>
 <span class="cstat-no" title="statement not covered" >          &lt;/button&gt;</span>
@@ -980,15 +1007,15 @@
 <span class="cstat-no" title="statement not covered" >          &lt;div className="zoom-controls"&gt;</span>
 <span class="cstat-no" title="statement not covered" >            &lt;button onClick={handleZoomOut} className="zoom-button" disabled={zoom &lt;= 50}&gt;</span>
 <span class="cstat-no" title="statement not covered" >              &lt;svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor"&gt;</span>
-<span class="cstat-no" title="statement not covered" >                &lt;circle cx="11" cy="11" r="8" strokeWidth="2"/&gt;</span>
-<span class="cstat-no" title="statement not covered" >                &lt;path d="M21 21l-4.35-4.35M8 11h6" strokeWidth="2" strokeLinecap="round"/&gt;</span>
+<span class="cstat-no" title="statement not covered" >                &lt;circle cx="11" cy="11" r="8" strokeWidth="2" /&gt;</span>
+<span class="cstat-no" title="statement not covered" >                &lt;path d="M21 21l-4.35-4.35M8 11h6" strokeWidth="2" strokeLinecap="round" /&gt;</span>
 <span class="cstat-no" title="statement not covered" >              &lt;/svg&gt;</span>
 <span class="cstat-no" title="statement not covered" >            &lt;/button&gt;</span>
 <span class="cstat-no" title="statement not covered" >            &lt;span className="zoom-level"&gt;{zoom}%&lt;/span&gt;</span>
 <span class="cstat-no" title="statement not covered" >            &lt;button onClick={handleZoomIn} className="zoom-button" disabled={zoom &gt;= 150}&gt;</span>
 <span class="cstat-no" title="statement not covered" >              &lt;svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor"&gt;</span>
-<span class="cstat-no" title="statement not covered" >                &lt;circle cx="11" cy="11" r="8" strokeWidth="2"/&gt;</span>
-<span class="cstat-no" title="statement not covered" >                &lt;path d="M21 21l-4.35-4.35M11 8v6M8 11h6" strokeWidth="2" strokeLinecap="round"/&gt;</span>
+<span class="cstat-no" title="statement not covered" >                &lt;circle cx="11" cy="11" r="8" strokeWidth="2" /&gt;</span>
+<span class="cstat-no" title="statement not covered" >                &lt;path d="M21 21l-4.35-4.35M11 8v6M8 11h6" strokeWidth="2" strokeLinecap="round" /&gt;</span>
 <span class="cstat-no" title="statement not covered" >              &lt;/svg&gt;</span>
 <span class="cstat-no" title="statement not covered" >            &lt;/button&gt;</span>
 <span class="cstat-no" title="statement not covered" >            &lt;button onClick={handleResetZoom} className="toolbar-button-small"&gt;</span>
@@ -1001,10 +1028,10 @@
 <span class="cstat-no" title="statement not covered" >            className="toolbar-button"</span>
 <span class="cstat-no" title="statement not covered" >          &gt;</span>
 <span class="cstat-no" title="statement not covered" >            &lt;svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor"&gt;</span>
-<span class="cstat-no" title="statement not covered" >              &lt;rect x="3" y="3" width="7" height="7" strokeWidth="2"/&gt;</span>
-<span class="cstat-no" title="statement not covered" >              &lt;rect x="14" y="3" width="7" height="7" strokeWidth="2"/&gt;</span>
-<span class="cstat-no" title="statement not covered" >              &lt;rect x="3" y="14" width="7" height="7" strokeWidth="2"/&gt;</span>
-<span class="cstat-no" title="statement not covered" >              &lt;rect x="14" y="14" width="7" height="7" strokeWidth="2"/&gt;</span>
+<span class="cstat-no" title="statement not covered" >              &lt;rect x="3" y="3" width="7" height="7" strokeWidth="2" /&gt;</span>
+<span class="cstat-no" title="statement not covered" >              &lt;rect x="14" y="3" width="7" height="7" strokeWidth="2" /&gt;</span>
+<span class="cstat-no" title="statement not covered" >              &lt;rect x="3" y="14" width="7" height="7" strokeWidth="2" /&gt;</span>
+<span class="cstat-no" title="statement not covered" >              &lt;rect x="14" y="14" width="7" height="7" strokeWidth="2" /&gt;</span>
 <span class="cstat-no" title="statement not covered" >            &lt;/svg&gt;</span>
 <span class="cstat-no" title="statement not covered" >            Change Template</span>
 <span class="cstat-no" title="statement not covered" >          &lt;/button&gt;</span>
@@ -1022,7 +1049,12 @@
 <span class="cstat-no" title="statement not covered" >            ) : (</span>
 <span class="cstat-no" title="statement not covered" >              &lt;&gt;</span>
 <span class="cstat-no" title="statement not covered" >                &lt;svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor"&gt;</span>
-<span class="cstat-no" title="statement not covered" >                  &lt;path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4M7 10l5 5 5-5M12 15V3" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/&gt;</span>
+<span class="cstat-no" title="statement not covered" >                  &lt;path</span>
+<span class="cstat-no" title="statement not covered" >                    d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4M7 10l5 5 5-5M12 15V3"</span>
+<span class="cstat-no" title="statement not covered" >                    strokeWidth="2"</span>
+<span class="cstat-no" title="statement not covered" >                    strokeLinecap="round"</span>
+<span class="cstat-no" title="statement not covered" >                    strokeLinejoin="round"</span>
+<span class="cstat-no" title="statement not covered" >                  /&gt;</span>
 <span class="cstat-no" title="statement not covered" >                &lt;/svg&gt;</span>
 <span class="cstat-no" title="statement not covered" >                Export PDF</span>
 <span class="cstat-no" title="statement not covered" >              &lt;/&gt;</span>
@@ -1036,12 +1068,9 @@
 <span class="cstat-no" title="statement not covered" >        &lt;div className="template-selector-modal"&gt;</span>
 <span class="cstat-no" title="statement not covered" >          &lt;div className="modal-overlay" onClick={() =&gt; setShowTemplateSelector(false)}&gt;&lt;/div&gt;</span>
 <span class="cstat-no" title="statement not covered" >          &lt;div className="modal-content"&gt;</span>
-<span class="cstat-no" title="statement not covered" >            &lt;button</span>
-<span class="cstat-no" title="statement not covered" >              className="modal-close"</span>
-<span class="cstat-no" title="statement not covered" >              onClick={() =&gt; setShowTemplateSelector(false)}</span>
-<span class="cstat-no" title="statement not covered" >            &gt;</span>
+<span class="cstat-no" title="statement not covered" >            &lt;button className="modal-close" onClick={() =&gt; setShowTemplateSelector(false)}&gt;</span>
 <span class="cstat-no" title="statement not covered" >              &lt;svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor"&gt;</span>
-<span class="cstat-no" title="statement not covered" >                &lt;path d="M18 6L6 18M6 6l12 12" strokeWidth="2" strokeLinecap="round"/&gt;</span>
+<span class="cstat-no" title="statement not covered" >                &lt;path d="M18 6L6 18M6 6l12 12" strokeWidth="2" strokeLinecap="round" /&gt;</span>
 <span class="cstat-no" title="statement not covered" >              &lt;/svg&gt;</span>
 <span class="cstat-no" title="statement not covered" >            &lt;/button&gt;</span>
 <span class="cstat-no" title="statement not covered" >            &lt;TemplateSelector</span>
@@ -1073,7 +1102,11 @@
 <span class="cstat-no" title="statement not covered" >        &lt;button onClick={() =&gt; setShowTemplateSelector(true)} className="mobile-action-btn"&gt;</span>
 <span class="cstat-no" title="statement not covered" >          Templates</span>
 <span class="cstat-no" title="statement not covered" >        &lt;/button&gt;</span>
-<span class="cstat-no" title="statement not covered" >        &lt;button onClick={handleExportPDF} className="mobile-action-btn primary" disabled={isExporting}&gt;</span>
+<span class="cstat-no" title="statement not covered" >        &lt;button</span>
+<span class="cstat-no" title="statement not covered" >          onClick={handleExportPDF}</span>
+<span class="cstat-no" title="statement not covered" >          className="mobile-action-btn primary"</span>
+<span class="cstat-no" title="statement not covered" >          disabled={isExporting}</span>
+<span class="cstat-no" title="statement not covered" >        &gt;</span>
 <span class="cstat-no" title="statement not covered" >          {isExporting ? 'Exporting...' : 'Export PDF'}</span>
 <span class="cstat-no" title="statement not covered" >        &lt;/button&gt;</span>
 <span class="cstat-no" title="statement not covered" >      &lt;/div&gt;</span>
@@ -1087,7 +1120,7 @@
             <div class='footer quiet pad2 space-top1 center small'>
                 Code coverage generated by
                 <a href="https://istanbul.js.org/" target="_blank" rel="noopener noreferrer">istanbul</a>
-                at 2026-05-18T12:28:43.855Z
+                at 2026-05-19T09:21:39.476Z
             </div>
         <script src="../../../prettify.js"></script>
         <script>

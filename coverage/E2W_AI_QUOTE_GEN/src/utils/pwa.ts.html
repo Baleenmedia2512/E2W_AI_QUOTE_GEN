@@ -25,7 +25,7 @@
             <div class='fl pad1y space-right2'>
                 <span class="strong">0% </span>
                 <span class="quiet">Statements</span>
-                <span class='fraction'>0/254</span>
+                <span class='fraction'>0/262</span>
             </div>
         
             
@@ -46,7 +46,7 @@
             <div class='fl pad1y space-right2'>
                 <span class="strong">0% </span>
                 <span class="quiet">Lines</span>
-                <span class='fraction'>0/254</span>
+                <span class='fraction'>0/262</span>
             </div>
         
             
@@ -317,7 +317,23 @@
 <a name='L252'></a><a href='#L252'>252</a>
 <a name='L253'></a><a href='#L253'>253</a>
 <a name='L254'></a><a href='#L254'>254</a>
-<a name='L255'></a><a href='#L255'>255</a></td><td class="line-coverage quiet"><span class="cline-any cline-no">&nbsp;</span>
+<a name='L255'></a><a href='#L255'>255</a>
+<a name='L256'></a><a href='#L256'>256</a>
+<a name='L257'></a><a href='#L257'>257</a>
+<a name='L258'></a><a href='#L258'>258</a>
+<a name='L259'></a><a href='#L259'>259</a>
+<a name='L260'></a><a href='#L260'>260</a>
+<a name='L261'></a><a href='#L261'>261</a>
+<a name='L262'></a><a href='#L262'>262</a>
+<a name='L263'></a><a href='#L263'>263</a></td><td class="line-coverage quiet"><span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
 <span class="cline-any cline-no">&nbsp;</span>
 <span class="cline-any cline-no">&nbsp;</span>
 <span class="cline-any cline-no">&nbsp;</span>
@@ -578,7 +594,7 @@
 <span class="cstat-no" title="statement not covered" >  if ('serviceWorker' in navigator) {</span>
 <span class="cstat-no" title="statement not covered" >    try {</span>
 <span class="cstat-no" title="statement not covered" >      const registration = await navigator.serviceWorker.register('/service-worker.js', {</span>
-<span class="cstat-no" title="statement not covered" >        scope: '/'</span>
+<span class="cstat-no" title="statement not covered" >        scope: '/',</span>
 <span class="cstat-no" title="statement not covered" >      });</span>
 <span class="cstat-no" title="statement not covered" ></span>
 <span class="cstat-no" title="statement not covered" >      logger.info('✅ Service Worker registered successfully:', registration);</span>
@@ -592,13 +608,13 @@
 <span class="cstat-no" title="statement not covered" >      // Handle updates - DISABLED to prevent notifications</span>
 <span class="cstat-no" title="statement not covered" >      // registration.addEventListener('updatefound', () =&gt; {</span>
 <span class="cstat-no" title="statement not covered" >      //   const newWorker = registration.installing;</span>
-<span class="cstat-no" title="statement not covered" >      //   </span>
+<span class="cstat-no" title="statement not covered" >      //</span>
 <span class="cstat-no" title="statement not covered" >      //   if (newWorker) {</span>
 <span class="cstat-no" title="statement not covered" >      //     newWorker.addEventListener('statechange', () =&gt; {</span>
 <span class="cstat-no" title="statement not covered" >      //       if (newWorker.state === 'installed' &amp;&amp; navigator.serviceWorker.controller) {</span>
 <span class="cstat-no" title="statement not covered" >      //         // New service worker available</span>
 <span class="cstat-no" title="statement not covered" >      //         logger.info('🔄 New version available!');</span>
-<span class="cstat-no" title="statement not covered" >      //         </span>
+<span class="cstat-no" title="statement not covered" >      //</span>
 <span class="cstat-no" title="statement not covered" >      //         // Show update notification</span>
 <span class="cstat-no" title="statement not covered" >      //         showUpdateNotification(() =&gt; {</span>
 <span class="cstat-no" title="statement not covered" >      //           // Tell new service worker to skip waiting</span>
@@ -613,7 +629,7 @@
 <span class="cstat-no" title="statement not covered" >      // navigator.serviceWorker.addEventListener('message', (event) =&gt; {</span>
 <span class="cstat-no" title="statement not covered" >      //   if (event.data &amp;&amp; event.data.type === 'SW_ACTIVATED') {</span>
 <span class="cstat-no" title="statement not covered" >      //     logger.info(`✅ Service Worker activated (v${event.data.version})`);</span>
-<span class="cstat-no" title="statement not covered" >      //     </span>
+<span class="cstat-no" title="statement not covered" >      //</span>
 <span class="cstat-no" title="statement not covered" >      //     // Show success notification</span>
 <span class="cstat-no" title="statement not covered" >      //     const notification = document.createElement('div');</span>
 <span class="cstat-no" title="statement not covered" >      //     notification.style.cssText = `</span>
@@ -630,7 +646,7 @@
 <span class="cstat-no" title="statement not covered" >      //     `;</span>
 <span class="cstat-no" title="statement not covered" >      //     notification.textContent = `✅ Updated to v${event.data.version}`;</span>
 <span class="cstat-no" title="statement not covered" >      //     document.body.appendChild(notification);</span>
-<span class="cstat-no" title="statement not covered" >      //     </span>
+<span class="cstat-no" title="statement not covered" >      //</span>
 <span class="cstat-no" title="statement not covered" >      //     setTimeout(() =&gt; notification.remove(), 3000);</span>
 <span class="cstat-no" title="statement not covered" >      //   }</span>
 <span class="cstat-no" title="statement not covered" >      // });</span>
@@ -664,7 +680,7 @@
 <span class="cstat-no" title="statement not covered" >    max-width: 350px;</span>
 <span class="cstat-no" title="statement not covered" >    animation: slideIn 0.3s ease-out;</span>
 <span class="cstat-no" title="statement not covered" >  `;</span>
-<span class="cstat-no" title="statement not covered" >  </span>
+<span class="cstat-no" title="statement not covered" ></span>
 <span class="cstat-no" title="statement not covered" >  notification.innerHTML = `</span>
 <span class="cstat-no" title="statement not covered" >    &lt;div style="display: flex; align-items: center; gap: 12px;"&gt;</span>
 <span class="cstat-no" title="statement not covered" >      &lt;div style="font-size: 24px;"&gt;🔄&lt;/div&gt;</span>
@@ -695,7 +711,7 @@
 <span class="cstat-no" title="statement not covered" >      "&gt;Later&lt;/button&gt;</span>
 <span class="cstat-no" title="statement not covered" >    &lt;/div&gt;</span>
 <span class="cstat-no" title="statement not covered" >  `;</span>
-<span class="cstat-no" title="statement not covered" >  </span>
+<span class="cstat-no" title="statement not covered" ></span>
 <span class="cstat-no" title="statement not covered" >  // Add animation</span>
 <span class="cstat-no" title="statement not covered" >  const style = document.createElement('style');</span>
 <span class="cstat-no" title="statement not covered" >  style.textContent = `</span>
@@ -711,9 +727,9 @@
 <span class="cstat-no" title="statement not covered" >    }</span>
 <span class="cstat-no" title="statement not covered" >  `;</span>
 <span class="cstat-no" title="statement not covered" >  document.head.appendChild(style);</span>
-<span class="cstat-no" title="statement not covered" >  </span>
+<span class="cstat-no" title="statement not covered" ></span>
 <span class="cstat-no" title="statement not covered" >  document.body.appendChild(notification);</span>
-<span class="cstat-no" title="statement not covered" >  </span>
+<span class="cstat-no" title="statement not covered" ></span>
 <span class="cstat-no" title="statement not covered" >  // Handle update button</span>
 <span class="cstat-no" title="statement not covered" >  document.getElementById('update-now-btn')?.addEventListener('click', () =&gt; {</span>
 <span class="cstat-no" title="statement not covered" >    onUpdate();</span>
@@ -730,12 +746,12 @@
 <span class="cstat-no" title="statement not covered" >    document.body.appendChild(loading);</span>
 <span class="cstat-no" title="statement not covered" >    setTimeout(() =&gt; window.location.reload(), 500);</span>
 <span class="cstat-no" title="statement not covered" >  });</span>
-<span class="cstat-no" title="statement not covered" >  </span>
+<span class="cstat-no" title="statement not covered" ></span>
 <span class="cstat-no" title="statement not covered" >  // Handle later button</span>
 <span class="cstat-no" title="statement not covered" >  document.getElementById('update-later-btn')?.addEventListener('click', () =&gt; {</span>
 <span class="cstat-no" title="statement not covered" >    notification.remove();</span>
 <span class="cstat-no" title="statement not covered" >  });</span>
-<span class="cstat-no" title="statement not covered" >  </span>
+<span class="cstat-no" title="statement not covered" ></span>
 <span class="cstat-no" title="statement not covered" >  // Auto-dismiss after 30 seconds</span>
 <span class="cstat-no" title="statement not covered" >  setTimeout(() =&gt; {</span>
 <span class="cstat-no" title="statement not covered" >    if (document.body.contains(notification)) {</span>
@@ -761,8 +777,10 @@
 <span class="cstat-no" title="statement not covered" ></span>
 <span class="cstat-no" title="statement not covered" >// Check if app is installed as PWA</span>
 <span class="cstat-no" title="statement not covered" >export const isPWA = (): boolean =&gt; {</span>
-<span class="cstat-no" title="statement not covered" >  return window.matchMedia('(display-mode: standalone)').matches ||</span>
-<span class="cstat-no" title="statement not covered" >         (window.navigator as any).standalone === true;</span>
+<span class="cstat-no" title="statement not covered" >  return (</span>
+<span class="cstat-no" title="statement not covered" >    window.matchMedia('(display-mode: standalone)').matches ||</span>
+<span class="cstat-no" title="statement not covered" >    (window.navigator as any).standalone === true</span>
+<span class="cstat-no" title="statement not covered" >  );</span>
 <span class="cstat-no" title="statement not covered" >};</span>
 <span class="cstat-no" title="statement not covered" ></span>
 <span class="cstat-no" title="statement not covered" >// Prompt user to install PWA</span>
@@ -775,7 +793,7 @@
 <span class="cstat-no" title="statement not covered" ></span>
 <span class="cstat-no" title="statement not covered" >    // Show install button or prompt</span>
 <span class="cstat-no" title="statement not covered" >    logger.info('PWA install prompt available');</span>
-<span class="cstat-no" title="statement not covered" >    </span>
+<span class="cstat-no" title="statement not covered" ></span>
 <span class="cstat-no" title="statement not covered" >    // You can trigger this from a button click</span>
 <span class="cstat-no" title="statement not covered" >    const installButton = document.getElementById('pwa-install-button');</span>
 <span class="cstat-no" title="statement not covered" >    if (installButton) {</span>
@@ -812,15 +830,21 @@
 <span class="cstat-no" title="statement not covered" >};</span>
 <span class="cstat-no" title="statement not covered" ></span>
 <span class="cstat-no" title="statement not covered" >// Check storage quota</span>
-<span class="cstat-no" title="statement not covered" >export const checkStorageQuota = async (): Promise&lt;{ usage: number; quota: number; percentage: number }&gt; =&gt; {</span>
+<span class="cstat-no" title="statement not covered" >export const checkStorageQuota = async (): Promise&lt;{</span>
+<span class="cstat-no" title="statement not covered" >  usage: number;</span>
+<span class="cstat-no" title="statement not covered" >  quota: number;</span>
+<span class="cstat-no" title="statement not covered" >  percentage: number;</span>
+<span class="cstat-no" title="statement not covered" >}&gt; =&gt; {</span>
 <span class="cstat-no" title="statement not covered" >  if (navigator.storage &amp;&amp; navigator.storage.estimate) {</span>
 <span class="cstat-no" title="statement not covered" >    const estimate = await navigator.storage.estimate();</span>
 <span class="cstat-no" title="statement not covered" >    const usage = estimate.usage || 0;</span>
 <span class="cstat-no" title="statement not covered" >    const quota = estimate.quota || 0;</span>
 <span class="cstat-no" title="statement not covered" >    const percentage = quota &gt; 0 ? (usage / quota) * 100 : 0;</span>
-<span class="cstat-no" title="statement not covered" >    </span>
-<span class="cstat-no" title="statement not covered" >    logger.info(`Storage used: ${(usage / 1024 / 1024).toFixed(2)} MB of ${(quota / 1024 / 1024).toFixed(2)} MB (${percentage.toFixed(2)}%)`);</span>
-<span class="cstat-no" title="statement not covered" >    </span>
+<span class="cstat-no" title="statement not covered" ></span>
+<span class="cstat-no" title="statement not covered" >    logger.info(</span>
+<span class="cstat-no" title="statement not covered" >      `Storage used: ${(usage / 1024 / 1024).toFixed(2)} MB of ${(quota / 1024 / 1024).toFixed(2)} MB (${percentage.toFixed(2)}%)`,</span>
+<span class="cstat-no" title="statement not covered" >    );</span>
+<span class="cstat-no" title="statement not covered" ></span>
 <span class="cstat-no" title="statement not covered" >    return { usage, quota, percentage };</span>
 <span class="cstat-no" title="statement not covered" >  }</span>
 <span class="cstat-no" title="statement not covered" >  return { usage: 0, quota: 0, percentage: 0 };</span>
@@ -832,7 +856,7 @@
             <div class='footer quiet pad2 space-top1 center small'>
                 Code coverage generated by
                 <a href="https://istanbul.js.org/" target="_blank" rel="noopener noreferrer">istanbul</a>
-                at 2026-05-18T12:28:43.855Z
+                at 2026-05-19T09:21:39.476Z
             </div>
         <script src="../../../prettify.js"></script>
         <script>

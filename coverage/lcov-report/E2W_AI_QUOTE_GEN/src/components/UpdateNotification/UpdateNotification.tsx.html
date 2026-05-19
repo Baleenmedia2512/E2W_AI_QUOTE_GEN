@@ -25,7 +25,7 @@
             <div class='fl pad1y space-right2'>
                 <span class="strong">0% </span>
                 <span class="quiet">Statements</span>
-                <span class='fraction'>0/217</span>
+                <span class='fraction'>0/214</span>
             </div>
         
             
@@ -46,7 +46,7 @@
             <div class='fl pad1y space-right2'>
                 <span class="strong">0% </span>
                 <span class="quiet">Lines</span>
-                <span class='fraction'>0/217</span>
+                <span class='fraction'>0/214</span>
             </div>
         
             
@@ -277,13 +277,7 @@
 <a name='L212'></a><a href='#L212'>212</a>
 <a name='L213'></a><a href='#L213'>213</a>
 <a name='L214'></a><a href='#L214'>214</a>
-<a name='L215'></a><a href='#L215'>215</a>
-<a name='L216'></a><a href='#L216'>216</a>
-<a name='L217'></a><a href='#L217'>217</a>
-<a name='L218'></a><a href='#L218'>218</a></td><td class="line-coverage quiet"><span class="cline-any cline-no">&nbsp;</span>
-<span class="cline-any cline-no">&nbsp;</span>
-<span class="cline-any cline-no">&nbsp;</span>
-<span class="cline-any cline-no">&nbsp;</span>
+<a name='L215'></a><a href='#L215'>215</a></td><td class="line-coverage quiet"><span class="cline-any cline-no">&nbsp;</span>
 <span class="cline-any cline-no">&nbsp;</span>
 <span class="cline-any cline-no">&nbsp;</span>
 <span class="cline-any cline-no">&nbsp;</span>
@@ -507,7 +501,12 @@
 <span class="cstat-no" title="statement not covered" >import { FiRefreshCw, FiDownload, FiAlertCircle } from 'react-icons/fi';</span>
 <span class="cstat-no" title="statement not covered" ></span>
 <span class="cstat-no" title="statement not covered" >import { getSyncStatus, syncPendingChanges } from '../../services/dataSyncService';</span>
-<span class="cstat-no" title="statement not covered" >import { checkForUpdates, clearCacheAndReload, formatVersion, AppVersion } from '../../utils/cacheVersion';</span>
+<span class="cstat-no" title="statement not covered" >import {</span>
+<span class="cstat-no" title="statement not covered" >  checkForUpdates,</span>
+<span class="cstat-no" title="statement not covered" >  clearCacheAndReload,</span>
+<span class="cstat-no" title="statement not covered" >  formatVersion,</span>
+<span class="cstat-no" title="statement not covered" >  AppVersion,</span>
+<span class="cstat-no" title="statement not covered" >} from '../../utils/cacheVersion';</span>
 <span class="cstat-no" title="statement not covered" ></span>
 <span class="cstat-no" title="statement not covered" >export const UpdateNotification: React.FC = () =&gt; {</span>
 <span class="cstat-no" title="statement not covered" >  const [hasUpdate, setHasUpdate] = useState(false);</span>
@@ -517,11 +516,11 @@
 <span class="cstat-no" title="statement not covered" ></span>
 <span class="cstat-no" title="statement not covered" >  useEffect(() =&gt; {</span>
 <span class="cstat-no" title="statement not covered" >    // Check for updates on mount</span>
-<span class="cstat-no" title="statement not covered" >    checkForUpdates().then(result =&gt; {</span>
+<span class="cstat-no" title="statement not covered" >    checkForUpdates().then((result) =&gt; {</span>
 <span class="cstat-no" title="statement not covered" >      if (result.hasUpdate &amp;&amp; result.currentVersion) {</span>
 <span class="cstat-no" title="statement not covered" >        setHasUpdate(true);</span>
 <span class="cstat-no" title="statement not covered" >        setCurrentVersion(result.currentVersion);</span>
-<span class="cstat-no" title="statement not covered" >        </span>
+<span class="cstat-no" title="statement not covered" ></span>
 <span class="cstat-no" title="statement not covered" >        // Show toast notification</span>
 <span class="cstat-no" title="statement not covered" >        toast({</span>
 <span class="cstat-no" title="statement not covered" >          title: '🔄 Update Available',</span>
@@ -562,11 +561,11 @@
 <span class="cstat-no" title="statement not covered" >  };</span>
 <span class="cstat-no" title="statement not covered" ></span>
 <span class="cstat-no" title="statement not covered" >  const handleSync = async () =&gt; {</span>
-<span class="cstat-no" title="statement not covered" >    setSyncStatus(prev =&gt; ({ ...prev, isSyncing: true }));</span>
-<span class="cstat-no" title="statement not covered" >    </span>
+<span class="cstat-no" title="statement not covered" >    setSyncStatus((prev) =&gt; ({ ...prev, isSyncing: true }));</span>
+<span class="cstat-no" title="statement not covered" ></span>
 <span class="cstat-no" title="statement not covered" >    try {</span>
 <span class="cstat-no" title="statement not covered" >      const result = await syncPendingChanges();</span>
-<span class="cstat-no" title="statement not covered" >      </span>
+<span class="cstat-no" title="statement not covered" ></span>
 <span class="cstat-no" title="statement not covered" >      if (result.synced &gt; 0) {</span>
 <span class="cstat-no" title="statement not covered" >        toast({</span>
 <span class="cstat-no" title="statement not covered" >          title: '✅ Synced',</span>
@@ -576,7 +575,7 @@
 <span class="cstat-no" title="statement not covered" >          position: 'bottom-right',</span>
 <span class="cstat-no" title="statement not covered" >        });</span>
 <span class="cstat-no" title="statement not covered" >      }</span>
-<span class="cstat-no" title="statement not covered" >      </span>
+<span class="cstat-no" title="statement not covered" ></span>
 <span class="cstat-no" title="statement not covered" >      if (result.failed &gt; 0) {</span>
 <span class="cstat-no" title="statement not covered" >        toast({</span>
 <span class="cstat-no" title="statement not covered" >          title: '⚠️ Partial Sync',</span>
@@ -595,7 +594,7 @@
 <span class="cstat-no" title="statement not covered" >        position: 'bottom-right',</span>
 <span class="cstat-no" title="statement not covered" >      });</span>
 <span class="cstat-no" title="statement not covered" >    } finally {</span>
-<span class="cstat-no" title="statement not covered" >      setSyncStatus(prev =&gt; ({ ...prev, isSyncing: false }));</span>
+<span class="cstat-no" title="statement not covered" >      setSyncStatus((prev) =&gt; ({ ...prev, isSyncing: false }));</span>
 <span class="cstat-no" title="statement not covered" >    }</span>
 <span class="cstat-no" title="statement not covered" >  };</span>
 <span class="cstat-no" title="statement not covered" ></span>
@@ -632,7 +631,7 @@
 <span class="cstat-no" title="statement not covered" >                &lt;/Text&gt;</span>
 <span class="cstat-no" title="statement not covered" >              &lt;/VStack&gt;</span>
 <span class="cstat-no" title="statement not covered" >            &lt;/HStack&gt;</span>
-<span class="cstat-no" title="statement not covered" >            </span>
+<span class="cstat-no" title="statement not covered" ></span>
 <span class="cstat-no" title="statement not covered" >            &lt;HStack spacing={2}&gt;</span>
 <span class="cstat-no" title="statement not covered" >              &lt;Button</span>
 <span class="cstat-no" title="statement not covered" >                size="sm"</span>
@@ -643,11 +642,7 @@
 <span class="cstat-no" title="statement not covered" >              &gt;</span>
 <span class="cstat-no" title="statement not covered" >                Update Now</span>
 <span class="cstat-no" title="statement not covered" >              &lt;/Button&gt;</span>
-<span class="cstat-no" title="statement not covered" >              &lt;Button</span>
-<span class="cstat-no" title="statement not covered" >                size="sm"</span>
-<span class="cstat-no" title="statement not covered" >                variant="ghost"</span>
-<span class="cstat-no" title="statement not covered" >                onClick={() =&gt; setHasUpdate(false)}</span>
-<span class="cstat-no" title="statement not covered" >              &gt;</span>
+<span class="cstat-no" title="statement not covered" >              &lt;Button size="sm" variant="ghost" onClick={() =&gt; setHasUpdate(false)}&gt;</span>
 <span class="cstat-no" title="statement not covered" >                Later</span>
 <span class="cstat-no" title="statement not covered" >              &lt;/Button&gt;</span>
 <span class="cstat-no" title="statement not covered" >            &lt;/HStack&gt;</span>
@@ -670,8 +665,8 @@
 <span class="cstat-no" title="statement not covered" >          maxW="300px"</span>
 <span class="cstat-no" title="statement not covered" >        &gt;</span>
 <span class="cstat-no" title="statement not covered" >          &lt;HStack&gt;</span>
-<span class="cstat-no" title="statement not covered" >            &lt;Icon </span>
-<span class="cstat-no" title="statement not covered" >              as={syncStatus.isSyncing ? FiRefreshCw : FiAlertCircle} </span>
+<span class="cstat-no" title="statement not covered" >            &lt;Icon</span>
+<span class="cstat-no" title="statement not covered" >              as={syncStatus.isSyncing ? FiRefreshCw : FiAlertCircle}</span>
 <span class="cstat-no" title="statement not covered" >              boxSize={5}</span>
 <span class="cstat-no" title="statement not covered" >              className={syncStatus.isSyncing ? 'spin' : ''}</span>
 <span class="cstat-no" title="statement not covered" >            /&gt;</span>
@@ -688,11 +683,7 @@
 <span class="cstat-no" title="statement not covered" >              )}</span>
 <span class="cstat-no" title="statement not covered" >            &lt;/VStack&gt;</span>
 <span class="cstat-no" title="statement not covered" >            {!syncStatus.isSyncing &amp;&amp; (</span>
-<span class="cstat-no" title="statement not covered" >              &lt;Button</span>
-<span class="cstat-no" title="statement not covered" >                size="xs"</span>
-<span class="cstat-no" title="statement not covered" >                colorScheme="whiteAlpha"</span>
-<span class="cstat-no" title="statement not covered" >                onClick={handleSync}</span>
-<span class="cstat-no" title="statement not covered" >              &gt;</span>
+<span class="cstat-no" title="statement not covered" >              &lt;Button size="xs" colorScheme="whiteAlpha" onClick={handleSync}&gt;</span>
 <span class="cstat-no" title="statement not covered" >                Sync</span>
 <span class="cstat-no" title="statement not covered" >              &lt;/Button&gt;</span>
 <span class="cstat-no" title="statement not covered" >            )}</span>
@@ -721,7 +712,7 @@
             <div class='footer quiet pad2 space-top1 center small'>
                 Code coverage generated by
                 <a href="https://istanbul.js.org/" target="_blank" rel="noopener noreferrer">istanbul</a>
-                at 2026-05-18T12:28:44.034Z
+                at 2026-05-19T09:21:39.663Z
             </div>
         <script src="../../../../prettify.js"></script>
         <script>

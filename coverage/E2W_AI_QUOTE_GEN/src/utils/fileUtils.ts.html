@@ -23,9 +23,9 @@
         <div class='clearfix'>
             
             <div class='fl pad1y space-right2'>
-                <span class="strong">40.61% </span>
+                <span class="strong">41.8% </span>
                 <span class="quiet">Statements</span>
-                <span class='fraction'>93/229</span>
+                <span class='fraction'>102/244</span>
             </div>
         
             
@@ -44,9 +44,9 @@
         
             
             <div class='fl pad1y space-right2'>
-                <span class="strong">40.61% </span>
+                <span class="strong">41.8% </span>
                 <span class="quiet">Lines</span>
-                <span class='fraction'>93/229</span>
+                <span class='fraction'>102/244</span>
             </div>
         
             
@@ -292,7 +292,22 @@
 <a name='L227'></a><a href='#L227'>227</a>
 <a name='L228'></a><a href='#L228'>228</a>
 <a name='L229'></a><a href='#L229'>229</a>
-<a name='L230'></a><a href='#L230'>230</a></td><td class="line-coverage quiet"><span class="cline-any cline-yes">1x</span>
+<a name='L230'></a><a href='#L230'>230</a>
+<a name='L231'></a><a href='#L231'>231</a>
+<a name='L232'></a><a href='#L232'>232</a>
+<a name='L233'></a><a href='#L233'>233</a>
+<a name='L234'></a><a href='#L234'>234</a>
+<a name='L235'></a><a href='#L235'>235</a>
+<a name='L236'></a><a href='#L236'>236</a>
+<a name='L237'></a><a href='#L237'>237</a>
+<a name='L238'></a><a href='#L238'>238</a>
+<a name='L239'></a><a href='#L239'>239</a>
+<a name='L240'></a><a href='#L240'>240</a>
+<a name='L241'></a><a href='#L241'>241</a>
+<a name='L242'></a><a href='#L242'>242</a>
+<a name='L243'></a><a href='#L243'>243</a>
+<a name='L244'></a><a href='#L244'>244</a>
+<a name='L245'></a><a href='#L245'>245</a></td><td class="line-coverage quiet"><span class="cline-any cline-yes">1x</span>
 <span class="cline-any cline-yes">1x</span>
 <span class="cline-any cline-yes">1x</span>
 <span class="cline-any cline-yes">1x</span>
@@ -335,6 +350,7 @@
 <span class="cline-any cline-yes">12x</span>
 <span class="cline-any cline-yes">12x</span>
 <span class="cline-any cline-yes">12x</span>
+<span class="cline-any cline-yes">12x</span>
 <span class="cline-any cline-yes">6x</span>
 <span class="cline-any cline-yes">4x</span>
 <span class="cline-any cline-yes">12x</span>
@@ -433,6 +449,12 @@
 <span class="cline-any cline-no">&nbsp;</span>
 <span class="cline-any cline-no">&nbsp;</span>
 <span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
 <span class="cline-any cline-yes">1x</span>
 <span class="cline-any cline-yes">1x</span>
 <span class="cline-any cline-yes">1x</span>
@@ -508,13 +530,21 @@
 <span class="cline-any cline-yes">2x</span>
 <span class="cline-any cline-yes">8x</span>
 <span class="cline-any cline-yes">8x</span>
-<span class="cline-any cline-yes">10x</span>
+<span class="cline-any cline-yes">8x</span>
+<span class="cline-any cline-yes">8x</span>
+<span class="cline-any cline-yes">7x</span>
+<span class="cline-any cline-yes">6x</span>
+<span class="cline-any cline-yes">5x</span>
 <span class="cline-any cline-yes">10x</span>
 <span class="cline-any cline-yes">3x</span>
 <span class="cline-any cline-yes">3x</span>
 <span class="cline-any cline-yes">5x</span>
 <span class="cline-any cline-yes">5x</span>
-<span class="cline-any cline-yes">10x</span>
+<span class="cline-any cline-yes">5x</span>
+<span class="cline-any cline-yes">5x</span>
+<span class="cline-any cline-yes">4x</span>
+<span class="cline-any cline-yes">4x</span>
+<span class="cline-any cline-yes">3x</span>
 <span class="cline-any cline-yes">10x</span>
 <span class="cline-any cline-yes">3x</span>
 <span class="cline-any cline-yes">3x</span>
@@ -562,11 +592,12 @@ export const validateExcelFile = (file: File): { valid: boolean; error?: string 
     'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet', // .xlsx
     'application/vnd.ms-excel', // .xls
   ];
-  
-  const hasValidType = validTypes.includes(file.type) || 
-                       file.name.toLowerCase().endsWith('.xlsx') || 
-                       file.name.toLowerCase().endsWith('.xls');
-  
+&nbsp;
+  const hasValidType =
+    validTypes.includes(file.type) ||
+    file.name.toLowerCase().endsWith('.xlsx') ||
+    file.name.toLowerCase().endsWith('.xls');
+&nbsp;
   if (!hasValidType) {
     return { valid: false, error: 'Only Excel files (.xlsx, .xls) are allowed' };
   }
@@ -584,27 +615,29 @@ export const validateExcelFile = (file: File): { valid: boolean; error?: string 
 export const extractImageContent = <span class="fstat-no" title="function not covered" >async (file: File): Promise&lt;FileExtractionResult&gt; =&gt; {</span>
 <span class="cstat-no" title="statement not covered" >  try {</span>
 <span class="cstat-no" title="statement not covered" >    logger.info('Starting image extraction for:', file.name);</span>
-<span class="cstat-no" title="statement not covered" >    </span>
+<span class="cstat-no" title="statement not covered" ></span>
 <span class="cstat-no" title="statement not covered" >    // Convert image to base64</span>
 <span class="cstat-no" title="statement not covered" >    const arrayBuffer = await file.arrayBuffer();</span>
 <span class="cstat-no" title="statement not covered" >    const base64String = btoa(</span>
-<span class="cstat-no" title="statement not covered" >      new Uint8Array(arrayBuffer).reduce((data, byte) =&gt; data + String.fromCharCode(byte), '')</span>
+<span class="cstat-no" title="statement not covered" >      new Uint8Array(arrayBuffer).reduce((data, byte) =&gt; data + String.fromCharCode(byte), ''),</span>
 <span class="cstat-no" title="statement not covered" >    );</span>
-<span class="cstat-no" title="statement not covered" >    </span>
+<span class="cstat-no" title="statement not covered" ></span>
 <span class="cstat-no" title="statement not covered" >    // Create object URL for display</span>
 <span class="cstat-no" title="statement not covered" >    const imageDataUrl = `data:${file.type};base64,${base64String}`;</span>
-<span class="cstat-no" title="statement not covered" >    </span>
+<span class="cstat-no" title="statement not covered" ></span>
 <span class="cstat-no" title="statement not covered" >    // Use Gemini Vision API for OCR</span>
 <span class="cstat-no" title="statement not covered" >    const apiKey = import.meta.env.VITE_GEMINI_API_KEY;</span>
 <span class="cstat-no" title="statement not covered" >    if (!apiKey || apiKey.trim() === '') {</span>
-<span class="cstat-no" title="statement not covered" >      throw new Error('Gemini API key not configured. Please add VITE_GEMINI_API_KEY to your .env file.');</span>
+<span class="cstat-no" title="statement not covered" >      throw new Error(</span>
+<span class="cstat-no" title="statement not covered" >        'Gemini API key not configured. Please add VITE_GEMINI_API_KEY to your .env file.',</span>
+<span class="cstat-no" title="statement not covered" >      );</span>
 <span class="cstat-no" title="statement not covered" >    }</span>
-<span class="cstat-no" title="statement not covered" >    </span>
+<span class="cstat-no" title="statement not covered" ></span>
 <span class="cstat-no" title="statement not covered" >    const genAI = new GoogleGenerativeAI(apiKey.trim());</span>
 <span class="cstat-no" title="statement not covered" >    const model = genAI.getGenerativeModel({ model: 'gemini-2.5-flash-lite' });</span>
-<span class="cstat-no" title="statement not covered" >    </span>
+<span class="cstat-no" title="statement not covered" ></span>
 <span class="cstat-no" title="statement not covered" >    logger.info('Sending image to Gemini Vision API for text extraction...');</span>
-<span class="cstat-no" title="statement not covered" >    </span>
+<span class="cstat-no" title="statement not covered" ></span>
 <span class="cstat-no" title="statement not covered" >    const prompt = `Extract ALL text content from this image. Preserve the layout, structure, and formatting as much as possible. Include:</span>
 <span class="cstat-no" title="statement not covered" >- All headings and titles</span>
 <span class="cstat-no" title="statement not covered" >- All body text and paragraphs</span>
@@ -627,35 +660,39 @@ export const extractImageContent = <span class="fstat-no" title="function not co
 <span class="cstat-no" title="statement not covered" >     City2   | Value1  | Value2  | Value3  | Value4</span>
 <span class="cstat-no" title="statement not covered" >4. VERIFY: Count the number of columns in the header row and ensure each data row has the SAME number of values</span>
 <span class="cstat-no" title="statement not covered" >5. If a table has merged cells or complex structure, use clear labels like "Column Name: Value" for each cell`;</span>
-<span class="cstat-no" title="statement not covered" >    </span>
+<span class="cstat-no" title="statement not covered" ></span>
 <span class="cstat-no" title="statement not covered" >    const result = await model.generateContent([</span>
 <span class="cstat-no" title="statement not covered" >      prompt,</span>
 <span class="cstat-no" title="statement not covered" >      {</span>
 <span class="cstat-no" title="statement not covered" >        inlineData: {</span>
 <span class="cstat-no" title="statement not covered" >          mimeType: file.type,</span>
-<span class="cstat-no" title="statement not covered" >          data: base64String</span>
-<span class="cstat-no" title="statement not covered" >        }</span>
-<span class="cstat-no" title="statement not covered" >      }</span>
+<span class="cstat-no" title="statement not covered" >          data: base64String,</span>
+<span class="cstat-no" title="statement not covered" >        },</span>
+<span class="cstat-no" title="statement not covered" >      },</span>
 <span class="cstat-no" title="statement not covered" >    ]);</span>
-<span class="cstat-no" title="statement not covered" >    </span>
+<span class="cstat-no" title="statement not covered" ></span>
 <span class="cstat-no" title="statement not covered" >    const response = await result.response;</span>
 <span class="cstat-no" title="statement not covered" >    const textContent = response.text();</span>
-<span class="cstat-no" title="statement not covered" >    </span>
+<span class="cstat-no" title="statement not covered" ></span>
 <span class="cstat-no" title="statement not covered" >    logger.info('Image text extraction successful, length:', textContent.length);</span>
-<span class="cstat-no" title="statement not covered" >    </span>
+<span class="cstat-no" title="statement not covered" ></span>
 <span class="cstat-no" title="statement not covered" >    if (!textContent || textContent.trim().length === 0) {</span>
-<span class="cstat-no" title="statement not covered" >      throw new Error('No text could be extracted from the image. The image may not contain readable text.');</span>
+<span class="cstat-no" title="statement not covered" >      throw new Error(</span>
+<span class="cstat-no" title="statement not covered" >        'No text could be extracted from the image. The image may not contain readable text.',</span>
+<span class="cstat-no" title="statement not covered" >      );</span>
 <span class="cstat-no" title="statement not covered" >    }</span>
-<span class="cstat-no" title="statement not covered" >    </span>
+<span class="cstat-no" title="statement not covered" ></span>
 <span class="cstat-no" title="statement not covered" >    return {</span>
 <span class="cstat-no" title="statement not covered" >      textContent: textContent.trim(),</span>
 <span class="cstat-no" title="statement not covered" >      pageCount: 1,</span>
 <span class="cstat-no" title="statement not covered" >      images: [imageDataUrl],</span>
-<span class="cstat-no" title="statement not covered" >      pageImages: [{</span>
-<span class="cstat-no" title="statement not covered" >        pageNumber: 1,</span>
-<span class="cstat-no" title="statement not covered" >        text: textContent.trim(),</span>
-<span class="cstat-no" title="statement not covered" >        imageDataUrl</span>
-<span class="cstat-no" title="statement not covered" >      }]</span>
+<span class="cstat-no" title="statement not covered" >      pageImages: [</span>
+<span class="cstat-no" title="statement not covered" >        {</span>
+<span class="cstat-no" title="statement not covered" >          pageNumber: 1,</span>
+<span class="cstat-no" title="statement not covered" >          text: textContent.trim(),</span>
+<span class="cstat-no" title="statement not covered" >          imageDataUrl,</span>
+<span class="cstat-no" title="statement not covered" >        },</span>
+<span class="cstat-no" title="statement not covered" >      ],</span>
 <span class="cstat-no" title="statement not covered" >    };</span>
 <span class="cstat-no" title="statement not covered" >  } catch (error: any) {</span>
 <span class="cstat-no" title="statement not covered" >    logger.error('Error extracting image content:', error);</span>
@@ -669,54 +706,54 @@ export const extractImageContent = <span class="fstat-no" title="function not co
 export const extractExcelContent = <span class="fstat-no" title="function not covered" >async (file: File): Promise&lt;FileExtractionResult&gt; =&gt; {</span>
 <span class="cstat-no" title="statement not covered" >  try {</span>
 <span class="cstat-no" title="statement not covered" >    logger.info('Starting Excel extraction for:', file.name);</span>
-<span class="cstat-no" title="statement not covered" >    </span>
+<span class="cstat-no" title="statement not covered" ></span>
 <span class="cstat-no" title="statement not covered" >    const arrayBuffer = await file.arrayBuffer();</span>
 <span class="cstat-no" title="statement not covered" >    const workbook = XLSX.read(arrayBuffer, { type: 'array' });</span>
-<span class="cstat-no" title="statement not covered" >    </span>
+<span class="cstat-no" title="statement not covered" ></span>
 <span class="cstat-no" title="statement not covered" >    logger.info('Excel workbook loaded, sheets:', workbook.SheetNames.length);</span>
-<span class="cstat-no" title="statement not covered" >    </span>
+<span class="cstat-no" title="statement not covered" ></span>
 <span class="cstat-no" title="statement not covered" >    let textContent = '';</span>
 <span class="cstat-no" title="statement not covered" >    const sheets = workbook.SheetNames;</span>
-<span class="cstat-no" title="statement not covered" >    </span>
+<span class="cstat-no" title="statement not covered" ></span>
 <span class="cstat-no" title="statement not covered" >    // Extract content from all sheets</span>
 <span class="cstat-no" title="statement not covered" >    sheets.forEach((sheetName, index) =&gt; {</span>
 <span class="cstat-no" title="statement not covered" >      const worksheet = workbook.Sheets[sheetName];</span>
-<span class="cstat-no" title="statement not covered" >      </span>
+<span class="cstat-no" title="statement not covered" ></span>
 <span class="cstat-no" title="statement not covered" >      // Add sheet header</span>
 <span class="cstat-no" title="statement not covered" >      textContent += `\n${'='.repeat(60)}\n`;</span>
 <span class="cstat-no" title="statement not covered" >      textContent += `SHEET ${index + 1}: ${sheetName}\n`;</span>
 <span class="cstat-no" title="statement not covered" >      textContent += `${'='.repeat(60)}\n\n`;</span>
-<span class="cstat-no" title="statement not covered" >      </span>
+<span class="cstat-no" title="statement not covered" ></span>
 <span class="cstat-no" title="statement not covered" >      // Convert sheet to CSV format with pipe delimiters for better structure</span>
 <span class="cstat-no" title="statement not covered" >      // This preserves table layout better than plain text</span>
 <span class="cstat-no" title="statement not covered" >      const csv = XLSX.utils.sheet_to_csv(worksheet, { FS: '\t|\t' });</span>
-<span class="cstat-no" title="statement not covered" >      </span>
+<span class="cstat-no" title="statement not covered" ></span>
 <span class="cstat-no" title="statement not covered" >      if (csv.trim()) {</span>
 <span class="cstat-no" title="statement not covered" >        textContent += csv + '\n\n';</span>
 <span class="cstat-no" title="statement not covered" >      } else {</span>
 <span class="cstat-no" title="statement not covered" >        textContent += '(Empty sheet)\n\n';</span>
 <span class="cstat-no" title="statement not covered" >      }</span>
 <span class="cstat-no" title="statement not covered" >    });</span>
-<span class="cstat-no" title="statement not covered" >    </span>
+<span class="cstat-no" title="statement not covered" ></span>
 <span class="cstat-no" title="statement not covered" >    const finalText = textContent.trim();</span>
 <span class="cstat-no" title="statement not covered" >    logger.info('Excel extraction complete. Total text length:', finalText.length);</span>
-<span class="cstat-no" title="statement not covered" >    </span>
+<span class="cstat-no" title="statement not covered" ></span>
 <span class="cstat-no" title="statement not covered" >    if (finalText.length === 0) {</span>
 <span class="cstat-no" title="statement not covered" >      throw new Error('Excel file appears to be empty or contains no readable data.');</span>
 <span class="cstat-no" title="statement not covered" >    }</span>
-<span class="cstat-no" title="statement not covered" >    </span>
+<span class="cstat-no" title="statement not covered" ></span>
 <span class="cstat-no" title="statement not covered" >    // Create a simple preview image (optional - could be enhanced later)</span>
 <span class="cstat-no" title="statement not covered" >    const pageImages = sheets.map((sheetName, index) =&gt; ({</span>
 <span class="cstat-no" title="statement not covered" >      pageNumber: index + 1,</span>
 <span class="cstat-no" title="statement not covered" >      text: `Sheet: ${sheetName}`,</span>
-<span class="cstat-no" title="statement not covered" >      imageDataUrl: '' // No visual preview for now</span>
+<span class="cstat-no" title="statement not covered" >      imageDataUrl: '', // No visual preview for now</span>
 <span class="cstat-no" title="statement not covered" >    }));</span>
-<span class="cstat-no" title="statement not covered" >    </span>
+<span class="cstat-no" title="statement not covered" ></span>
 <span class="cstat-no" title="statement not covered" >    return {</span>
 <span class="cstat-no" title="statement not covered" >      textContent: finalText,</span>
 <span class="cstat-no" title="statement not covered" >      pageCount: sheets.length,</span>
 <span class="cstat-no" title="statement not covered" >      images: [],</span>
-<span class="cstat-no" title="statement not covered" >      pageImages</span>
+<span class="cstat-no" title="statement not covered" >      pageImages,</span>
 <span class="cstat-no" title="statement not covered" >    };</span>
 <span class="cstat-no" title="statement not covered" >  } catch (error: any) {</span>
 <span class="cstat-no" title="statement not covered" >    logger.error('Error extracting Excel content:', error);</span>
@@ -730,24 +767,32 @@ export const extractExcelContent = <span class="fstat-no" title="function not co
 export const detectFileType = (file: File): 'pdf' | 'image' | 'excel' | 'unknown' =&gt; {
   const fileName = file.name.toLowerCase();
   const fileType = file.type.toLowerCase();
-  
+&nbsp;
   // Check PDF
   if (fileType.includes('pdf') || fileName.endsWith('.pdf')) {
     return 'pdf';
   }
-  
+&nbsp;
   // Check Image (JPEG/JPG)
-  if (fileType.includes('jpeg') || fileType.includes('jpg') || 
-      fileName.endsWith('.jpg') || fileName.endsWith('.jpeg')) {
+  if (
+    fileType.includes('jpeg') ||
+    fileType.includes('jpg') ||
+    fileName.endsWith('.jpg') ||
+    fileName.endsWith('.jpeg')
+  ) {
     return 'image';
   }
-  
+&nbsp;
   // Check Excel
-  if (fileType.includes('spreadsheet') || fileType.includes('excel') ||
-      fileName.endsWith('.xlsx') || fileName.endsWith('.xls')) {
+  if (
+    fileType.includes('spreadsheet') ||
+    fileType.includes('excel') ||
+    fileName.endsWith('.xlsx') ||
+    fileName.endsWith('.xls')
+  ) {
     return 'excel';
   }
-  
+&nbsp;
   return 'unknown';
 };
 &nbsp;</pre></td></tr></table></pre>
@@ -757,7 +802,7 @@ export const detectFileType = (file: File): 'pdf' | 'image' | 'excel' | 'unknown
             <div class='footer quiet pad2 space-top1 center small'>
                 Code coverage generated by
                 <a href="https://istanbul.js.org/" target="_blank" rel="noopener noreferrer">istanbul</a>
-                at 2026-05-18T12:28:43.855Z
+                at 2026-05-19T09:21:39.476Z
             </div>
         <script src="../../../prettify.js"></script>
         <script>

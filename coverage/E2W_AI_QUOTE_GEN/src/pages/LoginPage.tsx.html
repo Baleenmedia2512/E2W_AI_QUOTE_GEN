@@ -25,7 +25,7 @@
             <div class='fl pad1y space-right2'>
                 <span class="strong">0% </span>
                 <span class="quiet">Statements</span>
-                <span class='fraction'>0/396</span>
+                <span class='fraction'>0/387</span>
             </div>
         
             
@@ -46,7 +46,7 @@
             <div class='fl pad1y space-right2'>
                 <span class="strong">0% </span>
                 <span class="quiet">Lines</span>
-                <span class='fraction'>0/396</span>
+                <span class='fraction'>0/387</span>
             </div>
         
             
@@ -450,25 +450,7 @@
 <a name='L385'></a><a href='#L385'>385</a>
 <a name='L386'></a><a href='#L386'>386</a>
 <a name='L387'></a><a href='#L387'>387</a>
-<a name='L388'></a><a href='#L388'>388</a>
-<a name='L389'></a><a href='#L389'>389</a>
-<a name='L390'></a><a href='#L390'>390</a>
-<a name='L391'></a><a href='#L391'>391</a>
-<a name='L392'></a><a href='#L392'>392</a>
-<a name='L393'></a><a href='#L393'>393</a>
-<a name='L394'></a><a href='#L394'>394</a>
-<a name='L395'></a><a href='#L395'>395</a>
-<a name='L396'></a><a href='#L396'>396</a>
-<a name='L397'></a><a href='#L397'>397</a></td><td class="line-coverage quiet"><span class="cline-any cline-no">&nbsp;</span>
-<span class="cline-any cline-no">&nbsp;</span>
-<span class="cline-any cline-no">&nbsp;</span>
-<span class="cline-any cline-no">&nbsp;</span>
-<span class="cline-any cline-no">&nbsp;</span>
-<span class="cline-any cline-no">&nbsp;</span>
-<span class="cline-any cline-no">&nbsp;</span>
-<span class="cline-any cline-no">&nbsp;</span>
-<span class="cline-any cline-no">&nbsp;</span>
-<span class="cline-any cline-no">&nbsp;</span>
+<a name='L388'></a><a href='#L388'>388</a></td><td class="line-coverage quiet"><span class="cline-any cline-no">&nbsp;</span>
 <span class="cline-any cline-no">&nbsp;</span>
 <span class="cline-any cline-no">&nbsp;</span>
 <span class="cline-any cline-no">&nbsp;</span>
@@ -887,7 +869,7 @@
 <span class="cstat-no" title="statement not covered" >  const [password, setPassword] = useState('');</span>
 <span class="cstat-no" title="statement not covered" >  const [showPassword, setShowPassword] = useState(false);</span>
 <span class="cstat-no" title="statement not covered" >  const [isSubmitting, setIsSubmitting] = useState(false);</span>
-<span class="cstat-no" title="statement not covered" >  </span>
+<span class="cstat-no" title="statement not covered" ></span>
 <span class="cstat-no" title="statement not covered" >  const toast = useToast();</span>
 <span class="cstat-no" title="statement not covered" >  const history = useHistory();</span>
 <span class="cstat-no" title="statement not covered" >  const location = useLocation&lt;{ from?: string }&gt;();</span>
@@ -903,7 +885,7 @@
 <span class="cstat-no" title="statement not covered" ></span>
 <span class="cstat-no" title="statement not covered" >  const handleSubmit = async (e: React.FormEvent) =&gt; {</span>
 <span class="cstat-no" title="statement not covered" >    e.preventDefault();</span>
-<span class="cstat-no" title="statement not covered" >    </span>
+<span class="cstat-no" title="statement not covered" ></span>
 <span class="cstat-no" title="statement not covered" >    // Validation</span>
 <span class="cstat-no" title="statement not covered" >    if (!email || !password) {</span>
 <span class="cstat-no" title="statement not covered" >      toast({</span>
@@ -921,7 +903,7 @@
 <span class="cstat-no" title="statement not covered" ></span>
 <span class="cstat-no" title="statement not covered" >    try {</span>
 <span class="cstat-no" title="statement not covered" >      await login({ email, password });</span>
-<span class="cstat-no" title="statement not covered" >      </span>
+<span class="cstat-no" title="statement not covered" ></span>
 <span class="cstat-no" title="statement not covered" >      toast({</span>
 <span class="cstat-no" title="statement not covered" >        title: 'Login successful',</span>
 <span class="cstat-no" title="statement not covered" >        description: 'Welcome back!',</span>
@@ -929,7 +911,7 @@
 <span class="cstat-no" title="statement not covered" >        duration: 2000,</span>
 <span class="cstat-no" title="statement not covered" >        isClosable: true,</span>
 <span class="cstat-no" title="statement not covered" >      });</span>
-<span class="cstat-no" title="statement not covered" >      </span>
+<span class="cstat-no" title="statement not covered" ></span>
 <span class="cstat-no" title="statement not covered" >      // Redirect to the page they tried to visit or home</span>
 <span class="cstat-no" title="statement not covered" >      const from = location.state?.from || '/';</span>
 <span class="cstat-no" title="statement not covered" >      history.push(from);</span>
@@ -947,16 +929,11 @@
 <span class="cstat-no" title="statement not covered" >  };</span>
 <span class="cstat-no" title="statement not covered" ></span>
 <span class="cstat-no" title="statement not covered" >  return (</span>
-<span class="cstat-no" title="statement not covered" >    &lt;Box</span>
-<span class="cstat-no" title="statement not covered" >      minH="100vh"</span>
-<span class="cstat-no" title="statement not covered" >      bg="white"</span>
-<span class="cstat-no" title="statement not covered" >      position="relative"</span>
-<span class="cstat-no" title="statement not covered" >      overflow="hidden"</span>
-<span class="cstat-no" title="statement not covered" >    &gt;</span>
+<span class="cstat-no" title="statement not covered" >    &lt;Box minH="100vh" bg="white" position="relative" overflow="hidden"&gt;</span>
 <span class="cstat-no" title="statement not covered" >      {/* White Header Bar - Status Bar Area */}</span>
 <span class="cstat-no" title="statement not covered" >      &lt;Box</span>
 <span class="cstat-no" title="statement not covered" >        bg="white"</span>
-<span class="cstat-no" title="statement not covered" >        h={{ base: "44px", md: "60px" }}</span>
+<span class="cstat-no" title="statement not covered" >        h={{ base: '44px', md: '60px' }}</span>
 <span class="cstat-no" title="statement not covered" >        borderBottom="1px solid"</span>
 <span class="cstat-no" title="statement not covered" >        borderColor="gray.100"</span>
 <span class="cstat-no" title="statement not covered" >      /&gt;</span>
@@ -1028,9 +1005,9 @@
 <span class="cstat-no" title="statement not covered" >                  /&gt;</span>
 <span class="cstat-no" title="statement not covered" >                &lt;/Icon&gt;</span>
 <span class="cstat-no" title="statement not covered" >              &lt;/Box&gt;</span>
-<span class="cstat-no" title="statement not covered" >              &lt;Heading </span>
-<span class="cstat-no" title="statement not covered" >                size="lg" </span>
-<span class="cstat-no" title="statement not covered" >                color="white" </span>
+<span class="cstat-no" title="statement not covered" >              &lt;Heading</span>
+<span class="cstat-no" title="statement not covered" >                size="lg"</span>
+<span class="cstat-no" title="statement not covered" >                color="white"</span>
 <span class="cstat-no" title="statement not covered" >                fontWeight="800"</span>
 <span class="cstat-no" title="statement not covered" >                letterSpacing="tight"</span>
 <span class="cstat-no" title="statement not covered" >                textShadow="0 2px 10px rgba(0, 0, 0, 0.2)"</span>
@@ -1081,8 +1058,8 @@
 <span class="cstat-no" title="statement not covered" >                  back</span>
 <span class="cstat-no" title="statement not covered" >                &lt;/Text&gt;</span>
 <span class="cstat-no" title="statement not covered" >              &lt;/Box&gt;</span>
-<span class="cstat-no" title="statement not covered" >              &lt;Text </span>
-<span class="cstat-no" title="statement not covered" >                color="whiteAlpha.900" </span>
+<span class="cstat-no" title="statement not covered" >              &lt;Text</span>
+<span class="cstat-no" title="statement not covered" >                color="whiteAlpha.900"</span>
 <span class="cstat-no" title="statement not covered" >                fontSize="sm"</span>
 <span class="cstat-no" title="statement not covered" >                fontWeight="500"</span>
 <span class="cstat-no" title="statement not covered" >                lineHeight="1.6"</span>
@@ -1179,7 +1156,7 @@
 <span class="cstat-no" title="statement not covered" >                /&gt;</span>
 <span class="cstat-no" title="statement not covered" >              &lt;/InputRightElement&gt;</span>
 <span class="cstat-no" title="statement not covered" >            &lt;/InputGroup&gt;</span>
-<span class="cstat-no" title="statement not covered" >            </span>
+<span class="cstat-no" title="statement not covered" ></span>
 <span class="cstat-no" title="statement not covered" >            {/* Error Message or Forgot Password */}</span>
 <span class="cstat-no" title="statement not covered" >            {error ? (</span>
 <span class="cstat-no" title="statement not covered" >              &lt;FormErrorMessage mt={2} fontSize="sm"&gt;</span>
@@ -1236,11 +1213,7 @@
 <span class="cstat-no" title="statement not covered" >        &lt;Box textAlign="center" mt={12} pb={8}&gt;</span>
 <span class="cstat-no" title="statement not covered" >          &lt;Text fontSize="sm" color="gray.600"&gt;</span>
 <span class="cstat-no" title="statement not covered" >            Don't have an account?{' '}</span>
-<span class="cstat-no" title="statement not covered" >            &lt;Text</span>
-<span class="cstat-no" title="statement not covered" >              as="span"</span>
-<span class="cstat-no" title="statement not covered" >              color="gray.500"</span>
-<span class="cstat-no" title="statement not covered" >              fontWeight="600"</span>
-<span class="cstat-no" title="statement not covered" >            &gt;</span>
+<span class="cstat-no" title="statement not covered" >            &lt;Text as="span" color="gray.500" fontWeight="600"&gt;</span>
 <span class="cstat-no" title="statement not covered" >              Contact admin</span>
 <span class="cstat-no" title="statement not covered" >            &lt;/Text&gt;</span>
 <span class="cstat-no" title="statement not covered" >          &lt;/Text&gt;</span>
@@ -1258,7 +1231,7 @@
             <div class='footer quiet pad2 space-top1 center small'>
                 Code coverage generated by
                 <a href="https://istanbul.js.org/" target="_blank" rel="noopener noreferrer">istanbul</a>
-                at 2026-05-18T12:28:43.855Z
+                at 2026-05-19T09:21:39.476Z
             </div>
         <script src="../../../prettify.js"></script>
         <script>
