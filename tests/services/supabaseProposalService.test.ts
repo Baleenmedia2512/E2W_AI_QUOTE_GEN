@@ -18,6 +18,10 @@ import {
   loadAllProposalsFromCloud,
   loadProposalFromCloud,
   deleteProposalFromCloud,
+  findCloudDuplicate,
+  downloadProposalFile,
+  checkCloudStorageAvailability,
+  cloudProposalToStored,
 } from '../../src/services/supabaseProposalService';
 
 const mockCloudProposal = {
@@ -197,6 +201,140 @@ describe('supabaseProposalService', () => {
 
       const result = await deleteProposalFromCloud('nonexistent');
       expect(result).toBe(false);
+    });
+  });
+
+  // ─────────────────────────────────────────────
+  // findCloudDuplicate
+  // ─────────────────────────────────────────────
+  describe('findCloudDuplicate', () => {
+    function makeDuplicateChain(data: any, error: any = null) {
+      return {
+        select: vi.fn().mockReturnThis(),
+        eq: vi.fn().mockReturnThis(),
+        order: vi.fn().mockReturnThis(),
+        limit: vi.fn().mockReturnThis(),
+        maybeSingle: vi.fn().mockResolvedValue({ data, error }),
+      };
+    }
+
+    it('returns the CloudProposal when a duplicate exists', async () => {
+      vi.mocked(supabase.from).mockReturnValue(makeDuplicateChain(mockCloudProposal) as any);
+
+      const result = await findCloudDuplicate('test-proposal.pdf', 102400);
+      expect(result).not.toBeNull();
+      expect(result?.id).toBe('proposal-001');
+      expect(result?.file_name).toBe('test-proposal.pdf');
+    });
+
+    it('returns null when no duplicate found (data is null)', async () => {
+      vi.mocked(supabase.from).mockReturnValue(makeDuplicateChain(null) as any);
+
+      const result = await findCloudDuplicate('unique-file.pdf', 5000);
+      expect(result).toBeNull();
+    });
+
+    it('returns null on database error', async () => {
+      vi.mocked(supabase.from).mockReturnValue(
+        makeDuplicateChain(null, { message: 'DB error' }) as any,
+      );
+
+      const result = await findCloudDuplicate('any.pdf', 1024);
+      expect(result).toBeNull();
+    });
+  });
+
+  // ─────────────────────────────────────────────
+  // downloadProposalFile
+  // ─────────────────────────────────────────────
+  describe('downloadProposalFile', () => {
+    it('returns a Blob on successful download', async () => {
+      const mockBlob = new Blob(['PDF content'], { type: 'application/pdf' });
+      const storageChain = {
+        download: vi.fn().mockResolvedValue({ data: mockBlob, error: null }),
+      };
+      vi.mocked(supabase.storage.from).mockReturnValue(storageChain as any);
+
+      const result = await downloadProposalFile('user-001/12345_test.pdf');
+      expect(result).not.toBeNull();
+      expect(result).toBe(mockBlob);
+    });
+
+    it('returns null on storage error', async () => {
+      const storageChain = {
+        download: vi.fn().mockResolvedValue({ data: null, error: { message: 'Not found' } }),
+      };
+      vi.mocked(supabase.storage.from).mockReturnValue(storageChain as any);
+
+      const result = await downloadProposalFile('missing/path.pdf');
+      expect(result).toBeNull();
+    });
+  });
+
+  // ─────────────────────────────────────────────
+  // checkCloudStorageAvailability
+  // ─────────────────────────────────────────────
+  describe('checkCloudStorageAvailability', () => {
+    it('returns true when cloud storage is accessible', async () => {
+      const storageChain = {
+        list: vi.fn().mockResolvedValue({ data: [], error: null }),
+      };
+      vi.mocked(supabase.storage.from).mockReturnValue(storageChain as any);
+
+      const result = await checkCloudStorageAvailability();
+      expect(result).toBe(true);
+    });
+
+    it('returns false when cloud storage returns an error', async () => {
+      const storageChain = {
+        list: vi.fn().mockResolvedValue({ data: null, error: { message: 'Bucket not found' } }),
+      };
+      vi.mocked(supabase.storage.from).mockReturnValue(storageChain as any);
+
+      const result = await checkCloudStorageAvailability();
+      expect(result).toBe(false);
+    });
+  });
+
+  // ─────────────────────────────────────────────
+  // cloudProposalToStored (pure function)
+  // ─────────────────────────────────────────────
+  describe('cloudProposalToStored', () => {
+    it('maps all CloudProposal fields to StoredProposal correctly', () => {
+      const stored = cloudProposalToStored(mockCloudProposal);
+
+      expect(stored.id).toBe(mockCloudProposal.id);
+      expect(stored.fileName).toBe(mockCloudProposal.file_name);
+      expect(stored.fileType).toBe(mockCloudProposal.file_type);
+      expect(stored.fileSize).toBe(mockCloudProposal.file_size);
+      expect(stored.textContent).toBe(mockCloudProposal.text_content);
+      expect(stored.pageCount).toBe(mockCloudProposal.page_count);
+      expect(stored.fileUrl).toBe(mockCloudProposal.file_url);
+      expect(stored.storagePath).toBe(mockCloudProposal.storage_path);
+      expect(stored.uploadedByUserId).toBe(mockCloudProposal.uploaded_by_user_id);
+      expect(stored.uploadedByName).toBe(mockCloudProposal.uploaded_by_name);
+    });
+
+    it('sets isCloudStored to true', () => {
+      const stored = cloudProposalToStored(mockCloudProposal);
+      expect(stored.isCloudStored).toBe(true);
+    });
+
+    it('sets fileBlob to null (downloaded on-demand)', () => {
+      const stored = cloudProposalToStored(mockCloudProposal);
+      expect(stored.fileBlob).toBeNull();
+    });
+
+    it('initialises extractedImages and pageImages as empty arrays', () => {
+      const stored = cloudProposalToStored(mockCloudProposal);
+      expect(stored.extractedImages).toEqual([]);
+      expect(stored.pageImages).toEqual([]);
+    });
+
+    it('parses uploadedAt as a Date from the ISO string', () => {
+      const stored = cloudProposalToStored(mockCloudProposal);
+      expect(stored.uploadedAt).toBeInstanceOf(Date);
+      expect(stored.uploadedAt.toISOString()).toBe(new Date(mockCloudProposal.uploaded_at).toISOString());
     });
   });
 });

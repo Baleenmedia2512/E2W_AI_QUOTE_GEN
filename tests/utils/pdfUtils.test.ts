@@ -231,3 +231,45 @@ describe('pdfUtils – IoU bounding-box deduplication logic', () => {
     expect(deduplicateBoxes([])).toHaveLength(0);
   });
 });
+
+// ─────────────────────────────────────────────────────────────────────────────
+// validatePDFFile
+// ─────────────────────────────────────────────────────────────────────────────
+import { validatePDFFile } from '../../src/utils/pdfUtils';
+
+describe('pdfUtils – validatePDFFile', () => {
+  it('returns valid:true for a PDF file within size limit', () => {
+    const file = new File(['%PDF-1.4 content'], 'proposal.pdf', { type: 'application/pdf' });
+    const result = validatePDFFile(file);
+    expect(result.valid).toBe(true);
+    expect(result.error).toBeUndefined();
+  });
+
+  it('returns valid:false with error for a non-PDF file', () => {
+    const file = new File(['hello world'], 'document.docx', {
+      type: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+    });
+    const result = validatePDFFile(file);
+    expect(result.valid).toBe(false);
+    expect(result.error).toBe('Only PDF files are allowed');
+  });
+
+  it('returns valid:false with error when PDF exceeds 10 MB default limit', () => {
+    const overSizeBytes = 11 * 1024 * 1024; // 11 MB
+    const largeContent = new Uint8Array(overSizeBytes);
+    const file = new File([largeContent], 'huge.pdf', { type: 'application/pdf' });
+    Object.defineProperty(file, 'size', { value: overSizeBytes });
+    const result = validatePDFFile(file);
+    expect(result.valid).toBe(false);
+    expect(result.error).toMatch(/File size must be less than/);
+  });
+
+  it('returns valid:true for a PDF exactly at the size limit (not over)', () => {
+    const maxSizeMB = 10;
+    const exactBytes = maxSizeMB * 1024 * 1024; // exactly 10 MB
+    const file = new File(['%PDF'], 'exact.pdf', { type: 'application/pdf' });
+    Object.defineProperty(file, 'size', { value: exactBytes });
+    const result = validatePDFFile(file);
+    expect(result.valid).toBe(true);
+  });
+});

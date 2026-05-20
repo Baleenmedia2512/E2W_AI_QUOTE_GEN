@@ -15,6 +15,12 @@ import {
   savePageImagesById,
   loadPageImagesById,
   clearPageImagesById,
+  saveActiveProposalIds,
+  loadActiveProposalIds,
+  clearActiveProposalIds,
+  saveActiveProposalMeta,
+  loadActiveProposalMeta,
+  clearActiveProposalMeta,
 } from '../../src/utils/imageStorage';
 
 // ── Helpers ────────────────────────────────────────────────────────────────
@@ -145,5 +151,86 @@ describe('imageStorage – savePageImagesById / loadPageImagesById / clearPageIm
     it('does not throw when clearing a non-existent proposal ID', async () => {
       await expect(clearPageImagesById('does-not-exist')).resolves.not.toThrow();
     });
+  });
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Active Proposal IDs (localStorage)
+// ─────────────────────────────────────────────────────────────────────────────
+describe('imageStorage – saveActiveProposalIds / loadActiveProposalIds / clearActiveProposalIds', () => {
+  beforeEach(() => {
+    localStorage.clear();
+  });
+
+  it('returns an empty array when nothing has been saved', () => {
+    const result = loadActiveProposalIds();
+    expect(result).toEqual([]);
+  });
+
+  it('saves and loads an array of proposal IDs correctly', () => {
+    const ids = ['id-001', 'id-002', 'id-003'];
+    saveActiveProposalIds(ids);
+    const result = loadActiveProposalIds();
+    expect(result).toEqual(ids);
+  });
+
+  it('overwrites previous IDs on a second save', () => {
+    saveActiveProposalIds(['old-id-1', 'old-id-2']);
+    saveActiveProposalIds(['new-id-1']);
+    const result = loadActiveProposalIds();
+    expect(result).toEqual(['new-id-1']);
+  });
+
+  it('returns empty array after clearActiveProposalIds', () => {
+    saveActiveProposalIds(['id-a', 'id-b']);
+    clearActiveProposalIds();
+    const result = loadActiveProposalIds();
+    expect(result).toEqual([]);
+  });
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Active Proposal Meta (localStorage)
+// ─────────────────────────────────────────────────────────────────────────────
+describe('imageStorage – saveActiveProposalMeta / loadActiveProposalMeta / clearActiveProposalMeta', () => {
+  beforeEach(() => {
+    localStorage.clear();
+  });
+
+  const makeMeta = (id: string) => ({
+    id,
+    fileName: `proposal-${id}.pdf`,
+    fileType: 'application/pdf',
+    pageCount: 2,
+    textContent: `Text content for ${id}`,
+    fileUrl: `https://example.com/${id}.pdf`,
+  });
+
+  it('returns an empty array when nothing has been saved', () => {
+    const result = loadActiveProposalMeta();
+    expect(result).toEqual([]);
+  });
+
+  it('saves and loads metadata array correctly', () => {
+    const meta = [makeMeta('m-001'), makeMeta('m-002')];
+    saveActiveProposalMeta(meta);
+    const result = loadActiveProposalMeta();
+    expect(result).toHaveLength(2);
+    expect(result[0].id).toBe('m-001');
+    expect(result[1].id).toBe('m-002');
+  });
+
+  it('strips fileUrl from saved metadata (lightweight meta only)', () => {
+    saveActiveProposalMeta([makeMeta('strip-test')]);
+    const result = loadActiveProposalMeta();
+    // fileUrl should not be persisted — only lightweight fields
+    expect(result[0].fileUrl).toBeUndefined();
+  });
+
+  it('returns empty array after clearActiveProposalMeta', () => {
+    saveActiveProposalMeta([makeMeta('to-clear')]);
+    clearActiveProposalMeta();
+    const result = loadActiveProposalMeta();
+    expect(result).toEqual([]);
   });
 });

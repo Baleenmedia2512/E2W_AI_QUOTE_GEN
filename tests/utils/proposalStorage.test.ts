@@ -13,6 +13,8 @@ import {
   loadRecentProposals,
   loadProposalById,
   findDuplicateProposal,
+  deleteProposalFromLibrary,
+  clearProposalLibrary,
 } from '../../src/utils/proposalStorage';
 
 // ── Helpers ────────────────────────────────────────────────────────────────
@@ -133,6 +135,49 @@ describe('proposalStorage', () => {
       );
       const result = await findDuplicateProposal('same-name.pdf', 'application/pdf', 9999);
       expect(result).toBeNull();
+    });
+  });
+
+  // ── deleteProposalFromLibrary ──────────────────────────────────────────
+  describe('deleteProposalFromLibrary', () => {
+    it('removes a saved proposal so loadProposalById returns null', async () => {
+      const id = await saveProposalToLibrary(makeFakeProposal({ fileName: 'to-delete.pdf' }));
+      await deleteProposalFromLibrary(id);
+      const result = await loadProposalById(id);
+      expect(result).toBeNull();
+    });
+
+    it('does not throw when deleting a non-existent ID', async () => {
+      await expect(deleteProposalFromLibrary('non-existent-id-abc')).resolves.not.toThrow();
+    });
+
+    it('removes the deleted proposal from loadRecentProposals', async () => {
+      const id = await saveProposalToLibrary(makeFakeProposal({ fileName: 'delete-me.pdf' }));
+      const beforeDelete = await loadRecentProposals();
+      const foundBefore = beforeDelete.some((p: any) => p.id === id);
+      expect(foundBefore).toBe(true);
+
+      await deleteProposalFromLibrary(id);
+
+      const afterDelete = await loadRecentProposals();
+      const foundAfter = afterDelete.some((p: any) => p.id === id);
+      expect(foundAfter).toBe(false);
+    });
+  });
+
+  // ── clearProposalLibrary ───────────────────────────────────────────────
+  describe('clearProposalLibrary', () => {
+    it('removes all proposals so loadRecentProposals returns empty array', async () => {
+      await saveProposalToLibrary(makeFakeProposal({ fileName: 'a.pdf' }));
+      await saveProposalToLibrary(makeFakeProposal({ fileName: 'b.pdf' }));
+      await clearProposalLibrary();
+      const results = await loadRecentProposals();
+      expect(results).toHaveLength(0);
+    });
+
+    it('does not throw when clearing an already empty library', async () => {
+      await clearProposalLibrary(); // ensure empty
+      await expect(clearProposalLibrary()).resolves.not.toThrow();
     });
   });
 });
