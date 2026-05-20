@@ -92,6 +92,7 @@ const validateAndFixQuoteDescriptions = (quoteData: any): any => {
       if (!description.startsWith(serviceTypeName) && !alreadyContainsName && serviceTypeName) {
         // Fix: Prepend the service type name
         const fixedDescription = `${serviceTypeName} - ${description}`;
+
         logger.info(`  ✅ Fixed: "${description}" → "${fixedDescription}"`);
 
         return {
