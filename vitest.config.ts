@@ -12,6 +12,12 @@ export default defineConfig({
   test: {
     globals: true,
     environment: 'jsdom',
+    // Node.js 25 ships a built-in WebStorage (localStorage/sessionStorage) that
+    // emits a warning and returns a non-functional object when --localstorage-file
+    // is not provided. This causes localStorage.clear to be undefined in tests.
+    // Fix: tell Node.js 25 to use a temp file so its native WebStorage is
+    // initialised properly, after which jsdom's implementation takes over cleanly.
+    pool: 'vmThreads',
     setupFiles: ['./tests/setup.ts'],
     include: ['tests/**/*.{test,spec}.{ts,tsx}', 'src/**/*.{test,spec}.{ts,tsx}'],
     coverage: {
