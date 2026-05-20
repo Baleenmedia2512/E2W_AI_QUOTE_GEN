@@ -1,8 +1,8 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { render, screen } from '@testing-library/react';
+import { render, screen, fireEvent } from '@testing-library/react';
 import React from 'react';
 import QuotePreview from '../../src/components/QuotePreview/QuotePreview';
-import { simpleQuote, quoteWithGST, emptyQuote } from '../fixtures/quotes';
+import { simpleQuote, quoteWithGST, emptyQuote, singleLineItem } from '../fixtures/quotes';
 
 // Mock Chakra UI with minimal stubs
 vi.mock('@chakra-ui/react', () => ({
@@ -124,5 +124,74 @@ describe('QuotePreview', () => {
     // Button may or may not be visible depending on component structure; don't require it
     // But the component should render without error
     expect(screen.queryByText(/No quote generated yet/i)).toBeNull();
+  });
+
+  // ─────────────────────────────────────────────
+  // Interaction — onUpdate callback
+  // ─────────────────────────────────────────────
+  it('calls onUpdate when the GST checkbox is toggled', () => {
+    render(<QuotePreview quote={simpleQuote} onUpdate={mockOnUpdate} />);
+    // simpleQuote.gstEnabled = false → checkbox is unchecked
+    const checkbox = screen.getByRole('checkbox');
+    fireEvent.click(checkbox);
+    expect(mockOnUpdate).toHaveBeenCalledTimes(1);
+  });
+
+  it('calls onUpdate with gstEnabled flipped when checkbox toggled', () => {
+    render(<QuotePreview quote={simpleQuote} onUpdate={mockOnUpdate} />);
+    const checkbox = screen.getByRole('checkbox');
+    fireEvent.click(checkbox);
+    const updatedQuote = mockOnUpdate.mock.calls[0][0];
+    // simpleQuote had gstEnabled=false → should now be true
+    expect(updatedQuote.gstEnabled).toBe(true);
+  });
+
+  it('calls onUpdate when Terms & Conditions textarea is changed', () => {
+    render(<QuotePreview quote={simpleQuote} onUpdate={mockOnUpdate} />);
+    const textareas = screen.getAllByRole('textbox');
+    // Last textarea is Terms & Conditions
+    const termsTextarea = textareas[textareas.length - 1];
+    fireEvent.change(termsTextarea, { target: { value: 'New payment terms' } });
+    expect(mockOnUpdate).toHaveBeenCalledTimes(1);
+  });
+
+  it('calls onUpdate with new terms value when Terms textarea changes', () => {
+    render(<QuotePreview quote={simpleQuote} onUpdate={mockOnUpdate} />);
+    const textareas = screen.getAllByRole('textbox');
+    const termsTextarea = textareas[textareas.length - 1];
+    fireEvent.change(termsTextarea, { target: { value: 'Updated terms here' } });
+    const updatedQuote = mockOnUpdate.mock.calls[0][0];
+    expect(updatedQuote.termsAndConditions).toBe('Updated terms here');
+  });
+
+  it('calls onUpdate when Delete section button is clicked', () => {
+    // Use a fresh items array so splice doesn't mutate the shared fixture
+    const freshQuote = { ...simpleQuote, items: [singleLineItem] };
+    render(<QuotePreview quote={freshQuote} onUpdate={mockOnUpdate} />);
+    const deleteButton = screen.getByRole('button', { name: /delete section/i });
+    fireEvent.click(deleteButton);
+    expect(mockOnUpdate).toHaveBeenCalledTimes(1);
+  });
+
+  it('calls onUpdate with item removed when Delete section is clicked', () => {
+    // Use a fresh items array so splice doesn't mutate the shared fixture
+    const freshQuote = { ...simpleQuote, items: [singleLineItem] };
+    render(<QuotePreview quote={freshQuote} onUpdate={mockOnUpdate} />);
+    const deleteButton = screen.getByRole('button', { name: /delete section/i });
+    fireEvent.click(deleteButton);
+    const updatedQuote = mockOnUpdate.mock.calls[0][0];
+    expect(updatedQuote.items).toHaveLength(0);
+  });
+
+  it('onUpdate receives a valid Quote object with required fields', () => {
+    render(<QuotePreview quote={simpleQuote} onUpdate={mockOnUpdate} />);
+    const checkbox = screen.getByRole('checkbox');
+    fireEvent.click(checkbox);
+    const updatedQuote = mockOnUpdate.mock.calls[0][0];
+    expect(updatedQuote).toHaveProperty('id');
+    expect(updatedQuote).toHaveProperty('items');
+    expect(updatedQuote).toHaveProperty('total');
+    expect(updatedQuote).toHaveProperty('subtotal');
+    expect(Array.isArray(updatedQuote.items)).toBe(true);
   });
 });

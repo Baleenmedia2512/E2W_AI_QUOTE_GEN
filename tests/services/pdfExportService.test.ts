@@ -2,7 +2,73 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 import {
   validateElementForExport,
   estimatePDFSize,
+  exportToPDF,
+  exportToPDFWithOptions,
 } from '../../src/services/pdfExportService';
+
+// ── Module mocks ──────────────────────────────────────────────────────────────
+let mockIsNativePlatform = false;
+
+vi.mock('@capacitor/core', () => ({
+  Capacitor: {
+    isNativePlatform: () => mockIsNativePlatform,
+    isPluginAvailable: () => false,
+  },
+}));
+
+vi.mock('@capacitor/filesystem', () => ({
+  Filesystem: {
+    writeFile: vi.fn().mockResolvedValue({ uri: 'file:///docs/quote.pdf' }),
+  },
+  Directory: { Documents: 'DOCUMENTS' },
+}));
+
+vi.mock('@capacitor-community/file-opener', () => ({
+  FileOpener: { open: vi.fn().mockResolvedValue(undefined) },
+}));
+
+vi.mock('../../src/plugins/downloadNotification', () => ({
+  default: { showDownloadNotification: vi.fn().mockResolvedValue(undefined) },
+}));
+
+vi.mock('../../src/utils/logger', () => ({
+  logger: { info: vi.fn(), warn: vi.fn(), error: vi.fn() },
+}));
+
+// Mock canvas returned by html2canvas
+const createMockCanvas = () => {
+  const canvas = document.createElement('canvas');
+  canvas.width = 794;
+  canvas.height = 1123;
+  canvas.toDataURL = vi.fn().mockReturnValue('data:image/png;base64,ABC=');
+  return canvas;
+};
+
+vi.mock('html2canvas', () => ({
+  default: vi.fn().mockImplementation(() => Promise.resolve(createMockCanvas())),
+}));
+
+// jsPDF mock — each instance gets trackable methods
+const mockPdfSave = vi.fn();
+const mockPdfAddPage = vi.fn();
+const mockPdfAddImage = vi.fn();
+const mockPdfOutput = vi.fn().mockReturnValue('data:application/pdf;base64,XXX=,abc');
+const mockPdfSetProperties = vi.fn();
+const mockPdfLink = vi.fn();
+
+vi.mock('jspdf', () => ({
+  default: vi.fn().mockImplementation(() => ({
+    addPage: mockPdfAddPage,
+    addImage: mockPdfAddImage,
+    save: mockPdfSave,
+    output: mockPdfOutput,
+    setProperties: mockPdfSetProperties,
+    link: mockPdfLink,
+    setFontSize: vi.fn(),
+    text: vi.fn(),
+    internal: { pageSize: { getWidth: () => 210, getHeight: () => 297 } },
+  })),
+}));
 
 // pdfExportService uses jsPDF, html2canvas, and Capacitor which are DOM/native.
 // We test only the pure helper functions that don't require DOM rendering.
@@ -10,6 +76,7 @@ import {
 describe('pdfExportService — pure helpers', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    mockIsNativePlatform = false;
   });
 
   // ─────────────────────────────────────────────
@@ -78,3 +145,102 @@ describe('pdfExportService — pure helpers', () => {
     });
   });
 });
+
+// ─────────────────────────────────────────────────────────────────────────────
+// exportToPDFWithOptions — integration tests (html2canvas + jsPDF mocked)
+// ─────────────────────────────────────────────────────────────────────────────
+describe('exportToPDFWithOptions', () => {
+  let el: HTMLElement;
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    mockIsNativePlatform = false;
+    el = document.createElement('div');
+    el.id = 'test-element';
+    document.body.appendChild(el);
+  });
+
+  afterEach(() => {
+    document.body.removeChild(el);
+  });
+
+  it('calls html2canvas with the provided element', async () => {
+    const html2canvas = (await import('html2canvas')).default as ReturnType<typeof vi.fn>;
+    await exportToPDFWithOptions(el, { quoteNumber: 'Q-001', templateType: 'corporate-minimal' });
+    expect(html2canvas).toHaveBeenCalledWith(el, expect.objectContaining({ scale: 2 }));
+  });
+
+  it('calls pdf.save on web (non-mobile) platform', async () => {
+    mockIsNativePlatform = false;
+    await exportToPDFWithOptions(el, { quoteNumber: 'Q-001', templateType: 'corporate-minimal' });
+    expect(mockPdfSave).toHaveBeenCalledTimes(1);
+  });
+
+  it('uses custom filename option when provided', async () => {
+    mockIsNativePlatform = false;
+    await exportToPDFWithOptions(el, {
+      quoteNumber: 'Q-001',
+      templateType: 'corporate-minimal',
+      filename: 'my-custom-quote.pdf',
+    });
+    expect(mockPdfSave).toHaveBeenCalledWith('my-custom-quote.pdf');
+  });
+
+  it('calls Filesystem.writeFile on mobile (Capacitor) platform', async () => {
+    mockIsNativePlatform = true;
+    const { Filesystem } = await import('@capacitor/filesystem');
+    await exportToPDFWithOptions(el, { quoteNumber: 'Q-002', templateType: 'premium-agency' });
+    expect(Filesystem.writeFile).toHaveBeenCalledTimes(1);
+  });
+
+  it('throws an error when html2canvas rejects', async () => {
+    const html2canvas = (await import('html2canvas')).default as ReturnType<typeof vi.fn>;
+    html2canvas.mockRejectedValueOnce(new Error('canvas failure'));
+    await expect(
+      exportToPDFWithOptions(el, { quoteNumber: 'Q-ERR', templateType: 'corporate-minimal' }),
+    ).rejects.toThrow();
+  });
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// exportToPDF — fallback path (no DOM sections → legacyFullCapture)
+// ─────────────────────────────────────────────────────────────────────────────
+describe('exportToPDF', () => {
+  let el: HTMLElement;
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    mockIsNativePlatform = false;
+    el = document.createElement('div');
+    el.id = 'test-export-element';
+    document.body.appendChild(el);
+
+    // legacyFullCapture (and captureSectionAtA4) call document.fonts.ready.
+    // jsdom 24 defines document.fonts but its ready promise may not settle
+    // reliably without real font loading; stub it so the export path resolves.
+    try {
+      Object.defineProperty(document, 'fonts', {
+        value: { ready: Promise.resolve(), check: () => true },
+        configurable: true,
+        writable: true,
+      });
+    } catch {
+      // If already non-configurable, patch ready in place
+      if (document.fonts) {
+        (document.fonts as unknown as Record<string, unknown>).ready = Promise.resolve();
+      }
+    }
+  });
+
+  afterEach(() => {
+    document.body.removeChild(el);
+  });
+
+  it('completes without throwing when no PDF sections exist in DOM', async () => {
+    // No pdf-page-1, pdf-page-summary etc. in DOM → falls back to legacyFullCapture
+    await expect(
+      exportToPDF(el, 'Q-001', 'corporate-minimal'),
+    ).resolves.not.toThrow();
+  });
+});
+
