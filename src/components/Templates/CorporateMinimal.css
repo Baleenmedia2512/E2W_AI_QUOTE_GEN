@@ -51,10 +51,20 @@
 }
 
 .template-corporate-minimal .company-logo {
-  max-width: 220px;
-  max-height: 100px;
+  max-width: 340px;
+  max-height: 150px;
   object-fit: contain;
   display: inline-block;
+}
+
+.template-corporate-minimal .quote-title {
+  text-align: center;
+  font-size: 22px;
+  font-weight: 800;
+  color: #1a3a5c;
+  margin: 8px 0 14px 0;
+  letter-spacing: 6px;
+  text-transform: uppercase;
 }
 
 .template-corporate-minimal .company-name {
@@ -68,13 +78,25 @@
 
 .template-corporate-minimal .company-details {
   flex: 1;
-  font-size: 11px;
+  font-size: 15px;
   color: #636e72;
-  line-height: 1.5;
+  line-height: 1.7;
 }
 
 .template-corporate-minimal .company-details p {
-  margin: 2px 0;
+  margin: 4px 0;
+}
+
+/* Clickable contact links — brand blue + underline so they're clearly tappable */
+.template-corporate-minimal .contact-link {
+  color: #2980b9 !important;
+  text-decoration: underline;
+  word-break: break-word;
+  padding: 2px 0;
+}
+
+.template-corporate-minimal .contact-link:hover {
+  color: #1a3a5c;
 }
 
 .template-corporate-minimal .quote-meta {
@@ -135,7 +157,7 @@
 }
 
 .template-corporate-minimal .client-section h3 {
-  font-size: 10px;
+  font-size: 14px;
   font-weight: 700;
   color: #2980b9;
   margin: 0 0 6px 0;
@@ -144,7 +166,7 @@
 }
 
 .template-corporate-minimal .client-details {
-  font-size: 12.5px;
+  font-size: 14.5px;
   line-height: 1.5;
   color: #2d3436;
 }
@@ -664,14 +686,22 @@
   bottom: unset !important;
   left: unset !important;
   right: unset !important;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  width: 100%;
 }
 
 .template-corporate-minimal .company-contact-footer .footer-page-number {
-  flex: 0 0 100%;
-  text-align: center;
-  font-size: 11px;
+  display: block;
+  width: 100%;
+  text-align: center !important;
+  font-size: 8px;
   font-weight: 600;
   color: #636e72;
+  margin-top: 4px;
+  -webkit-text-size-adjust: none;
+  text-size-adjust: none;
 }
 
 .template-corporate-minimal .company-contact-footer .footer-divider {
@@ -684,10 +714,23 @@
   display: flex;
   justify-content: center;
   align-items: center;
-  flex-wrap: wrap;
-  gap: 20px;
-  font-size: 11px;
+  flex-wrap: nowrap;
+  gap: 16px;
+  font-size: 7px !important;
   color: #636e72;
+  width: 100%;
+  -webkit-text-size-adjust: none;
+  text-size-adjust: none;
+}
+
+.template-corporate-minimal .company-contact-footer .footer-row-top {
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  flex-wrap: nowrap;
+  gap: 16px;
+  width: 100%;
+  overflow: hidden;
 }
 
 .template-corporate-minimal .company-contact-footer .footer-item {
@@ -720,8 +763,8 @@
   }
 
   .template-corporate-minimal .company-logo {
-    max-width: 220px;
-    max-height: 100px;
+    max-width: 320px;
+    max-height: 140px;
   }
 
   .template-corporate-minimal .company-name {

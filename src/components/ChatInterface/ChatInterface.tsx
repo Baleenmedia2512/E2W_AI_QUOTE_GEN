@@ -242,29 +242,9 @@ const ChatInterface: React.FC = () => {
       }
     }
 
-    // ★ Forward city-inheritance: if a segment has no city but a LATER segment does,
-    // propagate that city back. Handles "auto and bus branding in chennai" where
-    // Seg 1 ("auto") has no city, Seg 2 ("bus branding in chennai") does → Seg 1 inherits Chennai.
-    // Only inherits when exactly one distinct city appears in the whole message
-    // (otherwise we genuinely don't know which city the cityless segment belongs to).
-    const distinctCities = Array.from(new Set(
-      segments.map(s => s.detectedCity).filter((c): c is string => !!c)
-    ));
-    if (distinctCities.length === 1) {
-      const onlyCity = distinctCities[0];
-      for (let i = 0; i < segments.length; i++) {
-        const s = segments[i];
-        if (!s.detectedCity) {
-          segments[i] = {
-            ...s,
-            raw: `${s.raw} ${onlyCity}`.trim(),
-            cityNeeded: false,
-            detectedCity: onlyCity,
-            selectedCities: [onlyCity],
-          };
-        }
-      }
-    }
+    // NOTE: Do not auto-inherit a single detected city to other city-missing
+    // segments. Example: "30 bus madurai and auto" should keep "auto" without a
+    // city so the city picker can ask the user explicitly.
 
     // Bug 2: dedupe by `${city}|${normalizedServiceText}` so repeated clauses
     // ("cab and cab", "auto and auto") collapse into a single entry.
@@ -573,6 +553,12 @@ const ChatInterface: React.FC = () => {
       const availCities = getAvailableCities();
       if (availCities.length > 1) {
         const rawSegments = parseSegmentsForCity(userMessage.content, availCities);
+        // For pure one-segment, city-missing queries like "auto", force explicit
+        // city choice instead of silently auto-assigning a single matched city.
+        const forceCityPickerForSingleCityless =
+          rawSegments.length === 1 &&
+          rawSegments[0].cityNeeded &&
+          !rawSegments[0].detectedCity;
 
         // Auto-assign city for segments whose service exists in exactly ONE city's registry.
         // Falls back to raw PDF text scan if registry not yet built for a city.
@@ -589,7 +575,7 @@ const ChatInterface: React.FC = () => {
             return cls.state === 'specific' || cls.state === 'vague';
           });
 
-          if (citiesWithService.length === 1) {
+          if (citiesWithService.length === 1 && !forceCityPickerForSingleCityless) {
             console.log(`🏙️ Registry auto-assigned "${seg.raw}" → ${citiesWithService[0]}`);
             return {
               ...seg,
@@ -609,7 +595,7 @@ const ChatInterface: React.FC = () => {
         const hasServiceRequest = segments.some(s =>
           s.cityNeeded && s.matchedCities !== undefined && s.matchedCities.length >= 2
         );
-        if (hasServiceRequest) {
+        if (hasServiceRequest || forceCityPickerForSingleCityless) {
           const pickerMsgId = (Date.now() + 1).toString();
           const pickerMsg: Message = {
             id: pickerMsgId,
@@ -635,9 +621,9 @@ const ChatInterface: React.FC = () => {
     // ─── PRE-GEMINI CITY-SERVICE AVAILABILITY CHECK (Registry-based) ────────
     // Replaces the old strict-parser check. Uses cityServiceRegistry built from
     // Gemini's one-time PDF read to verify service availability + quantity constraints.
-    // SKIP: checkbox-confirmed messages are already verified upstream.
-    const isCheckboxConfirmed = isCheckboxConfirmedFlag;
-    if (activeProposals.length > 1 && !isCheckboxConfirmed) {
+    // NOTE: Do not skip checkbox-confirmed messages here; they still need
+    // min/max quantity validation for consistent warning behavior.
+    if (activeProposals.length > 1) {
       const availCitiesPre = getAvailableCities();
       if (availCitiesPre.length > 1) {
         const preSegments = parseSegmentsForCity(userMessage.content, availCitiesPre);
@@ -1186,41 +1172,6 @@ const ChatInterface: React.FC = () => {
           updatedAt: new Date()
         };
         
-        // Check if any items are below minimum quantity — deduplicate by service name
-        // Uses both the AI-returned minimumQuantity AND the session cache (so that
-        // continued messages in the same chat are validated even when the AI omits minimumQuantity).
-        const seenServices = new Set<string>();
-        const belowMinItems = quoteItems
-          .filter(item => {
-            const serviceKey = item.description.split(' - ')[0].toLowerCase().trim();
-            const effectiveMin = item.minimumQuantity || minQtyCacheRef.current.get(serviceKey);
-            if (effectiveMin) {
-              console.log(`🔍 Min qty check: "${serviceKey}" qty=${item.quantity} min=${effectiveMin} (source: ${item.minimumQuantity ? 'AI' : 'cache'})`);
-            }
-            return effectiveMin !== undefined && item.quantity < effectiveMin;
-          })
-          .map(item => {
-            const serviceKey = item.description.split(' - ')[0].toLowerCase().trim();
-            const effectiveMin = item.minimumQuantity || minQtyCacheRef.current.get(serviceKey)!;
-            return {
-              description: item.description.split(' - ')[0],
-              requested: item.quantity,
-              minimum: effectiveMin
-            };
-          })
-          .filter(item => {
-            if (seenServices.has(item.description)) return false;
-            seenServices.add(item.description);
-            return true;
-          });
-        
-        if (belowMinItems.length > 0) {
-          // Set quote but pause navigation — show warning dialog
-          setCurrentQuote(quote);
-          setMinQtyWarning({ items: belowMinItems, pendingQuote: quote });
-          return;
-        }
-
         setCurrentQuote(quote);
         
         // Show success message before navigating
