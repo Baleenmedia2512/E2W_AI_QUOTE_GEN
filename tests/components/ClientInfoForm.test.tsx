@@ -3,7 +3,6 @@ import { render, screen, fireEvent } from '@testing-library/react';
 import React from 'react';
 import ClientInfoForm from '../../src/components/ClientInfoForm/ClientInfoForm';
 
-// Chakra UI needs a ChakraProvider wrapper; stub it out for pure logic testing
 vi.mock('@chakra-ui/react', () => {
   const Box = ({ children }: any) => <div>{children}</div>;
   const VStack = ({ children }: any) => <div>{children}</div>;
@@ -12,21 +11,42 @@ vi.mock('@chakra-ui/react', () => {
   const GridItem = ({ children }: any) => <div>{children}</div>;
   const FormControl = ({ children }: any) => <div>{children}</div>;
   const FormLabel = ({ children }: any) => <label>{children}</label>;
-  const FormErrorMessage = ({ children }: any) => <span data-testid="form-error">{children}</span>;
-  const Input = ({ value, onChange, placeholder, ...rest }: any) => (
+  const FormErrorMessage = ({ children }: any) => (
+    <span data-testid="form-error">{children}</span>
+  );
+  // Strip `type` so jsdom doesn't apply native email/tel form validation
+  // (React component does its own validation — we don't want browser-level blocking)
+  const Input = ({ value, onChange, placeholder, type: _type, ...rest }: any) => (
     <input value={value} onChange={onChange} placeholder={placeholder} {...rest} />
   );
   const Textarea = ({ value, onChange, placeholder, ...rest }: any) => (
     <textarea value={value} onChange={onChange} placeholder={placeholder} {...rest} />
   );
   const Button = ({ children, onClick, type }: any) => (
-    <button onClick={onClick} type={type}>{children}</button>
+    <button onClick={onClick} type={type}>
+      {children}
+    </button>
   );
   const Heading = ({ children }: any) => <h2>{children}</h2>;
-  const Text = ({ children }: any) => <p>{children}</p>;
+  const Text = ({ children }: any) => <span>{children}</span>;
   const Spacer = () => <div />;
 
-  return { Box, VStack, HStack, Grid, GridItem, FormControl, FormLabel, FormErrorMessage, Input, Textarea, Button, Heading, Text, Spacer };
+  return {
+    Box,
+    VStack,
+    HStack,
+    Grid,
+    GridItem,
+    FormControl,
+    FormLabel,
+    FormErrorMessage,
+    Input,
+    Textarea,
+    Button,
+    Heading,
+    Text,
+    Spacer,
+  };
 });
 
 const mockSubmit = vi.fn();
@@ -37,62 +57,219 @@ describe('ClientInfoForm', () => {
     vi.clearAllMocks();
   });
 
+  // ─────────────────────────────────────────────
+  // Rendering
+  // ─────────────────────────────────────────────
+
   it('renders all required form fields', () => {
     render(<ClientInfoForm onSubmit={mockSubmit} />);
-
-    // At minimum the form renders inputs
-    const inputs = screen.getAllByRole('textbox');
-    expect(inputs.length).toBeGreaterThan(0);
+    expect(screen.getByPlaceholderText('Enter client name')).toBeTruthy();
+    expect(screen.getByPlaceholderText('Enter company name')).toBeTruthy();
+    expect(screen.getByPlaceholderText('Enter client address')).toBeTruthy();
+    expect(screen.getByPlaceholderText('Enter GST number')).toBeTruthy();
+    expect(screen.getByPlaceholderText('+1 (555) 000-0000')).toBeTruthy();
+    expect(screen.getByPlaceholderText('client@example.com')).toBeTruthy();
   });
 
-  it('does not call onSubmit when name is empty (validation blocks)', async () => {
+  // ─────────────────────────────────────────────
+  // Validation — Required fields
+  // ─────────────────────────────────────────────
+
+  it('does not call onSubmit when name is empty', () => {
     render(<ClientInfoForm onSubmit={mockSubmit} />);
-
-    // Find submit button by role (any button that isn't Back)
-    const buttons = screen.getAllByRole('button');
-    const submitButton = buttons.find((b: any) => !/back/i.test(b.textContent || ''));
-    if (submitButton) fireEvent.click(submitButton);
-
-    // onSubmit should NOT have been called — validation blocks it
+    fireEvent.click(screen.getByRole('button', { name: /continue/i }));
     expect(mockSubmit).not.toHaveBeenCalled();
   });
 
-  it('calls onSubmit with form data when form is valid', async () => {
+  it('shows "Client name is required" error when name is empty on submit', () => {
     render(<ClientInfoForm onSubmit={mockSubmit} />);
-
-    // Fill in the name field (minimum required)
-    const nameInputs = screen.getAllByRole('textbox');
-    fireEvent.change(nameInputs[0], { target: { value: 'Test Client' } });
-
-    const submitButton = screen.getByRole('button', { name: /generate|submit|next|continue/i });
-    fireEvent.click(submitButton);
-
-    // If no errors, onSubmit should be called
-    // (email validation may still trigger; test with valid email below)
+    fireEvent.click(screen.getByRole('button', { name: /continue/i }));
+    expect(screen.getByText('Client name is required')).toBeTruthy();
   });
 
-  it('pre-fills form fields from initialData prop', () => {
+  it('does not call onSubmit when phone is empty', () => {
+    render(<ClientInfoForm onSubmit={mockSubmit} />);
+    fireEvent.change(screen.getByPlaceholderText('Enter client name'), {
+      target: { value: 'Test Client' },
+    });
+    fireEvent.click(screen.getByRole('button', { name: /continue/i }));
+    expect(mockSubmit).not.toHaveBeenCalled();
+  });
+
+  it('shows "Phone is required" error when phone is empty on submit', () => {
+    render(<ClientInfoForm onSubmit={mockSubmit} />);
+    fireEvent.change(screen.getByPlaceholderText('Enter client name'), {
+      target: { value: 'Test Client' },
+    });
+    fireEvent.click(screen.getByRole('button', { name: /continue/i }));
+    expect(screen.getByText('Phone is required')).toBeTruthy();
+  });
+
+  // ─────────────────────────────────────────────
+  // Validation — Format errors
+  // ─────────────────────────────────────────────
+
+  it('shows "Invalid phone number" for non-numeric phone input', () => {
+    render(<ClientInfoForm onSubmit={mockSubmit} />);
+    fireEvent.change(screen.getByPlaceholderText('Enter client name'), {
+      target: { value: 'Test Client' },
+    });
+    fireEvent.change(screen.getByPlaceholderText('+1 (555) 000-0000'), {
+      target: { value: 'abc-not-a-number' },
+    });
+    fireEvent.click(screen.getByRole('button', { name: /continue/i }));
+    expect(screen.getByText('Invalid phone number')).toBeTruthy();
+    expect(mockSubmit).not.toHaveBeenCalled();
+  });
+
+  it('shows "Invalid email address" for malformed optional email', () => {
+    render(<ClientInfoForm onSubmit={mockSubmit} />);
+    fireEvent.change(screen.getByPlaceholderText('Enter client name'), {
+      target: { value: 'Test Client' },
+    });
+    fireEvent.change(screen.getByPlaceholderText('+1 (555) 000-0000'), {
+      target: { value: '9876543210' },
+    });
+    fireEvent.change(screen.getByPlaceholderText('client@example.com'), {
+      target: { value: 'not-an-email' },
+    });
+    fireEvent.click(screen.getByRole('button', { name: /continue/i }));
+    expect(screen.getByText('Invalid email address')).toBeTruthy();
+    expect(mockSubmit).not.toHaveBeenCalled();
+  });
+
+  it('shows "Invalid GST format" for malformed optional GST', () => {
+    render(<ClientInfoForm onSubmit={mockSubmit} />);
+    fireEvent.change(screen.getByPlaceholderText('Enter client name'), {
+      target: { value: 'Test Client' },
+    });
+    fireEvent.change(screen.getByPlaceholderText('+1 (555) 000-0000'), {
+      target: { value: '9876543210' },
+    });
+    fireEvent.change(screen.getByPlaceholderText('Enter GST number'), {
+      target: { value: 'INVALID GST!' },
+    });
+    fireEvent.click(screen.getByRole('button', { name: /continue/i }));
+    expect(screen.getByText('Invalid GST format')).toBeTruthy();
+    expect(mockSubmit).not.toHaveBeenCalled();
+  });
+
+  // ─────────────────────────────────────────────
+  // Valid form submission
+  // ─────────────────────────────────────────────
+
+  it('calls onSubmit with correct data when all required fields are filled', () => {
+    render(<ClientInfoForm onSubmit={mockSubmit} />);
+    fireEvent.change(screen.getByPlaceholderText('Enter client name'), {
+      target: { value: 'John Doe' },
+    });
+    fireEvent.change(screen.getByPlaceholderText('+1 (555) 000-0000'), {
+      target: { value: '9876543210' },
+    });
+    fireEvent.click(screen.getByRole('button', { name: /continue/i }));
+    expect(mockSubmit).toHaveBeenCalledTimes(1);
+    expect(mockSubmit).toHaveBeenCalledWith(
+      expect.objectContaining({ name: 'John Doe', phone: '9876543210' }),
+    );
+  });
+
+  it('accepts a valid optional email without showing an error', () => {
+    render(<ClientInfoForm onSubmit={mockSubmit} />);
+    fireEvent.change(screen.getByPlaceholderText('Enter client name'), {
+      target: { value: 'Jane Doe' },
+    });
+    fireEvent.change(screen.getByPlaceholderText('+1 (555) 000-0000'), {
+      target: { value: '1234567890' },
+    });
+    fireEvent.change(screen.getByPlaceholderText('client@example.com'), {
+      target: { value: 'jane@example.com' },
+    });
+    fireEvent.click(screen.getByRole('button', { name: /continue/i }));
+    expect(mockSubmit).toHaveBeenCalledTimes(1);
+    expect(screen.queryByText('Invalid email address')).toBeNull();
+  });
+
+  // ─────────────────────────────────────────────
+  // Error clearing on typing
+  // ─────────────────────────────────────────────
+
+  it('clears the name error when the user starts typing in the name field', () => {
+    render(<ClientInfoForm onSubmit={mockSubmit} />);
+    fireEvent.click(screen.getByRole('button', { name: /continue/i }));
+    expect(screen.getByText('Client name is required')).toBeTruthy();
+    // Start typing — error disappears
+    fireEvent.change(screen.getByPlaceholderText('Enter client name'), {
+      target: { value: 'A' },
+    });
+    expect(screen.queryByText('Client name is required')).toBeNull();
+  });
+
+  it('clears the phone error when the user starts typing in the phone field', () => {
+    render(<ClientInfoForm onSubmit={mockSubmit} />);
+    fireEvent.change(screen.getByPlaceholderText('Enter client name'), {
+      target: { value: 'Test Client' },
+    });
+    fireEvent.click(screen.getByRole('button', { name: /continue/i }));
+    expect(screen.getByText('Phone is required')).toBeTruthy();
+    fireEvent.change(screen.getByPlaceholderText('+1 (555) 000-0000'), {
+      target: { value: '9' },
+    });
+    expect(screen.queryByText('Phone is required')).toBeNull();
+  });
+
+  // ─────────────────────────────────────────────
+  // Clear button
+  // ─────────────────────────────────────────────
+
+  it('Clear button resets all form fields to empty', () => {
+    render(<ClientInfoForm onSubmit={mockSubmit} />);
+    fireEvent.change(screen.getByPlaceholderText('Enter client name'), {
+      target: { value: 'Filled Name' },
+    });
+    fireEvent.change(screen.getByPlaceholderText('+1 (555) 000-0000'), {
+      target: { value: '9999999999' },
+    });
+    fireEvent.click(screen.getByRole('button', { name: /clear/i }));
+    expect(
+      (screen.getByPlaceholderText('Enter client name') as HTMLInputElement).value,
+    ).toBe('');
+    expect(
+      (screen.getByPlaceholderText('+1 (555) 000-0000') as HTMLInputElement).value,
+    ).toBe('');
+  });
+
+  // ─────────────────────────────────────────────
+  // initialData prop
+  // ─────────────────────────────────────────────
+
+  it('pre-fills all fields from initialData prop', () => {
     const initialData = {
       name: 'Acme Corp',
-      company: 'Acme',
+      company: 'Acme Ltd',
       address: '123 Main St',
-      gst: '27AABCB1234E1ZX',
+      gst: 'ACME12345',
       phone: '9876543210',
       email: 'acme@example.com',
     };
-
     render(<ClientInfoForm onSubmit={mockSubmit} initialData={initialData} />);
-
-    const inputs = screen.getAllByRole('textbox');
-    // At least one input should have the pre-filled name value
-    const values = inputs.map((el: any) => el.value);
-    expect(values).toContain('Acme Corp');
+    expect(
+      (screen.getByPlaceholderText('Enter client name') as HTMLInputElement).value,
+    ).toBe('Acme Corp');
+    expect(
+      (screen.getByPlaceholderText('+1 (555) 000-0000') as HTMLInputElement).value,
+    ).toBe('9876543210');
+    expect(
+      (screen.getByPlaceholderText('client@example.com') as HTMLInputElement).value,
+    ).toBe('acme@example.com');
   });
+
+  // ─────────────────────────────────────────────
+  // Back button
+  // ─────────────────────────────────────────────
 
   it('renders Back button when onBack prop is provided', () => {
     render(<ClientInfoForm onSubmit={mockSubmit} onBack={mockBack} />);
-    const backButton = screen.queryByRole('button', { name: /back/i });
-    expect(backButton).not.toBeNull();
+    expect(screen.queryByRole('button', { name: /back/i })).not.toBeNull();
   });
 
   it('does NOT render Back button when onBack prop is absent', () => {
