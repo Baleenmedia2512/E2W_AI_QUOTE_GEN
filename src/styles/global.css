@@ -1,5 +1,13 @@
 /* Global Mobile-First Styles */
 
+/* ── Strict Calibri enforcement on all mobile devices ──
+   Overrides any template or component font-family declarations. */
+@media (max-width: 768px) {
+  *, *::before, *::after {
+    font-family: 'Calibri', Calibri, sans-serif !important;
+  }
+}
+
 /* Safe area insets for notched phones */
 :root {
   --safe-area-top: env(safe-area-inset-top, 0px);
@@ -26,6 +34,7 @@ html {
   -webkit-text-size-adjust: 100%;
   -ms-text-size-adjust: 100%;
   text-size-adjust: 100%;
+  font-family: 'Calibri', Calibri, sans-serif !important;
   height: 100%;
   overflow-x: hidden;
 }
@@ -48,6 +57,7 @@ html {
 body {
   margin: 0;
   padding: 0;
+  font-family: 'Calibri', Calibri, sans-serif !important;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
   overscroll-behavior-y: none;
@@ -63,7 +73,8 @@ body {
   overflow-x: hidden;
   overflow-y: auto;
   height: 100vh;
-  background: #ffffff;
+  font-family: inherit;
+  background: #FFFFFF;
   padding-bottom: 64px; /* Space for bottom nav on mobile */
 }
 

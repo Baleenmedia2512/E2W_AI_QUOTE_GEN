@@ -19,13 +19,14 @@
 #pdf-page-3,
 #pdf-page-terms,
 #pdf-page-summary,
-[id^='pdf-service-'] {
-  width: 794px !important; /* A4 width at 96dpi */
+[id^="pdf-service-"] {
+  font-family: 'Calibri', Calibri, sans-serif !important;
+  width: 794px !important;           /* A4 width at 96dpi */
   min-width: 794px !important;
   max-width: 794px !important;
   box-sizing: border-box;
   background: #ffffff;
-  font-size: 13px; /* Fixed font size, not responsive */
+  font-size: 16px;                   /* Fixed font size, not responsive */
   line-height: 1.6;
   overflow: visible;
   margin: 0 !important;
@@ -109,7 +110,8 @@ html body [id^='pdf-service-ref-'] {
 #pdf-page-3 *,
 #pdf-page-terms *,
 #pdf-page-summary *,
-[id^='pdf-service-'] * {
+[id^="pdf-service-"] * {
+  font-family: 'Calibri', Calibri, sans-serif !important;
   max-width: 100% !important;
   flex-wrap: wrap !important; /* Allow wrapping if needed */
   word-wrap: break-word !important;
@@ -126,7 +128,7 @@ html body [id^='pdf-service-ref-'] {
   max-width: 100% !important;
   table-layout: auto; /* Allow auto layout for better fitting */
   border-collapse: collapse;
-  font-size: 13px !important; /* Fixed font size for tables */
+  font-size: 16px !important;          /* Fixed font size for tables */
 }
 
 #pdf-page-1 th,
@@ -135,10 +137,10 @@ html body [id^='pdf-service-ref-'] {
 #pdf-page-2 td,
 #pdf-page-summary th,
 #pdf-page-summary td,
-[id^='pdf-service-'] th,
-[id^='pdf-service-'] td {
-  padding: 4px 5px !important; /* Minimal cell padding for large margins */
-  font-size: 13px !important;
+[id^="pdf-service-"] th,
+[id^="pdf-service-"] td {
+  padding: 4px 5px !important;        /* Minimal cell padding for large margins */
+  font-size: 16px !important;
   word-break: break-word !important;
   line-height: 1.2 !important;
 }
@@ -253,7 +255,7 @@ html body [id^='pdf-service-ref-'] {
 }
 
 .template-corporate-minimal .system-generated-notice p {
-  font-size: 13px !important;
+  font-size: 16px !important;
   color: #1a3a5c !important;
   font-weight: 500 !important;
   letter-spacing: 0.3px !important;
@@ -286,7 +288,7 @@ html body [id^='pdf-service-ref-'] {
 }
 
 .template-classic-business .system-generated-notice p {
-  font-size: 12px !important;
+  font-size: 15px !important;
   color: #5a4a2a !important;
   font-weight: 500 !important;
   letter-spacing: 0.3px !important;
@@ -321,8 +323,8 @@ html body [id^='pdf-service-ref-'] {
   opacity: 0.7 !important;
 }
 
-[id^='pdf-service-ref-'] .pa-notice p {
-  font-size: 12px !important;
+[id^="pdf-service-ref-"] .pa-notice p {
+  font-size: 15px !important;
   color: #5a4a3a !important;
   font-weight: 500 !important;
   letter-spacing: 0.3px !important;
@@ -346,8 +348,8 @@ html body [id^='pdf-service-ref-'] {
   opacity: 0.8 !important;
 }
 
-[id^='pdf-service-ref-'] .ms-notice p {
-  font-size: 12px !important;
+[id^="pdf-service-ref-"] .ms-notice p {
+  font-size: 15px !important;
   color: #047857 !important;
   font-weight: 600 !important;
   letter-spacing: 0.3px !important;
@@ -375,18 +377,45 @@ html body [id^='pdf-service-ref-'] {
 
 .company-contact-footer .footer-content {
   display: flex !important;
+  flex-direction: column !important;
+  justify-content: center !important;
+  align-items: center !important;
+  gap: 6px !important;
+  font-size: 7px !important;
+  color: #636e72 !important;
+}
+
+.company-contact-footer .footer-row-top {
+  display: flex !important;
+  flex-direction: row !important;
   justify-content: center !important;
   align-items: center !important;
   flex-wrap: wrap !important;
-  gap: 20px !important;
-  font-size: 9px !important;
-  color: #636e72 !important;
+  gap: 4px 16px !important;
+  width: 100% !important;
+}
+
+.company-contact-footer .footer-row-bottom {
+  display: flex !important;
+  justify-content: center !important;
+  align-items: center !important;
+  width: 100% !important;
+  min-height: 14px !important;
+  text-align: center !important;
 }
 
 .company-contact-footer .footer-item {
   display: inline-flex !important;
   align-items: center !important;
   gap: 6px !important;
+  white-space: nowrap !important;
+}
+
+.company-contact-footer .footer-item--address {
+  white-space: normal !important;
+  word-break: break-word !important;
+  text-align: center !important;
+  justify-content: center !important;
 }
 
 /* Terms and notes sections */
@@ -404,9 +433,9 @@ html body [id^='pdf-service-ref-'] {
 #pdf-page-1 .notes-section p,
 #pdf-page-summary .terms-section ul,
 #pdf-page-summary .notes-section p,
-[id^='pdf-service-']:not([id^='pdf-service-ref-']) .terms-section ul,
-[id^='pdf-service-']:not([id^='pdf-service-ref-']) .notes-section p {
-  font-size: 9px !important; /* Smaller font for terms to fit with margins */
+[id^="pdf-service-"]:not([id^="pdf-service-ref-"]) .terms-section ul,
+[id^="pdf-service-"]:not([id^="pdf-service-ref-"]) .notes-section p {
+  font-size: 12px !important;          /* Smaller font for terms to fit with margins */
   line-height: 1.4 !important;
   padding-right: 0 !important;
   margin-right: 0 !important;
@@ -424,22 +453,22 @@ html body [id^='pdf-service-ref-'] {
 /* Adjust header/title sizes for better fit */
 #pdf-page-1 h1,
 #pdf-page-summary h1,
-[id^='pdf-service-']:not([id^='pdf-service-ref-']) h1 {
-  font-size: 14px !important;
+[id^="pdf-service-"]:not([id^="pdf-service-ref-"]) h1 {
+  font-size: 17px !important;
   margin-bottom: 8px !important;
 }
 
 #pdf-page-1 h2,
 #pdf-page-summary h2,
-[id^='pdf-service-']:not([id^='pdf-service-ref-']) h2 {
-  font-size: 13px !important;
+[id^="pdf-service-"]:not([id^="pdf-service-ref-"]) h2 {
+  font-size: 16px !important;
   margin-bottom: 6px !important;
 }
 
 #pdf-page-1 h3,
 #pdf-page-summary h3,
-[id^='pdf-service-']:not([id^='pdf-service-ref-']) h3 {
-  font-size: 11px !important;
+[id^="pdf-service-"]:not([id^="pdf-service-ref-"]) h3 {
+  font-size: 14px !important;
   margin-bottom: 6px !important;
 }
 
@@ -467,10 +496,10 @@ html body [id^='pdf-service-ref-'] {
 #pdf-page-summary .company-name,
 #pdf-page-summary .company-title,
 #pdf-page-summary .letterhead-name,
-[id^='pdf-service-']:not([id^='pdf-service-ref-']) .company-name,
-[id^='pdf-service-']:not([id^='pdf-service-ref-']) .company-title,
-[id^='pdf-service-']:not([id^='pdf-service-ref-']) .letterhead-name {
-  font-size: 16px !important;
+[id^="pdf-service-"]:not([id^="pdf-service-ref-"]) .company-name,
+[id^="pdf-service-"]:not([id^="pdf-service-ref-"]) .company-title,
+[id^="pdf-service-"]:not([id^="pdf-service-ref-"]) .letterhead-name {
+  font-size: 19px !important;
   margin-bottom: 4px !important;
 }
 
@@ -482,11 +511,11 @@ html body [id^='pdf-service-ref-'] {
 #pdf-page-summary .client-details,
 #pdf-page-summary .letterhead-info,
 #pdf-page-summary .company-info p,
-[id^='pdf-service-']:not([id^='pdf-service-ref-']) .company-details,
-[id^='pdf-service-']:not([id^='pdf-service-ref-']) .client-details,
-[id^='pdf-service-']:not([id^='pdf-service-ref-']) .letterhead-info,
-[id^='pdf-service-']:not([id^='pdf-service-ref-']) .company-info p {
-  font-size: 9px !important;
+[id^="pdf-service-"]:not([id^="pdf-service-ref-"]) .company-details,
+[id^="pdf-service-"]:not([id^="pdf-service-ref-"]) .client-details,
+[id^="pdf-service-"]:not([id^="pdf-service-ref-"]) .letterhead-info,
+[id^="pdf-service-"]:not([id^="pdf-service-ref-"]) .company-info p {
+  font-size: 19px !important;
   line-height: 1.3 !important;
   margin: 2px 0 !important;
 }
@@ -522,11 +551,11 @@ html body [id^='pdf-service-ref-'] {
 #pdf-page-2 .reference-images-title,
 [id^='pdf-service-ref-'] .reference-images-title {
   margin-top: 0 !important;
-  margin-bottom: 35px !important; /* Increased from 20px to 35px */
-  padding-bottom: 12px !important; /* Added padding */
-  font-size: 22px; /* Increased from 18px to 22px */
-  font-weight: 700; /* Increased from 600 to 700 */
-  color: #750926; /* Changed from #333 to match branding */
+  margin-bottom: 35px !important;  /* Increased from 20px to 35px */
+  padding-bottom: 12px !important;  /* Added padding */
+  font-size: 24px;  /* Increased from 18px to 22px */
+  font-weight: 700;  /* Increased from 600 to 700 */
+  color: #750926;  /* Changed from #333 to match branding */
   text-align: center;
   border-bottom: 3px solid #750926; /* Added border */
   page-break-after: avoid !important;
@@ -559,8 +588,8 @@ html body [id^='pdf-service-ref-'] {
 
 /* Image captions */
 #pdf-page-2 .reference-image-caption,
-[id^='pdf-service-ref-'] .reference-image-caption {
-  font-size: 12px;
+[id^="pdf-service-ref-"] .reference-image-caption {
+  font-size: 15px;
   color: #666;
   text-align: center;
   margin: 10px 0 25px 0; /* Increased bottom margin from 20px to 25px */
@@ -580,8 +609,8 @@ html body [id^='pdf-service-ref-'] {
 
 /* Service type headings in reference section */
 #pdf-page-2 .service-type-heading,
-[id^='pdf-service-ref-'] .service-type-heading {
-  font-size: 16px;
+[id^="pdf-service-ref-"] .service-type-heading {
+  font-size: 19px;
   font-weight: 600;
   color: #750926;
   margin: 30px 0 15px 0;
@@ -603,7 +632,7 @@ html body [id^='pdf-service-ref-'] {
   [id^='pdf-service-'] {
     width: 794px !important;
     min-width: 794px !important;
-    font-size: 13px !important;
+    font-size: 16px !important;
   }
 
   #pdf-page-1 *,
@@ -643,4 +672,181 @@ html body [id^='pdf-service-ref-'] {
   height: 0 !important;
   margin: 0 !important;
   padding: 0 !important;
+}
+
+/* ============================================================
+   PDF MOBILE READABILITY BOOST
+   ------------------------------------------------------------
+   PDFs are rendered at A4 width (794px). When viewed on mobile
+   PDF readers, the entire page is shrunk to fit screen width,
+   which makes 16px text appear ~6-8px to the user. These rules
+   bump all text ~25% larger so it stays readable on phones
+   without breaking layout (margins are generous enough to absorb
+   the increase). Uses html body for max specificity to override
+   the !important values defined earlier in this file.
+   ============================================================ */
+
+/* Base body text */
+html body #pdf-page-1,
+html body #pdf-page-2,
+html body #pdf-page-3,
+html body #pdf-page-terms,
+html body #pdf-page-summary,
+html body [id^="pdf-service-"] {
+  font-size: 19px !important;
+  line-height: 1.55 !important;
+}
+
+/* Tables (line items) */
+html body #pdf-page-1 table,
+html body #pdf-page-2 table,
+html body #pdf-page-summary table,
+html body [id^="pdf-service-"] table,
+html body #pdf-page-1 th,
+html body #pdf-page-1 td,
+html body #pdf-page-2 th,
+html body #pdf-page-2 td,
+html body #pdf-page-summary th,
+html body #pdf-page-summary td,
+html body [id^="pdf-service-"] th,
+html body [id^="pdf-service-"] td {
+  font-size: 19px !important;
+}
+
+/* Headings */
+html body #pdf-page-1 h1,
+html body #pdf-page-summary h1,
+html body [id^="pdf-service-"]:not([id^="pdf-service-ref-"]) h1 {
+  font-size: 22px !important;
+}
+
+html body #pdf-page-1 h2,
+html body #pdf-page-summary h2,
+html body [id^="pdf-service-"]:not([id^="pdf-service-ref-"]) h2 {
+  font-size: 20px !important;
+}
+
+html body #pdf-page-1 h3,
+html body #pdf-page-summary h3,
+html body [id^="pdf-service-"]:not([id^="pdf-service-ref-"]) h3 {
+  font-size: 18px !important;
+}
+
+/* Company name / title */
+html body #pdf-page-1 .company-name,
+html body #pdf-page-1 .company-title,
+html body #pdf-page-1 .letterhead-name,
+html body #pdf-page-summary .company-name,
+html body #pdf-page-summary .company-title,
+html body #pdf-page-summary .letterhead-name,
+html body [id^="pdf-service-"]:not([id^="pdf-service-ref-"]) .company-name,
+html body [id^="pdf-service-"]:not([id^="pdf-service-ref-"]) .company-title,
+html body [id^="pdf-service-"]:not([id^="pdf-service-ref-"]) .letterhead-name {
+  font-size: 24px !important;
+}
+
+/* Company / client details */
+html body #pdf-page-1 .company-details,
+html body #pdf-page-1 .client-details,
+html body #pdf-page-1 .letterhead-info,
+html body #pdf-page-1 .company-info p,
+html body #pdf-page-summary .company-details,
+html body #pdf-page-summary .client-details,
+html body #pdf-page-summary .letterhead-info,
+html body #pdf-page-summary .company-info p,
+html body [id^="pdf-service-"]:not([id^="pdf-service-ref-"]) .company-details,
+html body [id^="pdf-service-"]:not([id^="pdf-service-ref-"]) .client-details,
+html body [id^="pdf-service-"]:not([id^="pdf-service-ref-"]) .letterhead-info,
+html body [id^="pdf-service-"]:not([id^="pdf-service-ref-"]) .company-info p {
+  font-size: 15px !important;
+  line-height: 1.4 !important;
+}
+
+/* Terms & notes — keep slightly smaller but still readable */
+html body #pdf-page-1 .terms-section ul,
+html body #pdf-page-1 .terms-section ul li,
+html body #pdf-page-1 .terms-section table,
+html body #pdf-page-1 .terms-section table td,
+html body #pdf-page-1 .terms-section table th,
+html body #pdf-page-1 .notes-section p,
+html body #pdf-page-summary .terms-section ul,
+html body #pdf-page-summary .terms-section ul li,
+html body #pdf-page-summary .terms-section table,
+html body #pdf-page-summary .terms-section table td,
+html body #pdf-page-summary .terms-section table th,
+html body #pdf-page-summary .notes-section p,
+html body #pdf-page-terms .terms-section ul,
+html body #pdf-page-terms .terms-section ul li,
+html body #pdf-page-terms .terms-section table,
+html body #pdf-page-terms .terms-section table td,
+html body #pdf-page-terms .terms-section table th,
+html body [id^="pdf-service-"]:not([id^="pdf-service-ref-"]) .terms-section ul,
+html body [id^="pdf-service-"]:not([id^="pdf-service-ref-"]) .terms-section ul li,
+html body [id^="pdf-service-"]:not([id^="pdf-service-ref-"]) .terms-section table,
+html body [id^="pdf-service-"]:not([id^="pdf-service-ref-"]) .terms-section table td,
+html body [id^="pdf-service-"]:not([id^="pdf-service-ref-"]) .terms-section table th,
+html body [id^="pdf-service-"]:not([id^="pdf-service-ref-"]) .notes-section p {
+  font-size: 15px !important;
+  line-height: 1.5 !important;
+}
+
+/* Bank details — smaller than terms list */
+html body #pdf-page-1 .bank-details-section table,
+html body #pdf-page-1 .bank-details-section table td,
+html body #pdf-page-1 .bank-details-section table th,
+html body #pdf-page-terms .bank-details-section table,
+html body #pdf-page-terms .bank-details-section table td,
+html body #pdf-page-terms .bank-details-section table th,
+html body #pdf-page-summary .bank-details-section table,
+html body #pdf-page-summary .bank-details-section table td,
+html body #pdf-page-summary .bank-details-section table th,
+html body [id^="pdf-service-"] .bank-details-section table,
+html body [id^="pdf-service-"] .bank-details-section table td,
+html body [id^="pdf-service-"] .bank-details-section table th {
+  font-size: 14px !important;
+  line-height: 1.5 !important;
+}
+
+/* System-generated / signed notices */
+html body .template-corporate-minimal .system-generated-notice p,
+html body .template-classic-business .system-generated-notice p,
+html body [id^="pdf-service-ref-"] .pa-notice p,
+html body [id^="pdf-service-ref-"] .ms-notice p {
+  font-size: 18px !important;
+}
+
+/* Footer contact bar — small font so long address fits on one line */
+html body .company-contact-footer .footer-content {
+  font-size: 8px !important;
+  line-height: 1.3 !important;
+}
+
+html body .company-contact-footer .footer-row-top {
+  flex-wrap: nowrap !important;
+  row-gap: 4px !important;
+}
+
+html body .company-contact-footer .footer-item,
+html body .company-contact-footer .footer-item * {
+  white-space: nowrap !important;
+  word-break: keep-all !important;
+}
+
+/* Address item in bottom row — allow wrapping */
+html body .company-contact-footer .footer-item--address,
+html body .company-contact-footer .footer-item--address * {
+  white-space: normal !important;
+  word-break: break-word !important;
+  text-align: center !important;
+}
+
+html body .company-contact-footer .footer-item a {
+  text-decoration: none !important;
+  color: #0066cc !important;
+}
+
+/* Service type headings in reference section */
+html body #pdf-page-2 .service-type-heading,
+html body [id^="pdf-service-ref-"] .service-type-heading {
+  font-size: 22px !important;
 }

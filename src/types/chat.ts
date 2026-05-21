@@ -56,6 +56,14 @@ export interface Message {
     availableCities: string[];
   };
 
+  // CITY SERVICE LIST — shown when user types just a city name (e.g. "madurai")
+  // to surface every service available in that city as clickable chips.
+  isCityServiceList?: boolean;
+  cityServiceList?: Array<{
+    city: string;
+    services: Array<{ name: string; minQty: number }>;
+  }>;
+
   // DEPRECATED (kept for backward compatibility)
   isServiceNotFound?: boolean;
   availableServices?: ServiceSuggestion[];

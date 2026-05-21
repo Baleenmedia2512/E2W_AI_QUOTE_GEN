@@ -4,7 +4,7 @@
   max-width: 210mm; /* A4 width */
   min-height: 297mm; /* A4 height */
   margin: 0 auto;
-  font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+  font-family: 'Calibri';
   color: #2d3436;
   line-height: 1.4;
   position: relative;
@@ -51,10 +51,20 @@
 }
 
 .template-corporate-minimal .company-logo {
-  max-width: 220px;
-  max-height: 100px;
+  max-width: 420px;
+  max-height: 190px;
   object-fit: contain;
   display: inline-block;
+}
+
+.template-corporate-minimal .quote-title {
+  text-align: center;
+  font-size: 27px;
+  font-weight: 800;
+  color: #1a3a5c;
+  margin: 18px 0 20px 0;
+  letter-spacing: 6px;
+  text-transform: uppercase;
 }
 
 .template-corporate-minimal .company-name {
@@ -68,13 +78,25 @@
 
 .template-corporate-minimal .company-details {
   flex: 1;
-  font-size: 11px;
+  font-size: 20px;
   color: #636e72;
-  line-height: 1.5;
+  line-height: 1.7;
 }
 
 .template-corporate-minimal .company-details p {
-  margin: 2px 0;
+  margin: 4px 0;
+}
+
+/* Clickable contact links — brand blue + underline so they're clearly tappable */
+.template-corporate-minimal .contact-link {
+  color: #2980b9 !important;
+  text-decoration: underline;
+  word-break: break-word;
+  padding: 2px 0;
+}
+
+.template-corporate-minimal .contact-link:hover {
+  color: #1a3a5c;
 }
 
 .template-corporate-minimal .quote-meta {
@@ -92,17 +114,17 @@
 }
 
 .template-corporate-minimal .meta-details {
-  font-size: 10px;
+  font-size: 17px;
   background: #f0f4f8;
   border-radius: 6px;
-  padding: 6px 10px;
+  padding: 14px 18px;
 }
 
 .template-corporate-minimal .meta-row {
   display: flex;
   justify-content: flex-end;
   align-items: baseline;
-  margin-bottom: 4px;
+  margin-bottom: 8px;
   gap: 10px;
 }
 
@@ -114,7 +136,7 @@
   font-weight: 600;
   color: #636e72;
   white-space: nowrap;
-  font-size: 11.5px;
+  font-size: 18.5px;
   text-transform: uppercase;
   letter-spacing: 0.3px;
 }
@@ -122,42 +144,42 @@
 .template-corporate-minimal .meta-value {
   color: #1a3a5c;
   font-weight: 600;
-  font-size: 13px;
+  font-size: 20px;
 }
 
 /* ─── Client Section ─── */
 .template-corporate-minimal .client-section {
   background: #f7f9fc;
-  padding: 14px 20px;
+  padding: 18px 24px;
   margin-bottom: 18px;
   border-left: 4px solid #2980b9;
   border-radius: 0 6px 6px 0;
 }
 
 .template-corporate-minimal .client-section h3 {
-  font-size: 10px;
+  font-size: 20px;
   font-weight: 700;
   color: #2980b9;
-  margin: 0 0 6px 0;
+  margin: 0 0 10px 0;
   text-transform: uppercase;
   letter-spacing: 1.5px;
 }
 
 .template-corporate-minimal .client-details {
-  font-size: 12.5px;
+  font-size: 20.5px;
   line-height: 1.5;
   color: #2d3436;
 }
 
 .template-corporate-minimal .client-name {
   font-weight: 700;
-  font-size: 15px;
+  font-size: 21px;
   color: #1a3a5c;
-  margin: 0 0 2px 0;
+  margin: 0 0 5px 0;
 }
 
 .template-corporate-minimal .client-details p {
-  margin: 2px 0;
+  margin: 5px 0;
 }
 
 /* ─── Quote Items Table ─── */
@@ -177,7 +199,7 @@
   table-layout: fixed;
   border-collapse: separate;
   border-spacing: 0;
-  font-size: 13px;
+  font-size: 14.5px;
   border-radius: 6px;
   overflow: visible; /* Must not clip rows during PDF canvas capture */
   box-shadow: 0 1px 4px rgba(0, 0, 0, 0.06);
@@ -190,13 +212,13 @@
 }
 
 .template-corporate-minimal .items-table th {
-  padding: 10px 8px;
+  padding: 13px 10px;
   text-align: right;
   font-weight: 600;
   text-transform: uppercase;
   letter-spacing: 0.8px;
-  font-size: 13px;
-  border-right: 1px solid rgba(255, 255, 255, 0.2);
+  font-size: 14.5px;
+  border-right: 1px solid rgba(255,255,255,0.2);
 }
 .template-corporate-minimal .items-table th:last-child {
   border-right: none;
@@ -204,14 +226,14 @@
 
 .template-corporate-minimal .items-table th .th-main {
   display: block;
-  font-size: 13px;
+  font-size: 14.5px;
   font-weight: 700;
   letter-spacing: 0.8px;
 }
 
 .template-corporate-minimal .items-table th .th-sub {
   display: block;
-  font-size: 11px;
+  font-size: 12.5px;
   font-weight: 500;
   opacity: 0.8;
   letter-spacing: 0.3px;
@@ -271,7 +293,7 @@
 .template-corporate-minimal .item-remark {
   text-align: left;
   color: #555;
-  font-size: 11px;
+  font-size: 12.5px;
   vertical-align: top;
   padding-right: 8px;
   word-wrap: break-word;
@@ -284,22 +306,22 @@
 /* ─── Wide table variant: GST columns present — fits all 7-8 cols inside A4 width ─── */
 .template-corporate-minimal .items-table--gst {
   table-layout: fixed;
-  font-size: 11.5px;
+  font-size: 13px;
 }
 .template-corporate-minimal .items-table--gst th {
-  padding: 7px 4px;
-  font-size: 11px;
+  padding: 12px 8px;
+  font-size: 22px;
   letter-spacing: 0.3px;
 }
 .template-corporate-minimal .items-table--gst th .th-main {
-  font-size: 11px;
+  font-size: 22px;
 }
 .template-corporate-minimal .items-table--gst th .th-sub {
-  font-size: 10px;
+  font-size: 16px;
 }
 .template-corporate-minimal .items-table--gst td {
-  padding: 7px 4px;
-  font-size: 11.5px;
+  padding: 11px 8px;
+  font-size: 16px;
 }
 .template-corporate-minimal .items-table--gst .col-description {
   width: 16%;
@@ -338,10 +360,10 @@
   max-width: 14%;
 }
 .template-corporate-minimal .items-table--gst .item-title {
-  font-size: 12px;
+  font-size: 16.5px;
 }
 .template-corporate-minimal .items-table--gst .item-details {
-  font-size: 10.5px;
+  font-size: 15px;
 }
 /* Remove nowrap so numbers can wrap within tight columns */
 .template-corporate-minimal .items-table--gst .item-quantity,
@@ -360,16 +382,16 @@
   white-space: nowrap;
 }
 .template-corporate-minimal .items-table--gst .tfoot-label {
-  padding: 8px 6px;
+  padding: 12px 10px;
 }
 .template-corporate-minimal .items-table--gst .tfoot-excl,
 .template-corporate-minimal .items-table--gst .tfoot-gst-amt {
-  padding: 8px 6px;
-  font-size: 13px;
+  padding: 12px 10px;
+  font-size: 17.5px;
 }
 .template-corporate-minimal .items-table--gst .tfoot-incl {
-  padding: 8px 6px;
-  font-size: 15px;
+  padding: 12px 10px;
+  font-size: 19.5px;
 }
 
 .template-corporate-minimal .items-table tbody tr {
@@ -390,10 +412,10 @@
   color: #ffffff;
 }
 .template-corporate-minimal .items-table tfoot .tfoot-label {
-  padding: 10px 14px;
+  padding: 13px 16px;
   font-weight: 700;
-  font-size: 12px;
-  color: rgba(255, 255, 255, 0.85);
+  font-size: 13.5px;
+  color: rgba(255,255,255,0.85);
   text-transform: uppercase;
   letter-spacing: 0.4px;
   border-top: 2px solid #1a3a5c;
@@ -401,17 +423,17 @@
 .template-corporate-minimal .items-table tfoot .tfoot-excl,
 .template-corporate-minimal .items-table tfoot .tfoot-gst-pct,
 .template-corporate-minimal .items-table tfoot .tfoot-gst-amt {
-  padding: 10px 14px;
+  padding: 13px 16px;
   font-weight: 700;
-  font-size: 15px;
+  font-size: 16.5px;
   color: #ffffff;
   text-align: right;
   border-top: 2px solid #1a3a5c;
 }
 .template-corporate-minimal .items-table tfoot .tfoot-incl {
-  padding: 8px 14px 8px 14px;
+  padding: 12px 16px;
   font-weight: 800;
-  font-size: 19px;
+  font-size: 20.5px;
   color: #ffffff;
   text-align: right;
   border-top: 2px solid #1a3a5c;
@@ -428,7 +450,7 @@
 }
 
 .template-corporate-minimal .items-table td {
-  padding: 10px 8px;
+  padding: 13px 10px;
   vertical-align: middle;
 }
 
@@ -440,11 +462,11 @@
   font-weight: 600;
   color: #1a3a5c;
   margin-bottom: 3px;
-  font-size: 13.5px;
+  font-size: 15px;
 }
 
 .template-corporate-minimal .item-details {
-  font-size: 11.5px;
+  font-size: 13px;
   color: #636e72;
   line-height: 1.5;
   margin-top: 2px;
@@ -487,12 +509,12 @@
 
 .template-corporate-minimal .item-gst {
   color: #1a3a5c;
-  font-size: 13px;
+  font-size: 14.5px;
 }
 
 .template-corporate-minimal .item-final {
   color: #1a3a5c;
-  font-size: 13.5px;
+  font-size: 15px;
   background: #e8f0fb;
 }
 
@@ -516,8 +538,8 @@
   display: flex;
   justify-content: space-between;
   align-items: center;
-  padding: 8px 16px;
-  font-size: 13px;
+  padding: 11px 18px;
+  font-size: 16px;
 }
 
 .template-corporate-minimal .total-row:not(.total-final) {
@@ -528,7 +550,7 @@
 .template-corporate-minimal .total-label {
   font-weight: 600;
   color: #636e72;
-  font-size: 12.5px;
+  font-size: 15.5px;
 }
 
 .template-corporate-minimal .total-value {
@@ -540,20 +562,20 @@
 .template-corporate-minimal .total-final {
   background: linear-gradient(135deg, #1a3a5c 0%, #1e4d78 100%);
   color: #ffffff;
-  font-size: 15px;
+  font-size: 18px;
   font-weight: 700;
-  padding: 10px 16px;
+  padding: 14px 20px;
   margin-top: 2px;
 }
 
 .template-corporate-minimal .total-final .total-label {
   color: rgba(255, 255, 255, 0.85);
-  font-size: 13px;
+  font-size: 16px;
 }
 
 .template-corporate-minimal .total-final .total-value {
   color: #ffffff;
-  font-size: 17px;
+  font-size: 20px;
   font-weight: 800;
   letter-spacing: 0.3px;
 }
@@ -561,23 +583,23 @@
 /* ─── Notes Section ─── */
 .template-corporate-minimal .notes-section {
   background: #fefdf5;
-  padding: 12px 16px;
+  padding: 16px 20px;
   margin-bottom: 14px;
   border-left: 4px solid #f0c040;
   border-radius: 0 6px 6px 0;
 }
 
 .template-corporate-minimal .notes-section h3 {
-  font-size: 10px;
+  font-size: 13px;
   font-weight: 700;
   color: #1a3a5c;
-  margin: 0 0 4px 0;
+  margin: 0 0 8px 0;
   text-transform: uppercase;
   letter-spacing: 1px;
 }
 
 .template-corporate-minimal .notes-section p {
-  font-size: 11.5px;
+  font-size: 14.5px;
   color: #555;
   margin: 0;
   line-height: 1.5;
@@ -587,16 +609,16 @@
 .template-corporate-minimal .terms-section {
   margin-top: 24px;
   margin-bottom: 14px;
-  padding: 12px 16px;
+  padding: 16px 20px;
   background: #f7f9fc;
   border-radius: 6px;
 }
 
 .template-corporate-minimal .terms-section h3 {
-  font-size: 10px;
+  font-size: 13px;
   font-weight: 700;
   color: #1a3a5c;
-  margin: 0 0 6px 0;
+  margin: 0 0 10px 0;
   text-transform: uppercase;
   letter-spacing: 1.5px;
 }
@@ -608,9 +630,9 @@
 }
 
 .template-corporate-minimal .terms-section li {
-  font-size: 11.5px;
+  font-size: 14.5px;
   color: #555;
-  padding: 3px 0 3px 16px;
+  padding: 5px 0 5px 20px;
   position: relative;
   line-height: 1.45;
 }
@@ -629,7 +651,7 @@
 /* ─── System Generated Notice ─── */
 .template-corporate-minimal .system-generated-notice {
   margin-top: 32px;
-  padding: 16px 24px;
+  padding: 20px 28px;
   background: linear-gradient(135deg, #f0f7ff 0%, #e8f4f8 100%);
   border: 1px solid #b8d4e8;
   border-left: 4px solid #1a3a5c;
@@ -640,7 +662,7 @@
 }
 
 .template-corporate-minimal .system-generated-notice p {
-  font-size: 13px;
+  font-size: 16px;
   color: #1a3a5c;
   margin: 0;
   font-weight: 500;
@@ -653,7 +675,7 @@
   font-weight: 700;
   font-style: normal;
   color: #1a3a5c;
-  font-size: 12px;
+  font-size: 15px;
 }
 
 /* ─── Company Contact Footer ─── */
@@ -664,14 +686,22 @@
   bottom: unset !important;
   left: unset !important;
   right: unset !important;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  width: 100%;
 }
 
 .template-corporate-minimal .company-contact-footer .footer-page-number {
-  flex: 0 0 100%;
-  text-align: center;
-  font-size: 11px;
+  display: block;
+  width: 100%;
+  text-align: center !important;
+  font-size: 8px;
   font-weight: 600;
   color: #636e72;
+  margin-top: 4px;
+  -webkit-text-size-adjust: none;
+  text-size-adjust: none;
 }
 
 .template-corporate-minimal .company-contact-footer .footer-divider {
@@ -684,10 +714,23 @@
   display: flex;
   justify-content: center;
   align-items: center;
-  flex-wrap: wrap;
-  gap: 20px;
-  font-size: 11px;
+  flex-wrap: nowrap;
+  gap: 16px;
+  font-size: 7px !important;
   color: #636e72;
+  width: 100%;
+  -webkit-text-size-adjust: none;
+  text-size-adjust: none;
+}
+
+.template-corporate-minimal .company-contact-footer .footer-row-top {
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  flex-wrap: nowrap;
+  gap: 16px;
+  width: 100%;
+  overflow: hidden;
 }
 
 .template-corporate-minimal .company-contact-footer .footer-item {
@@ -720,8 +763,8 @@
   }
 
   .template-corporate-minimal .company-logo {
-    max-width: 220px;
-    max-height: 100px;
+    max-width: 320px;
+    max-height: 140px;
   }
 
   .template-corporate-minimal .company-name {
