@@ -3,7 +3,9 @@
 /* ── Strict Calibri enforcement on all mobile devices ──
    Overrides any template or component font-family declarations. */
 @media (max-width: 768px) {
-  *, *::before, *::after {
+  *,
+  *::before,
+  *::after {
     font-family: 'Calibri', Calibri, sans-serif !important;
   }
 }
@@ -74,7 +76,7 @@ body {
   overflow-y: auto;
   height: 100vh;
   font-family: inherit;
-  background: #FFFFFF;
+  background: #ffffff;
   padding-bottom: 64px; /* Space for bottom nav on mobile */
 }
 

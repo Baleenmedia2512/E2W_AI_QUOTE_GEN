@@ -52,7 +52,7 @@ vi.mock('../../src/services/pdfExportService', () => ({
 }));
 
 vi.mock('../../src/utils/logger', () => ({
-  logger: { info: vi.fn(), warn: vi.fn(), error: vi.fn() },
+  logger: { info: vi.fn(), warn: vi.fn(), error: vi.fn(), debug: vi.fn() },
 }));
 
 // ── Template component mocks ──────────────────────────────────────────────────

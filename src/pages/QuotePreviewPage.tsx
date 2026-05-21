@@ -1,4 +1,4 @@
-import React, { useState, useRef, useEffect, useMemo } from 'react';
+﻿import React, { useState, useRef, useEffect, useMemo } from 'react';
 import { useHistory } from 'react-router-dom';
 
 import { ClassicBusiness } from '../components/Templates/ClassicBusiness';
@@ -28,21 +28,20 @@ export const QuotePreviewPage: React.FC = () => {
   } = useAppStore();
 
   // Build flat merged pages — reactive to activeProposals (populated after async restore)
-  const mergedActiveImages = useMemo<ExtractedPage[]>(() =>
-    activeProposals.length > 0
-      ? activeProposals.flatMap(p => p.pageImages || [])
-      : [],
-  [activeProposals]);
+  const mergedActiveImages = useMemo<ExtractedPage[]>(
+    () => (activeProposals.length > 0 ? activeProposals.flatMap((p) => p.pageImages || []) : []),
+    [activeProposals],
+  );
 
   // Build city→pages map for per-PDF isolation in ReferenceImages
   // Key = lowercased fileName (e.g. "coimbatore rate card.pdf") → pages from that PDF
   // useMemo ensures the map updates after restoreActiveProposals() finishes async
   const proposalPageMap = useMemo<Record<string, ExtractedPage[]>>(() => {
     const map: Record<string, ExtractedPage[]> = {};
-    activeProposals.forEach(p => {
+    activeProposals.forEach((p) => {
       map[p.fileName.toLowerCase()] = p.pageImages || [];
     });
-    console.log(`🗺️ proposalPageMap rebuilt: ${Object.keys(map).length} PDFs`, Object.keys(map));
+    logger.debug(`🗺️ proposalPageMap rebuilt: ${Object.keys(map).length} PDFs`, Object.keys(map));
     return map;
   }, [activeProposals]);
 

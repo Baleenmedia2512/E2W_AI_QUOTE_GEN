@@ -1,4 +1,4 @@
-/**
+﻿/**
  * useCityServiceRegistry
  * ──────────────────────
  * Builds and persists a city→services registry by calling Gemini once per
@@ -23,35 +23,38 @@ import { useAppStore } from '../store';
 import { logger } from '../utils/logger';
 
 // ── Shared types ─────────────────────────────────────────────────────────────
-export interface ServiceQuantity { min: number; max: number | null; }
+export interface ServiceQuantity {
+  min: number;
+  max: number | null;
+}
 
 /**
  * Structured per-service entry. unitPrice/uom/etc. are nullable today and
  * will be filled in by the upcoming Pricing-Summary table parser.
  */
 export interface ServiceEntry {
-  canonicalName: string;        // normalized + synonyms applied (lookup key)
-  displayName: string;          // first/prettiest variant seen, shown in UI
-  aliases: string[];            // every other variant the same service appears as
+  canonicalName: string; // normalized + synonyms applied (lookup key)
+  displayName: string; // first/prettiest variant seen, shown in UI
+  aliases: string[]; // every other variant the same service appears as
   minQty: number;
   maxQty: number | null;
-  unitPrice: number | null;     // ₹ per unit (filled later)
-  uom: string | null;           // "per board", "per metro/month", …
+  unitPrice: number | null; // ₹ per unit (filled later)
+  uom: string | null; // "per board", "per metro/month", …
   campaignPrice: number | null; // total for min qty
   remarks: string | null;
   size: string | null;
-  rowIndex: number | null;      // position in PDF Pricing-Summary table
+  rowIndex: number | null; // position in PDF Pricing-Summary table
 }
 
 export interface CityRegistry {
   // ── New (v2) ──
   city: string;
-  entries: Record<string, ServiceEntry>;   // keyed by canonicalName
-  idf: Record<string, number>;             // token → inverse-document-frequency weight
+  entries: Record<string, ServiceEntry>; // keyed by canonicalName
+  idf: Record<string, number>; // token → inverse-document-frequency weight
   source: 'gemini' | 'pricing_summary';
-  builtAt: number;                          // Date.now() when built
-  ttlDays: number;                          // expiry hint for localStorage
-  pdfHash: string | null;                   // sha-256 of source PDF text (cache invalidation)
+  builtAt: number; // Date.now() when built
+  ttlDays: number; // expiry hint for localStorage
+  pdfHash: string | null; // sha-256 of source PDF text (cache invalidation)
 
   // ── Legacy (derived from entries — kept for backward compat) ──
   services: string[];
@@ -73,11 +76,13 @@ const DEFAULT_TTL_DAYS = 7;
 
 // One-time cleanup of legacy cache keys so they don't sit in storage forever.
 try {
-  ['e2w_city_service_registry'].forEach(k => sessionStorage.removeItem(k));
+  ['e2w_city_service_registry'].forEach((k) => sessionStorage.removeItem(k));
   Object.keys(localStorage)
-    .filter(k => k.startsWith('e2w_registry_v2:') && !k.startsWith(LOCAL_KEY_PREFIX))
-    .forEach(k => localStorage.removeItem(k));
-} catch { /* ignore */ }
+    .filter((k) => k.startsWith('e2w_registry_v2:') && !k.startsWith(LOCAL_KEY_PREFIX))
+    .forEach((k) => localStorage.removeItem(k));
+} catch {
+  /* ignore */
+}
 
 export const getCityServiceRegistry = () => _registry;
 
@@ -108,15 +113,17 @@ export const KNOWN_CITY_LIST = [
 function normalizeSvc(s: string): string {
   return s
     .toLowerCase()
-    .replace(/\(\d+\s*\/\s*\d+\)/g, ' ')                 // strip "(1/3)" page markers FIRST
-    .replace(/[\u2013\u2014\u2212–—\-\/]/g, ' ')         // dashes & slashes
-    .replace(/[()[\]{}]/g, ' ')                          // remaining brackets
-    .replace(/\b(boards|hoardings|posters|screens|stations|ads|copies|stickers|banners|frames|cabs|autos|buses|vans|metros|hoarding)\b/g,
-      m => {
+    .replace(/\(\d+\s*\/\s*\d+\)/g, ' ') // strip "(1/3)" page markers FIRST
+    .replace(/[\u2013\u2014\u2212–—\-\/]/g, ' ') // dashes & slashes
+    .replace(/[()[\]{}]/g, ' ') // remaining brackets
+    .replace(
+      /\b(boards|hoardings|posters|screens|stations|ads|copies|stickers|banners|frames|cabs|autos|buses|vans|metros|hoarding)\b/g,
+      (m) => {
         // singularize, but keep "hoarding" mapped to "hoarding" (already singular)
         if (m === 'hoarding') return 'hoarding';
         return m.replace(/s$/, '');
-      })
+      },
+    )
     .replace(/\s+/g, ' ')
     .trim();
 }
@@ -125,7 +132,7 @@ function normalizeSvc(s: string): string {
 // Map "ads" → "branding" so detail-page headings collapse onto summary rows.
 // Keep this list small; add entries only when a real mismatch is observed.
 const SYNONYMS: Array<[RegExp, string]> = [
-  [/\bad\b/g, 'branding'],                 // "lobby screen ad" → "lobby screen branding"
+  [/\bad\b/g, 'branding'], // "lobby screen ad" → "lobby screen branding"
   [/\badvertising\b/g, 'branding'],
   // NOTE: do NOT collapse "sticker" → "branding". "Auto Back Stickers" is a
   // distinct rate-card row from Auto Full/Semi Branding — collapsing it
@@ -150,7 +157,8 @@ export function canonicalizeServiceName(s: string): string {
 // price/spec line. Headings are short, mostly ALL-CAPS (or title case), have
 // no rupee/percent/digits-with-units, and don't contain words like "price",
 // "duration", "min." etc.
-const HEADING_BLOCKLIST = /\b(price|rental|display|design|specification|specifications|reference|image|grand total|total|terms|conditions|gst|lead time|prior notice|min\.|quantity|duration|material|back to summary|email|phone|sales@|proposal|day image|night image|left side|right side|back side|back top|size|back to)\b/i;
+const HEADING_BLOCKLIST =
+  /\b(price|rental|display|design|specification|specifications|reference|image|grand total|total|terms|conditions|gst|lead time|prior notice|min\.|quantity|duration|material|back to summary|email|phone|sales@|proposal|day image|night image|left side|right side|back side|back top|size|back to)\b/i;
 const RUPEE_OR_NUMBER_HEAVY = /(₹|\bRs\.?\b|\d{2,}|%|inches|days?|months?)/i;
 
 function isPlausibleHeading(s: string): boolean {
@@ -207,8 +215,11 @@ async function hashText(text: string): Promise<string> {
     const enc = new TextEncoder().encode(text.slice(0, 8000));
     const buf = await crypto.subtle.digest('SHA-256', enc);
     return Array.from(new Uint8Array(buf).slice(0, 8))
-      .map(b => b.toString(16).padStart(2, '0')).join('');
-  } catch { return ''; }
+      .map((b) => b.toString(16).padStart(2, '0'))
+      .join('');
+  } catch {
+    return '';
+  }
 }
 
 // ── Persistence helpers ──────────────────────────────────────────────────────
@@ -219,14 +230,18 @@ function persistToSession() {
       snapshot[key] = val;
     });
     sessionStorage.setItem(SESSION_KEY, JSON.stringify(snapshot));
-  } catch { /* quota exceeded — silently skip */ }
+  } catch {
+    /* quota exceeded — silently skip */
+  }
 }
 
 function persistToLocal(cityKey: string, reg: CityRegistry) {
   try {
     const payload = { data: reg, expiresAt: reg.builtAt + reg.ttlDays * 86_400_000 };
     localStorage.setItem(LOCAL_KEY_PREFIX + cityKey, JSON.stringify(payload));
-  } catch { /* ignore */ }
+  } catch {
+    /* ignore */
+  }
 }
 
 function readFromLocal(cityKey: string): CityRegistry | null {
@@ -239,12 +254,19 @@ function readFromLocal(cityKey: string): CityRegistry | null {
       return null;
     }
     // Reject empty/failed snapshots so we re-parse from source
-    if (!data || !data.entries || Object.keys(data.entries).length === 0 || data.status !== 'ready') {
+    if (
+      !data ||
+      !data.entries ||
+      Object.keys(data.entries).length === 0 ||
+      data.status !== 'ready'
+    ) {
       localStorage.removeItem(LOCAL_KEY_PREFIX + cityKey);
       return null;
     }
     return data;
-  } catch { return null; }
+  } catch {
+    return null;
+  }
 }
 
 // ── Restore from sessionStorage on first import ──────────────────────────────
@@ -263,20 +285,26 @@ try {
         _registry.set(key, v);
       } else {
         dropped++;
-        console.log(`♻️ [Registry] Dropping stale "${key}" snapshot (status=${v.status}, entries=${v.entries ? Object.keys(v.entries).length : 0}) — will rebuild.`);
+        logger.debug(
+          `♻️ [Registry] Dropping stale "${key}" snapshot (status=${v.status}, entries=${v.entries ? Object.keys(v.entries).length : 0}) — will rebuild.`,
+        );
       }
     });
     if (_registry.size > 0) {
-      console.log('♻️ [Registry] Restored from sessionStorage:', [..._registry.keys()].join(', '));
+      logger.debug('♻️ [Registry] Restored from sessionStorage:', [..._registry.keys()].join(', '));
     }
     if (dropped > 0) {
       // Re-persist so the dropped entries don't keep coming back on reload
       const snapshot: Record<string, CityRegistry> = {};
-      _registry.forEach((val, key) => { snapshot[key] = val; });
+      _registry.forEach((val, key) => {
+        snapshot[key] = val;
+      });
       sessionStorage.setItem(SESSION_KEY, JSON.stringify(snapshot));
     }
   }
-} catch { /* ignore corrupt storage */ }
+} catch {
+  /* ignore corrupt storage */
+}
 
 // ── Helper: build a v2 CityRegistry from Gemini's raw extraction ─────────────
 // Applies Layer 1 (normalize) + Layer 2 (synonyms) + Layer 3 (dedupe with
@@ -288,11 +316,18 @@ function buildRegistryFromGemini(
   cityKey: string,
   parsed: {
     services?: string[];
-    quantities?: Record<string, {
-      min?: unknown; max?: unknown;
-      unitPrice?: unknown; uom?: unknown;
-      campaignPrice?: unknown; remarks?: unknown; rowIndex?: unknown;
-    }>;
+    quantities?: Record<
+      string,
+      {
+        min?: unknown;
+        max?: unknown;
+        unitPrice?: unknown;
+        uom?: unknown;
+        campaignPrice?: unknown;
+        remarks?: unknown;
+        rowIndex?: unknown;
+      }
+    >;
     aliases?: Record<string, string[]>;
   },
   pdfHash: string,
@@ -306,8 +341,9 @@ function buildRegistryFromGemini(
     if (!canonical) continue;
 
     // Find the quantities/price row keyed by either raw or canonical
-    const rawKey = Object.keys(parsed.quantities ?? {})
-      .find(k => canonicalizeServiceName(k) === canonical) ?? rawName;
+    const rawKey =
+      Object.keys(parsed.quantities ?? {}).find((k) => canonicalizeServiceName(k) === canonical) ??
+      rawName;
     const q = parsed.quantities?.[rawKey];
     const minQty = typeof q?.min === 'number' ? q.min : 1;
     const maxQty = typeof q?.max === 'number' ? q.max : null;
@@ -319,9 +355,9 @@ function buildRegistryFromGemini(
 
     // Aliases: Summary-table name variants (or any other variant Gemini found)
     const rawAliases: string[] = (parsed.aliases?.[rawName] ?? []).filter(
-      (a): a is string => typeof a === 'string' && a.trim().length > 0
+      (a): a is string => typeof a === 'string' && a.trim().length > 0,
     );
-    const aliasSet = new Set<string>(rawAliases.map(a => a.trim()));
+    const aliasSet = new Set<string>(rawAliases.map((a) => a.trim()));
 
     if (entries[canonical]) {
       // Duplicate inner-page name — merge aliases, keep stricter qty
@@ -331,7 +367,8 @@ function buildRegistryFromGemini(
       if (existing.maxQty == null) existing.maxQty = maxQty;
       if (existing.unitPrice == null && unitPrice != null) existing.unitPrice = unitPrice;
       if (existing.uom == null && uom != null) existing.uom = uom;
-      if (existing.campaignPrice == null && campaignPrice != null) existing.campaignPrice = campaignPrice;
+      if (existing.campaignPrice == null && campaignPrice != null)
+        existing.campaignPrice = campaignPrice;
     } else {
       entries[canonical] = {
         canonicalName: canonical,
@@ -376,7 +413,7 @@ export function findEntryByName(cityKey: string, query: string): ServiceEntry | 
   const canonical = canonicalizeServiceName(query);
   if (reg.entries[canonical]) return reg.entries[canonical];
   for (const e of Object.values(reg.entries)) {
-    if (e.aliases.some(a => canonicalizeServiceName(a) === canonical)) return e;
+    if (e.aliases.some((a) => canonicalizeServiceName(a) === canonical)) return e;
   }
   return null;
 }
@@ -401,13 +438,15 @@ export const useCityServiceRegistry = () => {
       if (existing && (existing.status === 'ready' || existing.status === 'building')) return;
 
       if (!proposal.textContent || proposal.textContent.trim().length < 50) {
-        console.warn(`⚠️ [Registry] Skipping "${cityKey}" — textContent too short (${proposal.textContent?.trim().length ?? 0} chars)`);
+        console.warn(
+          `⚠️ [Registry] Skipping "${cityKey}" — textContent too short (${proposal.textContent?.trim().length ?? 0} chars)`,
+        );
         _registry.set(cityKey, makeFailedRegistry(cityKey));
         return;
       }
 
       _registry.set(cityKey, makeBuildingRegistry(cityKey));
-      console.log(`🏗️ [Registry] Building for "${cityKey}"...`);
+      logger.debug(`🏗️ [Registry] Building for "${cityKey}"...`);
 
       (async () => {
         try {
@@ -419,7 +458,9 @@ export const useCityServiceRegistry = () => {
           if (cached && cached.pdfHash === pdfHash) {
             _registry.set(cityKey, cached);
             persistToSession();
-            console.log(`💾 [Registry] localStorage hit for "${cityKey}" — ${Object.keys(cached.entries).length} entries, no API call.`);
+            logger.debug(
+              `💾 [Registry] localStorage hit for "${cityKey}" — ${Object.keys(cached.entries).length} entries, no API call.`,
+            );
             return;
           }
 
@@ -431,28 +472,34 @@ export const useCityServiceRegistry = () => {
           // Only stop at a NEW ## section header (not at lines starting with a single
           // '#' which could legitimately appear inside the list, e.g. "#1 bus branding").
           const serviceListMatch = proposal.textContent!.match(
-            /##Inner Header content Service Name list\s*\n([\s\S]*?)(?=\n##|\s*$)/i
+            /##Inner Header content Service Name list\s*\n([\s\S]*?)(?=\n##|\s*$)/i,
           );
           if (serviceListMatch) {
             const rawBlock = serviceListMatch[1];
-            const rawLines = rawBlock.split('\n').map(s => s.trim());
+            const rawLines = rawBlock.split('\n').map((s) => s.trim());
             const serviceNames = rawLines
               // Reject only true markdown section headers ("## ...").
               // A leading "#1 ", "1.", "1)", etc. is a numeric list marker we
               // strip below — those lines must be KEPT.
-              .filter(s => s.length > 2 && !/^#{2,}/.test(s))
+              .filter((s) => s.length > 2 && !/^#{2,}/.test(s))
               // Strip leading list markers: "1.", "1)", "- ", "* ", "#1 ", "•"
-              .map(s => s.replace(/^(?:#?\d+[.)]?\s+|[-*•]\s+)/, '').trim())
-              .filter(s => s.length > 2);
+              .map((s) => s.replace(/^(?:#?\d+[.)]?\s+|[-*•]\s+)/, '').trim())
+              .filter((s) => s.length > 2);
 
-            console.log(`🔎 [Registry] "${cityKey}" fast-path matched ${rawLines.length} raw lines, ${serviceNames.length} after filter. Raw block:\n${rawBlock}`);
+            logger.debug(
+              `🔎 [Registry] "${cityKey}" fast-path matched ${rawLines.length} raw lines, ${serviceNames.length} after filter. Raw block:\n${rawBlock}`,
+            );
 
             if (serviceNames.length > 0) {
               seededServiceNames = serviceNames;
-              console.log(`✅ [Registry] "${cityKey}" seeded ${serviceNames.length} services from explicit list; continuing to quantity extraction`);
+              logger.debug(
+                `✅ [Registry] "${cityKey}" seeded ${serviceNames.length} services from explicit list; continuing to quantity extraction`,
+              );
             }
           } else {
-            console.log(`🔎 [Registry] "${cityKey}" — no "##Inner Header content Service Name list" section found, trying heading-pattern fast path`);
+            logger.debug(
+              `🔎 [Registry] "${cityKey}" — no "##Inner Header content Service Name list" section found, trying heading-pattern fast path`,
+            );
           }
 
           // ── Fast path #2: detect inner-page headings by their (N/M) page marker ──
@@ -467,7 +514,7 @@ export const useCityServiceRegistry = () => {
             .replace(/\t\|\t/g, ' ')
             .replace(/\s*\|\s*/g, ' ')
             .replace(/[ \t]+/g, ' ');
-          const lines = flat.split('\n').map(l => l.trim());
+          const lines = flat.split('\n').map((l) => l.trim());
 
           const pageMarker = /\(\s*1\s*\/\s*\d+\s*\)\s*$/;
           const headingCandidates = new Set<string>();
@@ -502,9 +549,14 @@ export const useCityServiceRegistry = () => {
           if (!seededServiceNames && headingCandidates.size > 0) {
             const serviceNames = [...headingCandidates];
             seededServiceNames = serviceNames;
-            console.log(`✅ [Registry] "${cityKey}" seeded ${serviceNames.length} services from heading-pattern fast path; continuing to quantity extraction. Headings:`, serviceNames);
+            logger.debug(
+              `✅ [Registry] "${cityKey}" seeded ${serviceNames.length} services from heading-pattern fast path; continuing to quantity extraction. Headings:`,
+              serviceNames,
+            );
           } else {
-            console.log(`🔎 [Registry] "${cityKey}" — heading-pattern fast path found 0 candidates, using Gemini full extraction`);
+            logger.debug(
+              `🔎 [Registry] "${cityKey}" — heading-pattern fast path found 0 candidates, using Gemini full extraction`,
+            );
           }
 
           // ── Diagnostic: dump what we're sending to Gemini so we can see if
@@ -513,14 +565,26 @@ export const useCityServiceRegistry = () => {
           // no amount of Gemini-prompt tuning will recover it.
           const txt = proposal.textContent!;
           const probes = [
-            'auto full branding', 'auto semi branding', 'auto back sticker',
-            'bus full branding', 'bus semi branding', 'bus shelter',
-            'cab branding', 'mobile van', 'lamp post', 'flex hoarding',
-            'lobby screen', 'metro branding',
+            'auto full branding',
+            'auto semi branding',
+            'auto back sticker',
+            'bus full branding',
+            'bus semi branding',
+            'bus shelter',
+            'cab branding',
+            'mobile van',
+            'lamp post',
+            'flex hoarding',
+            'lobby screen',
+            'metro branding',
           ];
-          const presence = probes.map(p => `${p}=${txt.toLowerCase().includes(p) ? '✓' : '✗'}`).join(' ');
-          console.log(`📄 [Registry] "${cityKey}" textContent length=${txt.length}, slice→Gemini=${Math.min(txt.length, 50000)}`);
-          console.log(`📄 [Registry] "${cityKey}" probe hits: ${presence}`);
+          const presence = probes
+            .map((p) => `${p}=${txt.toLowerCase().includes(p) ? '✓' : '✗'}`)
+            .join(' ');
+          logger.debug(
+            `📄 [Registry] "${cityKey}" textContent length=${txt.length}, slice→Gemini=${Math.min(txt.length, 50000)}`,
+          );
+          logger.debug(`📄 [Registry] "${cityKey}" probe hits: ${presence}`);
 
           const apiKey = (import.meta.env.VITE_GEMINI_API_KEY || '').trim();
           if (!apiKey) throw new Error('No API key');
@@ -598,7 +662,9 @@ CRITICAL RULES:
 - Return ONLY valid JSON — no markdown fences, no explanation, no extra text.
 - Never copy the placeholder strings above. Every value must come directly from the document below.
 
-${seededServiceNames && seededServiceNames.length > 0 ? `
+${
+  seededServiceNames && seededServiceNames.length > 0
+    ? `
 SEED SERVICES (deterministic parser result):
 ${seededServiceNames.map((s, i) => `${i + 1}. ${s}`).join('\n')}
 
@@ -606,19 +672,27 @@ IMPORTANT FOR THIS RUN:
 - Use the seed list above as the EXACT services[] output (lowercase).
 - Do NOT add/remove/reword service names.
 - Focus on extracting quantities/price metadata for these services from the pricing summary.
-` : ''}
+`
+    : ''
+}
 
 Rate card content:
 ${proposal.textContent.slice(0, 50000)}`;
 
           const result = await model.generateContent(prompt);
           const raw = result.response.text().trim();
-          console.log(`🤖 [Registry] "${cityKey}" raw Gemini response (${raw.length} chars):\n${raw.slice(0, 2000)}${raw.length > 2000 ? '\n…(truncated)' : ''}`);
-          const jsonStr = raw.replace(/^```(?:json)?\s*/i, '').replace(/\s*```$/i, '').trim();
+          logger.debug(
+            `🤖 [Registry] "${cityKey}" raw Gemini response (${raw.length} chars):\n${raw.slice(0, 2000)}${raw.length > 2000 ? '\n…(truncated)' : ''}`,
+          );
+          const jsonStr = raw
+            .replace(/^```(?:json)?\s*/i, '')
+            .replace(/\s*```$/i, '')
+            .trim();
           const parsed = JSON.parse(jsonStr);
-          const parsedForBuild = (seededServiceNames && seededServiceNames.length > 0)
-            ? { ...parsed, services: seededServiceNames }
-            : parsed;
+          const parsedForBuild =
+            seededServiceNames && seededServiceNames.length > 0
+              ? { ...parsed, services: seededServiceNames }
+              : parsed;
 
           const reg = buildRegistryFromGemini(cityKey, parsedForBuild, pdfHash);
           _registry.set(cityKey, reg);
@@ -627,9 +701,15 @@ ${proposal.textContent.slice(0, 50000)}`;
 
           const entryCount = Object.keys(reg.entries).length;
           const aliasCount = Object.values(reg.entries).reduce((n, e) => n + e.aliases.length, 0);
-          console.log(`✅ [Registry] Ready for "${cityKey}": ${entryCount} entries (${aliasCount} aliases collapsed), source=${reg.source}, hash=${pdfHash}`);
-          console.log(`📊 [Registry] IDF top tokens for "${cityKey}":`,
-            Object.entries(reg.idf).sort((a, b) => b[1] - a[1]).slice(0, 8));
+          logger.debug(
+            `✅ [Registry] Ready for "${cityKey}": ${entryCount} entries (${aliasCount} aliases collapsed), source=${reg.source}, hash=${pdfHash}`,
+          );
+          logger.debug(
+            `📊 [Registry] IDF top tokens for "${cityKey}":`,
+            Object.entries(reg.idf)
+              .sort((a, b) => b[1] - a[1])
+              .slice(0, 8),
+          );
         } catch (err) {
           console.warn(`⚠️ [Registry] Build failed for "${cityKey}":`, err);
           _registry.set(cityKey, makeFailedRegistry(cityKey));
@@ -642,15 +722,29 @@ ${proposal.textContent.slice(0, 50000)}`;
 // ── Tiny constructors so we don't repeat the empty-shape boilerplate ─────────
 function makeBuildingRegistry(cityKey: string): CityRegistry {
   return {
-    city: cityKey, entries: {}, idf: {}, source: 'gemini',
-    builtAt: Date.now(), ttlDays: DEFAULT_TTL_DAYS, pdfHash: null,
-    services: [], quantities: {}, status: 'building',
+    city: cityKey,
+    entries: {},
+    idf: {},
+    source: 'gemini',
+    builtAt: Date.now(),
+    ttlDays: DEFAULT_TTL_DAYS,
+    pdfHash: null,
+    services: [],
+    quantities: {},
+    status: 'building',
   };
 }
 function makeFailedRegistry(cityKey: string): CityRegistry {
   return {
-    city: cityKey, entries: {}, idf: {}, source: 'gemini',
-    builtAt: Date.now(), ttlDays: DEFAULT_TTL_DAYS, pdfHash: null,
-    services: [], quantities: {}, status: 'failed',
+    city: cityKey,
+    entries: {},
+    idf: {},
+    source: 'gemini',
+    builtAt: Date.now(),
+    ttlDays: DEFAULT_TTL_DAYS,
+    pdfHash: null,
+    services: [],
+    quantities: {},
+    status: 'failed',
   };
 }

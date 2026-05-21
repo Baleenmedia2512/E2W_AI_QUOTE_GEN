@@ -123,7 +123,7 @@ vi.mock('../../src/utils/localStorage', () => ({
 }));
 
 vi.mock('../../src/utils/logger', () => ({
-  logger: { info: vi.fn(), warn: vi.fn(), error: vi.fn() },
+  logger: { info: vi.fn(), warn: vi.fn(), error: vi.fn(), debug: vi.fn() },
 }));
 
 // ── Component under test ──────────────────────────────────────────────────────

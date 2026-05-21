@@ -22,7 +22,7 @@ vi.mock('../../src/components/Templates/PremiumAgency', () => ({
 }));
 
 vi.mock('../../src/utils/logger', () => ({
-  logger: { info: vi.fn(), warn: vi.fn(), error: vi.fn() },
+  logger: { info: vi.fn(), warn: vi.fn(), error: vi.fn(), debug: vi.fn() },
 }));
 
 const mockOnSelectTemplate = vi.fn();

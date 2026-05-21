@@ -218,7 +218,7 @@
   text-transform: uppercase;
   letter-spacing: 0.8px;
   font-size: 14.5px;
-  border-right: 1px solid rgba(255,255,255,0.2);
+  border-right: 1px solid rgba(255, 255, 255, 0.2);
 }
 .template-corporate-minimal .items-table th:last-child {
   border-right: none;
@@ -415,7 +415,7 @@
   padding: 13px 16px;
   font-weight: 700;
   font-size: 13.5px;
-  color: rgba(255,255,255,0.85);
+  color: rgba(255, 255, 255, 0.85);
   text-transform: uppercase;
   letter-spacing: 0.4px;
   border-top: 2px solid #1a3a5c;

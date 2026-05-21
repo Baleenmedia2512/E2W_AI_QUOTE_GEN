@@ -1,4 +1,4 @@
-import React, { useMemo, useState, useEffect, useRef } from 'react';
+﻿import React, { useMemo, useState, useEffect, useRef } from 'react';
 import './ReferenceImages.css';
 import {
   extractReviewViaGemini,
@@ -108,28 +108,28 @@ function filterPagesByCategory(pages: ExtractedPage[], category: string): Extrac
   // Synonym map for common advertising/media industry terms
   // Also includes common OCR/PDF typos as synonyms
   const synonymMap: Record<string, string[]> = {
-    'ads': ['branding', 'advertising', 'ad', 'advertisement', 'advertisements'],
-    'branding': ['ads', 'advertising', 'ad', 'advertisement'],
-    'ad': ['branding', 'ads', 'advertising'],
-    'advertising': ['branding', 'ads', 'ad'],
-    'board': ['boards'],
-    'boards': ['board'],
-    'sticker': ['stickers'],
-    'stickers': ['sticker'],
-    'poster': ['posters'],
-    'posters': ['poster'],
-    'hoarding': ['hoardings'],
-    'hoardings': ['hoarding'],
-    'banner': ['banners'],
-    'banners': ['banner'],
+    ads: ['branding', 'advertising', 'ad', 'advertisement', 'advertisements'],
+    branding: ['ads', 'advertising', 'ad', 'advertisement'],
+    ad: ['branding', 'ads', 'advertising'],
+    advertising: ['branding', 'ads', 'ad'],
+    board: ['boards'],
+    boards: ['board'],
+    sticker: ['stickers'],
+    stickers: ['sticker'],
+    poster: ['posters'],
+    posters: ['poster'],
+    hoarding: ['hoardings'],
+    hoardings: ['hoarding'],
+    banner: ['banners'],
+    banners: ['banner'],
     // Vehicle / transit synonyms
-    'cab': ['taxi', 'car', 'cab'],
-    'taxi': ['cab', 'car', 'taxi'],
-    'van': ['vehicle', 'van'],
-    'mobile': ['mobile'],
+    cab: ['taxi', 'car', 'cab'],
+    taxi: ['cab', 'car', 'taxi'],
+    van: ['vehicle', 'van'],
+    mobile: ['mobile'],
     // Print / media synonyms
-    'advertisement': ['ad', 'ads', 'advert', 'advertising'],
-    'radio': ['fm', 'radio', 'broadcast'],
+    advertisement: ['ad', 'ads', 'advert', 'advertising'],
+    radio: ['fm', 'radio', 'broadcast'],
     // PDF typo corrections
     awareness: ['awarness', 'awarenes', 'awarness'],
     direction: ['directio', 'dirction'],
@@ -927,42 +927,44 @@ function extractAllServiceTypes(items: QuoteItem[]): string[] {
 
     const lower = serviceType.toLowerCase();
     let extracted: string | null = null;
-    
-    if (lower.includes('branding') || 
-        lower.includes('shelter') ||
-        lower.includes('signage') ||
-        lower.includes('printing') ||
-        lower.includes('ads') ||
-        lower.includes('advertising') ||
-        lower.includes('advertisement') ||
-        lower.includes('screen') ||
-        lower.includes('lobby') ||
-        lower.includes('hoarding') ||
-        lower.includes('board') ||
-        lower.includes('sticker') ||
-        lower.includes('banner') ||
-        lower.includes('poster') ||
-        lower.includes('flex') ||
-        lower.includes('standee') ||
-        lower.includes('display') ||
-        lower.includes('newspaper') ||
-        lower.includes('insertion') ||
-        lower.includes('pamphlet') ||
-        lower.includes('leaflet') ||
-        lower.includes('flyer') ||
-        lower.includes('classified') ||
-        lower.includes('distribution') ||
-        lower.includes('barricade') ||
-        lower.includes('awareness') ||
-        lower.includes('direction') ||
-        lower.includes('mobile') ||
-        lower.includes('van') ||
-        lower.includes('cab') ||
-        lower.includes('taxi') ||
-        lower.includes('radio') ||
-        lower.includes('metro') ||
-        lower.includes('lamp') ||
-        lower.includes('hoardings')) {
+
+    if (
+      lower.includes('branding') ||
+      lower.includes('shelter') ||
+      lower.includes('signage') ||
+      lower.includes('printing') ||
+      lower.includes('ads') ||
+      lower.includes('advertising') ||
+      lower.includes('advertisement') ||
+      lower.includes('screen') ||
+      lower.includes('lobby') ||
+      lower.includes('hoarding') ||
+      lower.includes('board') ||
+      lower.includes('sticker') ||
+      lower.includes('banner') ||
+      lower.includes('poster') ||
+      lower.includes('flex') ||
+      lower.includes('standee') ||
+      lower.includes('display') ||
+      lower.includes('newspaper') ||
+      lower.includes('insertion') ||
+      lower.includes('pamphlet') ||
+      lower.includes('leaflet') ||
+      lower.includes('flyer') ||
+      lower.includes('classified') ||
+      lower.includes('distribution') ||
+      lower.includes('barricade') ||
+      lower.includes('awareness') ||
+      lower.includes('direction') ||
+      lower.includes('mobile') ||
+      lower.includes('van') ||
+      lower.includes('cab') ||
+      lower.includes('taxi') ||
+      lower.includes('radio') ||
+      lower.includes('metro') ||
+      lower.includes('lamp') ||
+      lower.includes('hoardings')
+    ) {
       extracted = serviceType;
     }
 
@@ -971,21 +973,37 @@ function extractAllServiceTypes(items: QuoteItem[]): string[] {
       if (dashMatch) {
         const beforeDash = dashMatch[1].trim();
         const bdLower = beforeDash.toLowerCase();
-        if (bdLower.includes('branding') || bdLower.includes('shelter') ||
-            bdLower.includes('signage') || bdLower.includes('printing') ||
-            bdLower.includes('ads') || bdLower.includes('advertising') ||
-            bdLower.includes('advertisement') ||
-            bdLower.includes('screen') || bdLower.includes('lobby') ||
-            bdLower.includes('sticker') || bdLower.includes('banner') ||
-            bdLower.includes('poster') || bdLower.includes('flex') ||
-            bdLower.includes('standee') || bdLower.includes('display') ||
-            bdLower.includes('newspaper') || bdLower.includes('insertion') ||
-            bdLower.includes('pamphlet') || bdLower.includes('leaflet') ||
-            bdLower.includes('flyer') || bdLower.includes('classified') ||
-            bdLower.includes('mobile') || bdLower.includes('van') ||
-            bdLower.includes('cab') || bdLower.includes('taxi') ||
-            bdLower.includes('radio') || bdLower.includes('metro') ||
-            bdLower.includes('lamp') || bdLower.includes('board')) {
+        if (
+          bdLower.includes('branding') ||
+          bdLower.includes('shelter') ||
+          bdLower.includes('signage') ||
+          bdLower.includes('printing') ||
+          bdLower.includes('ads') ||
+          bdLower.includes('advertising') ||
+          bdLower.includes('advertisement') ||
+          bdLower.includes('screen') ||
+          bdLower.includes('lobby') ||
+          bdLower.includes('sticker') ||
+          bdLower.includes('banner') ||
+          bdLower.includes('poster') ||
+          bdLower.includes('flex') ||
+          bdLower.includes('standee') ||
+          bdLower.includes('display') ||
+          bdLower.includes('newspaper') ||
+          bdLower.includes('insertion') ||
+          bdLower.includes('pamphlet') ||
+          bdLower.includes('leaflet') ||
+          bdLower.includes('flyer') ||
+          bdLower.includes('classified') ||
+          bdLower.includes('mobile') ||
+          bdLower.includes('van') ||
+          bdLower.includes('cab') ||
+          bdLower.includes('taxi') ||
+          bdLower.includes('radio') ||
+          bdLower.includes('metro') ||
+          bdLower.includes('lamp') ||
+          bdLower.includes('board')
+        ) {
           extracted = beforeDash;
         }
       }
@@ -998,7 +1016,9 @@ function extractAllServiceTypes(items: QuoteItem[]): string[] {
 
     if (!extracted) {
       // Capture vehicle + qualifier + optional trailing noun (e.g. "Auto Back Stickers", "Bus Semi Panel Branding", "Mobile Van LED")
-      const vehicleMatch = desc.match(/(bus|auto|mobile|van|cab|taxi|tempo|apartment|building|lift|elevator|residential|commercial)\s+(full|semi|back|panel|shelter|rickshaw|branding|led|non|van)(\s+[a-z]+)*/i);
+      const vehicleMatch = desc.match(
+        /(bus|auto|mobile|van|cab|taxi|tempo|apartment|building|lift|elevator|residential|commercial)\s+(full|semi|back|panel|shelter|rickshaw|branding|led|non|van)(\s+[a-z]+)*/i,
+      );
       if (vehicleMatch) extracted = vehicleMatch[0].trim();
     }
 
@@ -1647,7 +1667,14 @@ function getPagesForCity(
   return null;
 }
 
-export const ReferenceImages: React.FC<ReferenceImagesProps> = ({ proposalPages, proposalPageMap, items, terms = [], specOnly = false, noSpec = false }) => {
+export const ReferenceImages: React.FC<ReferenceImagesProps> = ({
+  proposalPages,
+  proposalPageMap,
+  items,
+  terms = [],
+  specOnly = false,
+  noSpec = false,
+}) => {
   // Determine which pages to use: city-isolated from map, or all flat pages
   const resolvedPages = useMemo(() => {
     if (proposalPageMap && items && items.length > 0) {
@@ -1999,7 +2026,7 @@ export const ReferenceImages: React.FC<ReferenceImagesProps> = ({ proposalPages,
   const finalRefImageUrls = lazyCroppedRefImages.length > 0 ? lazyCroppedRefImages : refImageUrls;
   const showSingleCenteredRef = !specImageUrl && finalRefImageUrls.length === 1;
 
-  console.log('✅ ReferenceImages: Rendering smart layout for', filteredPages.length, 'pages');
+  logger.debug('✅ ReferenceImages: Rendering smart layout for', filteredPages.length, 'pages');
 
   // specOnly: render ONLY the Display Specification block (no spacer, no images, no review, no terms)
   if (specOnly) {
@@ -2015,9 +2042,7 @@ export const ReferenceImages: React.FC<ReferenceImagesProps> = ({ proposalPages,
               <div className="spec-table">
                 {specGroups.map((group, gi) => (
                   <React.Fragment key={gi}>
-                    {group.heading && (
-                      <div className="spec-group-heading">{group.heading}</div>
-                    )}
+                    {group.heading && <div className="spec-group-heading">{group.heading}</div>}
                     {group.fields.map((f, fi) => (
                       <div key={fi} className="spec-row">
                         <span className="spec-label">{f.label}</span>
@@ -2030,7 +2055,11 @@ export const ReferenceImages: React.FC<ReferenceImagesProps> = ({ proposalPages,
             )}
             {specImageUrl && !hasMeaningfulSpec && (
               <div className="ref-img-container spec-img-container">
-                <img src={lazyCroppedSpecImage ?? lazyCroppedPureSpecImage ?? specImageUrl} alt="Design specification diagram" className="ref-img" />
+                <img
+                  src={lazyCroppedSpecImage ?? lazyCroppedPureSpecImage ?? specImageUrl}
+                  alt="Design specification diagram"
+                  className="ref-img"
+                />
               </div>
             )}
           </div>
@@ -2054,9 +2083,7 @@ export const ReferenceImages: React.FC<ReferenceImagesProps> = ({ proposalPages,
             <div className="spec-table">
               {specGroups.map((group, gi) => (
                 <React.Fragment key={gi}>
-                  {group.heading && (
-                    <div className="spec-group-heading">{group.heading}</div>
-                  )}
+                  {group.heading && <div className="spec-group-heading">{group.heading}</div>}
                   {group.fields.map((f, fi) => (
                     <div key={fi} className="spec-row">
                       <span className="spec-label">{f.label}</span>
@@ -2070,7 +2097,11 @@ export const ReferenceImages: React.FC<ReferenceImagesProps> = ({ proposalPages,
           {/* Show spec image when: no spec at all, OR spec has only minimal content (material only, no dimensions) */}
           {specImageUrl && !hasMeaningfulSpec && (
             <div className="ref-img-container spec-img-container">
-              <img src={lazyCroppedSpecImage ?? lazyCroppedPureSpecImage ?? specImageUrl} alt="Design specification diagram" className="ref-img" />
+              <img
+                src={lazyCroppedSpecImage ?? lazyCroppedPureSpecImage ?? specImageUrl}
+                alt="Design specification diagram"
+                className="ref-img"
+              />
             </div>
           )}
         </div>
@@ -2078,23 +2109,24 @@ export const ReferenceImages: React.FC<ReferenceImagesProps> = ({ proposalPages,
 
       {/* Reference Images — each image is its own data-pdf-block so no image is ever
           sliced at a page boundary. The heading appears only on the first block. */}
-      {refImageUrls.length > 0 && finalRefImageUrls.map((src, idx) => (
-        <div key={idx} className="smart-section" data-pdf-block="atomic">
-          {idx === 0 && (
-            <h3 className="smart-section-heading">
-              <span className="smart-heading-bar" />
-              3. Reference Images
-            </h3>
-          )}
-          <div className="ref-img-container ref-img-single-center">
-            <img
-              src={src}
-              alt={`Reference ${idx + 1}`}
-              className={`ref-img ${finalRefImageUrls.length === 1 ? 'ref-img-single' : ''}`}
-            />
+      {refImageUrls.length > 0 &&
+        finalRefImageUrls.map((src, idx) => (
+          <div key={idx} className="smart-section" data-pdf-block="atomic">
+            {idx === 0 && (
+              <h3 className="smart-section-heading">
+                <span className="smart-heading-bar" />
+                3. Reference Images
+              </h3>
+            )}
+            <div className="ref-img-container ref-img-single-center">
+              <img
+                src={src}
+                alt={`Reference ${idx + 1}`}
+                className={`ref-img ${finalRefImageUrls.length === 1 ? 'ref-img-single' : ''}`}
+              />
+            </div>
           </div>
-        </div>
-      ))}
+        ))}
 
       {/* Customer Review */}
       {finalReview && (
@@ -2155,9 +2187,15 @@ export const ReferenceImages: React.FC<ReferenceImagesProps> = ({ proposalPages,
             <span className="smart-heading-bar" />
             3. Reference Images from Proposal
           </h3>
-          {filteredPages.map(page => (
+          {filteredPages.map((page) => (
             <div key={page.pageNumber} data-pdf-block="atomic">
-              <img key={page.pageNumber} src={page.imageDataUrl} alt={`Page ${page.pageNumber}`} className="ref-img fallback-img" style={{ marginBottom: '20px' }} />
+              <img
+                key={page.pageNumber}
+                src={page.imageDataUrl}
+                alt={`Page ${page.pageNumber}`}
+                className="ref-img fallback-img"
+                style={{ marginBottom: '20px' }}
+              />
             </div>
           ))}
         </div>
@@ -2165,6 +2203,3 @@ export const ReferenceImages: React.FC<ReferenceImagesProps> = ({ proposalPages,
     </div>
   );
 };
-
-
-

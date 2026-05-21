@@ -1,4 +1,4 @@
-import { Capacitor } from '@capacitor/core';
+﻿import { Capacitor } from '@capacitor/core';
 import { SpeechRecognition } from '@capacitor-community/speech-recognition';
 import {
   Box,
@@ -89,7 +89,9 @@ const ChatInterface: React.FC = () => {
 
   // Multi-select for the city-only "all services" list.
   // Map: messageId -> set of "City|Service" keys → quantity (defaults to minQty).
-  const [cityServiceSelection, setCityServiceSelection] = useState<Record<string, Record<string, number>>>({});
+  const [cityServiceSelection, setCityServiceSelection] = useState<
+    Record<string, Record<string, number>>
+  >({});
 
   // Minimum quantity warning dialog state
   const [minQtyWarning, setMinQtyWarning] = useState<{
@@ -183,7 +185,7 @@ const ChatInterface: React.FC = () => {
   // Return first city from the list that appears in the text segment (case-insensitive)
   const detectCityInText = (text: string, cities: string[]): string | null => {
     const lower = text.toLowerCase();
-    return cities.find(c => lower.includes(c.toLowerCase())) || null;
+    return cities.find((c) => lower.includes(c.toLowerCase())) || null;
   };
 
   // Detect "city-only" queries — the user typed one or more known city names
@@ -193,14 +195,17 @@ const ChatInterface: React.FC = () => {
   //                      "madurai, trichy" · "what's available in chennai"
   // Examples that DO NOT match: "50 auto chennai" · "bus in madurai" · "chennai vs madurai"
   const detectCityOnlyQuery = (text: string): string[] => {
-    const availCities = getAvailableCities().map(c => c.toLowerCase());
+    const availCities = getAvailableCities().map((c) => c.toLowerCase());
     if (availCities.length === 0) return [];
     if (/\d/.test(text)) return []; // any digit → not a city-only query
 
     const cleaned = text
       .toLowerCase()
       .replace(/[?!.,;:]/g, ' ')
-      .replace(/\b(show|me|all|list|services?|in|for|of|the|a|an|please|what|whats|which|available|need|want|want|i|about|tell|give)\b/g, ' ')
+      .replace(
+        /\b(show|me|all|list|services?|in|for|of|the|a|an|please|what|whats|which|available|need|want|want|i|about|tell|give)\b/g,
+        ' ',
+      )
       .replace(/\s+/g, ' ')
       .trim();
     if (!cleaned) return [];
@@ -208,7 +213,7 @@ const ChatInterface: React.FC = () => {
     const tokens = cleaned.split(/\s+/).filter(Boolean);
     const cities: string[] = [];
     for (const t of tokens) {
-      const match = availCities.find(c => c === t);
+      const match = availCities.find((c) => c === t);
       if (!match) return []; // any non-city token disqualifies the query
       if (!cities.includes(match)) cities.push(match);
     }
@@ -447,9 +452,17 @@ const ChatInterface: React.FC = () => {
       let i = 0;
       while (i < userWords.length) {
         const single = wordMatchesService(userWords[i], svc);
-        const pair = i < userWords.length - 1 && new RegExp(`\\b${escapeRx(joinedPairs[i])}s?\\b`, 'i').test(svc);
-        if (single) { i += 1; continue; }
-        if (pair) { i += 2; continue; }
+        const pair =
+          i < userWords.length - 1 &&
+          new RegExp(`\\b${escapeRx(joinedPairs[i])}s?\\b`, 'i').test(svc);
+        if (single) {
+          i += 1;
+          continue;
+        }
+        if (pair) {
+          i += 2;
+          continue;
+        }
         return false;
       }
       return true;
@@ -458,7 +471,8 @@ const ChatInterface: React.FC = () => {
       `🧮 [Classify] city="${cityKey}" userWords=[${userWords.join(',')}] joined=[${joinedPairs.join(',')}] → ${matches.length} match(es): [${matches.join(' | ')}]`,
     );
     if (matches.length === 0) return { state: 'not_found' };
-    if (matches.length === 1) return { state: 'specific', matches, qty: entry.quantities[matches[0]] };
+    if (matches.length === 1)
+      return { state: 'specific', matches, qty: entry.quantities[matches[0]] };
 
     // ── TF-IDF tie-break ──────────────────────────────────────────────────
     // Multiple candidates matched — score each by IDF-weighted token overlap.
@@ -474,9 +488,15 @@ const ChatInterface: React.FC = () => {
       return s;
     };
     const scored = matches
-      .map(svc => ({ svc, score: scoreOf(svc) }))
+      .map((svc) => ({ svc, score: scoreOf(svc) }))
       .sort((a, b) => b.score - a.score);
-    console.log(`🧮 [Classify] TF-IDF scores:`, scored.slice(0, 5).map(s => `${s.svc}=${s.score.toFixed(2)}`).join(' | '));
+    logger.debug(
+      `🧮 [Classify] TF-IDF scores:`,
+      scored
+        .slice(0, 5)
+        .map((s) => `${s.svc}=${s.score.toFixed(2)}`)
+        .join(' | '),
+    );
 
     const [top, second] = scored;
     const clearWinner = top.score >= 1.0 && top.score >= second.score * 1.25;
@@ -524,7 +544,9 @@ const ChatInterface: React.FC = () => {
 
     // Strip internal bypass flags (never shown to user or sent to Gemini)
     const isQtyOverride = text.includes('[QTY_OVERRIDE]');
-    const isCheckboxConfirmedFlag = text.includes('[User has already specified complete service names from checkboxes]');
+    const isCheckboxConfirmedFlag = text.includes(
+      '[User has already specified complete service names from checkboxes]',
+    );
     const cleanedText = text
       .replace(/\s*\[QTY_OVERRIDE\]/g, '')
       .replace(/\s*\[User has already specified complete service names from checkboxes\]/g, '')
@@ -546,11 +568,14 @@ const ChatInterface: React.FC = () => {
       const cityOnlyMatches = detectCityOnlyQuery(cleanedText);
       if (cityOnlyMatches.length > 0) {
         const lists = cityOnlyMatches
-          .map(cityKey => {
+          .map((cityKey) => {
             const entry = cityServiceRegistry.current.get(cityKey);
             if (!entry || entry.status !== 'ready' || entry.services.length === 0) return null;
-            const services = entry.services.map(svc => ({
-              name: svc.split(' ').map(w => w.charAt(0).toUpperCase() + w.slice(1)).join(' '),
+            const services = entry.services.map((svc) => ({
+              name: svc
+                .split(' ')
+                .map((w) => w.charAt(0).toUpperCase() + w.slice(1))
+                .join(' '),
               minQty: entry.quantities[svc]?.min ?? 1,
             }));
             return {
@@ -558,27 +583,29 @@ const ChatInterface: React.FC = () => {
               services,
             };
           })
-          .filter((x): x is { city: string; services: Array<{ name: string; minQty: number }> } => !!x);
+          .filter(
+            (x): x is { city: string; services: Array<{ name: string; minQty: number }> } => !!x,
+          );
 
         if (lists.length > 0) {
           const assistantMsg: Message = {
             id: (Date.now() + 1).toString(),
             role: 'assistant',
-            content: lists.length === 1
-              ? `Here are all services available in ${lists[0].city}. Tap any to start a quote:`
-              : `Here are services available in: ${lists.map(l => l.city).join(', ')}. Tap any to start:`,
+            content:
+              lists.length === 1
+                ? `Here are all services available in ${lists[0].city}. Tap any to start a quote:`
+                : `Here are services available in: ${lists.map((l) => l.city).join(', ')}. Tap any to start:`,
             timestamp: new Date(),
             isCityServiceList: true,
             cityServiceList: lists,
           };
-          setMessages(prev => [...prev, userMessage, assistantMsg]);
+          setMessages((prev) => [...prev, userMessage, assistantMsg]);
           setInputValue('');
           return;
         }
       }
     }
     // ─────────────────────────────────────────────────────────────────────────
-
 
     // ─── CITY GATE ────────────────────────────────────────────────────────────
     // When multiple city PDFs are loaded, every "and"-segment must have a city.
@@ -593,9 +620,7 @@ const ChatInterface: React.FC = () => {
         // For pure one-segment, city-missing queries like "auto", force explicit
         // city choice instead of silently auto-assigning a single matched city.
         const forceCityPickerForSingleCityless =
-          rawSegments.length === 1 &&
-          rawSegments[0].cityNeeded &&
-          !rawSegments[0].detectedCity;
+          rawSegments.length === 1 && rawSegments[0].cityNeeded && !rawSegments[0].detectedCity;
 
         // Auto-assign city for segments whose service exists in exactly ONE city's registry.
         // Falls back to raw PDF text scan if registry not yet built for a city.
@@ -614,7 +639,7 @@ const ChatInterface: React.FC = () => {
           });
 
           if (citiesWithService.length === 1 && !forceCityPickerForSingleCityless) {
-            console.log(`🏙️ Registry auto-assigned "${seg.raw}" → ${citiesWithService[0]}`);
+            logger.debug(`🏙️ Registry auto-assigned "${seg.raw}" → ${citiesWithService[0]}`);
             return {
               ...seg,
               cityNeeded: false,
@@ -678,7 +703,12 @@ const ChatInterface: React.FC = () => {
             .join(' ');
         // vague segment now carries the FULL matches list straight from the classifier,
         // so the checkbox group is built from real registry data (works for any category).
-        const vagueSegments: Array<{ seg: typeof preSegments[0]; cityKey: string; matches: string[]; qty: number }> = [];
+        const vagueSegments: Array<{
+          seg: (typeof preSegments)[0];
+          cityKey: string;
+          matches: string[];
+          qty: number;
+        }> = [];
         // Collected below-minimum segments — surfaced AFTER the loop in a single combined warning
         // so other valid segments aren't dropped (previously a `return` bailed out on the first).
         const belowMinSegments: Array<{
@@ -820,7 +850,10 @@ const ChatInterface: React.FC = () => {
             if (cls.qty && requestedQty !== null) {
               const { min, max } = cls.qty;
               if (!isQtyOverride && requestedQty < min) {
-                const svcLabel = matchedSvc.split(' ').map(w => w.charAt(0).toUpperCase() + w.slice(1)).join(' ');
+                const svcLabel = matchedSvc
+                  .split(' ')
+                  .map((w) => w.charAt(0).toUpperCase() + w.slice(1))
+                  .join(' ');
                 // Collect — DO NOT return. We still want every other segment processed
                 // so the user gets a single combined warning and the full batch is sent
                 // to Gemini after they choose Continue / Use Minimum.
@@ -832,7 +865,9 @@ const ChatInterface: React.FC = () => {
                   cityLabel,
                 });
                 validSegmentRaws.push(seg.raw);
-                validSegmentLabels.push(`${requestedQty} ${titleCaseSvc(matchedSvc)} (${cityLabel}) ⚠️ below min ${min}`);
+                validSegmentLabels.push(
+                  `${requestedQty} ${titleCaseSvc(matchedSvc)} (${cityLabel}) ⚠️ below min ${min}`,
+                );
                 continue;
               }
               if (max !== null && requestedQty > max) {
@@ -858,7 +893,7 @@ const ChatInterface: React.FC = () => {
         // every service. pendingMinReplacedMessage carries the same message with each
         // below-min segment's first number rewritten to its registry minimum.
         if (belowMinSegments.length > 0) {
-          setMessages(prev => [...prev, userMessage]);
+          setMessages((prev) => [...prev, userMessage]);
           const fullMessage = validSegmentRaws.join(' and ');
           let rewritten = fullMessage;
           for (const bm of belowMinSegments) {
@@ -869,7 +904,7 @@ const ChatInterface: React.FC = () => {
             rewritten = rewritten.replace(bm.rawSegment, rewrittenSeg);
           }
           setMinQtyWarning({
-            items: belowMinSegments.map(bm => ({
+            items: belowMinSegments.map((bm) => ({
               description: `${bm.svcLabel} - ${bm.cityLabel}`,
               requested: bm.requestedQty,
               minimum: bm.minQty,
@@ -1276,7 +1311,7 @@ const ChatInterface: React.FC = () => {
           createdAt: new Date(),
           updatedAt: new Date(),
         };
-        
+
         setCurrentQuote(quote);
 
         // Show success message before navigating
@@ -1616,8 +1651,9 @@ const ChatInterface: React.FC = () => {
     if (!minQtyWarning.pendingQuote) {
       setMinQtyWarning(null);
       // Prefer the pre-rewritten multi-segment message; fall back to legacy single-segment behavior.
-      const newMsg = minReplaced
-        ?? (pending ? pending.replace(/\b\d+\b/, String(minQtyWarning.items[0]?.minimum ?? 1)) : null);
+      const newMsg =
+        minReplaced ??
+        (pending ? pending.replace(/\b\d+\b/, String(minQtyWarning.items[0]?.minimum ?? 1)) : null);
       if (newMsg) {
         setPendingValidMessage(null);
         setPendingMinReplacedMessage(null);
@@ -1751,7 +1787,7 @@ const ChatInterface: React.FC = () => {
     //   "100 Cab Branding (Chennai) ⚠️ below min 100"
     //   "100 Cab Branding Chennai"   (legacy, no parens)
     if (assistantMsg?.directParts?.length) {
-      (assistantMsg.directParts as string[]).forEach(part => {
+      (assistantMsg.directParts as string[]).forEach((part) => {
         // Strip any trailing warning marker (e.g. "⚠️ below min 100") before parsing.
         const cleaned = part.replace(/\s*⚠️.*$/u, '').trim();
 
@@ -2602,227 +2638,315 @@ const ChatInterface: React.FC = () => {
                           )}
 
                         {/* 4️⃣ NO_MATCH - Show all services organized by category */}
-                        {message.isNoMatch && message.allServicesGrouped && message.allServicesGrouped.length > 0 && (
-                          <Box mt={3}>
-                            <Box mb={2} px={1}>
-                              <Text fontSize="13px" fontWeight="600" color="red.500">
-                                ❌ We don't offer {message.requestedService}
-                              </Text>
-                              <Text fontSize="12px" color="gray.600" mt={1}>
-                                Browse all our available services:
-                              </Text>
-                            </Box>
-                            <VStack align="stretch" spacing={3}>
-                              {message.allServicesGrouped.map((catGroup, cIdx) => (
-                                <Box key={cIdx}>
-                                  <Text fontSize="11px" fontWeight="700" color="gray.500" textTransform="uppercase" letterSpacing="wider" mb={1.5} px={1}>
-                                    {catGroup.category}
-                                  </Text>
-                                  <VStack align="stretch" spacing={1.5}>
-                                    {catGroup.services.map((svc, sIdx) => (
-                                      <Button
-                                        key={sIdx}
-                                        variant="outline"
-                                        size="sm"
-                                        justifyContent="flex-start"
-                                        textAlign="left"
-                                        whiteSpace="normal"
-                                        h="auto"
-                                        py={2.5}
-                                        px={4}
-                                        borderRadius="12px"
-                                        fontWeight="500"
-                                        fontSize="13px"
-                                        borderColor="gray.300"
-                                        color="gray.700"
-                                        bg="gray.50"
-                                        onClick={() => setInputValue(svc.name)}
-                                        isDisabled={isLoading}
-                                        _hover={{
-                                          bg: 'gray.100',
-                                          borderColor: 'gray.400',
-                                          transform: 'translateX(4px)',
-                                          boxShadow: '0 2px 8px rgba(107, 114, 128, 0.2)',
-                                        }}
-                                        transition="all 0.2s ease"
-                                        leftIcon={<Text fontSize="14px">→</Text>}
-                                      >
-                                        {svc.name}
-                                      </Button>
-                                    ))}
-                                  </VStack>
-                                </Box>
-                              ))}
-                            </VStack>
-                          </Box>
-                        )}
-
-                        {/* 🏙️ CITY-ONLY QUERY — show all services for the typed city, multi-select */}
-                        {message.isCityServiceList && message.cityServiceList && message.cityServiceList.length > 0 && (() => {
-                          const selection = cityServiceSelection[message.id] || {};
-                          const selectedCount = Object.keys(selection).length;
-                          const updateSelection = (next: Record<string, number>) => {
-                            setCityServiceSelection(prev => ({ ...prev, [message.id]: next }));
-                          };
-                          const toggle = (key: string, defaultQty: number) => {
-                            const next = { ...selection };
-                            if (key in next) delete next[key]; else next[key] = defaultQty;
-                            updateSelection(next);
-                          };
-                          const setQty = (key: string, qty: number) => {
-                            if (!Number.isFinite(qty) || qty < 1) qty = 1;
-                            updateSelection({ ...selection, [key]: qty });
-                          };
-                          const handleGenerate = () => {
-                            const parts: string[] = [];
-                            for (const [key, qty] of Object.entries(selection)) {
-                              const [city, ...rest] = key.split('|');
-                              const svcName = rest.join('|');
-                              parts.push(`${qty} ${svcName} in ${city}`);
-                            }
-                            if (parts.length === 0) return;
-                            const prompt = `Generate quote for ${parts.join(' and ')}`;
-                            setInputValue(prompt);
-                            setCityServiceSelection(prev => {
-                              const cp = { ...prev }; delete cp[message.id]; return cp;
-                            });
-                            setTimeout(() => {
-                              const sendBtn = document.querySelector('[data-send-btn]') as HTMLButtonElement;
-                              sendBtn?.click();
-                            }, 100);
-                          };
-
-                          return (
+                        {message.isNoMatch &&
+                          message.allServicesGrouped &&
+                          message.allServicesGrouped.length > 0 && (
                             <Box mt={3}>
-                              <VStack align="stretch" spacing={4}>
-                                {message.cityServiceList!.map((cityGroup, cIdx) => {
-                                  const allKeys = cityGroup.services.map(s => `${cityGroup.city}|${s.name}`);
-                                  const allSelected = allKeys.every(k => k in selection);
-                                  const toggleAll = () => {
-                                    const next = { ...selection };
-                                    if (allSelected) {
-                                      allKeys.forEach(k => { delete next[k]; });
-                                    } else {
-                                      cityGroup.services.forEach(s => {
-                                        const k = `${cityGroup.city}|${s.name}`;
-                                        if (!(k in next)) next[k] = s.minQty > 1 ? s.minQty : 1;
-                                      });
-                                    }
-                                    updateSelection(next);
-                                  };
-                                  return (
-                                    <Box key={cIdx}>
-                                      <HStack mb={2} px={1} spacing={2} justify="space-between">
-                                        <HStack spacing={2}>
-                                          <Text fontSize="11px" fontWeight="700" color="blue.600" textTransform="uppercase" letterSpacing="wider">
-                                            📍 {cityGroup.city}
-                                          </Text>
-                                          <Text fontSize="11px" color="gray.500">
-                                            ({cityGroup.services.length} services)
-                                          </Text>
-                                        </HStack>
-                                        <Button size="xs" variant="link" colorScheme="blue" onClick={toggleAll}>
-                                          {allSelected ? 'Clear all' : 'Select all'}
+                              <Box mb={2} px={1}>
+                                <Text fontSize="13px" fontWeight="600" color="red.500">
+                                  ❌ We don't offer {message.requestedService}
+                                </Text>
+                                <Text fontSize="12px" color="gray.600" mt={1}>
+                                  Browse all our available services:
+                                </Text>
+                              </Box>
+                              <VStack align="stretch" spacing={3}>
+                                {message.allServicesGrouped.map((catGroup, cIdx) => (
+                                  <Box key={cIdx}>
+                                    <Text
+                                      fontSize="11px"
+                                      fontWeight="700"
+                                      color="gray.500"
+                                      textTransform="uppercase"
+                                      letterSpacing="wider"
+                                      mb={1.5}
+                                      px={1}
+                                    >
+                                      {catGroup.category}
+                                    </Text>
+                                    <VStack align="stretch" spacing={1.5}>
+                                      {catGroup.services.map((svc, sIdx) => (
+                                        <Button
+                                          key={sIdx}
+                                          variant="outline"
+                                          size="sm"
+                                          justifyContent="flex-start"
+                                          textAlign="left"
+                                          whiteSpace="normal"
+                                          h="auto"
+                                          py={2.5}
+                                          px={4}
+                                          borderRadius="12px"
+                                          fontWeight="500"
+                                          fontSize="13px"
+                                          borderColor="gray.300"
+                                          color="gray.700"
+                                          bg="gray.50"
+                                          onClick={() => setInputValue(svc.name)}
+                                          isDisabled={isLoading}
+                                          _hover={{
+                                            bg: 'gray.100',
+                                            borderColor: 'gray.400',
+                                            transform: 'translateX(4px)',
+                                            boxShadow: '0 2px 8px rgba(107, 114, 128, 0.2)',
+                                          }}
+                                          transition="all 0.2s ease"
+                                          leftIcon={<Text fontSize="14px">→</Text>}
+                                        >
+                                          {svc.name}
                                         </Button>
-                                      </HStack>
-                                      <Box display="flex" flexWrap="wrap" gap={2}>
-                                        {cityGroup.services.map((svc, sIdx) => {
-                                          const key = `${cityGroup.city}|${svc.name}`;
-                                          const isSelected = key in selection;
-                                          const defaultQty = svc.minQty > 1 ? svc.minQty : 1;
-                                          return (
-                                            <Box
-                                              key={sIdx}
-                                              as="button"
-                                              type="button"
-                                              onClick={() => toggle(key, defaultQty)}
-                                              borderWidth="1.5px"
-                                              borderColor={isSelected ? 'blue.500' : 'gray.200'}
-                                              bg={isSelected ? 'blue.50' : 'white'}
-                                              borderRadius="12px"
-                                              px={3}
-                                              py={2}
-                                              fontSize="12px"
-                                              fontWeight="500"
-                                              color="gray.800"
-                                              textAlign="left"
-                                              transition="all 0.15s ease"
-                                              _hover={{ borderColor: 'blue.400', transform: 'translateY(-1px)' }}
-                                            >
-                                              <HStack spacing={2} align="center">
-                                                <Box
-                                                  w="16px"
-                                                  h="16px"
-                                                  borderRadius="4px"
-                                                  borderWidth="1.5px"
-                                                  borderColor={isSelected ? 'blue.500' : 'gray.300'}
-                                                  bg={isSelected ? 'blue.500' : 'white'}
-                                                  display="flex"
-                                                  alignItems="center"
-                                                  justifyContent="center"
-                                                  flexShrink={0}
-                                                >
-                                                  {isSelected && <Icon as={FiCheck} boxSize="11px" color="white" />}
-                                                </Box>
-                                                <Text>{svc.name}</Text>
-                                                {svc.minQty > 1 && (
-                                                  <Text as="span" fontSize="10px" color="gray.500">
-                                                    (min {svc.minQty})
-                                                  </Text>
-                                                )}
-                                              </HStack>
-                                              {isSelected && (
-                                                <HStack mt={2} spacing={1} onClick={(e) => e.stopPropagation()}>
-                                                  <Button size="xs" variant="outline" px={2} minW="24px" h="24px"
-                                                    onClick={(e) => { e.stopPropagation(); setQty(key, (selection[key] || defaultQty) - 1); }}
-                                                  >−</Button>
-                                                  <Input
-                                                    size="xs"
-                                                    w="56px"
-                                                    h="24px"
-                                                    textAlign="center"
-                                                    value={selection[key] ?? defaultQty}
-                                                    onChange={(e) => setQty(key, parseInt(e.target.value) || 1)}
-                                                    onClick={(e) => e.stopPropagation()}
-                                                  />
-                                                  <Button size="xs" variant="outline" px={2} minW="24px" h="24px"
-                                                    onClick={(e) => { e.stopPropagation(); setQty(key, (selection[key] || defaultQty) + 1); }}
-                                                  >+</Button>
-                                                </HStack>
-                                              )}
-                                            </Box>
-                                          );
-                                        })}
-                                      </Box>
-                                    </Box>
-                                  );
-                                })}
-
-                                <HStack spacing={3} justify="space-between" pt={2} borderTopWidth="1px" borderColor="gray.100">
-                                  <Text fontSize="12px" color="gray.600" fontWeight="500">
-                                    {selectedCount === 0
-                                      ? 'Select one or more services to continue.'
-                                      : `${selectedCount} service${selectedCount === 1 ? '' : 's'} selected`}
-                                  </Text>
-                                  <Button
-                                    size="sm"
-                                    bgGradient="linear(135deg, #dc2626 0%, #be123c 50%, #9f1239 100%)"
-                                    color="white"
-                                    fontWeight="700"
-                                    borderRadius="8px"
-                                    px={5}
-                                    isDisabled={selectedCount === 0}
-                                    leftIcon={<Icon as={FiCheck} boxSize="14px" />}
-                                    onClick={handleGenerate}
-                                    _hover={{ bgGradient: 'linear(135deg, #b91c1c 0%, #9f1239 100%)' }}
-                                  >
-                                    Generate Quote
-                                  </Button>
-                                </HStack>
+                                      ))}
+                                    </VStack>
+                                  </Box>
+                                ))}
                               </VStack>
                             </Box>
-                          );
-                        })()}
+                          )}
+
+                        {/* 🏙️ CITY-ONLY QUERY — show all services for the typed city, multi-select */}
+                        {message.isCityServiceList &&
+                          message.cityServiceList &&
+                          message.cityServiceList.length > 0 &&
+                          (() => {
+                            const selection = cityServiceSelection[message.id] || {};
+                            const selectedCount = Object.keys(selection).length;
+                            const updateSelection = (next: Record<string, number>) => {
+                              setCityServiceSelection((prev) => ({ ...prev, [message.id]: next }));
+                            };
+                            const toggle = (key: string, defaultQty: number) => {
+                              const next = { ...selection };
+                              if (key in next) delete next[key];
+                              else next[key] = defaultQty;
+                              updateSelection(next);
+                            };
+                            const setQty = (key: string, qty: number) => {
+                              if (!Number.isFinite(qty) || qty < 1) qty = 1;
+                              updateSelection({ ...selection, [key]: qty });
+                            };
+                            const handleGenerate = () => {
+                              const parts: string[] = [];
+                              for (const [key, qty] of Object.entries(selection)) {
+                                const [city, ...rest] = key.split('|');
+                                const svcName = rest.join('|');
+                                parts.push(`${qty} ${svcName} in ${city}`);
+                              }
+                              if (parts.length === 0) return;
+                              const prompt = `Generate quote for ${parts.join(' and ')}`;
+                              setInputValue(prompt);
+                              setCityServiceSelection((prev) => {
+                                const cp = { ...prev };
+                                delete cp[message.id];
+                                return cp;
+                              });
+                              setTimeout(() => {
+                                const sendBtn = document.querySelector(
+                                  '[data-send-btn]',
+                                ) as HTMLButtonElement;
+                                sendBtn?.click();
+                              }, 100);
+                            };
+
+                            return (
+                              <Box mt={3}>
+                                <VStack align="stretch" spacing={4}>
+                                  {message.cityServiceList!.map((cityGroup, cIdx) => {
+                                    const allKeys = cityGroup.services.map(
+                                      (s) => `${cityGroup.city}|${s.name}`,
+                                    );
+                                    const allSelected = allKeys.every((k) => k in selection);
+                                    const toggleAll = () => {
+                                      const next = { ...selection };
+                                      if (allSelected) {
+                                        allKeys.forEach((k) => {
+                                          delete next[k];
+                                        });
+                                      } else {
+                                        cityGroup.services.forEach((s) => {
+                                          const k = `${cityGroup.city}|${s.name}`;
+                                          if (!(k in next)) next[k] = s.minQty > 1 ? s.minQty : 1;
+                                        });
+                                      }
+                                      updateSelection(next);
+                                    };
+                                    return (
+                                      <Box key={cIdx}>
+                                        <HStack mb={2} px={1} spacing={2} justify="space-between">
+                                          <HStack spacing={2}>
+                                            <Text
+                                              fontSize="11px"
+                                              fontWeight="700"
+                                              color="blue.600"
+                                              textTransform="uppercase"
+                                              letterSpacing="wider"
+                                            >
+                                              📍 {cityGroup.city}
+                                            </Text>
+                                            <Text fontSize="11px" color="gray.500">
+                                              ({cityGroup.services.length} services)
+                                            </Text>
+                                          </HStack>
+                                          <Button
+                                            size="xs"
+                                            variant="link"
+                                            colorScheme="blue"
+                                            onClick={toggleAll}
+                                          >
+                                            {allSelected ? 'Clear all' : 'Select all'}
+                                          </Button>
+                                        </HStack>
+                                        <Box display="flex" flexWrap="wrap" gap={2}>
+                                          {cityGroup.services.map((svc, sIdx) => {
+                                            const key = `${cityGroup.city}|${svc.name}`;
+                                            const isSelected = key in selection;
+                                            const defaultQty = svc.minQty > 1 ? svc.minQty : 1;
+                                            return (
+                                              <Box
+                                                key={sIdx}
+                                                as="button"
+                                                type="button"
+                                                onClick={() => toggle(key, defaultQty)}
+                                                borderWidth="1.5px"
+                                                borderColor={isSelected ? 'blue.500' : 'gray.200'}
+                                                bg={isSelected ? 'blue.50' : 'white'}
+                                                borderRadius="12px"
+                                                px={3}
+                                                py={2}
+                                                fontSize="12px"
+                                                fontWeight="500"
+                                                color="gray.800"
+                                                textAlign="left"
+                                                transition="all 0.15s ease"
+                                                _hover={{
+                                                  borderColor: 'blue.400',
+                                                  transform: 'translateY(-1px)',
+                                                }}
+                                              >
+                                                <HStack spacing={2} align="center">
+                                                  <Box
+                                                    w="16px"
+                                                    h="16px"
+                                                    borderRadius="4px"
+                                                    borderWidth="1.5px"
+                                                    borderColor={
+                                                      isSelected ? 'blue.500' : 'gray.300'
+                                                    }
+                                                    bg={isSelected ? 'blue.500' : 'white'}
+                                                    display="flex"
+                                                    alignItems="center"
+                                                    justifyContent="center"
+                                                    flexShrink={0}
+                                                  >
+                                                    {isSelected && (
+                                                      <Icon
+                                                        as={FiCheck}
+                                                        boxSize="11px"
+                                                        color="white"
+                                                      />
+                                                    )}
+                                                  </Box>
+                                                  <Text>{svc.name}</Text>
+                                                  {svc.minQty > 1 && (
+                                                    <Text
+                                                      as="span"
+                                                      fontSize="10px"
+                                                      color="gray.500"
+                                                    >
+                                                      (min {svc.minQty})
+                                                    </Text>
+                                                  )}
+                                                </HStack>
+                                                {isSelected && (
+                                                  <HStack
+                                                    mt={2}
+                                                    spacing={1}
+                                                    onClick={(e) => e.stopPropagation()}
+                                                  >
+                                                    <Button
+                                                      size="xs"
+                                                      variant="outline"
+                                                      px={2}
+                                                      minW="24px"
+                                                      h="24px"
+                                                      onClick={(e) => {
+                                                        e.stopPropagation();
+                                                        setQty(
+                                                          key,
+                                                          (selection[key] || defaultQty) - 1,
+                                                        );
+                                                      }}
+                                                    >
+                                                      −
+                                                    </Button>
+                                                    <Input
+                                                      size="xs"
+                                                      w="56px"
+                                                      h="24px"
+                                                      textAlign="center"
+                                                      value={selection[key] ?? defaultQty}
+                                                      onChange={(e) =>
+                                                        setQty(key, parseInt(e.target.value) || 1)
+                                                      }
+                                                      onClick={(e) => e.stopPropagation()}
+                                                    />
+                                                    <Button
+                                                      size="xs"
+                                                      variant="outline"
+                                                      px={2}
+                                                      minW="24px"
+                                                      h="24px"
+                                                      onClick={(e) => {
+                                                        e.stopPropagation();
+                                                        setQty(
+                                                          key,
+                                                          (selection[key] || defaultQty) + 1,
+                                                        );
+                                                      }}
+                                                    >
+                                                      +
+                                                    </Button>
+                                                  </HStack>
+                                                )}
+                                              </Box>
+                                            );
+                                          })}
+                                        </Box>
+                                      </Box>
+                                    );
+                                  })}
+
+                                  <HStack
+                                    spacing={3}
+                                    justify="space-between"
+                                    pt={2}
+                                    borderTopWidth="1px"
+                                    borderColor="gray.100"
+                                  >
+                                    <Text fontSize="12px" color="gray.600" fontWeight="500">
+                                      {selectedCount === 0
+                                        ? 'Select one or more services to continue.'
+                                        : `${selectedCount} service${selectedCount === 1 ? '' : 's'} selected`}
+                                    </Text>
+                                    <Button
+                                      size="sm"
+                                      bgGradient="linear(135deg, #dc2626 0%, #be123c 50%, #9f1239 100%)"
+                                      color="white"
+                                      fontWeight="700"
+                                      borderRadius="8px"
+                                      px={5}
+                                      isDisabled={selectedCount === 0}
+                                      leftIcon={<Icon as={FiCheck} boxSize="14px" />}
+                                      onClick={handleGenerate}
+                                      _hover={{
+                                        bgGradient: 'linear(135deg, #b91c1c 0%, #9f1239 100%)',
+                                      }}
+                                    >
+                                      Generate Quote
+                                    </Button>
+                                  </HStack>
+                                </VStack>
+                              </Box>
+                            );
+                          })()}
 
                         {/* 🏙️ CITY PICKER — service-first layout */}
                         {message.isCityPicker &&

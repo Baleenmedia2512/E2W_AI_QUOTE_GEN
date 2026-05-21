@@ -32,7 +32,7 @@ vi.mock('../../src/plugins/downloadNotification', () => ({
 }));
 
 vi.mock('../../src/utils/logger', () => ({
-  logger: { info: vi.fn(), warn: vi.fn(), error: vi.fn() },
+  logger: { info: vi.fn(), warn: vi.fn(), error: vi.fn(), debug: vi.fn() },
 }));
 
 // Mock canvas returned by html2canvas
@@ -65,7 +65,11 @@ vi.mock('jspdf', () => ({
     setProperties: mockPdfSetProperties,
     link: mockPdfLink,
     setFontSize: vi.fn(),
+    setTextColor: vi.fn(),
+    setPage: vi.fn(),
     text: vi.fn(),
+    getNumberOfPages: vi.fn().mockReturnValue(1),
+    getCurrentPageInfo: vi.fn().mockReturnValue({ pageNumber: 1 }),
     internal: { pageSize: { getWidth: () => 210, getHeight: () => 297 } },
   })),
 }));
