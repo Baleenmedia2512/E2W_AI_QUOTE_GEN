@@ -517,7 +517,7 @@ html body [id^="pdf-service-ref-"] {
 [id^="pdf-service-"]:not([id^="pdf-service-ref-"]) .client-details,
 [id^="pdf-service-"]:not([id^="pdf-service-ref-"]) .letterhead-info,
 [id^="pdf-service-"]:not([id^="pdf-service-ref-"]) .company-info p {
-  font-size: 16px !important;
+  font-size: 19px !important;
   line-height: 1.3 !important;
   margin: 2px 0 !important;
 }
