@@ -522,7 +522,18 @@ FAIL  tests/services/geminiService.test.ts
 
 The calling code checks `if (parseQuoteFromResponse(response))` — an empty object `{}` is truthy in JavaScript! So the caller proceeds as if it received a valid quote, then renders an empty quote preview to the user. The user sees a blank quote and thinks the AI failed — but the real bug is that `{}` should have been `null`.
 
----
+---When the AI sends back a response that has no valid JSON (plain text, empty string, or broken JSON), parseQuoteFromResponse returns null.
+
+The caller then does:
+
+null is falsy → condition fails → no quote shown → user gets a proper "AI couldn't generate a quote" message. ✅
+
+After (Broken Code)
+The same bad responses now return {} (empty object) instead of null.
+
+The caller does the same check:
+
+{} is truthy in JavaScript → condition passes → app tries to render a quote from an empty object → user sees a blank/empty quote preview. ❌
 
 ### INTENTIONAL BREAK #2 — Strip JSON Extraction Logic
 
@@ -538,6 +549,12 @@ try {
   return null;
 }
 ```
+Before (Original Code)
+The function searches for where the JSON starts and ends inside the full response string, extracts just that portion, then parses it.
+
+After (Broken Code)
+The function tries to JSON.parse() the entire raw string — including the surrounding English text.
+
 
 **Expected failing test:**
 ```
@@ -596,6 +613,7 @@ const wrappedData: DataWithTimestamp<T> = {
   synced: false,
 };
 ```
+Break #1 (timestamp: 0): Every save gets a fake "year 1970" timestamp, so cloud always looks newer and silently overwrites the user's local work on every sync.
 
 **Expected failing test:**
 ```
