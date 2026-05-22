@@ -46,6 +46,7 @@ export const QuotePreviewPage: React.FC = () => {
 
   const [showTemplateSelector, setShowTemplateSelector] = useState(false);
   const [isExporting, setIsExporting] = useState(false);
+  const [isRestoring, setIsRestoring] = useState(true);
   const [zoom, setZoom] = useState(100);
   const [pageImages, setPageImages] = useState<ExtractedPage[]>(
     mergedActiveImages.length > 0 ? mergedActiveImages : (proposal.pageImages || [])
@@ -60,6 +61,7 @@ export const QuotePreviewPage: React.FC = () => {
         await loadRecentProposals(); // need metadata for restore
         await restoreActiveProposals();
       }
+      setIsRestoring(false);
     };
     init();
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
@@ -274,9 +276,15 @@ export const QuotePreviewPage: React.FC = () => {
           <button
             onClick={handleExportPDF}
             className="toolbar-button primary"
-            disabled={isExporting}
+            disabled={isExporting || isRestoring}
+            title={isRestoring ? 'Loading content, please wait...' : undefined}
           >
-            {isExporting ? (
+            {isRestoring ? (
+              <>
+                <div className="spinner"></div>
+                Loading...
+              </>
+            ) : isExporting ? (
               <>
                 <div className="spinner"></div>
                 Exporting...
@@ -323,6 +331,20 @@ export const QuotePreviewPage: React.FC = () => {
 
       {/* Preview Area */}
       <div className="preview-container">
+        {isRestoring && (
+          <div className="preview-loading-overlay">
+            <div className="hourglass-container">
+              <svg className="hourglass-svg" width="72" height="72" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+                <path d="M5 2H19" stroke="#C91F3D" strokeWidth="2" strokeLinecap="round"/>
+                <path d="M5 22H19" stroke="#C91F3D" strokeWidth="2" strokeLinecap="round"/>
+                <path d="M7 2L17 2L12 10.5L7 2Z" fill="#C91F3D" fillOpacity="0.25"/>
+                <path d="M7 22L17 22L12 13.5L7 22Z" fill="#C91F3D"/>
+                <line x1="12" y1="10.5" x2="12" y2="13.5" stroke="#C91F3D" strokeWidth="1.5" strokeLinecap="round"/>
+              </svg>
+              <p className="overlay-title">Loading your quote...</p>
+            </div>
+          </div>
+        )}
         <div className="preview-wrapper" style={{ transform: `scale(${zoom / 100})` }}>
           <div ref={previewRef} className="preview-content">
             {renderTemplate()}
@@ -335,8 +357,8 @@ export const QuotePreviewPage: React.FC = () => {
         <button onClick={() => setShowTemplateSelector(true)} className="mobile-action-btn">
           Templates
         </button>
-        <button onClick={handleExportPDF} className="mobile-action-btn primary" disabled={isExporting}>
-          {isExporting ? 'Exporting...' : 'Export PDF'}
+        <button onClick={handleExportPDF} className="mobile-action-btn primary" disabled={isExporting || isRestoring}>
+          {isRestoring ? 'Loading...' : isExporting ? 'Exporting...' : 'Export PDF'}
         </button>
       </div>
     </div>
