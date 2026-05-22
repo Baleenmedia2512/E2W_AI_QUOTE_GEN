@@ -94,7 +94,20 @@ const validateAndFixQuoteDescriptions = (quoteData: any): any => {
           description: fixedDescription
         };
       }
-      
+
+      // Deduplication: if description starts with "ServiceName - " AND the remainder
+      // already contains the service name (normalized), the prefix is redundant — strip it.
+      // Example: "Paper Advertisement - The Hindu - Paper Advertisement The Hindu - CLASSIFIEDS..."
+      //       →  "Paper Advertisement The Hindu - CLASSIFIEDS..."
+      if (serviceTypeName && description.startsWith(serviceTypeName + ' - ')) {
+        const remainder = description.slice(serviceTypeName.length + 3);
+        const normalize = (s: string) => s.toLowerCase().replace(/[\s\-–—]+/g, '');
+        if (normalize(remainder).includes(normalize(serviceTypeName))) {
+          console.log(`  🧹 Deduped: "${description}" → "${remainder}"`);
+          return { ...lineItem, description: remainder };
+        }
+      }
+
       // Already correct
       return lineItem;
     });
