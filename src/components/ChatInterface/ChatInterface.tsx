@@ -30,6 +30,12 @@ import { Quote, QuoteItem } from '../../types/quote';
 import { saveChatHistory, loadChatHistory } from '../../utils/localStorage';
 import { DEFAULT_GENERAL_TERMS } from '../../utils/quoteGrouping';
 import { logger } from '../../utils/logger';
+import {
+  detectCityInText,
+  detectCityOnlyQuery,
+  getAvailableCities,
+  isFullySpecifiedRequest,
+} from './chatHelpers';
 
 const SUGGESTION_PROMPTS = [
   'Generate quote for 100 auto full branding',
@@ -108,117 +114,6 @@ const ChatInterface: React.FC = () => {
   // Alternate message used when user clicks "Use Minimum" on a multi-segment below-min warning.
   // Holds the original message rewritten with each below-min segment's qty bumped to its registry minimum.
   const [pendingMinReplacedMessage, setPendingMinReplacedMessage] = useState<string | null>(null);
-  const isFullySpecifiedRequest = (userRequest: string): boolean => {
-    const request = userRequest.toLowerCase();
-
-    // Check for multi-city pattern: "CityName qty service, CityName qty service"
-    // e.g. "Chennai 50 auto full branding, Madurai 100 auto semi branding"
-    // Uses KNOWN_CITY_LIST to stay in sync with the rest of the app
-    const commaParts = request
-      .split(',')
-      .map((p) => p.trim())
-      .filter((p) => p.length > 0);
-    if (commaParts.length > 1) {
-      const allPartsHaveCity = commaParts.every((part) =>
-        KNOWN_CITY_LIST.some((city) => part.startsWith(city)),
-      );
-      if (allPartsHaveCity) {
-        logger.info(
-          '✅ Client-side detection: Multi-city request detected, treating as EXACT_MATCH',
-        );
-        return true;
-      }
-    }
-
-    // Check if request contains complete service specifications
-    // These patterns indicate the user has already specified the full service name
-    const fullServicePatterns = [
-      /bus full branding/i,
-      /bus semi branding/i,
-      /bus back panel/i,
-      /auto full branding/i,
-      /auto back stickers/i,
-      /metro interior/i,
-      /cab\s+(?:full|back|interior)/i,
-      /tempo\s+(?:full|back)/i,
-      /apartment\s+lift/i,
-      /traffic\s+(?:awareness|signal)/i,
-    ];
-
-    // If request matches any full service pattern, it's fully specified
-    const hasFullServiceName = fullServicePatterns.some((pattern) => pattern.test(request));
-
-    if (hasFullServiceName) {
-      logger.info(
-        '✅ Client-side detection: Request contains full service names, will skip MULTIPLE_MATCH',
-      );
-      return true;
-    }
-
-    return false;
-  };
-
-  // Extract city names from activeProposals file names (matched against KNOWN_CITY_LIST)
-  const getAvailableCities = (): string[] => {
-    const cities: string[] = [];
-    activeProposals.forEach((p) => {
-      const nameLower = p.fileName.toLowerCase();
-      KNOWN_CITY_LIST.forEach((city) => {
-        if (nameLower.includes(city) && !cities.find((c) => c.toLowerCase() === city)) {
-          cities.push(city.charAt(0).toUpperCase() + city.slice(1));
-        }
-      });
-    });
-    // Fallback: if no known city matched, use cleaned file names as city labels
-    if (cities.length === 0) {
-      activeProposals.forEach((p) => {
-        const name = p.fileName
-          .replace(/\.(pdf|xlsx?)$/i, '')
-          .replace(/[_-]+/g, ' ')
-          .trim();
-        if (!cities.includes(name)) cities.push(name);
-      });
-    }
-    return cities;
-  };
-
-  // Return first city from the list that appears in the text segment (case-insensitive)
-  const detectCityInText = (text: string, cities: string[]): string | null => {
-    const lower = text.toLowerCase();
-    return cities.find((c) => lower.includes(c.toLowerCase())) || null;
-  };
-
-  // Detect "city-only" queries — the user typed one or more known city names
-  // with no service / quantity. Returns lowercase city keys (matches registry keys),
-  // or [] if the query is anything more than just city names + filler words.
-  // Examples that match: "madurai" · "coimbatore" · "show services in chennai"
-  //                      "madurai, trichy" · "what's available in chennai"
-  // Examples that DO NOT match: "50 auto chennai" · "bus in madurai" · "chennai vs madurai"
-  const detectCityOnlyQuery = (text: string): string[] => {
-    const availCities = getAvailableCities().map((c) => c.toLowerCase());
-    if (availCities.length === 0) return [];
-    if (/\d/.test(text)) return []; // any digit → not a city-only query
-
-    const cleaned = text
-      .toLowerCase()
-      .replace(/[?!.,;:]/g, ' ')
-      .replace(
-        /\b(show|me|all|list|services?|in|for|of|the|a|an|please|what|whats|which|available|need|want|want|i|about|tell|give)\b/g,
-        ' ',
-      )
-      .replace(/\s+/g, ' ')
-      .trim();
-    if (!cleaned) return [];
-
-    const tokens = cleaned.split(/\s+/).filter(Boolean);
-    const cities: string[] = [];
-    for (const t of tokens) {
-      const match = availCities.find((c) => c === t);
-      if (!match) return []; // any non-city token disqualifies the query
-      if (!cities.includes(match)) cities.push(match);
-    }
-    return cities;
-  };
 
   // Split message by "and" or ",", then check each segment for a city keyword.
   // Pre-processing also handles Bug 1 — repeated clauses like " i need "/" i want "/
@@ -565,7 +460,10 @@ const ChatInterface: React.FC = () => {
     // pick one without having to remember the catalogue. Examples that trigger:
     //   "madurai"  · "coimbatore"  · "show services in chennai"  · "madurai, trichy"
     if (!isQtyOverride && !isCheckboxConfirmedFlag) {
-      const cityOnlyMatches = detectCityOnlyQuery(cleanedText);
+      const cityOnlyMatches = detectCityOnlyQuery(
+        cleanedText,
+        getAvailableCities(activeProposals).map((c) => c.toLowerCase()),
+      );
       if (cityOnlyMatches.length > 0) {
         const lists = cityOnlyMatches
           .map((cityKey) => {
@@ -614,7 +512,7 @@ const ChatInterface: React.FC = () => {
     // Skip the gate entirely for fully-specified requests (e.g. "50 auto full branding")
     // — those go straight to Gemini as EXACT_MATCH.
     if (activeProposals.length > 1) {
-      const availCities = getAvailableCities();
+      const availCities = getAvailableCities(activeProposals);
       if (availCities.length > 1) {
         const rawSegments = parseSegmentsForCity(userMessage.content, availCities);
         // For pure one-segment, city-missing queries like "auto", force explicit
@@ -688,7 +586,7 @@ const ChatInterface: React.FC = () => {
     // NOTE: Do not skip checkbox-confirmed messages here; they still need
     // min/max quantity validation for consistent warning behavior.
     if (activeProposals.length > 1) {
-      const availCitiesPre = getAvailableCities();
+      const availCitiesPre = getAvailableCities(activeProposals);
       if (availCitiesPre.length > 1) {
         const preSegments = parseSegmentsForCity(userMessage.content, availCitiesPre);
         const preAlerts: Array<{ city: string; service: string }> = [];
