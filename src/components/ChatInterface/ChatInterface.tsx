@@ -3112,66 +3112,76 @@ const ChatInterface: React.FC = () => {
           <Box
             bg="white"
             borderRadius="16px"
-            p={6}
             maxW="460px"
             w="100%"
             boxShadow="0 8px 32px rgba(0,0,0,0.18)"
+            display="flex"
+            flexDirection="column"
+            maxH="90vh"
+            overflow="hidden"
           >
-            <Text fontSize="16px" fontWeight="700" color="gray.800" mb={4}>
-              📋 Confirm Your Services
-            </Text>
-
-            {/* Table Header */}
-            <Box borderRadius="8px" overflow="hidden" border="1px solid" borderColor="gray.200" mb={4}>
-              <HStack bg="gray.800" px={3} py={2} spacing={0}>
-                <Text flex={2} fontSize="11px" fontWeight="700" color="white" textTransform="uppercase" letterSpacing="wider">Service</Text>
-                <Text flex={1} fontSize="11px" fontWeight="700" color="white" textTransform="uppercase" letterSpacing="wider" textAlign="right">City</Text>
-              </HStack>
-              {confirmationTable.rows.map((row, idx) => (
-                <HStack
-                  key={idx}
-                  px={3}
-                  py={2.5}
-                  spacing={0}
-                  bg={idx % 2 === 0 ? 'white' : 'gray.50'}
-                  borderTop="1px solid"
-                  borderColor="gray.100"
-                >
-                  <Text flex={2} fontSize="13px" fontWeight="500" color="gray.800">{row.service}</Text>
-                  <Text flex={1} fontSize="13px" color="blue.600" fontWeight="600" textAlign="right">{row.city}</Text>
-                </HStack>
-              ))}
+            {/* Sticky Header */}
+            <Box px={6} pt={6} pb={3} flexShrink={0}>
+              <Text fontSize="16px" fontWeight="700" color="gray.800">
+                📋 Confirm Your Services
+              </Text>
             </Box>
 
-            <Text fontSize="12px" color="gray.500" mb={5}>
-              {confirmationTable.rows.length} service{confirmationTable.rows.length !== 1 ? 's' : ''} selected. Confirm to generate the quote.
-            </Text>
+            {/* Scrollable Table Body */}
+            <Box flex={1} overflowY="auto" px={6} pb={2}>
+              <Box borderRadius="8px" overflow="hidden" border="1px solid" borderColor="gray.200">
+                <HStack bg="gray.800" px={3} py={2} spacing={0}>
+                  <Text flex={2} fontSize="11px" fontWeight="700" color="white" textTransform="uppercase" letterSpacing="wider">Service</Text>
+                  <Text flex={1} fontSize="11px" fontWeight="700" color="white" textTransform="uppercase" letterSpacing="wider" textAlign="right">City</Text>
+                </HStack>
+                {confirmationTable.rows.map((row, idx) => (
+                  <HStack
+                    key={idx}
+                    px={3}
+                    py={2.5}
+                    spacing={0}
+                    bg={idx % 2 === 0 ? 'white' : 'gray.50'}
+                    borderTop="1px solid"
+                    borderColor="gray.100"
+                  >
+                    <Text flex={2} fontSize="13px" fontWeight="500" color="gray.800">{row.service}</Text>
+                    <Text flex={1} fontSize="13px" color="blue.600" fontWeight="600" textAlign="right">{row.city}</Text>
+                  </HStack>
+                ))}
+              </Box>
+            </Box>
 
-            <HStack spacing={3} justify="flex-end">
-              <Button
-                size="sm"
-                variant="outline"
-                borderColor="gray.300"
-                color="gray.600"
-                borderRadius="8px"
-                onClick={() => setConfirmationTable(null)}
-              >
-                ← Edit
-              </Button>
-              <Button
-                size="sm"
-                bgGradient="linear(135deg, #dc2626 0%, #be123c 50%, #9f1239 100%)"
-                color="white"
-                fontWeight="700"
-                borderRadius="8px"
-                px={6}
-                onClick={handleConfirmAndGenerate}
-                leftIcon={<Icon as={FiCheck} boxSize="14px" />}
-                _hover={{ bgGradient: 'linear(135deg, #b91c1c 0%, #9f1239 100%)' }}
-              >
-                Generate Quote
-              </Button>
-            </HStack>
+            {/* Sticky Footer */}
+            <Box px={6} pt={3} pb={6} flexShrink={0} borderTop="1px solid" borderColor="gray.100">
+              <Text fontSize="12px" color="gray.500" mb={4}>
+                {confirmationTable.rows.length} service{confirmationTable.rows.length !== 1 ? 's' : ''} selected. Confirm to generate the quote.
+              </Text>
+              <HStack spacing={3} justify="flex-end">
+                <Button
+                  size="sm"
+                  variant="outline"
+                  borderColor="gray.300"
+                  color="gray.600"
+                  borderRadius="8px"
+                  onClick={() => setConfirmationTable(null)}
+                >
+                  ← Edit
+                </Button>
+                <Button
+                  size="sm"
+                  bgGradient="linear(135deg, #dc2626 0%, #be123c 50%, #9f1239 100%)"
+                  color="white"
+                  fontWeight="700"
+                  borderRadius="8px"
+                  px={6}
+                  onClick={handleConfirmAndGenerate}
+                  leftIcon={<Icon as={FiCheck} boxSize="14px" />}
+                  _hover={{ bgGradient: 'linear(135deg, #b91c1c 0%, #9f1239 100%)' }}
+                >
+                  Generate Quote
+                </Button>
+              </HStack>
+            </Box>
           </Box>
         </Box>
       )}
@@ -3291,50 +3301,64 @@ const ChatInterface: React.FC = () => {
           <Box
             bg="white"
             borderRadius="14px"
-            p={6}
             maxW="420px"
             w="100%"
             boxShadow="0 8px 32px rgba(0,0,0,0.18)"
+            display="flex"
+            flexDirection="column"
+            maxH="90vh"
+            overflow="hidden"
           >
-            <Text fontSize="16px" fontWeight="700" color="#c0392b" mb={3}>
-              ⚠️ Below Minimum Quantity
-            </Text>
-            {minQtyWarning.items.map((item, i) => (
-              <Box key={i} mb={3} p={3} bg="#fff5f5" borderRadius="8px" borderLeft="3px solid #c0392b">
-                <Text fontSize="13px" fontWeight="600" color="#2d3436">{item.description}</Text>
-                <Text fontSize="12px" color="#636e72" mt={1}>
-                  Minimum: <b>{item.minimum}</b> units &nbsp;|&nbsp; You requested: <b>{item.requested}</b> units
-                </Text>
-              </Box>
-            ))}
-            <Text fontSize="12.5px" color="#636e72" mb={5}>
-              Would you like to continue with your requested quantity, or update to the minimum?
-            </Text>
-            <HStack spacing={3} justify="flex-end">
-              <Button
-                size="sm"
-                variant="outline"
-                borderColor="#c0392b"
-                color="#c0392b"
-                onClick={handleMinQtyContinue}
-                _hover={{ bg: '#fff5f5' }}
-              >
-                {minQtyWarning.items.length > 1
-                  ? `Continue with requested (${minQtyWarning.items.length})`
-                  : `Continue with ${minQtyWarning.items[0].requested}`}
-              </Button>
-              <Button
-                size="sm"
-                bg="#1a3a5c"
-                color="white"
-                onClick={handleMinQtyUseMinimum}
-                _hover={{ bg: '#1e4d78' }}
-              >
-                {minQtyWarning.items.length > 1
-                  ? `Use Minimums (${minQtyWarning.items.length})`
-                  : `Use Minimum (${minQtyWarning.items[0].minimum})`}
-              </Button>
-            </HStack>
+            {/* Sticky Header */}
+            <Box px={6} pt={6} pb={3} flexShrink={0}>
+              <Text fontSize="16px" fontWeight="700" color="#c0392b">
+                ⚠️ Below Minimum Quantity
+              </Text>
+            </Box>
+
+            {/* Scrollable Items Body */}
+            <Box flex={1} overflowY="auto" px={6} pb={2}>
+              {minQtyWarning.items.map((item, i) => (
+                <Box key={i} mb={3} p={3} bg="#fff5f5" borderRadius="8px" borderLeft="3px solid #c0392b">
+                  <Text fontSize="13px" fontWeight="600" color="#2d3436">{item.description}</Text>
+                  <Text fontSize="12px" color="#636e72" mt={1}>
+                    Minimum: <b>{item.minimum}</b> units &nbsp;|&nbsp; You requested: <b>{item.requested}</b> units
+                  </Text>
+                </Box>
+              ))}
+            </Box>
+
+            {/* Sticky Footer */}
+            <Box px={6} pt={3} pb={6} flexShrink={0} borderTop="1px solid" borderColor="gray.100">
+              <Text fontSize="12.5px" color="#636e72" mb={4}>
+                Would you like to continue with your requested quantity, or update to the minimum?
+              </Text>
+              <HStack spacing={3} justify="flex-end">
+                <Button
+                  size="sm"
+                  variant="outline"
+                  borderColor="#c0392b"
+                  color="#c0392b"
+                  onClick={handleMinQtyContinue}
+                  _hover={{ bg: '#fff5f5' }}
+                >
+                  {minQtyWarning.items.length > 1
+                    ? `Continue with requested (${minQtyWarning.items.length})`
+                    : `Continue with ${minQtyWarning.items[0].requested}`}
+                </Button>
+                <Button
+                  size="sm"
+                  bg="#1a3a5c"
+                  color="white"
+                  onClick={handleMinQtyUseMinimum}
+                  _hover={{ bg: '#1e4d78' }}
+                >
+                  {minQtyWarning.items.length > 1
+                    ? `Use Minimums (${minQtyWarning.items.length})`
+                    : `Use Minimum (${minQtyWarning.items[0].minimum})`}
+                </Button>
+              </HStack>
+            </Box>
           </Box>
         </Box>
       )}
