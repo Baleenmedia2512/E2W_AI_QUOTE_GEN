@@ -293,9 +293,11 @@ export const CorporateMinimal: React.FC<TemplateProps> = ({ data, editable: _edi
             </h3>
             <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '11px', color: '#1a1a2e' }}>
               <tbody>
-                <tr><td style={{ padding: '4px 12px 4px 0', fontWeight: '600', whiteSpace: 'nowrap' }}>ICICI Current Acc.</td><td style={{ padding: '4px 0' }}>: 104005500375</td></tr>
-                <tr><td style={{ padding: '4px 12px 4px 0', fontWeight: '600', whiteSpace: 'nowrap' }}>Account Name</td><td style={{ padding: '4px 0' }}>: Baleen Media</td></tr>
-                <tr><td style={{ padding: '4px 12px 4px 0', fontWeight: '600', whiteSpace: 'nowrap' }}>IFSC</td><td style={{ padding: '4px 0' }}>: ICIC0001040</td></tr>
+                <tr><td style={{ padding: '4px 12px 4px 0', fontWeight: '600', whiteSpace: 'nowrap' }}>Account Holder</td><td style={{ padding: '4px 0' }}>: BALEEN MEDIA</td></tr>
+                <tr><td style={{ padding: '4px 12px 4px 0', fontWeight: '600', whiteSpace: 'nowrap' }}>Account Number</td><td style={{ padding: '4px 0' }}>: 99999566030153</td></tr>
+                <tr><td style={{ padding: '4px 12px 4px 0', fontWeight: '600', whiteSpace: 'nowrap' }}>IFSC</td><td style={{ padding: '4px 0' }}>: HDFC0001866</td></tr>
+                <tr><td style={{ padding: '4px 12px 4px 0', fontWeight: '600', whiteSpace: 'nowrap' }}>Branch</td><td style={{ padding: '4px 0' }}>: ADYAR</td></tr>
+                <tr><td style={{ padding: '4px 12px 4px 0', fontWeight: '600', whiteSpace: 'nowrap' }}>Account Type</td><td style={{ padding: '4px 0' }}>: Current Account</td></tr>
               </tbody>
             </table>
           </div>
@@ -413,9 +415,11 @@ export const CorporateMinimal: React.FC<TemplateProps> = ({ data, editable: _edi
           </h3>
           <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '11px', color: '#1a1a2e' }}>
             <tbody>
-              <tr><td style={{ padding: '4px 12px 4px 0', fontWeight: '600', whiteSpace: 'nowrap' }}>ICICI Current Acc.</td><td style={{ padding: '4px 0' }}>: 104005500375</td></tr>
-              <tr><td style={{ padding: '4px 12px 4px 0', fontWeight: '600', whiteSpace: 'nowrap' }}>Account Name</td><td style={{ padding: '4px 0' }}>: Baleen Media</td></tr>
-              <tr><td style={{ padding: '4px 12px 4px 0', fontWeight: '600', whiteSpace: 'nowrap' }}>IFSC</td><td style={{ padding: '4px 0' }}>: ICIC0001040</td></tr>
+              <tr><td style={{ padding: '4px 12px 4px 0', fontWeight: '600', whiteSpace: 'nowrap' }}>Account Holder</td><td style={{ padding: '4px 0' }}>: BALEEN MEDIA</td></tr>
+              <tr><td style={{ padding: '4px 12px 4px 0', fontWeight: '600', whiteSpace: 'nowrap' }}>Account Number</td><td style={{ padding: '4px 0' }}>: 99999566030153</td></tr>
+              <tr><td style={{ padding: '4px 12px 4px 0', fontWeight: '600', whiteSpace: 'nowrap' }}>IFSC</td><td style={{ padding: '4px 0' }}>: HDFC0001866</td></tr>
+              <tr><td style={{ padding: '4px 12px 4px 0', fontWeight: '600', whiteSpace: 'nowrap' }}>Branch</td><td style={{ padding: '4px 0' }}>: ADYAR</td></tr>
+              <tr><td style={{ padding: '4px 12px 4px 0', fontWeight: '600', whiteSpace: 'nowrap' }}>Account Type</td><td style={{ padding: '4px 0' }}>: Current Account</td></tr>
             </tbody>
           </table>
         </div>
