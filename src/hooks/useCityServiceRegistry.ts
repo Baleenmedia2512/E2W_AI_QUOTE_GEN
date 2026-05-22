@@ -371,6 +371,28 @@ export const useCityServiceRegistry = () => {
 
   useEffect(() => {
     console.log(`🔍 [Registry] useEffect fired — ${activeProposals.length} active proposals`);
+
+    // ── Evict registry entries whose proposal has been unloaded ──────────────
+    const activeCityKeys = new Set<string>();
+    activeProposals.forEach(p => {
+      const k = KNOWN_CITY_LIST.find(c => p.fileName.toLowerCase().includes(c))
+        || p.fileName.replace(/\.(pdf|xlsx?)$/i, '').toLowerCase().replace(/[^a-z]/g, '');
+      if (k) activeCityKeys.add(k);
+    });
+    for (const key of [..._registry.keys()]) {
+      if (!activeCityKeys.has(key)) {
+        _registry.delete(key);
+        try { localStorage.removeItem(LOCAL_KEY_PREFIX + key); } catch { /* ignore */ }
+        console.log(`🗑️ [Registry] Evicted "${key}" — proposal unloaded`);
+      }
+    }
+    // Re-persist session snapshot after eviction (clears removed cities)
+    if (activeCityKeys.size === 0 && _registry.size === 0) {
+      try { sessionStorage.removeItem(SESSION_KEY); } catch { /* ignore */ }
+    } else {
+      persistToSession();
+    }
+
     activeProposals.forEach(proposal => {
       const cityKey = KNOWN_CITY_LIST.find(c =>
         proposal.fileName.toLowerCase().includes(c)
