@@ -47,6 +47,7 @@ export const QuotePreviewPage: React.FC = () => {
   const [showTemplateSelector, setShowTemplateSelector] = useState(false);
   const [isExporting, setIsExporting] = useState(false);
   const [isRestoring, setIsRestoring] = useState(true);
+  const [isContentReady, setIsContentReady] = useState(false);
   const [zoom, setZoom] = useState(100);
   const [pageImages, setPageImages] = useState<ExtractedPage[]>(
     mergedActiveImages.length > 0 ? mergedActiveImages : (proposal.pageImages || [])
@@ -65,6 +66,31 @@ export const QuotePreviewPage: React.FC = () => {
     };
     init();
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Poll data-pdf-ready on preview content after data restore is done.
+  // ReferenceImages sets data-pdf-ready="true" 500 ms after all Gemini/lazy-crop
+  // async ops settle — the same signal the PDF export service already uses.
+  useEffect(() => {
+    if (isRestoring || !previewRef.current) return;
+    const check = () => {
+      const elements = previewRef.current?.querySelectorAll('[data-pdf-ready]');
+      if (!elements || elements.length === 0) {
+        setIsContentReady(true);
+        return true;
+      }
+      const allReady = Array.from(elements).every(
+        el => el.getAttribute('data-pdf-ready') === 'true'
+      );
+      if (allReady) {
+        setIsContentReady(true);
+        return true;
+      }
+      return false;
+    };
+    if (check()) return;
+    const id = setInterval(() => { if (check()) clearInterval(id); }, 200);
+    return () => clearInterval(id);
+  }, [isRestoring]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Sync pageImages state when activeProposals change (after restore)
   useEffect(() => {
@@ -276,10 +302,10 @@ export const QuotePreviewPage: React.FC = () => {
           <button
             onClick={handleExportPDF}
             className="toolbar-button primary"
-            disabled={isExporting || isRestoring}
-            title={isRestoring ? 'Loading content, please wait...' : undefined}
+            disabled={isExporting || !isContentReady}
+            title={!isContentReady ? 'Loading content, please wait...' : undefined}
           >
-            {isRestoring ? (
+            {!isContentReady ? (
               <>
                 <div className="spinner"></div>
                 Loading...
@@ -331,7 +357,7 @@ export const QuotePreviewPage: React.FC = () => {
 
       {/* Preview Area */}
       <div className="preview-container">
-        {isRestoring && (
+        {(!isContentReady) && (
           <div className="preview-loading-overlay">
             <div className="hourglass-container">
               <svg className="hourglass-svg" width="72" height="72" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
@@ -353,14 +379,16 @@ export const QuotePreviewPage: React.FC = () => {
       </div>
 
       {/* Mobile Actions */}
-      <div className="mobile-actions">
-        <button onClick={() => setShowTemplateSelector(true)} className="mobile-action-btn">
-          Templates
-        </button>
-        <button onClick={handleExportPDF} className="mobile-action-btn primary" disabled={isExporting || isRestoring}>
-          {isRestoring ? 'Loading...' : isExporting ? 'Exporting...' : 'Export PDF'}
-        </button>
-      </div>
+      {isContentReady && (
+        <div className="mobile-actions">
+          <button onClick={() => setShowTemplateSelector(true)} className="mobile-action-btn">
+            Templates
+          </button>
+          <button onClick={handleExportPDF} className="mobile-action-btn primary" disabled={isExporting}>
+            {isExporting ? 'Exporting...' : 'Export PDF'}
+          </button>
+        </div>
+      )}
     </div>
   );
 };

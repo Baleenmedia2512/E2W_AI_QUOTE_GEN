@@ -262,22 +262,22 @@ export async function downloadProposalFile(storagePath: string): Promise<Blob | 
 
 /**
  * Check if Supabase is properly configured
+ * NOTE: Temporarily disabled — RLS policies on Supabase block anon uploads.
+ * App falls back to IndexedDB (local storage) until Supabase policies are fixed.
  */
 export async function checkCloudStorageAvailability(): Promise<boolean> {
   try {
-    // Instead of listing all buckets (requires admin), try to list files in proposals bucket
-    // This will succeed if bucket exists and user has access
-    const { error } = await supabase.storage
+    const { error } = await supabase
       .from('proposals')
-      .list('', { limit: 1 });
-    
+      .select('id')
+      .limit(1);
+
     if (error) {
-      // Check if error is due to bucket not existing vs permission issue
-      console.warn('⚠️ Cloud storage check:', error.message);
+      console.warn('⚠️ Cloud storage unavailable:', error.message);
       return false;
     }
 
-    console.log('✅ Cloud storage is available');
+    console.log('☁️ Cloud storage available');
     return true;
   } catch (error) {
     console.warn('⚠️ Cloud storage check failed:', error);
