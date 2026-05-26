@@ -10,6 +10,7 @@
   position: relative;
   display: flex;
   flex-direction: column;
+  overflow-x: hidden; /* prevents table min-width from expanding the template */
 }
 
 /* Subtle top accent bar */
@@ -196,10 +197,11 @@
 
 .template-corporate-minimal .items-table {
   width: 100%;
+  min-width: 680px;
   table-layout: fixed;
   border-collapse: separate;
   border-spacing: 0;
-  font-size: 14.5px;
+  font-size: 16.5px;
   border-radius: 6px;
   overflow: visible;   /* Must not clip rows during PDF canvas capture */
   box-shadow: 0 1px 4px rgba(0, 0, 0, 0.06);
@@ -217,7 +219,7 @@
   font-weight: 600;
   text-transform: uppercase;
   letter-spacing: 0.8px;
-  font-size: 14.5px;
+  font-size: 17px;
   border-right: 1px solid rgba(255,255,255,0.2);
 }
 .template-corporate-minimal .items-table th:last-child {
@@ -226,14 +228,14 @@
 
 .template-corporate-minimal .items-table th .th-main {
   display: block;
-  font-size: 14.5px;
+  font-size: 17px;
   font-weight: 700;
   letter-spacing: 0.8px;
 }
 
 .template-corporate-minimal .items-table th .th-sub {
   display: block;
-  font-size: 12.5px;
+  font-size: 14px;
   font-weight: 500;
   opacity: 0.8;
   letter-spacing: 0.3px;
@@ -310,30 +312,30 @@
 }
 .template-corporate-minimal .items-table--gst th {
   padding: 12px 8px;
-  font-size: 22px;
+  font-size: 17px;
   letter-spacing: 0.3px;
 }
 .template-corporate-minimal .items-table--gst th .th-main {
-  font-size: 22px;
+  font-size: 17px;
 }
 .template-corporate-minimal .items-table--gst th .th-sub {
-  font-size: 16px;
+  font-size: 14px;
 }
 .template-corporate-minimal .items-table--gst td {
   padding: 11px 8px;
-  font-size: 16px;
+  font-size: 15px;
 }
 .template-corporate-minimal .items-table--gst .col-description {
-  width: 16%;
-  max-width: 16%;
+  width: 32%;
+  max-width: 32%;
 }
 .template-corporate-minimal .items-table--gst .col-quantity {
-  width: 6%;
-  max-width: 6%;
+  width: 7%;
+  max-width: 7%;
 }
 .template-corporate-minimal .items-table--gst .col-rate {
-  width: 10%;
-  max-width: 10%;
+  width: 15%;
+  max-width: 15%;
 }
 .template-corporate-minimal .items-table--gst .col-duration {
   width: 5%;
@@ -344,26 +346,26 @@
   max-width: 11%;
 }
 .template-corporate-minimal .items-table--gst .col-gst-pct {
-  width: 5%;
-  max-width: 5%;
+  width: 8%;
+  max-width: 8%;
 }
 .template-corporate-minimal .items-table--gst .col-gst {
   width: 11%;
   max-width: 11%;
 }
 .template-corporate-minimal .items-table--gst .col-final {
-  width: 13%;
-  max-width: 13%;
+  width: 18%;
+  max-width: 18%;
 }
 .template-corporate-minimal .items-table--gst .col-remark {
   width: 14%;
   max-width: 14%;
 }
 .template-corporate-minimal .items-table--gst .item-title {
-  font-size: 16.5px;
+  font-size: 15px;
 }
 .template-corporate-minimal .items-table--gst .item-details {
-  font-size: 15px;
+  font-size: 14px;
 }
 /* Remove nowrap so numbers can wrap within tight columns */
 .template-corporate-minimal .items-table--gst .item-quantity,

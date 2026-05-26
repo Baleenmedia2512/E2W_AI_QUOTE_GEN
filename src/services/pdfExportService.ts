@@ -66,6 +66,10 @@ const PDF_FONT_SKIP_SELECTOR = [
   '.pa-parties', '.pa-parties *',
   // Bank details (keep small — CSS rules set 12px, don't scale up)
   '.bank-details-section', '.bank-details-section *',
+  // Pricing tables — font sizes are already tuned for narrow fixed-layout columns
+  '.ms-table', '.ms-table *',
+  '.pa-table', '.pa-table *',
+  '.items-table', '.items-table *',
 ].join(', ');
 
 const normalizeFontSize = (node: HTMLElement): void => {

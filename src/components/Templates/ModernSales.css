@@ -182,6 +182,7 @@
 
 .template-modern-sales .ms-table {
   width: 100%;
+  min-width: 680px;
   table-layout: fixed;
   border-collapse: collapse;
   font-size: 10.5px;
