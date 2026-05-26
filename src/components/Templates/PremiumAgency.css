@@ -235,6 +235,7 @@
 
 .template-premium-agency .pa-table {
   width: 100%;
+  min-width: 680px;
   table-layout: fixed;
   border-collapse: collapse;
   font-size: 10.5px;
