@@ -243,9 +243,8 @@ export const CorporateMinimal: React.FC<TemplateProps> = ({ data, editable: _edi
             <div data-pdf-block="table">
               {renderItemsTable(quote.items)}
             </div>
-            {/* Display Specification packed into same page as pricing table */}
+            {/* Spec + Reference Images in same section — virtual page engine packs them together */}
             <ReferenceImages
-              specOnly
               proposalPages={data.proposalPages}
               proposalPageMap={data.proposalPageMap}
               items={quote.items}
@@ -255,13 +254,6 @@ export const CorporateMinimal: React.FC<TemplateProps> = ({ data, editable: _edi
 
           {/* Company Contact Footer */}
           {renderCompanyFooter(1, singleTotal)}
-        </div>
-
-        <div id="pdf-page-2" className="template-corporate-minimal">
-          <ReferenceImages noSpec proposalPages={data.proposalPages} proposalPageMap={data.proposalPageMap} items={quote.items} terms={[]} />
-
-          {/* Company Contact Footer */}
-          {renderCompanyFooter(2, singleTotal)}
         </div>
 
         {/* Page 3: Terms & Conditions */}
@@ -288,10 +280,10 @@ export const CorporateMinimal: React.FC<TemplateProps> = ({ data, editable: _edi
 
           {/* Bank Details */}
           <div className="terms-section bank-details-section" data-pdf-block="atomic" style={{ marginTop: '24px' }}>
-            <h3 style={{ textAlign: 'center', fontSize: '20px', fontWeight: '700', textTransform: 'uppercase', letterSpacing: '0.08em', color: '#3b0a14', margin: '0 0 18px 0', paddingBottom: '10px', borderBottom: '2px solid #2980b9' }}>
+            <h3 style={{ textAlign: 'center', fontSize: '22px', fontWeight: '700', textTransform: 'uppercase', letterSpacing: '0.08em', color: '#3b0a14', margin: '0 0 18px 0', paddingBottom: '10px', borderBottom: '2px solid #2980b9' }}>
               Bank Details
             </h3>
-            <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '11px', color: '#1a1a2e' }}>
+            <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '14px', color: '#1a1a2e' }}>
               <tbody>
                 <tr><td style={{ padding: '4px 12px 4px 0', fontWeight: '600', whiteSpace: 'nowrap' }}>Account Holder</td><td style={{ padding: '4px 0' }}>: BALEEN MEDIA</td></tr>
                 <tr><td style={{ padding: '4px 12px 4px 0', fontWeight: '600', whiteSpace: 'nowrap' }}>Account Number</td><td style={{ padding: '4px 0' }}>: 99999566030153</td></tr>

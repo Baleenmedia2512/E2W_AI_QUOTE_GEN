@@ -18,7 +18,7 @@ export const companyService = {
         .eq('is_active', true)
         .order('created_at', { ascending: false })
         .limit(1)
-        .single();
+        .maybeSingle();
 
       if (error) {
         console.warn('⚠️ Database fetch failed, using localStorage fallback:', error.message);
@@ -60,7 +60,7 @@ export const companyService = {
         .select('id')
         .eq('is_active', true)
         .limit(1)
-        .single();
+        .maybeSingle();
 
       if (existing?.id) {
         // Update existing record

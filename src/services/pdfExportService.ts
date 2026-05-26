@@ -456,7 +456,6 @@ const measureSectionBlocks = async (containerId: string): Promise<MeasuredBlock[
       measured.push(block);
     });
 
-    console.log(`Ã°Å¸â€œÂ measureSectionBlocks("${containerId}"): ${measured.length} blocks measured`, measured);
     return measured;
   } finally {
     document.body.removeChild(clone);
@@ -1127,37 +1126,6 @@ export const exportToPDF = async (
         }
       }
 
-      // Reference Images (Page 2+) — smart pagination so T&C never shares space with ref images
-      console.log('Ã°Å¸â€œâ€ž Checking for reference images...');
-      await waitForPdfReady('pdf-page-2');
-      const page2Source = document.getElementById('pdf-page-2');
-      if (page2Source) {
-        if (page2Source.scrollHeight > PDF_USABLE_HEIGHT_PX) {
-          const page2Blocks = await measureSectionBlocks('pdf-page-2');
-          if (page2Blocks.length > 0) {
-            const page2VPages = computeVirtualPages(page2Blocks, PDF_USABLE_HEIGHT_PX);
-            console.log(`[SmartPagination] pdf-page-2 => ${page2VPages.length} virtual page(s):`, page2VPages);
-            for (let vp = 0; vp < page2VPages.length; vp++) {
-              const vpResult = await captureVirtualPage('pdf-page-2', page2VPages[vp], page2Blocks);
-              if (vpResult) {
-                addCanvasToPDF(vpResult.canvas, vpResult.links, `page-2-vp${vp}`, false);
-              }
-            }
-          } else {
-            const referenceResult = await captureSectionAtA4('pdf-page-2');
-            if (referenceResult && referenceResult.canvas.height > 10) {
-              addCanvasToPDF(referenceResult.canvas, referenceResult.links, 'references', false);
-            }
-          }
-        } else {
-          const referenceResult = await captureSectionAtA4('pdf-page-2');
-          if (referenceResult && referenceResult.canvas.height > 10) {
-            addCanvasToPDF(referenceResult.canvas, referenceResult.links, 'references', false);
-          } else {
-            console.log('Ã¢â€žÂ¹Ã¯Â¸Â No reference images section found or section is empty');
-          }
-        }
-      }
       // General Terms & Conditions + Bank Details (final page) Ã¢â‚¬â€ smart pagination
       console.log('Ã°Å¸â€œâ€ž Checking for general T&C + banking page...');
       const termsSource = document.getElementById('pdf-page-terms');
