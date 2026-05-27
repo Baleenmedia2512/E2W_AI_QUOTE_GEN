@@ -74,7 +74,7 @@ export const CorporateMinimal: React.FC<TemplateProps> = ({ data, editable: _edi
   const filterGSTTerms = (terms: string[]) =>
     terms.filter(t => !/gst|tax\s*%|inclusive\s*of\s*(gst|tax)|exclusive\s*of\s*(gst|tax)|\+\s*gst|\d+\s*%\s*(gst|tax)/i.test(t));
   const normalizeTerms = (rawTerms: string) =>
-    rawTerms.split('\n').map(t => t.trim().replace(/^[â€¢\-\*]\s*/, '').trim()).filter(Boolean);
+    rawTerms.split('\n').map(t => t.trim().replace(/^[\u2022\u2023\u25aa\u25cf\-\–\*•]\s*/, '').trim()).filter(Boolean);
 
   // Reusable items table with per-item GST breakdown columns
   const renderItemsTable = (items: typeof quote.items) => {
@@ -236,7 +236,8 @@ export const CorporateMinimal: React.FC<TemplateProps> = ({ data, editable: _edi
               <h3 style={{ textAlign: 'center', fontSize: '20px', fontWeight: '700', textTransform: 'uppercase', letterSpacing: '0.08em', color: '#3b0a14', margin: '0 0 8px 0', paddingBottom: '10px', borderBottom: '2px solid #2980b9' }}>
                 {extractServiceType(quote.items[0]?.description || '').toUpperCase()}
               </h3>
-              <h3 className="smart-section-heading" style={{ fontSize: '15px', fontWeight: '700', textTransform: 'uppercase', letterSpacing: '0.06em', color: '#1a1a2e', margin: '16px 0 14px 0', paddingBottom: '8px', paddingLeft: '12px', borderBottom: '2px solid #2980b9', borderLeft: '4px solid #2980b9', borderRadius: '0 0 0 2px' }}>
+              <h3 className="smart-section-heading" style={{ fontSize: '15px', fontWeight: '700', textTransform: 'uppercase', letterSpacing: '0.06em', color: '#1a1a2e', margin: '16px 0 14px 0', paddingBottom: '8px', borderBottom: '2px solid #2980b9' }}>
+                <span className="smart-heading-bar" />
                 1. Pricing Summary
               </h3>
             </div>
@@ -352,7 +353,8 @@ export const CorporateMinimal: React.FC<TemplateProps> = ({ data, editable: _edi
                     <h3 style={{ marginBottom: '8px', fontSize: '22px', fontWeight: '700', color: '#750926', textAlign: 'center' }}>
                       {getServiceGroupHeading(group)}
                     </h3>
-                    <h3 className="smart-section-heading" style={{ fontSize: '15px', fontWeight: '700', textTransform: 'uppercase', letterSpacing: '0.06em', color: '#1a1a2e', margin: '24px 0 14px 0', paddingBottom: '8px', paddingLeft: '12px', borderBottom: '2px solid #2980b9', borderLeft: '4px solid #2980b9', borderRadius: '0 0 0 2px' }}>
+                    <h3 className="smart-section-heading" style={{ fontSize: '15px', fontWeight: '700', textTransform: 'uppercase', letterSpacing: '0.06em', color: '#1a1a2e', margin: '24px 0 14px 0', paddingBottom: '8px', borderBottom: '2px solid #2980b9' }}>
+                      <span className="smart-heading-bar" />
                       1. Pricing Summary
                     </h3>
                   </div>

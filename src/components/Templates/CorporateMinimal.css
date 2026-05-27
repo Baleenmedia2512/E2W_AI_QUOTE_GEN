@@ -203,6 +203,14 @@
   margin-bottom: 0;
 }
 
+/* ReferenceImages embedded inside the template already inherits the template's 44px
+   horizontal padding — remove the extra padding so section headings align with
+   "1. Pricing Summary" at the same left edge */
+.template-corporate-minimal .smart-reference-page {
+  padding-left: 0 !important;
+  padding-right: 0 !important;
+}
+
 /* Scroll wrapper — only the table scrolls horizontally on mobile */
 .template-corporate-minimal .table-scroll-wrap {
   width: 100%;
@@ -658,7 +666,7 @@
   content: '';
   position: absolute;
   left: 0;
-  top: 9px;
+  top: 13px; /* vertically centered with first text line (padding-top:5 + line-height/2:10.5 - dot-height/2:2.5) */
   width: 5px;
   height: 5px;
   border-radius: 50%;
