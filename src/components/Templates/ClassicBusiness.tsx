@@ -178,7 +178,7 @@ export const ClassicBusiness: React.FC<TemplateProps> = ({ data, editable: _edit
               </tr>
             </thead>
             <tbody>
-              {quote.items.map((item, index) => {
+              {quote.items.filter(item => item.rate !== 0 || item.total !== 0).map((item, index) => {
                 const itemGST = quote.gstEnabled ? item.total * (quote.gstPercentage / 100) : 0;
                 const itemFinal = item.total + itemGST;
                 return (
@@ -314,7 +314,7 @@ export const ClassicBusiness: React.FC<TemplateProps> = ({ data, editable: _edit
                     </tr>
                   </thead>
                   <tbody>
-                    {group.items.map((item, index) => {
+                    {group.items.filter((item: any) => item.rate !== 0 || item.total !== 0).map((item, index) => {
                       const itemGST = quote.gstEnabled ? item.total * (quote.gstPercentage / 100) : 0;
                       const itemFinal = item.total + itemGST;
                       return (

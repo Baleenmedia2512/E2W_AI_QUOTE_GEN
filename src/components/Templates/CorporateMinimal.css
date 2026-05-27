@@ -201,7 +201,7 @@
   table-layout: fixed;
   border-collapse: separate;
   border-spacing: 0;
-  font-size: 16.5px;
+  font-size: 18.5px;
   border-radius: 6px;
   overflow: visible;   /* Must not clip rows during PDF canvas capture */
   box-shadow: 0 1px 4px rgba(0, 0, 0, 0.06);
@@ -219,7 +219,7 @@
   font-weight: 600;
   text-transform: uppercase;
   letter-spacing: 0.8px;
-  font-size: 17px;
+  font-size: 19px;
   border-right: 1px solid rgba(255,255,255,0.2);
 }
 .template-corporate-minimal .items-table th:last-child {
@@ -228,14 +228,14 @@
 
 .template-corporate-minimal .items-table th .th-main {
   display: block;
-  font-size: 17px;
+  font-size: 19px;
   font-weight: 700;
   letter-spacing: 0.8px;
 }
 
 .template-corporate-minimal .items-table th .th-sub {
   display: block;
-  font-size: 14px;
+  font-size: 16px;
   font-weight: 500;
   opacity: 0.8;
   letter-spacing: 0.3px;
@@ -308,22 +308,22 @@
 /* ─── Wide table variant: GST columns present — fits all 7-8 cols inside A4 width ─── */
 .template-corporate-minimal .items-table--gst {
   table-layout: fixed;
-  font-size: 13px;
+  font-size: 17px;
 }
 .template-corporate-minimal .items-table--gst th {
   padding: 12px 8px;
-  font-size: 17px;
+  font-size: 19px;
   letter-spacing: 0.3px;
 }
 .template-corporate-minimal .items-table--gst th .th-main {
-  font-size: 17px;
+  font-size: 19px;
 }
 .template-corporate-minimal .items-table--gst th .th-sub {
-  font-size: 14px;
+  font-size: 16px;
 }
 .template-corporate-minimal .items-table--gst td {
   padding: 11px 8px;
-  font-size: 15px;
+  font-size: 19px;
 }
 .template-corporate-minimal .items-table--gst .col-description {
   width: 32%;
@@ -362,10 +362,10 @@
   max-width: 14%;
 }
 .template-corporate-minimal .items-table--gst .item-title {
-  font-size: 15px;
+  font-size: 19px;
 }
 .template-corporate-minimal .items-table--gst .item-details {
-  font-size: 14px;
+  font-size: 18px;
 }
 /* Remove nowrap so numbers can wrap within tight columns */
 .template-corporate-minimal .items-table--gst .item-quantity,
@@ -464,11 +464,11 @@
   font-weight: 600;
   color: #1a3a5c;
   margin-bottom: 3px;
-  font-size: 15px;
+  font-size: 17px;
 }
 
 .template-corporate-minimal .item-details {
-  font-size: 13px;
+  font-size: 15px;
   color: #636e72;
   line-height: 1.5;
   margin-top: 2px;
@@ -746,7 +746,7 @@
   .template-corporate-minimal {
     padding: 32px 24px;
     max-width: 100%;
-    overflow-x: hidden; /* table-scroll-wrap handles its own scroll */
+    overflow-x: clip; /* clip doesn't create a scroll container — keeps sticky column working */
   }
 
   .template-corporate-minimal .table-scroll-wrap {
@@ -802,30 +802,53 @@
   }
 
   .template-corporate-minimal .items-table {
-    font-size: 12px;
+    font-size: 14px;
   }
 
   .template-corporate-minimal .items-table th {
     padding: 10px 8px;
-    font-size: 10px;
+    font-size: 11px;
     letter-spacing: 0.3px;
     white-space: nowrap;
     vertical-align: middle;
   }
 
   .template-corporate-minimal .items-table th .th-main {
-    font-size: 10px;
+    font-size: 11px;
     letter-spacing: 0.3px;
   }
 
   .template-corporate-minimal .items-table th .th-sub {
-    font-size: 9px;
+    font-size: 10px;
     letter-spacing: 0.1px;
     margin-top: 1px;
   }
 
   .template-corporate-minimal .items-table td {
     padding: 10px 8px;
+  }
+
+  /* GST table overrides — higher specificity than base .items-table--gst td rule */
+  .template-corporate-minimal .items-table--gst {
+    font-size: 14px;
+  }
+  .template-corporate-minimal .items-table--gst th {
+    font-size: 11px;
+  }
+  .template-corporate-minimal .items-table--gst th .th-main {
+    font-size: 11px;
+  }
+  .template-corporate-minimal .items-table--gst th .th-sub {
+    font-size: 10px;
+  }
+  .template-corporate-minimal .items-table--gst td {
+    font-size: 14px;
+  }
+  .template-corporate-minimal .items-table--gst .item-title {
+    font-size: 14px;
+  }
+  .template-corporate-minimal .items-table--gst .item-details {
+    font-size: 13px;
   }
 
   /* Frozen/sticky Description column */
@@ -877,7 +900,7 @@
   .template-corporate-minimal {
     padding: 20px 16px;
     line-height: 1.45;
-    overflow-x: hidden; /* table-scroll-wrap handles its own scroll */
+    overflow-x: clip; /* clip doesn't create a scroll container — keeps sticky column working */
   }
 
   .template-corporate-minimal .company-contact-footer {
@@ -960,7 +983,7 @@
   }
 
   .template-corporate-minimal .items-table {
-    font-size: 11px;
+    font-size: 13px;
     border-radius: 4px;
     min-width: 700px;
   }
@@ -971,19 +994,19 @@
 
   .template-corporate-minimal .items-table th {
     padding: 9px 7px;
-    font-size: 9.5px;
+    font-size: 10.5px;
     letter-spacing: 0.2px;
     white-space: nowrap;
     vertical-align: middle;
   }
 
   .template-corporate-minimal .items-table th .th-main {
-    font-size: 9.5px;
+    font-size: 10.5px;
     letter-spacing: 0.2px;
   }
 
   .template-corporate-minimal .items-table th .th-sub {
-    font-size: 8.5px;
+    font-size: 9.5px;
     letter-spacing: 0px;
     margin-top: 1px;
   }
@@ -996,6 +1019,30 @@
 
   .template-corporate-minimal .items-table td {
     padding: 8px 6px;
+  }
+
+  /* GST table overrides — higher specificity than base .items-table--gst td rule */
+  .template-corporate-minimal .items-table--gst {
+    font-size: 13px;
+  }
+  .template-corporate-minimal .items-table--gst th {
+    font-size: 10.5px;
+  }
+  .template-corporate-minimal .items-table--gst th .th-main {
+    font-size: 10.5px;
+  }
+  .template-corporate-minimal .items-table--gst th .th-sub {
+    font-size: 9.5px;
+  }
+  .template-corporate-minimal .items-table--gst td {
+    font-size: 13px;
+    padding: 8px 6px;
+  }
+  .template-corporate-minimal .items-table--gst .item-title {
+    font-size: 13px;
+  }
+  .template-corporate-minimal .items-table--gst .item-details {
+    font-size: 12px;
   }
 
   .template-corporate-minimal .item-description {
@@ -1140,12 +1187,12 @@
   }
 
   .template-corporate-minimal .item-title {
-    font-size: 12px;
+    font-size: 14px;
   }
 
   .template-corporate-minimal .item-quantity,
   .template-corporate-minimal .item-rate {
-    font-size: 10.5px;
+    font-size: 12.5px;
   }
 }
 
@@ -1213,7 +1260,7 @@
 .pdf-export-mode .item-rate,
 .pdf-export-mode .item-total {
   width: auto !important;
-  font-size: 13px !important;
+  font-size: 15px !important;
 }
 
 .pdf-export-mode .item-quantity::before,
@@ -1281,33 +1328,33 @@
 }
 
 .pdf-export-mobile.pdf-export-mode .items-table th {
-  font-size: 12px !important;
+  font-size: 13px !important;
   padding: 8px 10px !important;
 }
 
 .pdf-export-mobile.pdf-export-mode .items-table td {
-  font-size: 12px !important;
+  font-size: 14px !important;
   padding: 8px 10px !important;
 }
 
 .pdf-export-mobile.pdf-export-mode .item-description {
-  font-size: 12px !important;
+  font-size: 14px !important;
 }
 
 .pdf-export-mobile.pdf-export-mode .item-quantity,
 .pdf-export-mobile.pdf-export-mode .item-rate,
 .pdf-export-mobile.pdf-export-mode .item-total {
-  font-size: 12px !important;
+  font-size: 14px !important;
 }
 
 .pdf-export-mobile.pdf-export-mode .totals-table th,
 .pdf-export-mobile.pdf-export-mode .totals-table td {
-  font-size: 12px !important;
+  font-size: 14px !important;
   padding: 8px 12px !important;
 }
 
 .pdf-export-mobile.pdf-export-mode .grand-total td {
-  font-size: 14px !important;
+  font-size: 16px !important;
 }
 
 .pdf-export-mobile.pdf-export-mode .terms-section h3 {

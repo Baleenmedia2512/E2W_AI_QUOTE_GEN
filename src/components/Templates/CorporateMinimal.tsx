@@ -43,8 +43,8 @@ export const CorporateMinimal: React.FC<TemplateProps> = ({ data, editable: _edi
     return new Intl.NumberFormat('en-IN', {
       style: 'currency',
       currency: 'INR',
-      minimumFractionDigits: 2,
-      maximumFractionDigits: 2
+      minimumFractionDigits: 0,
+      maximumFractionDigits: 3
     }).format(amount);
   };
 
@@ -104,7 +104,7 @@ export const CorporateMinimal: React.FC<TemplateProps> = ({ data, editable: _edi
           </tr>
         </thead>
         <tbody>
-          {items.map((item) => {
+          {items.filter(item => item.rate !== 0 || item.total !== 0).map((item) => {
             const itemGST = quote.gstEnabled ? item.total * gstPct / 100 : 0;
             const itemFinal = item.total + itemGST;
             return (
@@ -252,13 +252,8 @@ export const CorporateMinimal: React.FC<TemplateProps> = ({ data, editable: _edi
             />
           </div>
 
-          {/* Company Contact Footer */}
-          {renderCompanyFooter(1, singleTotal)}
-        </div>
-
-        {/* Page 3: Terms & Conditions */}
-        <div id="pdf-page-terms" className="template-corporate-minimal">
-          {/* Service-specific Terms (moved out of ReferenceImages so they never compete with ref images for page space) */}
+          {/* Terms flow within pdf-page-1 — virtual page engine packs them after reference images,
+              eliminating the blank half-page that occurred when they lived in a separate pdf-page-terms */}
           {singleTerms.length > 0 && (
             <div className="terms-section" data-pdf-block="list" style={{ marginBottom: '24px' }}>
               <h3 style={{ textAlign: 'center', fontSize: '20px', fontWeight: '700', textTransform: 'uppercase', letterSpacing: '0.08em', color: '#3b0a14', margin: '0 0 18px 0', paddingBottom: '10px', borderBottom: '2px solid #2980b9' }}>
@@ -280,10 +275,10 @@ export const CorporateMinimal: React.FC<TemplateProps> = ({ data, editable: _edi
 
           {/* Bank Details */}
           <div className="terms-section bank-details-section" data-pdf-block="atomic" style={{ marginTop: '24px' }}>
-            <h3 style={{ textAlign: 'center', fontSize: '22px', fontWeight: '700', textTransform: 'uppercase', letterSpacing: '0.08em', color: '#3b0a14', margin: '0 0 18px 0', paddingBottom: '10px', borderBottom: '2px solid #2980b9' }}>
+            <h3 style={{ textAlign: 'center', fontSize: '24px', fontWeight: '700', textTransform: 'uppercase', letterSpacing: '0.08em', color: '#3b0a14', margin: '0 0 18px 0', paddingBottom: '10px', borderBottom: '2px solid #2980b9' }}>
               Bank Details
             </h3>
-            <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '14px', color: '#1a1a2e' }}>
+            <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '16px', color: '#1a1a2e' }}>
               <tbody>
                 <tr><td style={{ padding: '4px 12px 4px 0', fontWeight: '600', whiteSpace: 'nowrap' }}>Account Holder</td><td style={{ padding: '4px 0' }}>: BALEEN MEDIA</td></tr>
                 <tr><td style={{ padding: '4px 12px 4px 0', fontWeight: '600', whiteSpace: 'nowrap' }}>Account Number</td><td style={{ padding: '4px 0' }}>: 99999566030153</td></tr>
@@ -300,7 +295,7 @@ export const CorporateMinimal: React.FC<TemplateProps> = ({ data, editable: _edi
           </div>
 
           {/* Company Contact Footer */}
-          {renderCompanyFooter(singleTotal, singleTotal)}
+          {renderCompanyFooter(1, singleTotal)}
         </div>
       </>
     );
