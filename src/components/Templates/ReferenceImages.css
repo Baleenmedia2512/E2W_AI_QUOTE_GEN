@@ -440,14 +440,13 @@
   font-size: 13px;
   color: #1a202c;
   font-weight: 400;
+  white-space: pre-line; /* preserve \n line breaks for multi-line values */
 }
 
 .spec-group-heading {
   font-size: 12px;
   font-weight: 700;
-  text-transform: uppercase;
   letter-spacing: 0.05em;
-  color: #2980b9;
   padding: 10px 16px 4px 16px;
   background: #eef5fb;
   border-bottom: 1px solid #d0e4f5;
@@ -459,19 +458,20 @@
 
 .spec-table .spec-group-heading-label {
   flex-shrink: 0;
-  color: #2980b9;
-  font-weight: 700;
-  text-transform: uppercase;
+  color: #1a202c !important; /* force black */
+  font-weight: 580;
   letter-spacing: 0.05em;
+  padding-right: 77px;
 }
 
 .spec-table .spec-group-heading-value {
   font-size: 13px;
   font-weight: 400;
-  color: #1a202c;
+  color: #1a202c !important; /* force black */
   text-transform: none;
   letter-spacing: normal;
   margin-left: 4px;
+  white-space: pre-line;
 }
 
 /* Spec diagram image appears below the text table */
