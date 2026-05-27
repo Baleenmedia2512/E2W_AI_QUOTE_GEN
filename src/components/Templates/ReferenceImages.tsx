@@ -1768,19 +1768,33 @@ export const ReferenceImages: React.FC<ReferenceImagesProps> = ({ proposalPages,
             </h3>
             {hasSpecContent && (
               <div className="spec-table">
-                {specGroups.map((group, gi) => (
-                  <React.Fragment key={gi}>
-                    {group.heading && (
-                      <div className="spec-group-heading">{group.heading}</div>
-                    )}
-                    {group.fields.map((f, fi) => (
-                      <div key={fi} className="spec-row">
-                        <span className="spec-label">{f.label}</span>
-                        <span className="spec-value">{f.value}</span>
-                      </div>
-                    ))}
-                  </React.Fragment>
-                ))}
+                {specGroups.map((group, gi) => {
+                  const headingLower = group.heading?.trim().toLowerCase() || '';
+                  const inlineValues = group.heading
+                    ? group.fields.filter(f => f.label.trim().toLowerCase() === headingLower).map(f => f.value)
+                    : [];
+                  const remainingFields = group.heading
+                    ? group.fields.filter(f => f.label.trim().toLowerCase() !== headingLower)
+                    : group.fields;
+                  return (
+                    <React.Fragment key={gi}>
+                      {group.heading && (
+                        <div className="spec-group-heading">
+                          <span className="spec-group-heading-label">{group.heading}</span>
+                          {inlineValues.length > 0 && (
+                            <span className="spec-group-heading-value">{inlineValues.join(', ')}</span>
+                          )}
+                        </div>
+                      )}
+                      {remainingFields.map((f, fi) => (
+                        <div key={fi} className="spec-row">
+                          <span className="spec-label">{f.label}</span>
+                          <span className="spec-value">{f.value}</span>
+                        </div>
+                      ))}
+                    </React.Fragment>
+                  );
+                })}
               </div>
             )}
             {specImageUrl && !hasMeaningfulSpec && (
@@ -1807,19 +1821,33 @@ export const ReferenceImages: React.FC<ReferenceImagesProps> = ({ proposalPages,
           </h3>
           {hasSpecContent && (
             <div className="spec-table">
-              {specGroups.map((group, gi) => (
-                <React.Fragment key={gi}>
-                  {group.heading && (
-                    <div className="spec-group-heading">{group.heading}</div>
-                  )}
-                  {group.fields.map((f, fi) => (
-                    <div key={fi} className="spec-row">
-                      <span className="spec-label">{f.label}</span>
-                      <span className="spec-value">{f.value}</span>
-                    </div>
-                  ))}
-                </React.Fragment>
-              ))}
+              {specGroups.map((group, gi) => {
+                const headingLower = group.heading?.trim().toLowerCase() || '';
+                const inlineValues = group.heading
+                  ? group.fields.filter(f => f.label.trim().toLowerCase() === headingLower).map(f => f.value)
+                  : [];
+                const remainingFields = group.heading
+                  ? group.fields.filter(f => f.label.trim().toLowerCase() !== headingLower)
+                  : group.fields;
+                return (
+                  <React.Fragment key={gi}>
+                    {group.heading && (
+                      <div className="spec-group-heading">
+                        <span className="spec-group-heading-label">{group.heading}</span>
+                        {inlineValues.length > 0 && (
+                          <span className="spec-group-heading-value">{inlineValues.join(', ')}</span>
+                        )}
+                      </div>
+                    )}
+                    {remainingFields.map((f, fi) => (
+                      <div key={fi} className="spec-row">
+                        <span className="spec-label">{f.label}</span>
+                        <span className="spec-value">{f.value}</span>
+                      </div>
+                    ))}
+                  </React.Fragment>
+                );
+              })}
             </div>
           )}
           {/* Show spec image when: no spec at all, OR spec has only minimal content (material only, no dimensions) */}
