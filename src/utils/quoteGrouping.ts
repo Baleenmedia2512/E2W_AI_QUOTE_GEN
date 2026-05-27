@@ -29,6 +29,11 @@ export const DEFAULT_GENERAL_TERMS = [
  * Falls back to vehicle keyword for simple single-word descriptions.
  */
 export function extractServiceType(description: string): string {
+  // Normalize embedded hyphens between word chars (e.g. "Van-Non" → "Van Non")
+  // so descriptions like "Mobile Van-Non Led" and "Mobile Van Non Led" resolve
+  // to the same service type key regardless of how Gemini formats them.
+  const description_norm = description.replace(/(\w)-(\w)/g, '$1 $2');
+
   // Step 1: Strip ALL price/rate/cost type suffixes to get the base service name.
   // Pattern covers:
   //   "- Distribution Price (per copy)"  → strip
@@ -43,15 +48,15 @@ export function extractServiceType(description: string): string {
   // Broad fallback: "- Anything Price/Rate/Cost/Charge..."
   const broadSuffixPattern = /\s*[-–—]\s*[\w\s&]+?\s+(Price|Rate|Cost|Charge|Pricing)\b.*/i;
 
-  let stripped = description
+  let stripped = description_norm
     .replace(priceSuffixPattern, '')
     .trim()
     .replace(/\s*[-–—]\s*$/, '')
     .trim();
 
   // Apply broad pattern if specific one didn't change anything
-  if (stripped === description.trim()) {
-    stripped = description
+  if (stripped === description_norm.trim()) {
+    stripped = description_norm
       .replace(broadSuffixPattern, '')
       .trim()
       .replace(/\s*[-–—]\s*$/, '')
@@ -65,7 +70,7 @@ export function extractServiceType(description: string): string {
   }
 
   // Step 2: Fallback — vehicle/service keyword matching (backward compatibility).
-  const desc = description.toLowerCase();
+  const desc = description_norm.toLowerCase();
   if (desc.includes('bus')) return 'Bus';
   if (desc.includes('auto')) return 'Auto';
   if (desc.includes('tempo')) return 'Tempo';
