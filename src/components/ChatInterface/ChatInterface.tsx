@@ -12,9 +12,10 @@ import {
   Icon,
   Checkbox,
 } from '@chakra-ui/react';
-import { FiSend, FiCheck, FiMic } from 'react-icons/fi';
+import { FiSend, FiCheck, FiMic, FiChevronUp, FiChevronDown } from 'react-icons/fi';
 import { useHistory } from 'react-router-dom';
 import { useAppStore } from '../../store';
+import { useAuthStore } from '../../store/authStore';
 import { sendMessageToGemini } from '../../services/geminiService';
 import { Message } from '../../types/chat';
 import { Quote, QuoteItem } from '../../types/quote';
@@ -37,6 +38,38 @@ const SUGGESTION_PROMPTS = [
   'Create quote for the services in proposal',
 ];
 
+// ── Command History Helpers (module-level, no component dependency) ────────
+const HISTORY_MAX = 50;
+const HISTORY_TTL_MS = 30 * 24 * 60 * 60 * 1000; // 30 days
+
+interface HistoryEntry { text: string; ts: number; }
+
+const getHistoryKey = (userId: string) => `chat_history_${userId}`;
+
+const loadPersistedHistory = (userId: string): HistoryEntry[] => {
+  try {
+    const raw = localStorage.getItem(getHistoryKey(userId));
+    if (!raw) return [];
+    const parsed: unknown = JSON.parse(raw);
+    if (!Array.isArray(parsed)) return [];
+    const cutoff = Date.now() - HISTORY_TTL_MS;
+    return (parsed as HistoryEntry[]).filter(
+      e => e && typeof e.text === 'string' && typeof e.ts === 'number' && e.ts > cutoff
+    );
+  } catch {
+    return [];
+  }
+};
+
+const savePersistedHistory = (userId: string, entries: HistoryEntry[]) => {
+  try {
+    localStorage.setItem(getHistoryKey(userId), JSON.stringify(entries));
+  } catch {
+    // Incognito / storage full — silently skip
+  }
+};
+// ──────────────────────────────────────────────────────────────────────────
+
 interface CityPickerSegment {
   raw: string;                    // Original segment text (e.g. "100 bus")
   cityNeeded: boolean;            // true if no city was detected in this segment
@@ -57,6 +90,15 @@ const ChatInterface: React.FC = () => {
   const recognitionRef = useRef<any>(null);
   // Cache: service key (lowercase) -> minimum quantity, persists across messages in the same session
   const minQtyCacheRef = useRef<Map<string, number>>(new Map());
+
+  // ── Command History ────────────────────────────────────────────────────────
+  const { user } = useAuthStore();
+  const [inputHistory, setInputHistory] = useState<HistoryEntry[]>([]);
+  const [historyIndex, setHistoryIndex] = useState(-1);
+  const [draftInput, setDraftInput] = useState('');
+  const inputRef = useRef<HTMLInputElement>(null);
+  const prevUserIdRef = useRef<string | undefined>(undefined);
+  // ──────────────────────────────────────────────────────────────────────────
 
   // ── City Service Registry ─────────────────────────────────────────────────
   // Built by useCityServiceRegistry() in App.tsx (runs on every page).
@@ -473,13 +515,100 @@ const ChatInterface: React.FC = () => {
     }
   }, []);
 
+  // ── Command History: load on login, clear on logout ────────────────────────
+  useEffect(() => {
+    if (user?.id) {
+      prevUserIdRef.current = user.id;
+      setInputHistory(loadPersistedHistory(user.id));
+    } else {
+      // User logged out — scrub their history from localStorage and clear memory
+      if (prevUserIdRef.current) {
+        try { localStorage.removeItem(getHistoryKey(prevUserIdRef.current)); } catch {}
+        prevUserIdRef.current = undefined;
+      }
+      setInputHistory([]);
+    }
+    setHistoryIndex(-1);
+    setDraftInput('');
+  }, [user?.id]);
+
+  // ── Command History: multi-tab sync via storage event ─────────────────────
+  useEffect(() => {
+    if (!user?.id) return;
+    const userId = user.id;
+    const handleStorageEvent = (e: StorageEvent) => {
+      if (e.key === getHistoryKey(userId)) {
+        setInputHistory(loadPersistedHistory(userId));
+      }
+    };
+    window.addEventListener('storage', handleStorageEvent);
+    return () => window.removeEventListener('storage', handleStorageEvent);
+  }, [user?.id]);
+  // ──────────────────────────────────────────────────────────────────────────
+
   // Thin wrapper: reads inputValue from state and delegates to sendMessageWithContent
   const handleSendMessage = () => {
     if (!inputValue.trim() || isLoading) return;
     const text = inputValue;
+    // ── Push to command history ──────────────────────────────────────────────
+    if (user?.id) {
+      setInputHistory(prev => {
+        const deduped = prev.filter(e => e.text !== text);
+        const next = [...deduped, { text, ts: Date.now() }].slice(-HISTORY_MAX);
+        savePersistedHistory(user.id!, next);
+        return next;
+      });
+    }
+    setHistoryIndex(-1);
+    setDraftInput('');
+    // ────────────────────────────────────────────────────────────────────────
     setInputValue('');
     sendMessageWithContent(text);
   };
+
+  // ── Command History: keyboard Up/Down navigation ───────────────────────────
+  const handleInputKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
+    if (inputHistory.length === 0) return;
+
+    const el = inputRef.current;
+    const cursorPos = el?.selectionStart ?? 0;
+    const valueLen = inputValue.length;
+
+    if (e.key === 'ArrowUp' && cursorPos === 0) {
+      e.preventDefault();
+      const newIdx = historyIndex === -1
+        ? inputHistory.length - 1
+        : Math.max(0, historyIndex - 1);
+      if (historyIndex === -1) setDraftInput(inputValue);
+      setHistoryIndex(newIdx);
+      setInputValue(inputHistory[newIdx].text);
+      setTimeout(() => {
+        if (el) el.selectionStart = el.selectionEnd = inputHistory[newIdx].text.length;
+      }, 0);
+      return;
+    }
+
+    if (e.key === 'ArrowDown' && cursorPos === valueLen) {
+      e.preventDefault();
+      if (historyIndex === -1) return;
+      const newIdx = historyIndex + 1;
+      if (newIdx >= inputHistory.length) {
+        setHistoryIndex(-1);
+        setInputValue(draftInput);
+        setTimeout(() => {
+          if (el) el.selectionStart = el.selectionEnd = draftInput.length;
+        }, 0);
+      } else {
+        setHistoryIndex(newIdx);
+        setInputValue(inputHistory[newIdx].text);
+        setTimeout(() => {
+          if (el) el.selectionStart = el.selectionEnd = inputHistory[newIdx].text.length;
+        }, 0);
+      }
+      return;
+    }
+  };
+  // ──────────────────────────────────────────────────────────────────────────
 
   // Core send logic — accepts text directly, no reliance on inputValue state
   const sendMessageWithContent = async (text: string) => {
@@ -2830,11 +2959,11 @@ const ChatInterface: React.FC = () => {
 
         {/* Bottom Chat Input Bar */}
         <HStack 
-          spacing={3} 
+          spacing={{ base: 1.5, md: 3 }} 
           flexShrink={0} 
-          px={{ base: 3, md: 4 }}
-          py={{ base: 4, md: 4 }}
-          pb={{ base: 'calc(1rem + env(safe-area-inset-bottom, 0px))', md: 4 }}
+          px={{ base: 2, md: 4 }}
+          py={{ base: 2.5, md: 4 }}
+          pb={{ base: 'calc(0.625rem + env(safe-area-inset-bottom, 0px))', md: 4 }}
           mb={{ base: '64px', md: 0 }}
           borderTop="2px solid"
           borderColor="gray.300"
@@ -2845,6 +2974,7 @@ const ChatInterface: React.FC = () => {
         >
           <Box position="relative" flex={1}>
             <Input
+              ref={inputRef}
               value={inputValue}
               onChange={(e) => setInputValue(e.target.value)}
               onKeyPress={(e) => {
@@ -2853,6 +2983,7 @@ const ChatInterface: React.FC = () => {
                   handleSendMessage();
                 }
               }}
+              onKeyDown={handleInputKeyDown}
               onFocus={(e) => {
                 // Auto-scroll input into view when keyboard appears
                 if (Capacitor.isNativePlatform() || window.innerWidth <= 768) {
@@ -2877,15 +3008,16 @@ const ChatInterface: React.FC = () => {
               border="2px solid"
               borderColor="gray.300"
               color="gray.900"
-              fontSize={{ base: '16px', md: '16px' }}
-              h={{ base: '56px', md: '60px' }}
+              fontSize={{ base: '14px', md: '16px' }}
+              h={{ base: '44px', md: '60px' }}
               w="100%"
-              px={{ base: 5, md: 6 }}
+              pl={{ base: 3, md: 6 }}
+              pr={{ base: 3, md: 6 }}
               fontWeight="500"
               transition="all 0.2s ease"
               _placeholder={{ 
                 color: 'gray.500', 
-                fontSize: { base: '15px', md: '16px' },
+                fontSize: { base: '12px', md: '16px' },
                 fontWeight: '500',
               }}
               _hover={{ 
@@ -3004,12 +3136,12 @@ const ChatInterface: React.FC = () => {
               }
               color="white"
               size="md"
-              h="48px"
-              w="48px"
-              minW="48px"
+              h={{ base: '38px', md: '48px' }}
+              w={{ base: '38px', md: '48px' }}
+              minW={{ base: '38px', md: '48px' }}
               borderRadius="full"
               flexShrink={0}
-              fontSize="20px"
+              fontSize={{ base: '15px', md: '20px' }}
               position="relative"
               zIndex={1}
               border="2px solid"
@@ -3059,6 +3191,86 @@ const ChatInterface: React.FC = () => {
               }}
             />
           </Box>
+          {/* Mobile-only: floating ▲▼ history pill above the input bar */}
+          {inputHistory.length > 0 && (
+            <VStack
+              display={{ base: 'flex', md: 'none' }}
+              position="absolute"
+              bottom="calc(100% + 6px)"
+              right={{ base: '8px', md: '16px' }}
+              spacing={0}
+              bg="white"
+              border="1.5px solid"
+              borderColor="gray.200"
+              borderRadius="12px"
+              overflow="hidden"
+              boxShadow="0 2px 12px rgba(0,0,0,0.15)"
+              zIndex={1001}
+              w="34px"
+            >
+              <IconButton
+                aria-label="Previous message"
+                icon={<FiChevronUp />}
+                h="28px"
+                w="34px"
+                minW="34px"
+                fontSize="16px"
+                variant="ghost"
+                borderRadius="0"
+                color={historyIndex === -1 || historyIndex > 0 ? 'brand.500' : 'gray.300'}
+                isDisabled={isLoading || inputHistory.length === 0 || historyIndex === 0}
+                onClick={() => {
+                  if (inputHistory.length === 0) return;
+                  const newIdx = historyIndex === -1
+                    ? inputHistory.length - 1
+                    : Math.max(0, historyIndex - 1);
+                  if (historyIndex === -1) setDraftInput(inputValue);
+                  setHistoryIndex(newIdx);
+                  setInputValue(inputHistory[newIdx].text);
+                  setTimeout(() => {
+                    const el = inputRef.current;
+                    if (el) el.selectionStart = el.selectionEnd = inputHistory[newIdx].text.length;
+                  }, 0);
+                }}
+                _hover={{ bg: 'brand.50' }}
+                _disabled={{ color: 'gray.200', cursor: 'not-allowed', opacity: 1 }}
+              />
+              <Box w="100%" h="1px" bg="gray.200" flexShrink={0} />
+              <IconButton
+                aria-label="Next message"
+                icon={<FiChevronDown />}
+                h="28px"
+                w="34px"
+                minW="34px"
+                fontSize="16px"
+                variant="ghost"
+                borderRadius="0"
+                color={historyIndex !== -1 ? 'brand.500' : 'gray.300'}
+                isDisabled={isLoading || historyIndex === -1}
+                onClick={() => {
+                  if (historyIndex === -1) return;
+                  const newIdx = historyIndex + 1;
+                  if (newIdx >= inputHistory.length) {
+                    setHistoryIndex(-1);
+                    setInputValue(draftInput);
+                    setTimeout(() => {
+                      const el = inputRef.current;
+                      if (el) el.selectionStart = el.selectionEnd = draftInput.length;
+                    }, 0);
+                  } else {
+                    setHistoryIndex(newIdx);
+                    setInputValue(inputHistory[newIdx].text);
+                    setTimeout(() => {
+                      const el = inputRef.current;
+                      if (el) el.selectionStart = el.selectionEnd = inputHistory[newIdx].text.length;
+                    }, 0);
+                  }
+                }}
+                _hover={{ bg: 'brand.50' }}
+                _disabled={{ color: 'gray.200', cursor: 'not-allowed', opacity: 1 }}
+              />
+            </VStack>
+          )}
           <IconButton
             aria-label="Send message"
             data-send-btn
@@ -3068,12 +3280,12 @@ const ChatInterface: React.FC = () => {
             bgGradient="linear(to-br, brand.500, brand.600)"
             color="white"
             size="lg"
-            h={{ base: '56px', md: '60px' }}
-            w={{ base: '56px', md: '60px' }}
-            minW={{ base: '56px', md: '60px' }}
-            borderRadius="16px"
+            h={{ base: '44px', md: '60px' }}
+            w={{ base: '44px', md: '60px' }}
+            minW={{ base: '44px', md: '60px' }}
+            borderRadius={{ base: '12px', md: '16px' }}
             flexShrink={0}
-            fontSize="22px"
+            fontSize={{ base: '18px', md: '22px' }}
             transition="all 0.2s ease"
             boxShadow="0 4px 20px rgba(201, 31, 61, 0.4), 0 2px 8px rgba(201, 31, 61, 0.25)"
             _hover={{
