@@ -69,8 +69,9 @@ function filterPagesByCategory(pages: ExtractedPage[], category: string): Extrac
     console.log('📌 Using service type (pricing suffix removed):', serviceTypeOnly);
   } else {
     // Only fall back to first-dash split if no sub-type qualifiers are present
-    // Sub-type qualifiers: words like interior, underground, exterior, station, etc.
-    const subTypePattern = /\b(interior|underground|exterior|station|rooftop|skyway|elevated|platform|non\s*led|led)\b/i;
+    // Sub-type qualifiers: words like interior, underground, exterior, station,
+    // variant descriptors like without/single/double/panel/light/lit/unlit, etc.
+    const subTypePattern = /\b(interior|underground|exterior|station|rooftop|skyway|elevated|platform|non\s*led|led|without|single|double|triple|panel|light|lit|unlit|backlit|front.?lit)\b/i;
     const hasSubType = subTypePattern.test(category);
     
     if (hasSubType) {
@@ -1009,6 +1010,37 @@ function filterPagesByQuoteItems(pages: ExtractedPage[], items: QuoteItem[]): Ex
         console.log(`⚠️ No pages found for "${serviceType}"`);
       }
     }
+
+    // BASE-TYPE FALLBACK: If no pages matched the full specific service type
+    // (e.g. "Bus Shelter - Single Panel - Without Light" found nothing),
+    // retry using only the base type (everything before the first " - ").
+    // This ensures generic reference images still appear when the PDF has no
+    // variant-specific page, while the negation guard prevents showing
+    // contradictory content (e.g. "With Light" page for a "Without Light" item).
+    if (matchedPages.size === 0) {
+      for (const serviceType of serviceTypes) {
+        const dashIdx = serviceType.indexOf(' - ');
+        if (dashIdx <= 0) continue; // no variant suffix to strip
+        const baseType = serviceType.substring(0, dashIdx).trim();
+        console.log(`🔄 Variant fallback: trying base type "${baseType}" for "${serviceType}"`);
+        const fallbackPages = filterPagesByCategory(pages, baseType);
+        if (fallbackPages.length > 0) {
+          console.log(`✅ Variant fallback: found ${fallbackPages.length} pages for base type "${baseType}"`);
+          const queryLower = serviceType.toLowerCase();
+          const wantsWithout = /\bwithout\b/.test(queryLower);
+          const wantsWith = /\bwith\s+(light|illumination)\b|\bbacklit\b/.test(queryLower);
+          fallbackPages
+            .filter(p => {
+              const pt = p.text.toLowerCase().replace(/\s*\|\s*/g, '').replace(/\s+/g, ' ');
+              // Skip page that explicitly describes the opposite variant
+              if (wantsWithout && /\bwith\s+light\b|\bbacklit\b|\bfront.?lit\b|\bwith\s+illumination\b/.test(pt)) return false;
+              if (wantsWith && /\bwithout\s+light\b|\bunlit\b/.test(pt)) return false;
+              return true;
+            })
+            .forEach(p => matchedPages.add(p.pageNumber));
+        }
+      }
+    }
     
     if (matchedPages.size > 0) {
       const result = pages.filter((page) => matchedPages.has(page.pageNumber));
@@ -1753,7 +1785,7 @@ export const ReferenceImages: React.FC<ReferenceImagesProps> = ({ proposalPages,
             )}
             {specImageUrl && !hasMeaningfulSpec && (
               <div className="ref-img-container spec-img-container">
-                <img src={lazyCroppedSpecImage ?? lazyCroppedPureSpecImage ?? specImageUrl} alt="Design specification diagram" className="ref-img" />
+                <img src={lazyCroppedPureSpecImage ?? lazyCroppedSpecImage ?? specImageUrl} alt="Design specification diagram" className="ref-img" />
               </div>
             )}
           </div>
@@ -1793,7 +1825,7 @@ export const ReferenceImages: React.FC<ReferenceImagesProps> = ({ proposalPages,
           {/* Show spec image when: no spec at all, OR spec has only minimal content (material only, no dimensions) */}
           {specImageUrl && !hasMeaningfulSpec && (
             <div className="ref-img-container spec-img-container">
-              <img src={lazyCroppedSpecImage ?? lazyCroppedPureSpecImage ?? specImageUrl} alt="Design specification diagram" className="ref-img" />
+              <img src={lazyCroppedPureSpecImage ?? lazyCroppedSpecImage ?? specImageUrl} alt="Design specification diagram" className="ref-img" />
             </div>
           )}
         </div>

@@ -55,14 +55,14 @@
   width: 100%;
   max-width: 700px;
   margin: 0 auto 20px auto;
-  padding: 20px;
+  padding: 0;
   clear: both;
   position: relative;
   page-break-inside: avoid !important;
   break-inside: avoid !important;
   overflow: hidden;
-  background: white;
-  height: 350px;
+  background: transparent;
+  height: 550px;
 }
 
 .reference-image {
@@ -70,12 +70,12 @@
   max-width: 100%;
   height: auto;
   max-height: none;
-  border: 1px solid #ddd;
+  border: 1px solid #e0e0e0;
   border-radius: 4px;
-  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.08);
+  box-shadow: none;
   display: block;
   object-fit: contain;
-  margin: -110px auto 0 auto;
+  margin: 0 auto;
   page-break-inside: avoid !important;
   break-inside: avoid !important;
   position: relative;
@@ -140,17 +140,17 @@
   break-inside: avoid !important;
   overflow: hidden !important;
   background: white !important;
-  height: 400px !important;
+  height: 850px !important;
 }
 
 #pdf-page-2 .reference-image {
   width: 100% !important;
   max-width: 100% !important;
   height: auto !important;
-  max-height: 500px !important;
+  max-height: 1000px !important;
   display: blonone !important;
   display: block !important;
-  margin: -12x solid #ccc !important;
+  margin: 0 !important;
   border-radius: 0 !important;
   box-shadow: none !important;
   object-fit: contain !important;
@@ -178,6 +178,8 @@
   page-break-before: always !important;
   break-before: page !important;
 }
+
+.reference-image-caption {
   font-size: 13px;
   margin-top: 10px;
   text-align: center;
@@ -299,9 +301,9 @@
 @media screen and (max-width: 768px) {
   .reference-image-item {
     height: 450px !important;
-    padding: 15px !important;
+    padding: 0 !important;
     overflow: hidden !important;
-    background: white !important;
+    background: transparent !important;
   }
   
   .reference-image {
@@ -329,7 +331,7 @@
 @media screen and (min-width: 769px) and (max-width: 1024px) {
   .reference-image-item {
     height: 350px !important;
-    padding: 18px !important;
+    padding: 0 !important;
   }
   
   .reference-image {
@@ -344,7 +346,7 @@
   height: auto !important;
   max-height: none !important;
   overflow: visible !important;
-  padding: 10px 20px !important;
+  padding: 0 !important;
 }
 
 .reference-image.cropped-image {
@@ -354,9 +356,9 @@
   max-width: 100% !important;
   object-fit: contain !important;
   display: block !important;
-  border: 1px solid #ddd !important;
+  border: 1px solid #e0e0e0 !important;
   border-radius: 4px !important;
-  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.08) !important;
+  box-shadow: none !important;
 }
 
 /* ============================================================
@@ -463,10 +465,10 @@
   display: flex;
   flex-direction: column;
   align-items: center;
-  background: #f8f9fa;
-  border: 1px solid #dee2e6;
+  background: transparent;
+  border: 1px solid #e0e0e0;
   border-radius: 6px;
-  padding: 12px;
+  padding: 0;
   overflow: visible;
 }
 
@@ -476,7 +478,7 @@
 }
 
 .ref-img-single-center {
-  min-height: 420px;
+  min-height: unset;
   justify-content: center;
 }
 

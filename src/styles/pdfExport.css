@@ -805,7 +805,7 @@ html body #pdf-page-summary .bank-details-section table th,
 html body [id^="pdf-service-"] .bank-details-section table,
 html body [id^="pdf-service-"] .bank-details-section table td,
 html body [id^="pdf-service-"] .bank-details-section table th {
-  font-size: 14px !important;
+  font-size: 18px !important;
   line-height: 1.5 !important;
 }
 

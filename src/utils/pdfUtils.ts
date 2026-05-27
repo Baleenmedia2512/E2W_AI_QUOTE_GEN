@@ -273,8 +273,8 @@ export function cropSpecDiagram(imageDataUrl: string): Promise<string> {
       // heading, and "Material: Vinyl sticker..." text. The actual diagram begins
       // roughly at 38% down. Skip past all of that.
       const scanStart = Math.round(h * 0.38);
-      // End scanning at 97% to ignore footer
-      const scanEnd = Math.round(h * 0.97);
+      // End scanning at 91% — page numbers/footers typically sit in the bottom 8-9%
+      const scanEnd = Math.round(h * 0.91);
 
       let contentTop = -1;
       let contentBottom = -1;
@@ -289,7 +289,7 @@ export function cropSpecDiagram(imageDataUrl: string): Promise<string> {
       // Fallback to fixed crop if scan found nothing
       if (contentTop === -1 || contentBottom === -1) {
         const topCut = Math.round(h * 0.38);
-        const bottomCut = Math.round(h * 0.05);
+        const bottomCut = Math.round(h * 0.09);
         const newH = h - topCut - bottomCut;
         if (newH < 50) { resolve(imageDataUrl); return; }
         const fallbackCanvas = document.createElement('canvas');
