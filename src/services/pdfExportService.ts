@@ -194,6 +194,7 @@ const captureSectionAtA4 = async (containerId: string): Promise<{ canvas: HTMLCa
   });
 
   document.body.appendChild(clone);
+  clone.classList.add('pdf-export-mode');
   // Must run AFTER appendChild: getComputedStyle returns empty values for
   // detached elements, which would skip the font-size normalization.
   forcePdfFontInTree(clone);
@@ -695,6 +696,7 @@ const captureVirtualPage = async (
     display: 'block',
   });
   document.body.appendChild(clone);
+  clone.classList.add('pdf-export-mode');
   // Must run AFTER appendChild — see captureSectionAtA4 for rationale.
   forcePdfFontInTree(clone);
 
