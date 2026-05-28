@@ -1566,7 +1566,8 @@ export const ReferenceImages: React.FC<ReferenceImagesProps> = ({ proposalPages,
   // Smart content extraction from parsed text — section-aware
   // specGroups and image extraction use filteredPages ONLY (unchanged behaviour)
   const specGroups = useMemo(() => extractDesignSpecFields(filteredPages), [filteredPages]);
-  const hasSpecContent = specGroups.some(g => g.fields.length > 0);
+  // Require at least one field with a non-empty value (a heading-only group is not "content")
+  const hasSpecContent = specGroups.some(g => g.fields.some(f => (f.value || '').trim().length > 0));
   // hasMeaningfulSpec: true only when spec table has dimension/measurement data (not just material name)
   const hasMeaningfulSpec = useMemo(() => {
     if (!hasSpecContent) return false;
@@ -1768,17 +1769,37 @@ export const ReferenceImages: React.FC<ReferenceImagesProps> = ({ proposalPages,
     }
   }, []); // mount only
 
-  // Debounce: after every async state change, reset a 500 ms timer.
+  // Debounce: after every async state/data change, reset a 500 ms timer.
   // When 500 ms elapses with no further changes, all async ops have settled
   // and we can mark the section ready for PDF capture.
+  // IMPORTANT: include the derived data (filteredPages, specGroups, refImageUrls)
+  // so that when proposalPages arrive async from IndexedDB and re-derive the
+  // content, the readiness timer restarts. Otherwise the section can report
+  // ready=true while the spec-table / images are still rendering, causing
+  // measureSectionBlocks to capture a too-small height and the smart-pagination
+  // engine to place the block on a page where its actual rendered height
+  // overflows into the footer overlay.
+  //
+  // Additionally: only set ready=true once filteredPages is non-empty. The
+  // initial render happens with filteredPages=[] (proposalPages still loading
+  // from IndexedDB). If we set ready=true on that empty state, waitForPdfReady
+  // returns immediately and measureSectionBlocks captures a too-small height
+  // for the spec / refImages blocks (heading only, no content).
   useEffect(() => {
+    if (containerRef.current) {
+      containerRef.current.setAttribute('data-pdf-ready', 'false');
+    }
+    // Wait for real data before becoming ready. If there are no filtered pages
+    // yet, stay false — the next render (when proposalPages arrives) will
+    // re-trigger this effect with non-empty filteredPages.
+    if (filteredPages.length === 0) return;
     const tid = setTimeout(() => {
       if (containerRef.current) {
         containerRef.current.setAttribute('data-pdf-ready', 'true');
       }
     }, 500);
     return () => clearTimeout(tid);
-  }, [geminiReview, lazyCroppedRefImages, lazyCroppedSpecImage, lazyCroppedPureSpecImage]);
+  }, [geminiReview, lazyCroppedRefImages, lazyCroppedSpecImage, lazyCroppedPureSpecImage, filteredPages, specGroups, refImageUrls, hasSpecContent, specImageUrl]);
   // ─────────────────────────────────────────────────────────────────────────
 
   if (!resolvedPages || resolvedPages.length === 0) {
@@ -1865,9 +1886,15 @@ export const ReferenceImages: React.FC<ReferenceImagesProps> = ({ proposalPages,
     <div className="smart-reference-page" ref={containerRef}>
       <div className="pdf-top-spacer" />
 
-      {/* Design Specification */}
+      {/* Design Specification
+          Marked as "header-group" (not "atomic") so the smart-pagination orphan
+          rule kicks in: if the spec block + the next block (Reference Images)
+          cannot both fit on the current page, the spec block is pushed to the
+          next page. This prevents the spec section from being orphaned at the
+          bottom of a pricing-table page where its content would overflow into
+          the footer overlay zone (USABLE_HEIGHT cutoff). */}
       {!noSpec && (hasSpecContent || specImageUrl) && (
-        <div className="smart-section" data-pdf-block="atomic">
+        <div className="smart-section" data-pdf-block="header-group">
           <h3 className="smart-section-heading">
             <span className="smart-heading-bar" />
             2. Display Specification

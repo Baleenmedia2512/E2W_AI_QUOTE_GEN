@@ -271,8 +271,9 @@
 }
 
 .template-corporate-minimal .items-table .col-quantity {
-  width: 7%;
+  width: 9%;
   text-align: right;
+  white-space: nowrap;
 }
 
 .template-corporate-minimal .items-table .col-rate {
@@ -352,8 +353,9 @@
   max-width: 32%;
 }
 .template-corporate-minimal .items-table--gst .col-quantity {
-  width: 7%;
-  max-width: 7%;
+  width: 9%;
+  max-width: 9%;
+  white-space: nowrap;
 }
 .template-corporate-minimal .items-table--gst .col-rate {
   width: 15%;
