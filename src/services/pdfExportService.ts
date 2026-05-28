@@ -9,8 +9,11 @@ import DownloadNotification from '../plugins/downloadNotification';
 // A4 dimensions at 96dpi (standard web resolution)
 const A4_WIDTH_PX = 794;   // 210mm at 96dpi
 const A4_HEIGHT_PX = 1123;  // 297mm at 96dpi
-// Usable content height per page: A4 (1123px) minus top padding (50) + bottom padding (50) + footer height (~62px) + safety buffer (10px)
-const PDF_USABLE_HEIGHT_PX = 951;
+// Usable content height per page: A4 (1123px) minus top padding (50) + bottom padding (50) + footer height (~62px) + safety buffer (30px)
+// A 30px buffer guards against minor render/measure drift; the primary fix for
+// async-content height mis-measurement lives in ReferenceImages' data-pdf-ready
+// debounce (it now resets when proposalPages / specGroups / refImageUrls change).
+const PDF_USABLE_HEIGHT_PX = 930;
 const PDF_FONT_FAMILY = "'Calibri'";
 const PDF_FONT_LOAD_SPECS = [
   '400 14px Calibri',

@@ -15,14 +15,13 @@ import QuoteStepper from '../components/QuoteWizard/QuoteStepper';
 import CompanyInfoForm from '../components/CompanyInfoForm/CompanyInfoForm';
 import ClientInfoForm from '../components/ClientInfoForm/ClientInfoFormWithAutocomplete';
 import QuotePreview from '../components/QuotePreview/QuotePreview';
-import { TemplateSelector } from '../components/TemplateSelector/TemplateSelector';
 import { useAppStore } from '../store';
 import { CompanyInfo } from '../types/company';
 import { ClientInfo } from '../types/client';
 import { Quote } from '../types/quote';
 import { saveCompanyInfo } from '../utils/localStorage';
 
-type QuoteStep = 'company' | 'client' | 'preview' | 'template';
+type QuoteStep = 'company' | 'client' | 'preview';
 
 const QuotePage: React.FC = () => {
   const history = useHistory();
@@ -142,8 +141,8 @@ const QuotePage: React.FC = () => {
       return;
     }
     
-    console.log('✅ Validation passed - moving to template selection...');
-    setCurrentStep('template');
+    console.log('✅ Validation passed - navigating to preview...');
+    handleTemplateSelected();
   };
 
   const handleTemplateSelected = () => {
@@ -223,9 +222,7 @@ const QuotePage: React.FC = () => {
   };
 
   const handleBack = () => {
-    if (currentStep === 'template') {
-      setCurrentStep('preview');
-    } else if (currentStep === 'preview') {
+    if (currentStep === 'preview') {
       setCurrentStep('client');
     } else if (currentStep === 'client') {
       setCurrentStep('company');
@@ -240,8 +237,6 @@ const QuotePage: React.FC = () => {
     } else if (currentStep === 'client' && clientInfo) {
       setCurrentStep('preview');
     } else if (currentStep === 'preview' && currentQuote) {
-      setCurrentStep('template');
-    } else if (currentStep === 'template' && selectedTemplate) {
       handleTemplateSelected();
     }
   };
@@ -251,7 +246,6 @@ const QuotePage: React.FC = () => {
       case 'company': return 1;
       case 'client': return 2;
       case 'preview': return 3;
-      case 'template': return 4;
       default: return 1;
     }
   };
@@ -292,8 +286,7 @@ const QuotePage: React.FC = () => {
               isDisabled={
                 (currentStep === 'company' && !companyInfo) ||
                 (currentStep === 'client' && !clientInfo) ||
-                (currentStep === 'preview' && !currentQuote) ||
-                (currentStep === 'template' && !selectedTemplate)
+                (currentStep === 'preview' && !currentQuote)
               }
               colorScheme="brand"
               size="md"
@@ -379,81 +372,13 @@ const QuotePage: React.FC = () => {
                 >
                   {!companyInfo ? 'Add Company Info' : 
                    !clientInfo ? 'Add Client Info' : 
-                   'Continue to Template'}
+                   'Preview & Export PDF'}
                 </Button>
               </HStack>
             </VStack>
           )}
 
-          {currentStep === 'template' && (
-            <VStack spacing={6} align="stretch">
-              <Box 
-                bg="white" 
-                borderRadius="20px" 
-                boxShadow="0 2px 8px rgba(0, 0, 0, 0.06)" 
-                p={{ base: 4, md: 6 }}
-              >
-                <TemplateSelector 
-                  selectedTemplate={selectedTemplate} 
-                  onSelectTemplate={setSelectedTemplate} 
-                />
-              </Box>
-              <HStack 
-                spacing={4} 
-                justify="space-between" 
-                bg="white" 
-                p={{ base: 4, md: 6 }} 
-                borderRadius="20px" 
-                boxShadow="0 4px 12px rgba(0, 0, 0, 0.08)" 
-                flexDir={{ base: 'column', sm: 'row' }} 
-                w="100%"
-              >
-                <Button
-                  onClick={() => setCurrentStep('preview')}
-                  variant="outline"
-                  size="lg"
-                  borderWidth="2px"
-                  borderColor="gray.300"
-                  color="gray.700"
-                  fontWeight="600"
-                  px={8}
-                  _hover={{ 
-                    bg: 'gray.50', 
-                    borderColor: 'gray.400',
-                    transform: 'translateY(-2px)',
-                    boxShadow: '0 4px 12px rgba(0, 0, 0, 0.1)'
-                  }}
-                  _active={{ transform: 'scale(0.98)' }}
-                  w={{ base: '100%', sm: 'auto' }}
-                  borderRadius="12px"
-                >
-                  ← Back
-                </Button>
-                <Button
-                  bgGradient="linear(to-r, #C91F3D, #B31B3E)"
-                  color="white"
-                  onClick={handleTemplateSelected}
-                  size="lg"
-                  fontWeight="600"
-                  px={{ base: 6, md: 10 }}
-                  _hover={{ 
-                    bgGradient: 'linear(to-r, #B31B3E, #9f1239)',
-                    transform: 'translateY(-2px)',
-                    boxShadow: '0 6px 20px rgba(201, 31, 61, 0.4)'
-                  }}
-                  _active={{ transform: 'scale(0.98)' }}
-                  isDisabled={!selectedTemplate}
-                  isLoading={isNavigating}
-                  loadingText="Loading..."
-                  w={{ base: '100%', sm: 'auto' }}
-                  borderRadius="12px"
-                  boxShadow="0 4px 16px rgba(201, 31, 61, 0.3)"
-                >
-                  Preview & Export PDF
-                </Button>
-              </HStack>
-            </VStack>
-          )}
+
         </Box>
       </Container>
     </Box>

@@ -361,14 +361,6 @@ export const CorporateMinimal: React.FC<TemplateProps> = ({ data, editable: _edi
                   <div data-pdf-block="table">
                     {renderItemsTable(group.items)}
                   </div>
-                  {/* Display Specification packed into same page as pricing table */}
-                  <ReferenceImages
-                    specOnly
-                    proposalPages={data.proposalPages}
-                    proposalPageMap={data.proposalPageMap}
-                    items={group.items}
-                    terms={[]}
-                  />
                 </div>
 
                 {/* Company Contact Footer */}
@@ -376,7 +368,7 @@ export const CorporateMinimal: React.FC<TemplateProps> = ({ data, editable: _edi
               </div>
 
               <div id={`pdf-service-ref-${groupIndex}`} className="template-corporate-minimal">
-                <ReferenceImages noSpec proposalPages={data.proposalPages} proposalPageMap={data.proposalPageMap} items={group.items} terms={groupTerms} />
+                <ReferenceImages proposalPages={data.proposalPages} proposalPageMap={data.proposalPageMap} items={group.items} terms={groupTerms} />
 
                 {renderCompanyFooter(refPage, multiTotal)}
               </div>

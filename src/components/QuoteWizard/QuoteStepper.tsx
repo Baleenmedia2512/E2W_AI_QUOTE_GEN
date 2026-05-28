@@ -19,7 +19,6 @@ const steps = [
   { number: 1, label: 'Company Info' },
   { number: 2, label: 'Client Info' },
   { number: 3, label: 'Preview & Edit' },
-  { number: 4, label: 'Choose Template' },
 ];
 
 const QuoteStepper: React.FC<QuoteStepperProps> = ({ currentStep }) => {

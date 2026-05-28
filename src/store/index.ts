@@ -48,7 +48,7 @@ const loadSelectedTemplate = (): TemplateType => {
   try {
     const saved = localStorage.getItem('selectedTemplate');
     if (saved && ['corporate-minimal', 'premium-agency', 'modern-sales', 'classic-business'].includes(saved)) {
-      return saved as TemplateType;
+      return 'corporate-minimal' as TemplateType;
     }
   } catch (error) {
     console.error('Failed to load template from localStorage:', error);
