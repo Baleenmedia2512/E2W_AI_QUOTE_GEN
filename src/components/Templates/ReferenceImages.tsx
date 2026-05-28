@@ -1170,7 +1170,7 @@ function extractDesignSpecFields(pages: ExtractedPage[]): SpecGroup[] {
         if (colonMatch) {
           const label = colonMatch[1].trim();
           const value = colonMatch[2].trim();
-          const isDim = /\d["'x×(]/i.test(value) || /side|front|back|top|bottom|left|right|dimension|size/i.test(label);
+          const isDim = /\d["'x×(]/i.test(value) || /\d\s+[x×]\s+\d/i.test(value) || /side|front|back|top|bottom|left|right|dimension|size/i.test(label);
           if (isDim) dimensionFields.push({ label, value });
           else materialFields.push({ label, value });
         }
@@ -1198,7 +1198,7 @@ function extractDesignSpecFields(pages: ExtractedPage[]): SpecGroup[] {
         const label = parts[0].replace(/:\s*$/, '').trim();
         const value = parts.slice(1).join(' ').trim();
         if (label && value) {
-          const isDim = /\d["'x×(]/i.test(value) || /side|front|back|top|bottom|left|right|dimension|size/i.test(label);
+          const isDim = /\d["'x×(]/i.test(value) || /\d\s+[x×]\s+\d/i.test(value) || /side|front|back|top|bottom|left|right|dimension|size/i.test(label);
           if (isDim) dimensionFields.push({ label, value });
           else materialFields.push({ label, value });
         }
@@ -1230,6 +1230,48 @@ function extractDesignSpecFields(pages: ExtractedPage[]): SpecGroup[] {
     }
 
     const groups: SpecGroup[] = [];
+
+    // Post-process dimensionFields: if a field has a "container" label (Size, Dimension…)
+    // whose value itself contains a sub-label colon pattern ("Top Panel: 25.9 x 2.75 (wxh) FT"),
+    // promote it to a SpecGroup heading and absorb subsequent sub-panel rows into it.
+    const SIZE_CONTAINER_RE = /^(size|dimensions?|display\s*size|ad\s*size|panel\s*size|creative\s*size)$/i;
+    const SUB_PANEL_RE = /^(top|bottom|left|right|front|back|[a-z]+\s+panel|[a-z]+\s+side|[a-z]+\s+face)/i;
+
+    const containerIdx = dimensionFields.findIndex(f => SIZE_CONTAINER_RE.test(f.label.trim()));
+    if (containerIdx !== -1) {
+      const containerField = dimensionFields[containerIdx];
+      const subColon = containerField.value.match(/^([^:]{1,40}):\s*(.+)$/);
+
+      // Case A: value contains a sub-label ("Top Panel: 25.9 x 2.75 (wxh) FT")
+      // → create Size group with sub-panel rows
+      if (subColon) {
+        const sizeGroupFields: Array<{ label: string; value: string }> = [
+          { label: subColon[1].trim(), value: subColon[2].trim() }
+        ];
+        const consumed = new Set<number>([containerIdx]);
+        for (let i = containerIdx + 1; i < dimensionFields.length; i++) {
+          if (SUB_PANEL_RE.test(dimensionFields[i].label.trim())) {
+            sizeGroupFields.push(dimensionFields[i]);
+            consumed.add(i);
+          }
+        }
+        const remainingDimFields = dimensionFields.filter((_, i) => !consumed.has(i));
+        groups.push({ heading: containerField.label, fields: sizeGroupFields });
+        if (remainingDimFields.length > 0) groups.push({ heading: null, fields: remainingDimFields });
+        if (materialFields.length > 0) groups.push({ heading: 'Material', fields: materialFields });
+        return groups;
+      }
+
+      // Case B: single value, no sub-label ("Size: A2 (16.5 x 23.4 inches)")
+      // → promote to a group so it renders consistently; renderHeadingAsRow
+      //   will fire (no remaining fields) and show it as a clean spec-row.
+      const remainingDimFields = dimensionFields.filter((_, i) => i !== containerIdx);
+      groups.push({ heading: containerField.label, fields: [{ label: containerField.label, value: containerField.value }] });
+      if (remainingDimFields.length > 0) groups.push({ heading: null, fields: remainingDimFields });
+      if (materialFields.length > 0) groups.push({ heading: 'Material', fields: materialFields });
+      return groups;
+    }
+
     if (dimensionFields.length > 0) groups.push({ heading: null, fields: dimensionFields });
     if (materialFields.length > 0) groups.push({ heading: 'Material', fields: materialFields });
     if (groups.length > 0) return groups;
@@ -1776,15 +1818,26 @@ export const ReferenceImages: React.FC<ReferenceImagesProps> = ({ proposalPages,
                   const remainingFields = group.heading
                     ? group.fields.filter(f => f.label.trim().toLowerCase() !== headingLower)
                     : group.fields;
+                  // When a headed group has only a single inline value and no sub-fields
+                  // (e.g. Material: Vinyl sticker with Lamination), render as a plain
+                  // spec-row so it aligns neatly with dimension rows above it.
+                  const renderHeadingAsRow = group.heading && remainingFields.length === 0 && inlineValues.length > 0;
                   return (
                     <React.Fragment key={gi}>
                       {group.heading && (
-                        <div className="spec-group-heading">
-                          <span className="spec-group-heading-label">{group.heading}</span>
-                          {inlineValues.length > 0 && (
-                            <span className="spec-group-heading-value">{inlineValues.join(', ')}</span>
-                          )}
-                        </div>
+                        renderHeadingAsRow ? (
+                          <div className="spec-row">
+                            <span className="spec-label spec-label--group">{group.heading}</span>
+                            <span className="spec-value">{inlineValues.join(', ')}</span>
+                          </div>
+                        ) : (
+                          <div className="spec-group-heading">
+                            <span className="spec-group-heading-label">{group.heading}</span>
+                            {inlineValues.length > 0 && (
+                              <span className="spec-group-heading-value">{inlineValues.join(', ')}</span>
+                            )}
+                          </div>
+                        )
                       )}
                       {remainingFields.map((f, fi) => (
                         <div key={fi} className="spec-row">
@@ -1829,15 +1882,23 @@ export const ReferenceImages: React.FC<ReferenceImagesProps> = ({ proposalPages,
                 const remainingFields = group.heading
                   ? group.fields.filter(f => f.label.trim().toLowerCase() !== headingLower)
                   : group.fields;
+                const renderHeadingAsRow = group.heading && remainingFields.length === 0 && inlineValues.length > 0;
                 return (
                   <React.Fragment key={gi}>
                     {group.heading && (
-                      <div className="spec-group-heading">
-                        <span className="spec-group-heading-label">{group.heading}</span>
-                        {inlineValues.length > 0 && (
-                          <span className="spec-group-heading-value">{inlineValues.join(', ')}</span>
-                        )}
-                      </div>
+                      renderHeadingAsRow ? (
+                        <div className="spec-row">
+                          <span className="spec-label spec-label--group">{group.heading}</span>
+                          <span className="spec-value">{inlineValues.join(', ')}</span>
+                        </div>
+                      ) : (
+                        <div className="spec-group-heading">
+                          <span className="spec-group-heading-label">{group.heading}</span>
+                          {inlineValues.length > 0 && (
+                            <span className="spec-group-heading-value">{inlineValues.join(', ')}</span>
+                          )}
+                        </div>
+                      )
                     )}
                     {remainingFields.map((f, fi) => (
                       <div key={fi} className="spec-row">
@@ -1922,7 +1983,7 @@ export const ReferenceImages: React.FC<ReferenceImagesProps> = ({ proposalPages,
           <div className="review-card">
             <ul className="ref-terms-list">
               {terms.map((term, idx) => (
-                <li key={idx}>{term}</li>
+                <li key={idx}><span className="ref-bullet-dot"></span>{term}</li>
               ))}
             </ul>
           </div>

@@ -657,20 +657,20 @@
 .template-corporate-minimal .terms-section li {
   font-size: 14.5px;
   color: #555;
-  padding: 5px 0 5px 20px;
-  position: relative;
+  padding: 5px 0;
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
   line-height: 1.45;
 }
 
-.template-corporate-minimal .terms-section li:before {
-  content: '';
-  position: absolute;
-  left: 0;
-  top: 13px; /* vertically centered with first text line (padding-top:5 + line-height/2:10.5 - dot-height/2:2.5) */
+.template-corporate-minimal .terms-section .bullet-dot {
   width: 5px;
   height: 5px;
   border-radius: 50%;
   background: #2980b9;
+  flex-shrink: 0;
+  margin-top: calc((1.45em - 5px) / 2);
 }
 
 /* ─── System Generated Notice ─── */
@@ -1119,14 +1119,15 @@
 
   .template-corporate-minimal .terms-section li {
     font-size: 11px;
-    padding: 4px 0 4px 14px;
+    padding: 4px 0;
+    gap: 10px;
     line-height: 1.5;
   }
 
-  .template-corporate-minimal .terms-section li:before {
-    top: 10px;
-    width: 5px;
-    height: 5px;
+  .template-corporate-minimal .terms-section .bullet-dot {
+    width: 4px;
+    height: 4px;
+    margin-top: calc((1.5em - 4px) / 2);
   }
 
   .template-corporate-minimal .system-generated-notice {

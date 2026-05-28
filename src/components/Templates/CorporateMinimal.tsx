@@ -261,7 +261,7 @@ export const CorporateMinimal: React.FC<TemplateProps> = ({ data, editable: _edi
                 Service Terms &amp; Conditions
               </h3>
               <ul>
-                {singleTerms.map((term, i) => <li key={i}>{term}</li>)}
+                {singleTerms.map((term, i) => <li key={i}><span className="bullet-dot"></span>{term}</li>)}
               </ul>
             </div>
           )}
@@ -270,7 +270,7 @@ export const CorporateMinimal: React.FC<TemplateProps> = ({ data, editable: _edi
               General Terms &amp; Conditions
             </h3>
             <ul>
-              {DEFAULT_GENERAL_TERMS.map((term, i) => <li key={i}>{term}</li>)}
+              {DEFAULT_GENERAL_TERMS.map((term, i) => <li key={i}><span className="bullet-dot"></span>{term}</li>)}
             </ul>
           </div>
 
@@ -393,7 +393,7 @@ export const CorporateMinimal: React.FC<TemplateProps> = ({ data, editable: _edi
             General Terms &amp; Conditions
           </h3>
           <ul>
-            {DEFAULT_GENERAL_TERMS.map((term, i) => <li key={i}>{term}</li>)}
+            {DEFAULT_GENERAL_TERMS.map((term, i) => <li key={i}><span className="bullet-dot"></span>{term}</li>)}
           </ul>
         </div>
 
