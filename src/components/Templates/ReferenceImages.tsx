@@ -1920,25 +1920,25 @@ export const ReferenceImages: React.FC<ReferenceImagesProps> = ({ proposalPages,
         </div>
       )}
 
-      {/* Reference Images — each image is its own data-pdf-block so no image is ever
-          sliced at a page boundary. The heading appears only on the first block. */}
-      {refImageUrls.length > 0 && finalRefImageUrls.map((src, idx) => (
-        <div key={idx} className="smart-section" data-pdf-block="atomic">
-          {idx === 0 && (
-            <h3 className="smart-section-heading">
-              <span className="smart-heading-bar" />
-              3. Reference Images
-            </h3>
-          )}
-          <div className="ref-img-container ref-img-single-center">
-            <img
-              src={src}
-              alt={`Reference ${idx + 1}`}
-              className={`ref-img ${finalRefImageUrls.length === 1 ? 'ref-img-single' : ''}`}
-            />
-          </div>
+      {/* Reference Images — all images are inside one atomic block so they
+          stay together in the PDF and never appear as separate sections. */}
+      {refImageUrls.length > 0 && (
+        <div className="smart-section" data-pdf-block="atomic">
+          <h3 className="smart-section-heading">
+            <span className="smart-heading-bar" />
+            3. Reference Images
+          </h3>
+          {finalRefImageUrls.map((src, idx) => (
+            <div key={idx} className="ref-img-container ref-img-single-center">
+              <img
+                src={src}
+                alt={`Reference ${idx + 1}`}
+                className={`ref-img ${finalRefImageUrls.length === 1 ? 'ref-img-single' : ''}`}
+              />
+            </div>
+          ))}
         </div>
-      ))}
+      )}
 
       {/* Customer Review */}
       {finalReview && (
