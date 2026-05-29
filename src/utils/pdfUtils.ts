@@ -20,6 +20,7 @@ export interface ExtractedPage {
 interface ImageBoundingBox {
   box: [number, number, number, number]; // [y_min, x_min, y_max, x_max] in 0-1000 scale
   label: string;
+  noPad?: boolean; // true for grid-split boxes that share exact boundaries — skip crop padding to prevent bleed
 }
 
 function shouldAttemptCropping(pageText: string): boolean {
@@ -57,20 +58,31 @@ async function detectImageRegions(imageDataUrl: string, pageNumber: number): Pro
 
     const base64Data = imageDataUrl.split(',')[1];
 
-    const prompt = `Analyze this advertising/media proposal PDF page image. Detect all product photographs, reference photos, vehicle branding mockups, bus/auto/van/car wrapped images, signage photos, billboard images, hoarding images, LED hoarding panels, flex hoarding prints, lamp post displays, traffic awareness boards, outdoor advertising boards, die-cut standees, branding boards, awareness signage, street furniture displays, and design example images.
+    const prompt = `Analyze this advertising/media proposal PDF page image. Detect all reference photographs and advertising mockup images.
 
-Rules:
-- ONLY detect actual photographs, mockup images, and product images
-- IGNORE: text-only areas, pricing tables, rate cards, headers, footers, page numbers, small logos (under 4% of page), decorative lines/shapes/swooshes, watermarks, background patterns, heading text like "Reference Image" or "Design Specification"
+Types to detect:
+- Metro/train/bus/transit interior photos showing advertising panels or branding inside coaches/compartments
+- Vehicle branding mockups: bus, auto-rickshaw, van, car, metro coach exterior wraps
+- Outdoor advertising: billboards, hoardings, LED panels, flex prints, lamp post displays, traffic boards
+- Signage: standees, branding boards, street furniture displays
+- General reference photos and design example images
+
+Critical rules for metro/train interior photos:
+- Treat each complete photo of a metro coach interior, train compartment, or transit vehicle interior as ONE bounding box — even if multiple advertisement panels are visible INSIDE the photo
+- Do NOT create separate boxes for individual advertisement posters/panels that appear inside a metro/train photo — the whole coach interior view is one image
+- If the page has 2 separate metro interior photos (e.g. one above the other), return 2 separate boxes
+
+General rules:
+- ONLY detect actual photographs and mockup images — ignore text blocks, tables, headers, footers, page numbers, small logos (under 4% of page area), decorative lines, watermarks
 - Each detected region must be at least 4% of the total page area
-- If an image has a visible border or frame, include it within the bounding box
-- Detect images even if they overlap or are stacked vertically
+- Include any visible border or frame within the bounding box
+- Detect all photos even if stacked vertically or placed side by side
 
-Return ONLY a valid JSON array (no markdown, no explanation, no extra text):
+Return ONLY a valid JSON array (no markdown, no explanation):
 [{"box": [y_min, x_min, y_max, x_max], "label": "short description"}]
 
-Coordinates use 0-1000 normalized scale where [0,0] is top-left corner and [1000,1000] is bottom-right corner.
-If no product images or photos are found on this page, return exactly: []`;
+Coordinates use 0-1000 normalized scale where [0,0] is top-left and [1000,1000] is bottom-right.
+If no photos or mockup images are found, return exactly: []`;
 
     const result = await model.generateContent([
       prompt,
@@ -131,12 +143,120 @@ If no product images or photos are found on this page, return exactly: []`;
         const interArea = interY * interX;
         const unionArea = boxArea + kArea - interArea;
         const iou = unionArea > 0 ? interArea / unionArea : 0;
-        return iou > 0.40; // 40% overlap → treat as duplicate
+        return iou > 0.20; // 20% overlap → treat as duplicate (lower = keep adjacent grid photos)
       });
       if (!overlaps) deduped.push(box);
     }
     console.log(`📦 Boxes after IoU dedup: ${deduped.length} (was ${validBoxes.length})`);
-    return deduped;
+
+    // ── Phase 1: Wide / tall strip splitter ─────────────────────────────────
+    // Gemini sometimes returns 2 full-width horizontal strips (one per row)
+    // instead of 4 individual photos. Split any box that spans >65% of the page
+    // width (or height) into two halves — left/right or top/bottom.
+    // Runs only when we have fewer than 4 boxes.
+    let working: ImageBoundingBox[] = [...deduped];
+    if (working.length < 4) {
+      const splitPass: ImageBoundingBox[] = [];
+      for (const b of working) {
+        const [y0, x0, y1, x1] = b.box;
+        const w = x1 - x0;
+        const h = y1 - y0;
+        const area = (w * h) / (1000 * 1000);
+        if (w > 650 && area >= 0.12) {
+          // Wide strip → split left / right
+          const mx = Math.round((x0 + x1) / 2);
+          splitPass.push({ box: [y0, x0, y1, mx] as [number,number,number,number], label: b.label + '-L', noPad: true });
+          splitPass.push({ box: [y0, mx, y1, x1] as [number,number,number,number], label: b.label + '-R', noPad: true });
+          console.log(`✂️ Split wide strip (w=${w}) into left/right`);
+        } else if (h > 600 && area >= 0.12) {
+          // Tall strip → split top / bottom
+          const my = Math.round((y0 + y1) / 2);
+          splitPass.push({ box: [y0, x0, my, x1] as [number,number,number,number], label: b.label + '-T', noPad: true });
+          splitPass.push({ box: [my, x0, y1, x1] as [number,number,number,number], label: b.label + '-B', noPad: true });
+          console.log(`✂️ Split tall strip (h=${h}) into top/bottom`);
+        } else {
+          splitPass.push(b);
+        }
+      }
+      if (splitPass.length > working.length) {
+        console.log(`✂️ Strip split: ${working.length} → ${splitPass.length} boxes`);
+        working = splitPass;
+      }
+    }
+    if (working.length >= 4) return working;
+
+    // ── Phase 2: Single large merged block → 4 quadrants ────────────────────
+    // Handles the case where Gemini returns 1 box covering the entire 2×2 grid.
+    if (working.length < 3 && working.length > 0) {
+      const largest = working.reduce((a, b) => {
+        const aArea = (a.box[2] - a.box[0]) * (a.box[3] - a.box[1]);
+        const bArea = (b.box[2] - b.box[0]) * (b.box[3] - b.box[1]);
+        return bArea > aArea ? b : a;
+      });
+      const [yMin, xMin, yMax, xMax] = largest.box;
+      const largestArea = ((yMax - yMin) * (xMax - xMin)) / (1000 * 1000);
+      if (largestArea >= 0.35) {
+        const midY = Math.round((yMin + yMax) / 2);
+        const midX = Math.round((xMin + xMax) / 2);
+        const quadrants: ImageBoundingBox[] = [
+          { box: [yMin, xMin, midY, midX] as [number,number,number,number], label: 'grid-tl', noPad: true },
+          { box: [yMin, midX, midY, xMax] as [number,number,number,number], label: 'grid-tr', noPad: true },
+          { box: [midY, xMin, yMax, midX] as [number,number,number,number], label: 'grid-bl', noPad: true },
+          { box: [midY, midX, yMax, xMax] as [number,number,number,number], label: 'grid-br', noPad: true },
+        ];
+        console.log(`🔲 Grid fallback: splitting 1 large box (area ${(largestArea*100).toFixed(0)}%) into 4 quadrants`);
+        const others = working.filter(b => b !== largest);
+        return [...quadrants, ...others];
+      }
+    }
+
+    // ── Phase 3: Quadrant coverage fill ─────────────────────────────────────
+    // Handles the "3 detected, 1 missed" case.
+    // Uses actual detected box edges as the row/column seam so the filled box
+    // aligns perfectly with its neighbours — no bleed or overlap at boundaries.
+    if (working.length >= 1 && working.length < 4) {
+      let envY0 = 1000, envX0 = 1000, envY1 = 0, envX1 = 0;
+      for (const b of working) {
+        const [y0, x0, y1, x1] = b.box;
+        envY0 = Math.min(envY0, y0); envX0 = Math.min(envX0, x0);
+        envY1 = Math.max(envY1, y1); envX1 = Math.max(envX1, x1);
+      }
+      const envArea = ((envY1 - envY0) * (envX1 - envX0)) / (1000 * 1000);
+      if (envArea >= 0.20) {
+        const geoMidY = (envY0 + envY1) / 2;
+        const geoMidX = (envX0 + envX1) / 2;
+        const topRowBoxes  = working.filter(b => (b.box[0] + b.box[2]) / 2 < geoMidY);
+        const leftColBoxes = working.filter(b => (b.box[1] + b.box[3]) / 2 < geoMidX);
+        const seamY = topRowBoxes.length  > 0 ? Math.max(...topRowBoxes.map(b  => b.box[2])) : geoMidY;
+        const seamX = leftColBoxes.length > 0 ? Math.max(...leftColBoxes.map(b => b.box[3])) : geoMidX;
+        const gridQuads: Array<[number, number, number, number]> = [
+          [envY0, envX0, seamY, seamX],
+          [envY0, seamX, seamY, envX1],
+          [seamY, envX0, envY1, seamX],
+          [seamY, seamX, envY1, envX1],
+        ];
+        const extra: ImageBoundingBox[] = [];
+        for (const [qy0, qx0, qy1, qx1] of gridQuads) {
+          const qArea = (qy1 - qy0) * (qx1 - qx0);
+          let covered = 0;
+          for (const b of working) {
+            const [by0, bx0, by1, bx1] = b.box;
+            const iy = Math.max(0, Math.min(qy1, by1) - Math.max(qy0, by0));
+            const ix = Math.max(0, Math.min(qx1, bx1) - Math.max(qx0, bx0));
+            covered += iy * ix;
+          }
+          if (qArea > 0 && covered / qArea < 0.50) {
+            extra.push({ box: [qy0, qx0, qy1, qx1] as [number,number,number,number], label: 'grid-fill', noPad: true });
+          }
+        }
+        if (extra.length > 0 && extra.length < 4) {
+          console.log(`🔲 Quadrant fill: adding ${extra.length} uncovered region(s) (seamY=${seamY}, seamX=${seamX})`);
+          return [...working, ...extra];
+        }
+      }
+    }
+
+    return working;
   } catch (error) {
     console.warn(`⚠️ Gemini Vision detection failed for page ${pageNumber}:`, error);
     return [];
@@ -160,7 +280,7 @@ function cropImageRegions(imageDataUrl: string, boxes: ImageBoundingBox[]): Prom
         try {
           // item.box is already normalized (box_2d || box) from detectImageRegions
           const [yMin, xMin, yMax, xMax] = item.box;
-          const padding = 15; // 1.5% padding
+          const padding = item.noPad ? 0 : 15; // grid-split boxes share exact boundaries — no padding to prevent bleed
           const sx = Math.max(0, Math.round(((xMin - padding) / 1000) * width));
           const sy = Math.max(0, Math.round(((yMin - padding) / 1000) * height));
           const ex = Math.min(width, Math.round(((xMax + padding) / 1000) * width));
@@ -598,6 +718,25 @@ export const extractPDFContent = async (file: File, maxImagePages?: number): Pro
 
         const croppedCount = pageImages.filter(p => p.croppedImages && p.croppedImages.length > 0).length;
         console.log(`🎯 Auto-crop complete: ${croppedCount} pages have cropped images`);
+
+        // ── IMAGE SUMMARY TABLE ──────────────────────────────────────────────
+        console.log(`\n📊 ===== PDF IMAGE SUMMARY: "${file.name}" =====`);
+        console.log(`   Total pages in PDF : ${pageCount}`);
+        console.log(`   Pages rendered     : ${pageImages.length}`);
+        console.log(`   Sent to Gemini     : ${pagesToCrop.length}`);
+        pageImages.forEach(p => {
+          const count = p.croppedImages?.length ?? 0;
+          const wasCandidate = pagesToCrop.some(c => c.pageNumber === p.pageNumber);
+          const status = count > 0
+            ? `✅ ${count} cropped image(s)`
+            : wasCandidate
+              ? '🔍 candidate — 0 detected'
+              : '○ not a candidate';
+          console.log(`   Page ${String(p.pageNumber).padStart(2, ' ')} : ${status}`);
+        });
+        console.log(`   Pages with images  : ${croppedCount} / ${pageImages.length}`);
+        console.log(`=================================================\n`);
+        // ────────────────────────────────────────────────────────────────────
       }
     } catch (err) {
       console.warn('⚠️ Auto-crop processing failed, continuing with full page images:', err);

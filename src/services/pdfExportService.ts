@@ -13,6 +13,8 @@ const A4_HEIGHT_PX = 1123;  // 297mm at 96dpi
 // A 30px buffer guards against minor render/measure drift; the primary fix for
 // async-content height mis-measurement lives in ReferenceImages' data-pdf-ready
 // debounce (it now resets when proposalPages / specGroups / refImageUrls change).
+// Desktop override style in measureSectionBlocks ensures getBoundingClientRect uses
+// the same layout as html2canvas (windowWidth:794), so measurements are accurate.
 const PDF_USABLE_HEIGHT_PX = 930;
 const PDF_FONT_FAMILY = "'Calibri'";
 const PDF_FONT_LOAD_SPECS = [
@@ -426,12 +428,43 @@ const measureSectionBlocks = async (containerId: string): Promise<MeasuredBlock[
     display: 'block',
   });
   document.body.appendChild(clone);
+  // Add pdf-export-mode BEFORE forcePdfFontInTree so CSS rules scoped to
+  // .pdf-export-mode (e.g. boosted tfoot font sizes) are active during measurement.
+  // Must match captureVirtualPage clone setup — otherwise the engine underestimates
+  // block heights and places content that overflows into the footer overlay zone.
+  clone.classList.add('pdf-export-mode');
+  // Inject desktop-layout overrides so the measurement clone renders the same layout
+  // as html2canvas with windowWidth:794. getBoundingClientRect() uses the real device
+  // viewport (mobile), so @media breakpoints change flex-direction, margins, font-sizes.
+  // These overrides explicitly reset height-affecting properties to their desktop values.
+  const desktopOverride = document.createElement('style');
+  desktopOverride.textContent = [
+    // CRITICAL: html2canvas renders with windowWidth:794 (desktop CSS, padding:36px 44px 20px 44px),
+    // giving a table content width of 706px (794-88). On mobile viewports @media(<=480px) fires and
+    // sets padding:20px 16px → content width 762px → table 762px → description col 137px (less wrap,
+    // shorter rows). We force desktop padding so getBoundingClientRect() measures rows at the same
+    // 706px table width that html2canvas will actually render, eliminating the height underestimate.
+    `.template-corporate-minimal { padding: 36px 44px 20px 44px !important; line-height: normal !important; }`,
+    // Reset header spacing to desktop values (mobile adds gap:16-20px, extra padding/margin)
+    '.template-header { gap: 0 !important; padding-bottom: 16px !important; margin-bottom: 18px !important; }',
+    // table-scroll-wrap: mobile adds negative margins (margin:0 -4px) that widen the scroll area
+    '.table-scroll-wrap { margin: 0 !important; padding: 0 !important; overflow: visible !important; }',
+    // reset sticky cells to avoid stacking-context measurement artefacts
+    '.items-table th, .items-table td { position: static !important; }',
+    // reset sticky tfoot so it renders right below the last tbody row
+    '.items-table tfoot { position: static !important; }',
+  ].join(' ');
+  clone.appendChild(desktopOverride);
   // Must run AFTER appendChild — see captureSectionAtA4 for rationale.
   forcePdfFontInTree(clone);
 
+  // The desktop override style above ensures measurement matches capture layout,
+  // so no height inflation is needed. Factor kept as 1.0 (identity).
+  const MEASUREMENT_SAFETY_FACTOR = 1.0;
+
   try {
     await document.fonts.ready;
-    // Two rAF cycles guarantee layout is fully resolved Ã¢â‚¬â€ more reliable than a fixed timeout
+    // Two rAF cycles guarantee layout is fully resolved
     await new Promise<void>(resolve =>
       requestAnimationFrame(() => requestAnimationFrame(() => resolve()))
     );
@@ -444,9 +477,15 @@ const measureSectionBlocks = async (containerId: string): Promise<MeasuredBlock[
       const style = window.getComputedStyle(el);
       const marginBottom = parseFloat(style.marginBottom) || 0;
       const type = (el.getAttribute('data-pdf-block') || 'atomic') as MeasuredBlock['type'];
-      const block: MeasuredBlock = { index, type, height: rect.height, marginBottom };
+      const block: MeasuredBlock = {
+        index,
+        type,
+        height: Math.ceil(rect.height * MEASUREMENT_SAFETY_FACTOR),
+        marginBottom,
+      };
 
-      // For table blocks: also measure thead, each tbody row, and tfoot individually
+      // For table blocks: also measure thead, each tbody row, and tfoot individually.
+      // Apply the same safety factor so row-by-row splitting uses conservative heights too.
       if (type === 'table') {
         const table = el.querySelector('table');
         if (table) {
@@ -454,9 +493,9 @@ const measureSectionBlocks = async (containerId: string): Promise<MeasuredBlock[
           const tfoot = table.querySelector('tfoot');
           const tbodyRows = Array.from(table.querySelectorAll('tbody tr'));
           block.tableData = {
-            theadHeight: thead ? thead.getBoundingClientRect().height : 0,
-            tfootHeight: tfoot ? tfoot.getBoundingClientRect().height : 0,
-            rows: tbodyRows.map(tr => ({ height: tr.getBoundingClientRect().height })),
+            theadHeight: Math.ceil((thead ? thead.getBoundingClientRect().height : 0) * MEASUREMENT_SAFETY_FACTOR),
+            tfootHeight: Math.ceil((tfoot ? tfoot.getBoundingClientRect().height : 0) * MEASUREMENT_SAFETY_FACTOR),
+            rows: tbodyRows.map(tr => ({ height: Math.ceil(tr.getBoundingClientRect().height * MEASUREMENT_SAFETY_FACTOR) })),
           };
         }
       }
@@ -501,19 +540,6 @@ const computeVirtualPages = (
       continue;
     }
 
-    // header-group orphan rule: heading fits but its next sibling would not Ã¢â‚¬â€
-    // push heading to next page so it always appears above its content
-    if (block.type === 'header-group' && i + 1 < blocks.length) {
-      const next = blocks[i + 1];
-      const nextFitsAfterHeader =
-        current.totalContentHeight + blockHeight + next.height + next.marginBottom <= usableHeight;
-      if (!nextFitsAfterHeader && current.blockIndices.length > 0 && current.totalContentHeight > 0) {
-        pages.push(current);
-        current = { blockIndices: [i], totalContentHeight: blockHeight };
-        continue;
-      }
-    }
-
     current.blockIndices.push(i);
     current.totalContentHeight += blockHeight;
   }
@@ -554,24 +580,6 @@ const computeVirtualPagesWithTableRows = (
         if (current.blockIndices.length > 0 && current.totalContentHeight > 0) pages.push(current);
         current = { blockIndices: [i], totalContentHeight: blockHeight };
         continue;
-      }
-
-      // header-group orphan rule: never leave a heading alone at the bottom.
-      // For table blocks, check against the MINIMUM table unit (thead + 1st row)
-      // rather than the full table height, so the heading stays with the first
-      // table segment instead of being pushed to an otherwise empty page.
-      if (block.type === 'header-group' && i + 1 < blocks.length) {
-        const next = blocks[i + 1];
-        const nextCheckHeight =
-          next.type === 'table' && next.tableData
-            ? next.tableData.theadHeight + (next.tableData.rows[0]?.height ?? 0)
-            : next.height + next.marginBottom;
-        const nextFits = current.totalContentHeight + blockHeight + nextCheckHeight <= usableHeight;
-        if (!nextFits && current.blockIndices.length > 0 && current.totalContentHeight > 0) {
-          pages.push(current);
-          current = { blockIndices: [i], totalContentHeight: blockHeight };
-          continue;
-        }
       }
 
       current.blockIndices.push(i);
@@ -700,6 +708,24 @@ const captureVirtualPage = async (
   });
   document.body.appendChild(clone);
   clone.classList.add('pdf-export-mode');
+  // Apply the same overrides used in measureSectionBlocks so capture and measurement
+  // always render at identical layout regardless of device viewport width.
+  const captureOverride = document.createElement('style');
+  captureOverride.textContent = [
+    // CRITICAL: match measureSectionBlocks desktopOverride exactly so html2canvas renders
+    // the same layout that was measured. Without these, mobile CSS fires (line-height:1.45,
+    // template-header gap:16px, margin-bottom:20px) making content ~97px taller than measured,
+    // causing the last table row to overflow past the footer start position.
+    `.template-corporate-minimal { padding: 36px 44px 20px 44px !important; line-height: normal !important; }`,
+    '.template-header { gap: 0 !important; padding-bottom: 16px !important; margin-bottom: 18px !important; }',
+    // Reset table scroll wrapper mobile margins/overflow
+    '.table-scroll-wrap { margin: 0 !important; padding: 0 !important; overflow: visible !important; }',
+    // Reset sticky cells to avoid stacking-context measurement artefacts
+    '.items-table th, .items-table td { position: static !important; }',
+    // Reset sticky tfoot so it renders right below the last tbody row
+    '.items-table tfoot { position: static !important; }',
+  ].join(' ');
+  clone.appendChild(captureOverride);
   // Must run AFTER appendChild — see captureSectionAtA4 for rationale.
   forcePdfFontInTree(clone);
 
@@ -775,6 +801,21 @@ const captureVirtualPage = async (
       backgroundColor: '#ffffff',
       logging: false,
       onclone: (doc, clonedEl) => {
+        // CRITICAL: inject desktop layout overrides directly into the html2canvas internal
+        // document <head>. Body-level <style> elements (the captureOverride appended to clone)
+        // are NOT reliably processed by html2canvas's internal CSS engine — only <head>
+        // stylesheets are guaranteed to apply. Without this, html2canvas may render with mobile
+        // CSS (line-height:1.45, padding:20px 16px) even though windowWidth=794, causing the
+        // captured content to be taller than measured and the last table row to overflow the footer.
+        const layoutOverride = doc.createElement('style');
+        layoutOverride.textContent = [
+          `.template-corporate-minimal { padding: 36px 44px 20px 44px !important; line-height: normal !important; }`,
+          '.template-header { gap: 0 !important; padding-bottom: 16px !important; margin-bottom: 18px !important; }',
+          '.table-scroll-wrap { margin: 0 !important; padding: 0 !important; overflow: visible !important; }',
+          '.items-table th, .items-table td { position: static !important; }',
+          '.items-table tfoot { position: static !important; }',
+        ].join(' ');
+        doc.head.appendChild(layoutOverride);
         enforcePdfFontInClonedDoc(doc);
         const elRect = clonedEl.getBoundingClientRect();
         clonedEl.querySelectorAll('a[href]').forEach((a) => {
@@ -1051,40 +1092,10 @@ export const exportToPDF = async (
         const serviceSource = document.getElementById(`pdf-service-${serviceIndex}`);
         if (!serviceSource) break; // no more service pages
 
-        // Wait for the specOnly ReferenceImages inside pdf-service-N (if any) to be ready
+        // Wait for ReferenceImages (now merged inside pdf-service-N) to be ready,
+        // then capture the merged section with smart block pagination.
         await waitForPdfReady(`pdf-service-${serviceIndex}`);
         await captureSmartSection(`pdf-service-${serviceIndex}`, `service-${serviceIndex}`);
-
-        // Wait for reference image async ops, then capture with smart pagination
-        await waitForPdfReady(`pdf-service-ref-${serviceIndex}`);
-        const refSource = document.getElementById(`pdf-service-ref-${serviceIndex}`);
-        if (refSource) {
-          console.log(`Ã°Å¸â€œÂ Smart pagination enabled: pdf-service-ref-${serviceIndex}`);
-          if (refSource.scrollHeight > PDF_USABLE_HEIGHT_PX) {
-            const refBlocks = await measureSectionBlocks(`pdf-service-ref-${serviceIndex}`);
-            if (refBlocks.length > 0) {
-              const refVPages = computeVirtualPages(refBlocks, PDF_USABLE_HEIGHT_PX);
-              console.log(`Ã°Å¸â€œâ€ž Virtual pages generated: ${refVPages.length}`);
-              for (let vp = 0; vp < refVPages.length; vp++) {
-                console.log(`Ã°Å¸Â§Â© Capturing virtual page ${vp + 1}/${refVPages.length}`);
-                const vpResult = await captureVirtualPage(`pdf-service-ref-${serviceIndex}`, refVPages[vp], refBlocks);
-                if (vpResult) {
-                  addCanvasToPDF(vpResult.canvas, vpResult.links, `service-ref-${serviceIndex}-vp${vp}`, false);
-                }
-              }
-            } else {
-              const refResult = await captureSectionAtA4(`pdf-service-ref-${serviceIndex}`);
-              if (refResult && refResult.canvas.height > 10) {
-                addCanvasToPDF(refResult.canvas, refResult.links, `service-ref-${serviceIndex}`, false);
-              }
-            }
-          } else {
-            const refResult = await captureSectionAtA4(`pdf-service-ref-${serviceIndex}`);
-            if (refResult && refResult.canvas.height > 10) {
-              addCanvasToPDF(refResult.canvas, refResult.links, `service-ref-${serviceIndex}`, false);
-            }
-          }
-        }
 
         serviceIndex++;
       }

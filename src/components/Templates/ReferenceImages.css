@@ -484,6 +484,78 @@
   margin-top: 14px;
 }
 
+/* --- Design Specification: Metro multi-column coach tables --- */
+.spec-coach-group {
+  margin-bottom: 10px;
+  border: 1px solid #d0e4f5;
+  border-radius: 4px;
+  overflow: hidden;
+}
+
+.spec-coach-group:last-child {
+  margin-bottom: 0;
+}
+
+.spec-coach-heading {
+  font-size: 12px;
+  font-weight: 700;
+  color: #1a3a5c;
+  background: #eef5fb;
+  border-bottom: 1px solid #d0e4f5;
+  padding: 7px 12px;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.spec-data-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 12px;
+}
+
+.spec-data-table thead {
+  background: linear-gradient(135deg, #1a3a5c 0%, #1e4d78 100%);
+  color: #ffffff;
+}
+
+.spec-data-table thead th {
+  padding: 7px 12px;
+  text-align: left;
+  font-weight: 600;
+  font-size: 11px;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  border-right: 1px solid rgba(255, 255, 255, 0.2);
+}
+
+.spec-data-table thead th:last-child {
+  border-right: none;
+  text-align: center;
+}
+
+.spec-data-table tbody tr {
+  border-bottom: 1px solid #e4ecf5;
+}
+
+.spec-data-table tbody tr:last-child {
+  border-bottom: none;
+}
+
+.spec-data-table tbody tr:nth-child(even) {
+  background: #f7f9fc;
+}
+
+.spec-data-table tbody td {
+  padding: 6px 12px;
+  color: #1a202c;
+  font-size: 12px;
+}
+
+.spec-data-table tbody td:last-child {
+  text-align: center;
+  font-weight: 600;
+}
+
 /* --- Reference Image container --- */
 .ref-img-container {
   display: flex;
@@ -623,6 +695,16 @@
 #pdf-page-2 .smart-reference-page,
 [id^="pdf-service-ref-"] .smart-reference-page {
   padding: 20px 28px !important;
+}
+
+/* When smart-reference-page is embedded inside pdf-page-1 or pdf-service-*
+   (alongside the pricing table and terms), its top/bottom padding creates
+   phantom space on continuation virtual pages where its child blocks have been
+   moved to earlier pages. Zero them out so the terms section follows directly. */
+#pdf-page-1 .smart-reference-page,
+[id^="pdf-service-"]:not([id^="pdf-service-ref-"]) .smart-reference-page {
+  padding-top: 0 !important;
+  padding-bottom: 0 !important;
 }
 
 #pdf-page-2 .smart-section-heading,

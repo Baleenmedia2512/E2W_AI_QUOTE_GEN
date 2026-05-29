@@ -74,7 +74,7 @@ export const CorporateMinimal: React.FC<TemplateProps> = ({ data, editable: _edi
   const filterGSTTerms = (terms: string[]) =>
     terms.filter(t => !/gst|tax\s*%|inclusive\s*of\s*(gst|tax)|exclusive\s*of\s*(gst|tax)|\+\s*gst|\d+\s*%\s*(gst|tax)/i.test(t));
   const normalizeTerms = (rawTerms: string) =>
-    rawTerms.split('\n').map(t => t.trim().replace(/^[\u2022\u2023\u25aa\u25cf\-\–\*•]\s*/, '').trim()).filter(Boolean);
+    rawTerms.split('\n').map(t => t.trim().replace(/^[\u2022\u2023\u25aa\u25cf\-\–\*•]\s*/, '').replace(/\s*\|\s*/g, ' ').trim()).filter(Boolean);
 
   // Reusable items table with per-item GST breakdown columns
   const renderItemsTable = (items: typeof quote.items) => {
@@ -232,7 +232,7 @@ export const CorporateMinimal: React.FC<TemplateProps> = ({ data, editable: _edi
           </div>
 
           <div className="quote-items-section">
-            <div data-pdf-block="header-group">
+            <div data-pdf-block="atomic">
               <h3 style={{ textAlign: 'center', fontSize: '20px', fontWeight: '700', textTransform: 'uppercase', letterSpacing: '0.08em', color: '#3b0a14', margin: '0 0 8px 0', paddingBottom: '10px', borderBottom: '2px solid #2980b9' }}>
                 {extractServiceType(quote.items[0]?.description || '').toUpperCase()}
               </h3>
@@ -319,7 +319,7 @@ export const CorporateMinimal: React.FC<TemplateProps> = ({ data, editable: _edi
         </div>
 
         <div className="quote-items-section">
-          <div data-pdf-block="header-group">
+          <div data-pdf-block="atomic">
             <h3 style={{ textAlign: 'center', fontSize: '20px', fontWeight: '700', textTransform: 'uppercase', letterSpacing: '0.08em', color: '#3b0a14', margin: '0 0 18px 0', paddingBottom: '10px', borderBottom: '2px solid #2980b9' }}>
               Executive Pricing Summary
             </h3>
@@ -349,7 +349,7 @@ export const CorporateMinimal: React.FC<TemplateProps> = ({ data, editable: _edi
             <>
               <div id={`pdf-service-${groupIndex}`} className="template-corporate-minimal">
                 <div className="quote-items-section">
-                  <div data-pdf-block="header-group">
+                  <div data-pdf-block="atomic">
                     <h3 style={{ marginBottom: '8px', fontSize: '22px', fontWeight: '700', color: '#750926', textAlign: 'center' }}>
                       {getServiceGroupHeading(group)}
                     </h3>
@@ -363,14 +363,13 @@ export const CorporateMinimal: React.FC<TemplateProps> = ({ data, editable: _edi
                   </div>
                 </div>
 
-                {/* Company Contact Footer */}
-                {renderCompanyFooter(servicePage, multiTotal)}
-              </div>
-
-              <div id={`pdf-service-ref-${groupIndex}`} className="template-corporate-minimal">
+                {/* Reference images, spec, review and terms merged into the same
+                    section so the greedy block packer fills space after the
+                    pricing table instead of starting a separate section. */}
                 <ReferenceImages proposalPages={data.proposalPages} proposalPageMap={data.proposalPageMap} items={group.items} terms={groupTerms} />
 
-                {renderCompanyFooter(refPage, multiTotal)}
+                {/* Company Contact Footer */}
+                {renderCompanyFooter(servicePage, multiTotal)}
               </div>
             </>
           </React.Fragment>
