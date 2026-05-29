@@ -1401,7 +1401,18 @@ function extractDesignSpecFields(pages: ExtractedPage[]): SpecGroup[] {
       const fullDimStr = parts.slice(0, dimEnd).join(' ').trim();
       const dimColon = fullDimStr.match(/^([^:]{1,60}):\s*(.+)$/);
       if (dimColon) {
-        dimensionFields.push({ label: dimColon[1].trim(), value: dimColon[2].trim() });
+        let dcLabel = dimColon[1].trim();
+        let dcValue = dimColon[2].trim();
+        // If the extracted value is itself an incomplete sub-label (ends with ':'),
+        // the actual dimension number is in the trailing pipe columns.
+        // e.g. "Size: Top Panel:" | "25.9 x 2.75" | "(wxh) FT"
+        //   → label="Size", value="Top Panel: 25.9 x 2.75 (wxh) FT"
+        if (/:\s*$/.test(dcValue) && dimEnd < parts.length) {
+          const rest = parts.slice(dimEnd).join(' ').trim();
+          dcValue = `${dcValue} ${rest}`.trim();
+          dimEnd = parts.length; // mark all remaining parts as consumed
+        }
+        dimensionFields.push({ label: dcLabel, value: dcValue });
       }
 
       // Handle PDF format where label and value are in separate pipe-columns:
