@@ -422,6 +422,8 @@
 
 .template-corporate-minimal .items-table tbody tr {
   transition: background 0.15s ease;
+  page-break-inside: avoid !important;
+  break-inside: avoid !important;
 }
 
 .template-corporate-minimal .items-table tbody td {
