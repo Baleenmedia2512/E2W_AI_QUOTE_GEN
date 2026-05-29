@@ -475,6 +475,22 @@
   font-size: 21px;
 }
 
+/* PDF measurement + capture parity fix:
+ * measureSectionBlocks uses getBoundingClientRect() which respects the real
+ * viewport width (mobile). html2canvas uses windowWidth: 794 which uses
+ * desktop CSS. These overrides force the SAME desktop font-sizes and paddings
+ * in BOTH clones (both get pdf-export-mode), so measured heights match
+ * captured heights and the smart-pagination engine never underestimates block
+ * sizes. Without these, 13-14px mobile font rows are measured but 17.5px
+ * desktop rows are captured, causing the tfoot to overflow the usable area. */
+.pdf-export-mode .items-table {
+  font-size: 17.5px !important;
+}
+.pdf-export-mode .items-table th {
+  padding: 13px 10px !important;
+  font-size: 11.5px !important;
+}
+
 .template-corporate-minimal .items-table tbody tr:nth-child(even) {
   background: #fafbfc;
 }

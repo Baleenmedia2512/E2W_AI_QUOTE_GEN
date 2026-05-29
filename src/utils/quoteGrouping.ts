@@ -140,7 +140,7 @@ export function filterTermsByServiceType(termsAndConditions: string, serviceType
   // Split by newlines and bullets to get individual lines
   const lines = termsAndConditions
     .split(/\n/)
-    .map(t => t.trim().replace(/^[•\-\*]\s*/, '').trim())
+    .map(t => t.trim().replace(/^[•\-\*]\s*/, '').replace(/\s*\|\s*/g, ' ').trim())
     .filter(Boolean);
 
   const filteredTerms: string[] = [];
@@ -194,7 +194,7 @@ export function getGeneralTerms(termsAndConditions: string): string[] {
   // Split by newlines to get individual lines
   const lines = termsAndConditions
     .split(/\n/)
-    .map(t => t.trim())
+    .map(t => t.trim().replace(/\s*\|\s*/g, ' '))
     .filter(Boolean);
   
   const generalTerms: string[] = [];

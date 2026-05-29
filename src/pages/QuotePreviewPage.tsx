@@ -1,11 +1,7 @@
 import React, { useState, useRef, useEffect, useMemo } from 'react';
 import { useHistory } from 'react-router-dom';
 import { useAppStore } from '../store';
-import { TemplateSelector } from '../components/TemplateSelector/TemplateSelector';
 import { CorporateMinimal } from '../components/Templates/CorporateMinimal';
-import { PremiumAgency } from '../components/Templates/PremiumAgency';
-import { ModernSales } from '../components/Templates/ModernSales';
-import { ClassicBusiness } from '../components/Templates/ClassicBusiness';
 import { exportToPDF } from '../services/pdfExportService';
 import { ExtractedPage } from '../types';
 import './QuotePreviewPage.css';
@@ -44,7 +40,6 @@ export const QuotePreviewPage: React.FC = () => {
     return map;
   }, [activeProposals]);
 
-  const [showTemplateSelector, setShowTemplateSelector] = useState(false);
   const [isExporting, setIsExporting] = useState(false);
   const [isRestoring, setIsRestoring] = useState(true);
   const [isContentReady, setIsContentReady] = useState(false);
@@ -184,18 +179,7 @@ export const QuotePreviewPage: React.FC = () => {
   });
 
   const renderTemplate = () => {
-    switch (selectedTemplate) {
-      case 'corporate-minimal':
-        return <CorporateMinimal data={templateData} />;
-      case 'premium-agency':
-        return <PremiumAgency data={templateData} />;
-      case 'modern-sales':
-        return <ModernSales data={templateData} />;
-      case 'classic-business':
-        return <ClassicBusiness data={templateData} />;
-      default:
-        return <CorporateMinimal data={templateData} />;
-    }
+    return <CorporateMinimal data={templateData} />;
   };
 
   const handleExportPDF = async () => {
@@ -287,19 +271,6 @@ export const QuotePreviewPage: React.FC = () => {
           </div>
 
           <button
-            onClick={() => setShowTemplateSelector(!showTemplateSelector)}
-            className="toolbar-button"
-          >
-            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor">
-              <rect x="3" y="3" width="7" height="7" strokeWidth="2"/>
-              <rect x="14" y="3" width="7" height="7" strokeWidth="2"/>
-              <rect x="3" y="14" width="7" height="7" strokeWidth="2"/>
-              <rect x="14" y="14" width="7" height="7" strokeWidth="2"/>
-            </svg>
-            Change Template
-          </button>
-
-          <button
             onClick={handleExportPDF}
             className="toolbar-button primary"
             disabled={isExporting || !isContentReady}
@@ -327,34 +298,6 @@ export const QuotePreviewPage: React.FC = () => {
         </div>
       </div>
 
-      {/* Template Selector Modal */}
-      {showTemplateSelector && (
-        <div className="template-selector-modal">
-          <div className="modal-overlay" onClick={() => setShowTemplateSelector(false)}></div>
-          <div className="modal-content">
-            <button
-              className="modal-close"
-              onClick={() => setShowTemplateSelector(false)}
-            >
-              <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor">
-                <path d="M18 6L6 18M6 6l12 12" strokeWidth="2" strokeLinecap="round"/>
-              </svg>
-            </button>
-            <TemplateSelector
-              selectedTemplate={selectedTemplate}
-              onSelectTemplate={(template) => {
-                console.log('🎨 Template selected in preview:', template);
-                setSelectedTemplate(template);
-                // Ensure localStorage is updated
-                localStorage.setItem('selectedTemplate', template);
-                console.log('✅ Template saved and modal closing');
-                setShowTemplateSelector(false);
-              }}
-            />
-          </div>
-        </div>
-      )}
-
       {/* Preview Area */}
       <div className="preview-container">
         {(!isContentReady) && (
@@ -381,9 +324,6 @@ export const QuotePreviewPage: React.FC = () => {
       {/* Mobile Actions */}
       {isContentReady && (
         <div className="mobile-actions">
-          <button onClick={() => setShowTemplateSelector(true)} className="mobile-action-btn">
-            Templates
-          </button>
           <button onClick={handleExportPDF} className="mobile-action-btn primary" disabled={isExporting}>
             {isExporting ? 'Exporting...' : 'Export PDF'}
           </button>

@@ -38,6 +38,10 @@ interface CustomerReviewData {
 interface SpecGroup {
   heading: string | null;
   fields: Array<{ label: string; value: string }>;
+  /** Multi-column table headers — used for metro-style multi-table specs */
+  tableHeaders?: string[];
+  /** Multi-column table rows — used for metro-style multi-table specs */
+  tableRows?: string[][];
 }
 
 
@@ -1117,6 +1121,210 @@ function filterPagesByQuoteItems(pages: ExtractedPage[], items: QuoteItem[]): Ex
 
 // --- Smart Content Extraction Helpers ---
 
+/**
+ * Merges pipe-split parts for dimension/header values that were split by the PDF extractor.
+ * e.g. ["Size in Inches", "(", "W x H", ")"] → ["Size in Inches ( W x H )"]
+ */
+function mergePipeParts(parts: string[]): string[] {
+  const merged: string[] = [];
+  for (const p of parts) {
+    const isContinuation =
+      merged.length > 0 &&
+      (/^\(/.test(p) || /^(wxh|w\s*x\s*h|wdh|inches|cms?|mm)\b/i.test(p) || /^\)/.test(p));
+    if (isContinuation) {
+      merged[merged.length - 1] = merged[merged.length - 1] + ' ' + p;
+    } else {
+      merged.push(p);
+    }
+  }
+  return merged;
+}
+
+/**
+ * Detects and parses metro train inside branding design spec.
+ * Activated when the spec section contains coach group headings (Coach-1, Coach-2, …).
+ * Returns null if this is not a metro multi-table spec (falls back to generic parser).
+ */
+function extractMetroMultiTableSpec(specSection: string): SpecGroup[] | null {
+  const lines = specSection.split('\n').map(l => l.trim()).filter(Boolean);
+  // Only activate if there is at least one coach heading line
+  const COACH_RE = /^coach[-\s]*\d/i;
+  if (!lines.some(l => COACH_RE.test(l))) return null;
+
+  const groups: SpecGroup[] = [];
+  let currentHeading: string | null = null;
+  let currentHeaders: string[] = [];
+  let currentRows: string[][] = [];
+  // Tracks a single-part line that may be the first half of a multi-line cell label
+  // (e.g. "Driver Door -" before "Sticker | 23.5 x 56 | 1" on the next line)
+  let pendingLabel: string | null = null;
+  // After a data row is pushed, a plain-text single-part line may be a continuation
+  // of that row's first cell (e.g. "Sticker" appearing after "Driver Door - | 23.5 x 56 | 1")
+  let lastWasDataRow = false;
+  // Set when "Card Material Area" header is encountered — skip the immediately following
+  // dimensions value line (e.g. "18.75 x 12.75 | 17.75 x 11.75") that belongs to it
+  let skipNextDataRow = false;
+
+  const flushGroup = () => {
+    if (currentRows.length > 0) {
+      // Auto-expand headers when data rows have more columns than detected headers
+      // (happens when the SIZE column header lands on a separate line in PDF extraction)
+      const maxCols = Math.max(...currentRows.map(r => r.length));
+      const headers = [...currentHeaders];
+      if (headers.length > 0 && headers.length < maxCols) {
+        const lastHeader = headers.pop()!;
+        while (headers.length < maxCols - 1) {
+          headers.push('Size (Inches)');
+        }
+        headers.push(lastHeader);
+      }
+      groups.push({
+        heading: currentHeading,
+        fields: [],
+        tableHeaders: headers.length > 0 ? headers : undefined,
+        tableRows: [...currentRows],
+      });
+    }
+    currentHeading = null;
+    currentHeaders = [];
+    currentRows = [];
+    pendingLabel = null;
+    lastWasDataRow = false;
+    skipNextDataRow = false;
+  };
+
+  for (const line of lines) {
+    const parts = line.split(/\t\|\t|\s\|\s|\|/).map(p => p.trim()).filter(p => p.length > 0);
+
+    // Coach heading (Coach-1, Coach-2 Ladies Coach, etc.)
+    if (COACH_RE.test(line)) {
+      pendingLabel = null;
+      lastWasDataRow = false;
+      skipNextDataRow = false;
+      flushGroup();
+      currentHeading = line;
+      continue;
+    }
+
+    // Summary heading (Interior Train Dimensions…)
+    if (/interior\s+train\s+dim/i.test(line) && parts.length === 1) {
+      pendingLabel = null;
+      lastWasDataRow = false;
+      skipNextDataRow = false;
+      flushGroup();
+      currentHeading = line;
+      continue;
+    }
+
+    // "Card Material Area | Card Display Area" header line: flush the current summary group
+    // and start a new mini 2-column group so it renders as its own table block
+    if (/card\s+material\s+area/i.test(line)) {
+      pendingLabel = null;
+      lastWasDataRow = false;
+      flushGroup();
+      // The parts of this line become column headers (e.g. ["Card Material Area", "Card Display Area"])
+      currentHeaders = parts.length >= 2 ? [...parts] : [line];
+      currentHeading = null;
+      skipNextDataRow = false; // next multi-part line is the value row — keep it
+      continue;
+    }
+
+    // Skip orphaned "Card Display Area" if it somehow arrives on its own line
+    if (/^\s*card\s+display\s+area\s*$/i.test(line)) {
+      pendingLabel = null;
+      lastWasDataRow = false;
+      continue;
+    }
+
+    // Skip the dimension value row that follows "Card Material Area" only when flagged
+    // (flag is no longer set for card material area — kept for any future use)
+    if (skipNextDataRow && parts.length >= 2) {
+      skipNextDataRow = false;
+      lastWasDataRow = false;
+      continue;
+    }
+    skipNextDataRow = false;
+
+    // "Total Media" row: keep it in the summary group (Interior Train Dimensions),
+    // skip it in coach groups where it would just repeat the per-coach sub-total
+    const isCoachGroup = currentHeading ? COACH_RE.test(currentHeading) : false;
+    if (isCoachGroup && parts.length > 0 && /^total\s+media/i.test(parts[0])) {
+      pendingLabel = null;
+      lastWasDataRow = false;
+      continue;
+    }
+
+    if (line.length < 2) continue;
+
+    // Column header row: first part matches "type of media" / "material" / generic header
+    if (
+      parts.length >= 2 &&
+      /^(type\s*of\s*media|material|description|item)/i.test(parts[0])
+    ) {
+      currentHeaders = mergePipeParts(parts);
+      pendingLabel = null;
+      lastWasDataRow = false;
+      continue;
+    }
+
+    // Orphaned SIZE column header: "size...inches" on its own line after main headers
+    // (PDF splits "Type of Media | Qty" onto one line, SIZE header onto the next)
+    if (
+      parts.length === 1 &&
+      currentHeaders.length > 0 &&
+      currentRows.length === 0 &&
+      /size.+inch/i.test(line)
+    ) {
+      // Insert as second-to-last column header (before Qty)
+      const lastHeader = currentHeaders.pop()!;
+      currentHeaders.push(line, lastHeader);
+      lastWasDataRow = false;
+      continue;
+    }
+
+    // Data rows: 2+ pipe-separated parts
+    if (parts.length >= 2) {
+      let row = mergePipeParts(parts);
+      // If there's a pending label and the row is short (missing the TYPE OF MEDIA column),
+      // prepend the pending label — handles "Driver Door -\nSticker | 23.5 x 56 | 1" cells
+      if (pendingLabel !== null && row.length < 3) {
+        row = [pendingLabel, ...row];
+      }
+      pendingLabel = null;
+      // "Total Media" rows lose their leading empty cell during PDF extraction
+      // (e.g. "| Total Media | 79" → ["Total Media", "79"]).  Left-pad to 3 cols
+      // so "79" lands in the QTY column, not the SIZE column.
+      if (/^total\s+media/i.test(row[0])) {
+        while (row.length < 3) row = ['', ...row];
+      }
+      currentRows.push(row);
+      lastWasDataRow = true;
+      continue;
+    }
+
+    // Single-part line handling
+    if (parts.length === 1) {
+      // Post-row continuation: the PDF emits the data row first, then the second visual line
+      // of a wrapped cell on the next text line (e.g. "Driver Door - | 23.5x56 | 1" then "Sticker").
+      // Append to the previous row's first cell as long as:
+      //  - it looks like plain text (no leading digit)
+      //  - it does NOT end with '-' (a trailing dash means it's the START of a new multi-line
+      //    label such as "Driver Door -", not a continuation of the previous row)
+      if (lastWasDataRow && currentRows.length > 0 && !/^\d/.test(line) && !line.endsWith('-')) {
+        currentRows[currentRows.length - 1][0] += ' ' + line;
+        // Keep lastWasDataRow true — there could be more continuation lines
+        continue;
+      }
+      lastWasDataRow = false;
+      // Pre-row label accumulation: handles "Driver Door -\nSticker\n23.5x56 | 1" ordering
+      pendingLabel = pendingLabel ? pendingLabel + ' ' + line : line;
+    }
+  }
+
+  flushGroup();
+  return groups.length > 0 ? groups : null;
+}
+
 function extractDesignSpecFields(pages: ExtractedPage[]): SpecGroup[] {
   for (const page of pages) {
     const text = page.text;
@@ -1136,6 +1344,11 @@ function extractDesignSpecFields(pages: ExtractedPage[]): SpecGroup[] {
     const afterSpec = text.substring(specMatch.index + specMatch[0].length);
     const endMatch = afterSpec.match(/\n(reference\s*image|ad\s*visual|sample\s*ad|newspaper\s*sample|customer review|click here)/i);
     const specSection = endMatch && endMatch.index !== undefined ? afterSpec.substring(0, endMatch.index) : afterSpec;
+
+    // ── Metro multi-table detection (coach-group style, e.g. Metro Train Inside Branding) ──
+    const metroGroups = extractMetroMultiTableSpec(specSection);
+    if (metroGroups) return metroGroups;
+    // ────────────────────────────────────────────────────────────────────────────────────────
 
     const dimensionFields: Array<{ label: string; value: string }> = [];
     const materialFields: Array<{ label: string; value: string }> = [];
@@ -1470,6 +1683,15 @@ function extractSpecSectionImage(pages: ExtractedPage[]): string | null {
 function extractRefSectionImages(pages: ExtractedPage[]): string[] {
   const refPages = getRefImagePages(pages);
   if (refPages.length === 0) return [];
+
+  // ── PER-PAGE STORED CROP DEBUG ───────────────────────────────────────────
+  console.log(`📸 Ref pages found: ${refPages.length}`);
+  refPages.forEach(p => {
+    const n = p.croppedImages?.length ?? 0;
+    console.log(`   Ref page ${p.pageNumber}: ${n > 0 ? `✅ ${n} stored cropped image(s)` : '⚠️  0 stored (will trigger lazy re-crop)'}`);
+  });
+  // ─────────────────────────────────────────────────────────────────────────
+
   // Collect ALL cropped images from ALL ref pages
   const allCropped: string[] = [];
   for (const page of refPages) {
@@ -1477,7 +1699,16 @@ function extractRefSectionImages(pages: ExtractedPage[]): string[] {
       allCropped.push(...page.croppedImages);
     }
   }
-  if (allCropped.length > 0) return allCropped;
+  if (allCropped.length > 0) {
+    // If additional ref pages have no croppedImages, include their full page image
+    // (handles multi-page reference image sections where only some pages were cropped at upload time)
+    for (const page of refPages) {
+      if (!page.croppedImages || page.croppedImages.length === 0) {
+        allCropped.push(page.imageDataUrl);
+      }
+    }
+    return allCropped;
+  }
   // Fallback: full page image of first reference page (contains all photos as one tall image)
   return [refPages[0].imageDataUrl];
 }
@@ -1567,10 +1798,15 @@ export const ReferenceImages: React.FC<ReferenceImagesProps> = ({ proposalPages,
   // specGroups and image extraction use filteredPages ONLY (unchanged behaviour)
   const specGroups = useMemo(() => extractDesignSpecFields(filteredPages), [filteredPages]);
   // Require at least one field with a non-empty value (a heading-only group is not "content")
-  const hasSpecContent = specGroups.some(g => g.fields.some(f => (f.value || '').trim().length > 0));
+  const hasSpecContent = specGroups.some(g =>
+    g.fields.some(f => (f.value || '').trim().length > 0) ||
+    (g.tableRows !== undefined && g.tableRows.length > 0)
+  );
   // hasMeaningfulSpec: true only when spec table has dimension/measurement data (not just material name)
   const hasMeaningfulSpec = useMemo(() => {
     if (!hasSpecContent) return false;
+    // Metro-style table groups always contain meaningful dimension/quantity data
+    if (specGroups.some(g => g.tableRows && g.tableRows.length > 0)) return true;
     const totalFields = specGroups.reduce((sum, g) => sum + g.fields.length, 0);
     if (totalFields > 2) return true;
     const dimensionKeywords = /\d[\s]*["'x×(]|\b(inches|inch|cm|mm|feet|ft|size|width|height|dimension|side|driver|conductor)\b/i;
@@ -1817,66 +2053,129 @@ export const ReferenceImages: React.FC<ReferenceImagesProps> = ({ proposalPages,
   const finalRefImageUrls = lazyCroppedRefImages.length > 0 ? lazyCroppedRefImages : refImageUrls;
   const showSingleCenteredRef = !specImageUrl && finalRefImageUrls.length === 1;
 
+  // ── RENDER-TIME IMAGE COUNT DEBUG ────────────────────────────────────────
+  console.log(`\n🖼️  ===== IMAGES LOADED FOR QUOTE =====`);
+  console.log(`   Stored upload-time : ${refImageUrls.length} image(s)`);
+  console.log(`   Lazy re-crop result: ${lazyCroppedRefImages.length} image(s)`);
+  console.log(`   ► Displaying       : ${finalRefImageUrls.length} image(s)` +
+    (lazyCroppedRefImages.length > 0 ? ' (from lazy re-crop)' :
+     refImageUrls.length > 0        ? ' (from stored crop)'  :
+                                       ' (fallback full page)'));
+  console.log(`=======================================\n`);
+  // ─────────────────────────────────────────────────────────────────────────
+
   console.log('✅ ReferenceImages: Rendering smart layout for', filteredPages.length, 'pages');
+
+  // Whether the spec section has metro-style multi-table groups (e.g. Metro Train Inside Branding).
+  // When true, each coach group gets its own data-pdf-block="atomic" so the page engine can break
+  // between groups instead of forcing every coach table onto the same page.
+  const hasMetroStyleTables = specGroups.some(g => g.tableRows && g.tableRows.length > 0);
+
+  // Renders the inner content of a single spec group (shared between metro and non-metro paths).
+  const renderSingleSpecGroup = (group: SpecGroup, gi: number) => {
+    if (group.tableRows && group.tableRows.length > 0) {
+      return (
+        <div key={gi} className="spec-coach-group">
+          {group.heading && <div className="spec-coach-heading">{group.heading}</div>}
+          <table className="spec-data-table">
+            {group.tableHeaders && group.tableHeaders.length > 0 && (
+              <thead>
+                <tr>
+                  {group.tableHeaders.map((h, hi) => <th key={hi}>{h}</th>)}
+                </tr>
+              </thead>
+            )}
+            <tbody>
+              {group.tableRows.map((row, ri) => (
+                <tr key={ri}>
+                  {row.map((cell, ci) => <td key={ci}>{cell}</td>)}
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      );
+    }
+    const headingLower = group.heading?.trim().toLowerCase() || '';
+    const inlineValues = group.heading
+      ? group.fields.filter(f => f.label.trim().toLowerCase() === headingLower).map(f => f.value)
+      : [];
+    const remainingFields = group.heading
+      ? group.fields.filter(f => f.label.trim().toLowerCase() !== headingLower)
+      : group.fields;
+    const renderHeadingAsRow = group.heading && remainingFields.length === 0 && inlineValues.length > 0;
+    return (
+      <React.Fragment key={gi}>
+        {group.heading && (
+          renderHeadingAsRow ? (
+            <div className="spec-row">
+              <span className="spec-label spec-label--group">{group.heading}</span>
+              <span className="spec-value">{inlineValues.join(', ')}</span>
+            </div>
+          ) : (
+            <div className="spec-group-heading">
+              <span className="spec-group-heading-label">{group.heading}</span>
+              {inlineValues.length > 0 && (
+                <span className="spec-group-heading-value">{inlineValues.join(', ')}</span>
+              )}
+            </div>
+          )
+        )}
+        {remainingFields.map((f, fi) => (
+          <div key={fi} className="spec-row">
+            <span className="spec-label">{f.label}</span>
+            <span className="spec-value">{f.value}</span>
+          </div>
+        ))}
+      </React.Fragment>
+    );
+  };
 
   // specOnly: render ONLY the Display Specification block (no spacer, no images, no review, no terms)
   if (specOnly) {
     return (
       <div className="smart-reference-page" ref={containerRef}>
         {(hasSpecContent || specImageUrl) && (
-          <div className="smart-section" data-pdf-block="atomic">
-            <h3 className="smart-section-heading">
-              <span className="smart-heading-bar" />
-              2. Display Specification
-            </h3>
-            {hasSpecContent && (
-              <div className="spec-table">
-                {specGroups.map((group, gi) => {
-                  const headingLower = group.heading?.trim().toLowerCase() || '';
-                  const inlineValues = group.heading
-                    ? group.fields.filter(f => f.label.trim().toLowerCase() === headingLower).map(f => f.value)
-                    : [];
-                  const remainingFields = group.heading
-                    ? group.fields.filter(f => f.label.trim().toLowerCase() !== headingLower)
-                    : group.fields;
-                  // When a headed group has only a single inline value and no sub-fields
-                  // (e.g. Material: Vinyl sticker with Lamination), render as a plain
-                  // spec-row so it aligns neatly with dimension rows above it.
-                  const renderHeadingAsRow = group.heading && remainingFields.length === 0 && inlineValues.length > 0;
-                  return (
-                    <React.Fragment key={gi}>
-                      {group.heading && (
-                        renderHeadingAsRow ? (
-                          <div className="spec-row">
-                            <span className="spec-label spec-label--group">{group.heading}</span>
-                            <span className="spec-value">{inlineValues.join(', ')}</span>
-                          </div>
-                        ) : (
-                          <div className="spec-group-heading">
-                            <span className="spec-group-heading-label">{group.heading}</span>
-                            {inlineValues.length > 0 && (
-                              <span className="spec-group-heading-value">{inlineValues.join(', ')}</span>
-                            )}
-                          </div>
-                        )
-                      )}
-                      {remainingFields.map((f, fi) => (
-                        <div key={fi} className="spec-row">
-                          <span className="spec-label">{f.label}</span>
-                          <span className="spec-value">{f.value}</span>
-                        </div>
-                      ))}
-                    </React.Fragment>
-                  );
-                })}
-              </div>
-            )}
-            {specImageUrl && !hasMeaningfulSpec && (
-              <div className="ref-img-container spec-img-container">
-                <img src={lazyCroppedPureSpecImage ?? lazyCroppedSpecImage ?? specImageUrl} alt="Design specification diagram" className="ref-img" />
-              </div>
-            )}
-          </div>
+          hasMetroStyleTables ? (
+            <>
+              {/* Heading travels with the first coach group — prevents orphan heading at page bottom */}
+              {specGroups.map((group, gi) => (
+                <div key={gi} className={`smart-section${group.tableRows ? '' : ' spec-table'}`} data-pdf-block="atomic">
+                  {gi === 0 && (
+                    <h3 className="smart-section-heading">
+                      <span className="smart-heading-bar" />
+                      2. Display Specification
+                    </h3>
+                  )}
+                  {renderSingleSpecGroup(group, gi)}
+                </div>
+              ))}
+              {specImageUrl && !hasMeaningfulSpec && (
+                <div className="smart-section" data-pdf-block="atomic">
+                  <div className="ref-img-container spec-img-container">
+                    <img src={lazyCroppedPureSpecImage ?? lazyCroppedSpecImage ?? specImageUrl} alt="Design specification diagram" className="ref-img" />
+                  </div>
+                </div>
+              )}
+            </>
+          ) : (
+            <div className="smart-section" data-pdf-block="atomic">
+              <h3 className="smart-section-heading">
+                <span className="smart-heading-bar" />
+                2. Display Specification
+              </h3>
+              {hasSpecContent && (
+                <div className="spec-table">
+                  {specGroups.map((group, gi) => renderSingleSpecGroup(group, gi))}
+                </div>
+              )}
+              {specImageUrl && !hasMeaningfulSpec && (
+                <div className="ref-img-container spec-img-container">
+                  <img src={lazyCroppedPureSpecImage ?? lazyCroppedSpecImage ?? specImageUrl} alt="Design specification diagram" className="ref-img" />
+                </div>
+              )}
+            </div>
+          )
         )}
       </div>
     );
@@ -1884,88 +2183,74 @@ export const ReferenceImages: React.FC<ReferenceImagesProps> = ({ proposalPages,
 
   return (
     <div className="smart-reference-page" ref={containerRef}>
-      <div className="pdf-top-spacer" />
+      {/* pdf-top-spacer must be a tracked block so the engine removes it from continuation pages */}
+      <div className="pdf-top-spacer" data-pdf-block="atomic" />
 
-      {/* Design Specification
-          Marked as "header-group" (not "atomic") so the smart-pagination orphan
-          rule kicks in: if the spec block + the next block (Reference Images)
-          cannot both fit on the current page, the spec block is pushed to the
-          next page. This prevents the spec section from being orphaned at the
-          bottom of a pricing-table page where its content would overflow into
-          the footer overlay zone (USABLE_HEIGHT cutoff). */}
       {!noSpec && (hasSpecContent || specImageUrl) && (
-        <div className="smart-section" data-pdf-block="header-group">
-          <h3 className="smart-section-heading">
-            <span className="smart-heading-bar" />
-            2. Display Specification
-          </h3>
-          {hasSpecContent && (
-            <div className="spec-table">
-              {specGroups.map((group, gi) => {
-                const headingLower = group.heading?.trim().toLowerCase() || '';
-                const inlineValues = group.heading
-                  ? group.fields.filter(f => f.label.trim().toLowerCase() === headingLower).map(f => f.value)
-                  : [];
-                const remainingFields = group.heading
-                  ? group.fields.filter(f => f.label.trim().toLowerCase() !== headingLower)
-                  : group.fields;
-                const renderHeadingAsRow = group.heading && remainingFields.length === 0 && inlineValues.length > 0;
-                return (
-                  <React.Fragment key={gi}>
-                    {group.heading && (
-                      renderHeadingAsRow ? (
-                        <div className="spec-row">
-                          <span className="spec-label spec-label--group">{group.heading}</span>
-                          <span className="spec-value">{inlineValues.join(', ')}</span>
-                        </div>
-                      ) : (
-                        <div className="spec-group-heading">
-                          <span className="spec-group-heading-label">{group.heading}</span>
-                          {inlineValues.length > 0 && (
-                            <span className="spec-group-heading-value">{inlineValues.join(', ')}</span>
-                          )}
-                        </div>
-                      )
-                    )}
-                    {remainingFields.map((f, fi) => (
-                      <div key={fi} className="spec-row">
-                        <span className="spec-label">{f.label}</span>
-                        <span className="spec-value">{f.value}</span>
-                      </div>
-                    ))}
-                  </React.Fragment>
-                );
-              })}
-            </div>
-          )}
-          {/* Show spec image when: no spec at all, OR spec has only minimal content (material only, no dimensions) */}
-          {specImageUrl && !hasMeaningfulSpec && (
-            <div className="ref-img-container spec-img-container">
-              <img src={lazyCroppedPureSpecImage ?? lazyCroppedSpecImage ?? specImageUrl} alt="Design specification diagram" className="ref-img" />
-            </div>
-          )}
-        </div>
+        hasMetroStyleTables ? (
+          <>
+            {/* Heading travels with the first coach group — prevents orphan heading at page bottom */}
+            {specGroups.map((group, gi) => (
+              <div key={gi} className={`smart-section${group.tableRows ? '' : ' spec-table'}`} data-pdf-block="atomic">
+                {gi === 0 && (
+                  <h3 className="smart-section-heading">
+                    <span className="smart-heading-bar" />
+                    2. Display Specification
+                  </h3>
+                )}
+                {renderSingleSpecGroup(group, gi)}
+              </div>
+            ))}
+            {/* Show spec image when spec has no meaningful dimensional content */}
+            {specImageUrl && !hasMeaningfulSpec && (
+              <div className="smart-section" data-pdf-block="atomic">
+                <div className="ref-img-container spec-img-container">
+                  <img src={lazyCroppedPureSpecImage ?? lazyCroppedSpecImage ?? specImageUrl} alt="Design specification diagram" className="ref-img" />
+                </div>
+              </div>
+            )}
+          </>
+        ) : (
+          <div className="smart-section" data-pdf-block="atomic">
+            <h3 className="smart-section-heading">
+              <span className="smart-heading-bar" />
+              2. Display Specification
+            </h3>
+            {hasSpecContent && (
+              <div className="spec-table">
+                {specGroups.map((group, gi) => renderSingleSpecGroup(group, gi))}
+              </div>
+            )}
+            {/* Show spec image when: no spec at all, OR spec has only minimal content (material only, no dimensions) */}
+            {specImageUrl && !hasMeaningfulSpec && (
+              <div className="ref-img-container spec-img-container">
+                <img src={lazyCroppedPureSpecImage ?? lazyCroppedSpecImage ?? specImageUrl} alt="Design specification diagram" className="ref-img" />
+              </div>
+            )}
+          </div>
+        )
       )}
 
-      {/* Reference Images — all images are inside one atomic block so they
-          stay together in the PDF and never appear as separate sections. */}
-      {refImageUrls.length > 0 && (
-        <div className="smart-section" data-pdf-block="atomic">
-          <h3 className="smart-section-heading">
-            <span className="smart-heading-bar" />
-            3. Reference Images
-          </h3>
-          {finalRefImageUrls.map((src, idx) => (
-            <div key={idx} className="ref-img-container ref-img-single-center">
-              <img
-                src={src}
-                alt={`Reference ${idx + 1}`}
-                className={`ref-img ${finalRefImageUrls.length === 1 ? 'ref-img-single' : ''}`}
-              />
-            </div>
-          ))}
+      {/* Reference Images — each image is its own atomic block so the greedy
+          packer can place them individually. The section heading travels with
+          the first image so it is never orphaned at the bottom of a page. */}
+      {refImageUrls.length > 0 && finalRefImageUrls.map((src, idx) => (
+        <div key={idx} className="smart-section" data-pdf-block="atomic">
+          {idx === 0 && (
+            <h3 className="smart-section-heading">
+              <span className="smart-heading-bar" />
+              3. Reference Images
+            </h3>
+          )}
+          <div className="ref-img-container ref-img-single-center">
+            <img
+              src={src}
+              alt={`Reference ${idx + 1}`}
+              className={`ref-img ${finalRefImageUrls.length === 1 ? 'ref-img-single' : ''}`}
+            />
+          </div>
         </div>
-      )}
+      ))}
 
       {/* Customer Review */}
       {finalReview && (
