@@ -45,6 +45,7 @@ const PDF_FONT_LOAD_SPECS = [
  * on one line.
  */
 const PDF_FONT_SCALE = 1.45;
+.0
 const PDF_FONT_MIN_PX = 14;
 const PDF_FONT_MAX_PX = 44;
 // Subtrees whose font-size must stay exactly as the template CSS declared it.
@@ -1054,27 +1055,29 @@ export const exportToPDF = async (
         if (!source) return false;
         const isFirstOfDoc = pageCount === 0;
         console.log(`Ã°Å¸â€œÂ Smart pagination enabled: ${sectionId}`);
-        if (source.scrollHeight > PDF_USABLE_HEIGHT_PX) {
-          const blocks = await measureSectionBlocks(sectionId);
-          if (blocks.length > 0) {
-            const vPages = computeVirtualPagesWithTableRows(blocks, PDF_USABLE_HEIGHT_PX);
-            console.log(`Ã¯Â¿Â½ Smart section START: ${sectionId}`, { virtualPages: vPages.length });
-            console.log(`Ã°Å¸â€œâ€ž Virtual pages generated: ${vPages.length}`);
-            for (let vp = 0; vp < vPages.length; vp++) {
-              console.log(`Ã°Å¸â€œâ€ž Rendering virtual page ${vp + 1}/${vPages.length}`, { sectionId, currentPdfPage: pdf.getCurrentPageInfo().pageNumber });
-              console.log(`Ã°Å¸Â§Â© Capturing virtual page ${vp + 1}/${vPages.length}`);
-              const vpResult = await captureVirtualPage(sectionId, vPages[vp], blocks);
-              if (vpResult) {
-                addCanvasToPDF(vpResult.canvas, vpResult.links, `${label}-vp${vp}`, isFirstOfDoc && vp === 0);
-                console.log(`Ã¢Å“â€¦ Virtual page inserted`, { sectionId, vp, insertedPdfPage: pdf.getCurrentPageInfo().pageNumber });
-              } else {
-                console.log(`Ã¢Å¡Â Ã¯Â¸Â Virtual page ${vp + 1} returned null Ã¢â‚¬â€ skipped`, { sectionId });
-              }
+        // Always use smart pagination when [data-pdf-block] elements exist.
+        // The live-DOM scrollHeight cannot guard this path: it reflects mobile CSS
+        // without pdf-export-mode or font scaling (1.45x). After those transforms
+        // content can be significantly taller, causing rows to overflow the footer.
+        const blocks = await measureSectionBlocks(sectionId);
+        if (blocks.length > 0) {
+          const vPages = computeVirtualPagesWithTableRows(blocks, PDF_USABLE_HEIGHT_PX);
+          console.log(`Ã¯Â¿Â½ Smart section START: ${sectionId}`, { virtualPages: vPages.length });
+          console.log(`Ã°Å¸â€œâ€ž Virtual pages generated: ${vPages.length}`);
+          for (let vp = 0; vp < vPages.length; vp++) {
+            console.log(`Ã°Å¸â€œâ€ž Rendering virtual page ${vp + 1}/${vPages.length}`, { sectionId, currentPdfPage: pdf.getCurrentPageInfo().pageNumber });
+            console.log(`Ã°Å¸Â§Â© Capturing virtual page ${vp + 1}/${vPages.length}`);
+            const vpResult = await captureVirtualPage(sectionId, vPages[vp], blocks);
+            if (vpResult) {
+              addCanvasToPDF(vpResult.canvas, vpResult.links, `${label}-vp${vp}`, isFirstOfDoc && vp === 0);
+              console.log(`Ã¢Å“â€¦ Virtual page inserted`, { sectionId, vp, insertedPdfPage: pdf.getCurrentPageInfo().pageNumber });
+            } else {
+              console.log(`Ã¢Å¡Â Ã¯Â¸Â Virtual page ${vp + 1} returned null Ã¢â‚¬â€ skipped`, { sectionId });
             }
-            return true;
           }
+          return true;
         }
-        // Fast path
+        // Fast path: no [data-pdf-block] elements — capture whole section at once
         const result = await captureSectionAtA4(sectionId);
         if (result) {
           addCanvasToPDF(result.canvas, result.links, label, isFirstOfDoc);

@@ -2103,23 +2103,13 @@ export const ReferenceImages: React.FC<ReferenceImagesProps> = ({ proposalPages,
     const remainingFields = group.heading
       ? group.fields.filter(f => f.label.trim().toLowerCase() !== headingLower)
       : group.fields;
-    const renderHeadingAsRow = group.heading && remainingFields.length === 0 && inlineValues.length > 0;
     return (
       <React.Fragment key={gi}>
         {group.heading && (
-          renderHeadingAsRow ? (
-            <div className="spec-row">
-              <span className="spec-label spec-label--group">{group.heading}</span>
-              <span className="spec-value">{inlineValues.join(', ')}</span>
-            </div>
-          ) : (
-            <div className="spec-group-heading">
-              <span className="spec-group-heading-label">{group.heading}</span>
-              {inlineValues.length > 0 && (
-                <span className="spec-group-heading-value">{inlineValues.join(', ')}</span>
-              )}
-            </div>
-          )
+          <div className="spec-row">
+            <span className="spec-label spec-label--group">{group.heading}</span>
+            <span className="spec-value">{inlineValues.join(', ')}</span>
+          </div>
         )}
         {remainingFields.map((f, fi) => (
           <div key={fi} className="spec-row">

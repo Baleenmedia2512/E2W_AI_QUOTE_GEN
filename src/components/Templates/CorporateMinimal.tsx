@@ -226,13 +226,13 @@ export const CorporateMinimal: React.FC<TemplateProps> = ({ data, editable: _edi
     return (
       <>
         <div id="pdf-page-1" className="template-corporate-minimal">
-          <div data-pdf-block="atomic">
+          <div data-pdf-block="atomic" style={{ paddingBottom: '1px' }}>
             {renderHeader()}
             {renderClientDetails()}
           </div>
 
           <div className="quote-items-section">
-            <div data-pdf-block="atomic">
+            <div data-pdf-block="atomic" style={{ paddingBottom: '1px' }}>
               <h3 style={{ textAlign: 'center', fontSize: '20px', fontWeight: '700', textTransform: 'uppercase', letterSpacing: '0.08em', color: '#3b0a14', margin: '0 0 8px 0', paddingBottom: '10px', borderBottom: '2px solid #2980b9' }}>
                 {extractServiceType(quote.items[0]?.description || '').toUpperCase()}
               </h3>
@@ -313,13 +313,13 @@ export const CorporateMinimal: React.FC<TemplateProps> = ({ data, editable: _edi
     <>
       {/* Page 1: Summary Page */}
       <div id="pdf-page-summary" className="template-corporate-minimal">
-        <div data-pdf-block="atomic">
+        <div data-pdf-block="atomic" style={{ paddingBottom: '1px' }}>
           {renderHeader()}
           {renderClientDetails()}
         </div>
 
         <div className="quote-items-section">
-          <div data-pdf-block="atomic">
+          <div data-pdf-block="atomic" style={{ paddingBottom: '1px' }}>
             <h3 style={{ textAlign: 'center', fontSize: '20px', fontWeight: '700', textTransform: 'uppercase', letterSpacing: '0.08em', color: '#3b0a14', margin: '0 0 18px 0', paddingBottom: '10px', borderBottom: '2px solid #2980b9' }}>
               Executive Pricing Summary
             </h3>
@@ -349,7 +349,7 @@ export const CorporateMinimal: React.FC<TemplateProps> = ({ data, editable: _edi
             <>
               <div id={`pdf-service-${groupIndex}`} className="template-corporate-minimal">
                 <div className="quote-items-section">
-                  <div data-pdf-block="atomic">
+                  <div data-pdf-block="atomic" style={{ paddingBottom: '1px' }}>
                     <h3 style={{ marginBottom: '8px', fontSize: '22px', fontWeight: '700', color: '#750926', textAlign: 'center' }}>
                       {getServiceGroupHeading(group)}
                     </h3>
