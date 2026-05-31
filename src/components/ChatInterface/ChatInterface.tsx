@@ -2041,7 +2041,8 @@ const ChatInterface: React.FC = () => {
               {messages.map(message => {
                 // Parse message content for special formatting
                 const lines = message.content.split('\n');
-                const hasQuoteHeader = lines[0]?.toLowerCase().includes('quote generated');
+                const hasQuoteHeader = lines[0]?.toLowerCase().includes('quote generated') &&
+                  (lines.length > 1 || message.content.includes('```json'));
 
                 // Helper: bold key summary values
                 function boldSummary(line: string) {
@@ -2087,7 +2088,8 @@ const ChatInterface: React.FC = () => {
                           </Text>
                         </HStack>
 
-                        {/* Response Card */}
+                        {/* Response Card — only render when there are body lines or a JSON block */}
+                        {(lines.slice(1).some(l => l.trim()) || message.content.includes('```json')) && (
                         <Box
                           bg="white"
                           border="1px solid"
@@ -2167,6 +2169,7 @@ const ChatInterface: React.FC = () => {
                             );
                           })()}
                         </Box>
+                        )} {/* end Response Card conditional */}
                       </Box>
                     ) : (
                       // Regular message format
