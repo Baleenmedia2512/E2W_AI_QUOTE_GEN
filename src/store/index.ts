@@ -93,10 +93,10 @@ export const useAppStore = create<AppState>((set) => ({
   proposal: initialProposalState,
   setProposal: (proposal) =>
     set((state) => {
-      if (proposal.pageImages) {
-        savePageImagesToDB(proposal.pageImages);
-      }
-      
+      // NOTE: savePageImagesToDB (legacy key 'pageImages') intentionally removed.
+      // Images are now saved per-proposal via savePageImagesById() below, which
+      // uses key 'pageImages_<id>' — avoids the sourceless duplicate in IndexedDB.
+
       // CLOUD-ONLY AUTO-SAVE: Save to cloud if available, fallback to local IndexedDB
       if (proposal.file && proposal.textContent && proposal.fileName) {
         const fullProposal = { ...state.proposal, ...proposal };

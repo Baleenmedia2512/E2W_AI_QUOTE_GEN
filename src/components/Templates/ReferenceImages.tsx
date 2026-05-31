@@ -1887,11 +1887,12 @@ export const ReferenceImages: React.FC<ReferenceImagesProps> = ({ proposalPages,
       return;
     }
     const storedCount = refPage.croppedImages?.length ?? 0;
-    if (storedCount >= 2 && storedCount <= 4) {
+    if (storedCount >= 1 && storedCount <= 4) {
+      // Native extraction produced at least 1 crop — trust it, skip Gemini re-crop
       setLazyCroppedRefImages([]);
       return;
     }
-    console.log(`🔁 Lazy re-crop triggered: stored count = ${storedCount} (${storedCount === 0 ? 'empty' : storedCount === 1 ? 'may have missed images' : 'suspicious duplicate count'})`);
+    console.log(`🔁 Lazy re-crop triggered: stored count = ${storedCount} (${storedCount === 0 ? 'empty' : 'suspicious duplicate count'})`);
     let cancelled = false;
     console.log('🔍 Triggering lazy Gemini Vision crop for reference page', refPage.pageNumber);
     cropReferencePageImage(refPage.imageDataUrl, refPage.pageNumber).then(async cropped => {

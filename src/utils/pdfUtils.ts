@@ -48,6 +48,353 @@ function shouldAttemptCropping(pageText: string): boolean {
   return false;
 }
 
+// ── PDF.js Native Image Extraction ───────────────────────────────────────────
+// Extracts images that are physically embedded in the PDF binary for a given page.
+// Uses getOperatorList() to find paint operations, then reads image data from
+// page.objs cache. Falls back gracefully if the internal API is unavailable.
+//
+// Filter thresholds (tuned for Baleen Media proposal PDFs):
+//   • minWidthPx  / minHeightPx : removes small icons, logos, decorative arrows
+//   • minAreaRatio               : removes elements < 3% of page area
+//   • maxAreaRatio               : removes full-page scanned images (same as imageDataUrl)
+//   • aspectRatioMin/Max         : removes ultra-thin decorative strips
+//   • seenHashes                 : deduplicates identical images reused across pages
+// ─────────────────────────────────────────────────────────────────────────────
+// ─────────────────────────────────────────────────────────────────────────────
+// extractPhotoFromLayoutRaster
+// Some PDF pages embed the entire layout (header + spec text + reference photo)
+// as a single raster XObject. This helper isolates the reference photo by scanning
+// the cropped canvas for horizontal white gap bands (>90% white rows, ≥8px tall)
+// and returning the content below the last such gap.
+// Only called when the XObject covers >65% of the page height.
+// ─────────────────────────────────────────────────────────────────────────────
+function extractPhotoFromLayoutRaster(
+  ctx: CanvasRenderingContext2D,
+  w: number,
+  h: number,
+): HTMLCanvasElement | null {
+  const WHITE_THRESH = 230; // R,G,B each > this → white pixel
+  const WHITE_ROW_RATIO = 0.90; // fraction of row that must be white
+  const MIN_GAP_HEIGHT = 3; // px — catch narrow gaps between label and photo
+  const MIN_PHOTO_HEIGHT = h * 0.20; // photo must be at least 20% of crop height
+
+  const imageData = ctx.getImageData(0, 0, w, h).data;
+
+  // Guard: check if top 25% of the crop is predominantly white.
+  // Real outdoor photos (hoarding, van, bus) have photo content up top — not white.
+  // Layout rasters (header + spec text) are mostly white background up top.
+  // If top 25% is NOT >55% white → this is a real photo, skip sub-crop entirely.
+  const topCheckRows = Math.floor(h * 0.25);
+  const topStep = Math.max(1, Math.floor((topCheckRows * w) / 2000));
+  let topWhite = 0, topTotal = 0;
+  for (let y = 0; y < topCheckRows; y++) {
+    for (let x = 0; x < w; x += topStep) {
+      const i = (y * w + x) * 4;
+      if (imageData[i] > WHITE_THRESH && imageData[i + 1] > WHITE_THRESH && imageData[i + 2] > WHITE_THRESH) topWhite++;
+      topTotal++;
+    }
+  }
+  if (topWhite / topTotal < 0.55) return null; // real photo content up top — don't sub-crop
+
+  // For each row, compute white-pixel fraction
+  const isWhiteRow: boolean[] = new Array(h);
+  for (let y = 0; y < h; y++) {
+    let white = 0;
+    for (let x = 0; x < w; x++) {
+      const i = (y * w + x) * 4;
+      if (imageData[i] > WHITE_THRESH && imageData[i + 1] > WHITE_THRESH && imageData[i + 2] > WHITE_THRESH) white++;
+    }
+    isWhiteRow[y] = white / w >= WHITE_ROW_RATIO;
+  }
+
+  // Find gap bands (consecutive white rows ≥ MIN_GAP_HEIGHT).
+  // Only scan the top 55% — gaps in the lower half are between stacked real
+  // photos (e.g. two trucks on one page) and must not be used as split points.
+  const GAP_SCAN_LIMIT = Math.floor(h * 0.55);
+  let lastGapEnd = -1;
+  let inGap = false;
+  let gapStart = 0;
+  for (let y = 0; y < GAP_SCAN_LIMIT; y++) {
+    if (isWhiteRow[y]) {
+      if (!inGap) { inGap = true; gapStart = y; }
+    } else {
+      if (inGap) {
+        inGap = false;
+        const gapHeight = y - gapStart;
+        if (gapHeight >= MIN_GAP_HEIGHT) lastGapEnd = y;
+      }
+    }
+  }
+  // Handle gap that extends up to the scan limit
+  if (inGap && GAP_SCAN_LIMIT - gapStart >= MIN_GAP_HEIGHT) lastGapEnd = GAP_SCAN_LIMIT;
+
+  // No gap found — this is a standalone photo, return null (no sub-crop)
+  if (lastGapEnd < 0) return null;
+
+  const photoY = lastGapEnd;
+  const photoH = h - photoY;
+
+  // Photo region too small — something went wrong, skip sub-crop
+  if (photoH < MIN_PHOTO_HEIGHT || photoH < 60) return null;
+
+  const out = document.createElement('canvas');
+  out.width = w;
+  out.height = photoH;
+  const outCtx = out.getContext('2d');
+  if (!outCtx) return null;
+  outCtx.drawImage(ctx.canvas, 0, photoY, w, photoH, 0, 0, w, photoH);
+  return out;
+}
+
+async function extractNativeImages(
+  pdfPage: any,
+  renderedCanvas: HTMLCanvasElement,
+  pageNumber: number,
+): Promise<string[]> {
+  const results: string[] = [];
+
+  try {
+    const opList = await pdfPage.getOperatorList();
+    const OPS = pdfjsLib.OPS as any;
+
+    // Collect all image paint operations and their canvas-space transforms
+    const imagePaintOps: { objId: string; transform: number[] }[] = [];
+
+    // PDF graphics state: track the current transformation matrix (CTM) stack.
+    // Each element is [a, b, c, d, e, f] — a standard 2D affine transform.
+    const ctmStack: number[][] = [[1, 0, 0, 1, 0, 0]];
+    let currentCTM = [1, 0, 0, 1, 0, 0];
+
+    for (let k = 0; k < opList.fnArray.length; k++) {
+      const fn = opList.fnArray[k];
+      const args = opList.argsArray[k];
+
+      if (fn === OPS.save) {
+        ctmStack.push([...currentCTM]);
+      } else if (fn === OPS.restore) {
+        currentCTM = ctmStack.pop() || [1, 0, 0, 1, 0, 0];
+      } else if (fn === OPS.transform) {
+        // Multiply current CTM by the new matrix
+        const [a, b, c, d, e, f] = args as number[];
+        const [ca, cb, cc, cd, ce, cf] = currentCTM;
+        currentCTM = [
+          ca * a + cc * b,
+          cb * a + cd * b,
+          ca * c + cc * d,
+          cb * c + cd * d,
+          ca * e + cc * f + ce,
+          cb * e + cd * f + cf,
+        ];
+      } else if (
+        fn === OPS.paintImageXObject ||
+        fn === OPS.paintJpegXObject ||
+        fn === OPS.paintImageXObjectRepeat
+      ) {
+        const objId = args[0] as string;
+        imagePaintOps.push({ objId, transform: [...currentCTM] });
+      } else if (fn === OPS.paintInlineImageXObject) {
+        // Inline image — data is directly in args[0], no objId lookup needed
+        try {
+          const imgData = args[0] as { width: number; height: number; data: Uint8ClampedArray | Uint8Array };
+          if (!imgData?.width || !imgData?.height || !imgData?.data) continue;
+
+          // Convert raw RGBA/grayscale pixel data to a canvas crop
+          const iw = imgData.width;
+          const ih = imgData.height;
+          const [a, , , d, e, f] = currentCTM;
+
+          // Page viewport dimensions
+          const viewport = pdfPage.getViewport({ scale: 2.0 });
+          const pw = viewport.width;
+          const ph = viewport.height;
+
+          // PDF origin is bottom-left; canvas origin is top-left
+          const sx = Math.round(e / viewport.viewBox[2] * pw);
+          const sy = Math.round((1 - (f + d) / viewport.viewBox[3]) * ph);
+          const sw = Math.round(Math.abs(a) / viewport.viewBox[2] * pw);
+          const sh = Math.round(Math.abs(d) / viewport.viewBox[3] * ph);
+
+          if (sw < 80 || sh < 60) continue;
+
+          const areaRatio = (sw * sh) / (renderedCanvas.width * renderedCanvas.height);
+          if (areaRatio < 0.03 || areaRatio > 0.97) continue;
+          const ar = sw / sh;
+          if (ar < 0.15 || ar > 7) continue;
+
+          const cropCanvas = document.createElement('canvas');
+          cropCanvas.width = sw;
+          cropCanvas.height = sh;
+          const cropCtx = cropCanvas.getContext('2d');
+          if (!cropCtx) continue;
+
+          // Draw from the already-rendered page canvas — pixel-perfect
+          cropCtx.drawImage(renderedCanvas, sx, sy, sw, sh, 0, 0, sw, sh);
+          results.push(cropCanvas.toDataURL('image/jpeg', 0.88));
+        } catch {
+          // skip malformed inline image
+        }
+      }
+    }
+
+    if (imagePaintOps.length === 0) return results;
+
+    // After page.render() has completed, all XObjects referenced on this page
+    // are already resolved in the PDF.js object cache. Call objs.get() without
+    // a callback so it returns synchronously — avoids an async wait that can
+    // hang indefinitely if a callback is never invoked for a missing/failed obj.
+    const viewport = pdfPage.getViewport({ scale: 2.0 });
+    const pw = renderedCanvas.width;
+    const ph = renderedCanvas.height;
+    const pdfW = viewport.viewBox[2];  // PDF page width in PDF units
+    const pdfH = viewport.viewBox[3];  // PDF page height in PDF units
+
+    const seenHashes = new Set<string>();
+    // Phase 1: collect bounding rects (pass basic filters, defer cropping)
+    const cropRects: { sx: number; sy: number; sw: number; sh: number; wasMerged: boolean }[] = [];
+
+    for (const { objId, transform } of imagePaintOps) {
+      try {
+        const [a, , , d, e, f] = transform;
+        const scaleX = pw / pdfW;
+        const scaleY = ph / pdfH;
+
+        const sx = Math.round(e * scaleX);
+        const sy = Math.round(ph - (f + Math.abs(d)) * scaleY);
+        const sw = Math.round(Math.abs(a) * scaleX);
+        const sh = Math.round(Math.abs(d) * scaleY);
+
+        if (sw < 80 || sh < 60) continue;
+        // No explicit off-page rejection here — rely on clamped size check below.
+        // Images with huge CTM can have sy < 0 or sy > ph yet still show a
+        // significant visible area on the canvas once clamped to page bounds.
+
+        // Use clamped (visible) dimensions for area ratio — images with CTM larger
+        // than the page are clipped to page bounds; their raw area would exceed 97%
+        const clSx = Math.max(0, sx), clSy = Math.max(0, sy);
+        const clSw = Math.min(sw, pw - clSx), clSh = Math.min(sh, ph - clSy);
+        if (clSw < 60 || clSh < 40) continue;
+        const areaRatio = (clSw * clSh) / (pw * ph);
+        if (areaRatio < 0.05 || areaRatio > 0.99) continue;
+
+        const ar = clSw / clSh;
+        if (ar < 0.15 || ar > 7) continue;
+
+        const hash = `${objId}:${sw}:${sh}:${sx}:${sy}`;
+        if (seenHashes.has(hash)) continue;
+        seenHashes.add(hash);
+
+        cropRects.push({ sx, sy, sw, sh, wasMerged: false });
+      } catch {
+        // skip malformed object
+      }
+    }
+
+    // Phase 2: merge adjacent rects — handles one visual split across two XObjects
+    // (e.g. a spec diagram or wide photo embedded as two side-by-side images)
+    const MERGE_TOL = 35; // px gap tolerance
+    let mergedRects = cropRects.map(r => ({ ...r })) as { sx: number; sy: number; sw: number; sh: number; wasMerged: boolean }[];
+    let merging = true;
+    while (merging) {
+      merging = false;
+      outer: for (let i = 0; i < mergedRects.length; i++) {
+        for (let j = i + 1; j < mergedRects.length; j++) {
+          const a = mergedRects[i], b = mergedRects[j];
+          const aRight = a.sx + a.sw, bRight = b.sx + b.sw;
+          const aBottom = a.sy + a.sh, bBottom = b.sy + b.sh;
+          // Horizontal gap (side-by-side)
+          const hGap = Math.min(Math.abs(aRight - b.sx), Math.abs(bRight - a.sx));
+          const heightSim = Math.abs(a.sh - b.sh) / Math.max(a.sh, b.sh, 1);
+          // Vertical gap (top-bottom)
+          const vGap = Math.min(Math.abs(aBottom - b.sy), Math.abs(bBottom - a.sy));
+          const widthSim  = Math.abs(a.sw - b.sw) / Math.max(a.sw, b.sw, 1);
+
+          if ((hGap < MERGE_TOL && heightSim < 0.25) || (vGap < MERGE_TOL && widthSim < 0.25)) {
+            mergedRects[i] = {
+              sx: Math.min(a.sx, b.sx),
+              sy: Math.min(a.sy, b.sy),
+              sw: Math.max(aRight, bRight)  - Math.min(a.sx, b.sx),
+              sh: Math.max(aBottom, bBottom) - Math.min(a.sy, b.sy),
+              wasMerged: true,  // formed by merging 2+ real XObjects — never sub-crop
+            };
+            mergedRects.splice(j, 1);
+            merging = true;
+            break outer;
+          }
+        }
+      }
+    }
+
+    // Phase 3: crop each merged rect + filter near-blank (white/empty) images
+    // subCropDone: once a layout-raster sub-crop fires, skip any further tall
+    // single-XObject rects on the same page (they are duplicate layout columns).
+    let subCropDone = false;
+    for (const { sx, sy, sw, sh, wasMerged: sw_wasMerged } of mergedRects) {
+      const clampedSx = Math.max(0, sx);
+      const clampedSy = Math.max(0, sy);
+      const clampedSw = Math.min(sw, pw - clampedSx);
+      const clampedSh = Math.min(sh, ph - clampedSy);
+      if (clampedSw < 60 || clampedSh < 40) continue;
+
+      const cropCanvas = document.createElement('canvas');
+      cropCanvas.width = clampedSw;
+      cropCanvas.height = clampedSh;
+      const cropCtx = cropCanvas.getContext('2d');
+      if (!cropCtx) continue;
+
+      cropCtx.drawImage(renderedCanvas, clampedSx, clampedSy, clampedSw, clampedSh, 0, 0, clampedSw, clampedSh);
+
+      // Sub-crop: only on single (non-merged) XObjects covering >65% of page height.
+      // Merged rects are already multiple real photos — never sub-crop them.
+      // If a sub-crop already fired this page, skip any further tall single XObjects
+      // (they are duplicate layout columns — same content, different position).
+      const heightRatio = clampedSh / ph;
+      let finalCanvas = cropCanvas;
+      let didSubCrop = false;
+      if (heightRatio > 0.65 && !sw_wasMerged) {
+        if (subCropDone) {
+          console.log(`   ⏭️ Page ${pageNumber}: skipped duplicate layout column (${clampedSw}×${clampedSh})`);
+          continue;
+        }
+        const subCropped = extractPhotoFromLayoutRaster(cropCtx, clampedSw, clampedSh);
+        if (subCropped) {
+          finalCanvas = subCropped;
+          didSubCrop = true;
+          console.log(`   ✂️ Page ${pageNumber}: sub-cropped layout raster ${clampedSw}×${clampedSh} → ${subCropped.width}×${subCropped.height}`);
+        }
+      }
+
+      // Run blank filter on finalCanvas (which may be the sub-cropped version)
+      const finalCtx = finalCanvas.getContext('2d');
+      if (finalCtx) {
+        const finalData = finalCtx.getImageData(0, 0, finalCanvas.width, finalCanvas.height);
+        const fp = finalData.data;
+        const fStep = Math.max(1, Math.floor(fp.length / (4 * 2000)));
+        let fWhite = 0, fTotal = 0;
+        for (let p = 0; p < fp.length; p += 4 * fStep) {
+          if (fp[p] > 230 && fp[p + 1] > 230 && fp[p + 2] > 230) fWhite++;
+          fTotal++;
+        }
+        if (fWhite / fTotal > 0.90) {
+          console.log(`   🚫 Page ${pageNumber}: skipped near-blank${didSubCrop ? ' sub-crop' : ''} (${finalCanvas.width}×${finalCanvas.height})`);
+          continue;
+        }
+      }
+
+      // Only mark subCropDone AFTER the image passes the blank filter and is stored
+      if (didSubCrop) subCropDone = true;
+
+      const areaRatio = (clampedSw * clampedSh) / (pw * ph);
+      results.push(finalCanvas.toDataURL('image/jpeg', 0.88));
+      console.log(`   📷 Page ${pageNumber}: native image — pos(${sx},${sy}) size(${clampedSw}×${clampedSh}) area=${(areaRatio * 100).toFixed(1)}%`);
+    }
+  } catch (opErr) {
+    console.warn(`   ⚠️ Page ${pageNumber}: getOperatorList failed:`, opErr);
+  }
+
+  return results;
+}
+// ── End Native Image Extraction ───────────────────────────────────────────────
+
 async function detectImageRegions(imageDataUrl: string, pageNumber: number): Promise<ImageBoundingBox[]> {
   try {
     const apiKey = import.meta.env.VITE_GEMINI_API_KEY;
@@ -659,10 +1006,12 @@ export const extractPDFContent = async (file: File, maxImagePages?: number): Pro
       allPageTexts.push({ pageNumber: i, text: pageText, pdfPage: page });
     }
 
-    // Phase 2: Render ALL pages as images so the full PDF is browsable in the UI
-    console.log(`🖼️ Rendering all ${allPageTexts.length} pages as images`);
+    // Phase 2 + 3: Render ALL pages as images AND extract native embedded images in one pass.
+    // Native extraction runs in the same loop so pdfPage objects are still open.
+    console.log(`🖼️ Rendering + native image extraction for all ${allPageTexts.length} pages`);
 
-    // Phase 3: Render all pages as images
+    let nativeSuccessCount = 0;
+
     for (const { pageNumber, text, pdfPage } of allPageTexts) {
       try {
         const viewport = pdfPage.getViewport({ scale: 2.0 });
@@ -670,12 +1019,45 @@ export const extractPDFContent = async (file: File, maxImagePages?: number): Pro
         canvas.width = viewport.width;
         canvas.height = viewport.height;
         const ctx = canvas.getContext('2d');
-        if (ctx) {
-          await pdfPage.render({ canvasContext: ctx, viewport }).promise;
-          const imageDataUrl = canvas.toDataURL('image/jpeg', 0.92);
-          pageImages.push({ pageNumber, text, imageDataUrl });
-          console.log(`Page ${pageNumber}/${pageCount} rendered as image`);
+        if (!ctx) continue;
+
+        await pdfPage.render({ canvasContext: ctx, viewport }).promise;
+        const imageDataUrl = canvas.toDataURL('image/jpeg', 0.92);
+
+        // ── Native image extraction (Option A) ───────────────────────────────
+        // Extract images physically embedded in the PDF binary using PDF.js
+        // operator list + object cache. No Gemini API call needed.
+        let croppedImages: string[] | undefined;
+        try {
+          const nativeImgs = await extractNativeImages(pdfPage, canvas, pageNumber);
+          if (nativeImgs.length > 0) {
+            croppedImages = nativeImgs;
+            nativeSuccessCount++;
+            console.log(`✅ Page ${pageNumber}/${pageCount}: ${nativeImgs.length} native image(s) extracted`);
+          } else {
+            console.log(`○  Page ${pageNumber}/${pageCount}: no embedded images found`);
+          }
+        } catch (nativeErr) {
+          console.warn(`⚠️ Page ${pageNumber}: native extraction error, falling back to Gemini:`, nativeErr);
+          // ── Fallback: Gemini Vision (only fires if native extraction threw) ──
+          if (shouldAttemptCropping(text)) {
+            try {
+              const boxes = await detectImageRegions(imageDataUrl, pageNumber);
+              if (boxes.length > 0) {
+                const cropped = await cropImageRegions(imageDataUrl, boxes);
+                if (cropped.length > 0) {
+                  croppedImages = cropped;
+                  console.log(`✅ Page ${pageNumber}: Gemini fallback got ${cropped.length} image(s)`);
+                }
+              }
+            } catch (geminiErr) {
+              console.warn(`⚠️ Page ${pageNumber}: Gemini fallback also failed:`, geminiErr);
+            }
+          }
         }
+
+        pageImages.push({ pageNumber, text, imageDataUrl, croppedImages });
+        console.log(`Page ${pageNumber}/${pageCount} rendered`);
       } catch (imgErr) {
         console.warn(`Failed to render page ${pageNumber} as image:`, imgErr);
       }
@@ -683,64 +1065,36 @@ export const extractPDFContent = async (file: File, maxImagePages?: number): Pro
 
     const finalText = textContent.trim();
     console.log('PDF extraction complete. Total text length:', finalText.length);
-    
+
     if (finalText.length === 0) {
       console.warn('WARNING: PDF text extraction resulted in empty content');
       throw new Error('PDF appears to be empty or contains only images. Please use a PDF with selectable text.');
     }
 
-    // Auto-crop reference images using Gemini Vision
-    try {
-      const pagesToCrop = pageImages.filter(p => shouldAttemptCropping(p.text));
-      if (pagesToCrop.length > 0) {
-        console.log(`🔍 Auto-cropping ${pagesToCrop.length} of ${pageImages.length} pages using Gemini Vision...`);
+    // ── IMAGE SUMMARY TABLE ──────────────────────────────────────────────────
+    const croppedCount = pageImages.filter(p => p.croppedImages && p.croppedImages.length > 0).length;
+    console.log(`\n📊 ===== PDF IMAGE SUMMARY: "${file.name}" =====`);
+    console.log(`   Total pages in PDF      : ${pageCount}`);
+    console.log(`   Pages rendered          : ${pageImages.length}`);
+    console.log(`   Pages with native imgs  : ${nativeSuccessCount}`);
+    console.log(`   Pages with any crops    : ${croppedCount}`);
 
-        for (let i = 0; i < pagesToCrop.length; i += 3) {
-          const chunk = pagesToCrop.slice(i, i + 3);
-          await Promise.all(chunk.map(async (page) => {
-            const boxes = await detectImageRegions(page.imageDataUrl, page.pageNumber);
-            if (boxes.length > 0) {
-              console.log(`✅ Page ${page.pageNumber}: Detected ${boxes.length} image regions`);
-              const cropped = await cropImageRegions(page.imageDataUrl, boxes);
-              if (cropped.length > 0) {
-                page.croppedImages = cropped;
-                console.log(`✅ Page ${page.pageNumber}: Cropped ${cropped.length} images successfully`);
-              }
-            } else {
-              console.log(`ℹ️ Page ${page.pageNumber}: No product images detected`);
-            }
-          }));
-
-          if (i + 3 < pagesToCrop.length) {
-            await new Promise(resolve => setTimeout(resolve, 1000));
-          }
-        }
-
-        const croppedCount = pageImages.filter(p => p.croppedImages && p.croppedImages.length > 0).length;
-        console.log(`🎯 Auto-crop complete: ${croppedCount} pages have cropped images`);
-
-        // ── IMAGE SUMMARY TABLE ──────────────────────────────────────────────
-        console.log(`\n📊 ===== PDF IMAGE SUMMARY: "${file.name}" =====`);
-        console.log(`   Total pages in PDF : ${pageCount}`);
-        console.log(`   Pages rendered     : ${pageImages.length}`);
-        console.log(`   Sent to Gemini     : ${pagesToCrop.length}`);
-        pageImages.forEach(p => {
-          const count = p.croppedImages?.length ?? 0;
-          const wasCandidate = pagesToCrop.some(c => c.pageNumber === p.pageNumber);
-          const status = count > 0
-            ? `✅ ${count} cropped image(s)`
-            : wasCandidate
-              ? '🔍 candidate — 0 detected'
-              : '○ not a candidate';
-          console.log(`   Page ${String(p.pageNumber).padStart(2, ' ')} : ${status}`);
-        });
-        console.log(`   Pages with images  : ${croppedCount} / ${pageImages.length}`);
-        console.log(`=================================================\n`);
-        // ────────────────────────────────────────────────────────────────────
-      }
-    } catch (err) {
-      console.warn('⚠️ Auto-crop processing failed, continuing with full page images:', err);
-    }
+    const isRef  = (t: string) => t.includes('reference image') || t.includes('reference photo') || t.includes('sample image');
+    const isSpec = (t: string) => t.includes('design specification') || t.includes('specification') || t.includes('display area');
+    let totalRef = 0; let totalSpec = 0;
+    pageImages.forEach(p => {
+      const t = p.text.toLowerCase();
+      const count = p.croppedImages?.length ?? 0;
+      const tag = isRef(t) ? '[REF ]' : isSpec(t) ? '[SPEC]' : '[----]';
+      const status = count > 0 ? `✅ ${count} image(s)` : '○ none';
+      console.log(`   Page ${String(p.pageNumber).padStart(3)} ${tag}: ${status}`);
+      if (isRef(t) && count > 0) totalRef += count;
+      if (isSpec(t) && count > 0) totalSpec += count;
+    });
+    console.log(`   📸 Reference images saved : ${totalRef}`);
+    console.log(`   📐 Spec images saved      : ${totalSpec}`);
+    console.log(`=================================================\n`);
+    // ─────────────────────────────────────────────────────────────────────────
 
     return {
       textContent: finalText,
