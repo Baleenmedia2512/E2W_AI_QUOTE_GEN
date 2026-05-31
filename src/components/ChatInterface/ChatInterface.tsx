@@ -1145,6 +1145,14 @@ const ChatInterface: React.FC = () => {
 
       // EXACT_MATCH - Quote generated, process and navigate
       if (response.isQuoteGeneration && response.quoteData) {
+        // Strip raw JSON block from the displayed message — it's already parsed above.
+        // Only keep the human-readable first line (e.g. "✓ Found exact match: ...").
+        assistantMessage.content = assistantMessage.content
+          .replace(/```json[\s\S]*?```/g, '')
+          .replace(/```[\s\S]*?```/g, '')
+          .trim();
+        // Update the already-added message in state with the clean content
+        setMessages(prev => prev.map(m => m.id === assistantMessage.id ? { ...m, content: assistantMessage.content } : m));
         // Detect if source is a JPEG/image rate card (use standard terms) vs Excel/PDF proposal (use extracted terms)
         // Check the actual documents that were sent to Gemini (multi-doc or single doc)
         let isRateCardImage = false;
@@ -2039,141 +2047,13 @@ const ChatInterface: React.FC = () => {
           ) : (
             <VStack align="stretch" spacing={5}>
               {messages.map(message => {
-                // Parse message content for special formatting
-                const lines = message.content.split('\n');
-                const hasQuoteHeader = lines[0]?.toLowerCase().includes('quote generated') &&
-                  (lines.length > 1 || message.content.includes('```json'));
-
-                // Helper: bold key summary values
-                function boldSummary(line: string) {
-                  // Bold numbers and key phrases (e.g., 5 Mobile LED Vans, 3 months)
-                  return line.replace(/(\d+\s+Mobile LED Vans|\d+\s+months?|\d+\s+LED vans?|\d+\s+vans?)/gi, '<b>$1</b>');
-                }
-
                 return (
                   <Box
                     key={message.id}
                     alignSelf={message.role === 'user' ? 'flex-end' : 'flex-start'}
                     maxW={message.role === 'user' ? '80%' : '90%'}
                   >
-                    {message.role === 'assistant' && hasQuoteHeader ? (
-                      // Special format for quote generation messages
-                      <Box>
-                        {/* Quote Header Badge */}
-                        <HStack 
-                          spacing={2} 
-                          mb={3} 
-                          align="center"
-                          bg="linear-gradient(135deg, #e6f7ff 0%, #e0f2fe 100%)"
-                          px={4}
-                          py={2.5}
-                          borderRadius="12px"
-                          border="1px solid"
-                          borderColor="blue.200"
-                          boxShadow="0 2px 6px rgba(14, 165, 233, 0.15)"
-                        >
-                          <Icon 
-                            as={FiCheck} 
-                            color="blue.600" 
-                            boxSize="16px"
-                            fontWeight="bold"
-                          />
-                          <Text
-                            fontSize="13px"
-                            fontWeight="700"
-                            color="blue.700"
-                            letterSpacing="tight"
-                          >
-                            {lines[0]}
-                          </Text>
-                        </HStack>
-
-                        {/* Response Card — only render when there are body lines or a JSON block */}
-                        {(lines.slice(1).some(l => l.trim()) || message.content.includes('```json')) && (
-                        <Box
-                          bg="white"
-                          border="1px solid"
-                          borderColor="gray.200"
-                          px={{ base: 4, md: 5 }}
-                          py={{ base: 4, md: 5 }}
-                          borderRadius="14px"
-                          boxShadow="0 4px 12px rgba(0, 0, 0, 0.06), 0 1px 3px rgba(0, 0, 0, 0.08)"
-                        >
-                          <VStack align="stretch" spacing={2.5}>
-                            {(() => {
-                              // Filter out all lines inside ```json ... ``` code blocks
-                              let inCodeBlock = false;
-                              return lines.slice(1).map((line, idx) => {
-                                if (line.trim().startsWith('```json')) { inCodeBlock = true; return null; }
-                                if (inCodeBlock && line.trim() === '```') { inCodeBlock = false; return null; }
-                                if (inCodeBlock) return null;
-                                if (!line.trim()) return null;
-                                return (
-                                  <Text 
-                                    key={idx} 
-                                    fontSize="14px" 
-                                    color="gray.700" 
-                                    lineHeight="1.7"
-                                    fontWeight="500"
-                                    dangerouslySetInnerHTML={{ __html: boldSummary(line) }} 
-                                  />
-                                );
-                              });
-                            })()}
-                          </VStack>
-
-                          {/* Code Block - if message contains JSON */}
-                          {message.content.includes('```json') && (() => {
-                            const raw = message.content.match(/```json\n([\s\S]*?)```/)?.[1] || '';
-                            // Enhanced syntax highlighting
-                            const highlighted = raw.replace(
-                              /("(?:[^"\\]|\\.)*")\s*(:)|("(?:[^"\\]|\\.)*")|(true|false|null)|(\d+(?:\.\d+)?)/g,
-                              (match: string, key: string, colon: string, str: string, bool: string, num: string) => {
-                                if (key && colon) return `<span style="color:#fbbf24; font-weight:600">${key}</span><span style="color:#9ca3af">${colon}</span>`;
-                                if (str) return `<span style="color:#34d399">${str}</span>`;
-                                if (bool) return `<span style="color:#60a5fa; font-weight:600">${bool}</span>`;
-                                if (num) return `<span style="color:#a78bfa; font-weight:600">${num}</span>`;
-                                return match;
-                              }
-                            );
-                            return (
-                              <Box
-                                bg="linear-gradient(135deg, #1e293b 0%, #0f172a 100%)"
-                                p={4}
-                                borderRadius="12px"
-                                fontSize="12px"
-                                fontFamily="'Consolas', 'Monaco', monospace"
-                                overflowX="auto"
-                                mt={4}
-                                maxW={{ base: '100%', md: '380px' }}
-                                border="1px solid"
-                                borderColor="gray.700"
-                                boxShadow="inset 0 2px 4px rgba(0,0,0,0.3), 0 2px 8px rgba(0,0,0,0.15)"
-                                sx={{
-                                  '::-webkit-scrollbar': { height: '6px' },
-                                  '::-webkit-scrollbar-track': { bg: 'whiteAlpha.100', borderRadius: '3px' },
-                                  '::-webkit-scrollbar-thumb': { bg: 'whiteAlpha.300', borderRadius: '3px' },
-                                }}
-                              >
-                                <Box
-                                  as="pre"
-                                  whiteSpace="pre"
-                                  fontSize="12px"
-                                  fontFamily="'Consolas', 'Monaco', monospace"
-                                  color="#e5e7eb"
-                                  lineHeight="1.6"
-                                  m={0}
-                                  dangerouslySetInnerHTML={{ __html: highlighted }}
-                                />
-                              </Box>
-                            );
-                          })()}
-                        </Box>
-                        )} {/* end Response Card conditional */}
-                      </Box>
-                    ) : (
-                      // Regular message format
-                      <Box>
+                    <Box>
                         <Box
                           bgGradient={message.role === 'user' 
                             ? 'linear(135deg, #dc2626 0%, #be123c 50%, #9f1239 100%)' 
@@ -2916,8 +2796,7 @@ const ChatInterface: React.FC = () => {
                             </VStack>
                           </Box>
                         )}
-                      </Box>
-                    )}
+                    </Box>
                   </Box>
                 );
               })}
