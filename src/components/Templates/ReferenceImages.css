@@ -484,6 +484,20 @@
   margin-top: 14px;
 }
 
+/* 2-column grid for multi-diagram spec pages (e.g. Mobile Van LED with 4 panel diagrams) */
+.spec-img-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+  width: 100%;
+}
+
+.spec-img-grid-item {
+  width: 100%;
+  height: auto;
+  object-fit: contain;
+}
+
 /* --- Design Specification: Metro multi-column coach tables --- */
 .spec-coach-group {
   margin-bottom: 10px;

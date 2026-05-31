@@ -79,6 +79,12 @@ try {
 
 export const getCityServiceRegistry = () => _registry;
 
+// ── Module-level page index: cityKey → { canonicalName → reference pageNumbers[] } ──
+// Built in-memory each session from pageImages — never persisted (images not in localStorage).
+const _pageIndex = new Map<string, Record<string, number[]>>();
+export const getPageIndexForCity = (cityKey: string): Record<string, number[]> | null =>
+  _pageIndex.get(cityKey) ?? null;
+
 // ── City list (single source of truth) ───────────────────────────────────────
 export const KNOWN_CITY_LIST = [
   'chennai', 'madurai', 'coimbatore', 'salem', 'trichy', 'tirupur',
@@ -136,11 +142,13 @@ export function canonicalizeServiceName(s: string): string {
 // price/spec line. Headings are short, mostly ALL-CAPS (or title case), have
 // no rupee/percent/digits-with-units, and don't contain words like "price",
 // "duration", "min." etc.
-const HEADING_BLOCKLIST = /\b(price|rental|display|design|specification|specifications|reference|image|grand total|total|terms|conditions|gst|lead time|prior notice|min\.|quantity|duration|material|back to summary|email|phone|sales@|proposal|day image|night image|left side|right side|back side|back top|size|back to)\b/i;
+const HEADING_BLOCKLIST = /\b(price|rental|display|design|specification|specifications|reference|image|grand total|total|terms|conditions|gst|lead time|prior notice|min\.|quantity|duration|material|back to summary|email|phone|sales@|proposal|day image|night image|left side|right side|back side|back top|back to)\b/i;
 const RUPEE_OR_NUMBER_HEAVY = /(₹|\bRs\.?\b|\d{2,}|%|inches|days?|months?)/i;
 
 function isPlausibleHeading(s: string): boolean {
-  const t = s.trim();
+  // Strip leading size prefix such as "30 Sqft " (e.g. "30 Sqft FLEX BANNER")
+  // so the number doesn't falsely trigger the RUPEE_OR_NUMBER_HEAVY check.
+  const t = s.trim().replace(/^\d+\s*(sqft?|sqm?)\s*/i, '');
   if (t.length < 4 || t.length > 80) return false;
   if (HEADING_BLOCKLIST.test(t)) return false;
   if (RUPEE_OR_NUMBER_HEAVY.test(t)) return false;
@@ -156,8 +164,8 @@ function isHeadingFragment(s: string): boolean {
   if (!t || t.length > 60) return false;
   if (HEADING_BLOCKLIST.test(t)) return false;
   if (RUPEE_OR_NUMBER_HEAVY.test(t)) return false;
-  // Letters, dashes (incl. en/em), spaces, ampersand, slash. No commas/colons/parens.
-  return /^[A-Za-z][A-Za-z\s\-\u2013\u2014&/]+$/.test(t);
+  // Letters, dashes (incl. en/em), spaces, ampersand, slash, underscore. No commas/colons/parens.
+  return /^[A-Za-z][A-Za-z\s\-\u2013\u2014&/_]+$/.test(t);
 }
 
 // ── Layer 4: IDF (inverse document frequency) per registry ───────────────────
@@ -423,6 +431,9 @@ export const useCityServiceRegistry = () => {
             _registry.set(cityKey, cached);
             persistToSession();
             console.log(`💾 [Registry] localStorage hit for "${cityKey}" — ${Object.keys(cached.entries).length} entries, no API call.`);
+            // Build page index from already-loaded pageImages (synchronous, no API call)
+            const idx = buildPageIndex(cityKey, cached.entries, proposal.pageImages ?? []);
+            _pageIndex.set(cityKey, idx);
             return;
           }
 
@@ -627,6 +638,9 @@ ${proposal.textContent.slice(0, 50000)}`;
           _registry.set(cityKey, reg);
           persistToSession();
           persistToLocal(cityKey, reg);
+          // Build page index from already-loaded pageImages (synchronous, no API call)
+          const idx = buildPageIndex(cityKey, reg.entries, proposal.pageImages ?? []);
+          _pageIndex.set(cityKey, idx);
 
           const entryCount = Object.keys(reg.entries).length;
           const aliasCount = Object.values(reg.entries).reduce((n, e) => n + e.aliases.length, 0);
@@ -641,6 +655,110 @@ ${proposal.textContent.slice(0, 50000)}`;
     });
   }, [activeProposals]);
 };
+
+/**
+ * Build a service → reference-page-numbers index from already-extracted PDF pages.
+ * Only indexes pages with (N/M) marker where N >= 2 (reference pages, not spec/pricing).
+ * Runs synchronously on the in-memory pageImages — no API call needed.
+ *
+ * Heading format in PDF: "CURRENT SERVICE (2/3) | NEXT SERVICE →"
+ * We take [0] of pipe-split to get current service, then strip (N/M) to get the name.
+ */
+function buildPageIndex(
+  cityKey: string,
+  entries: Record<string, ServiceEntry>,
+  pages: Array<{ pageNumber: number; text: string }>,
+): Record<string, number[]> {
+  const index: Record<string, number[]> = {};
+  // Unicode nav arrows used in PDF navigation bars (← → ◄ ► ▲ ▼ and their variants)
+  const NAV_ARROWS = /[\u2190\u2192\u2193\u2191\u25C4\u25BA\u25B2\u25BC\u00AB\u00BB]+/g;
+  // (N/M) marker pattern
+  const MARKER_RE = /\(\s*(\d+)\s*\/\s*(\d+)\s*\)/g;
+
+  for (const page of pages) {
+    const rawText = page.text.replace(/\s+/g, ' ').trim();
+    // Use 400 chars — long enough to cover pages where nav text precedes the heading.
+    const headingArea = rawText.substring(0, 400);
+
+    // Scan headingArea for ALL (N/M) markers.
+    // PDF nav bars have two layouts:
+    //   Layout A: "CURRENT SERVICE (N/M) | NEXT SERVICE →"   — marker before pipe
+    //   Layout B: "← PREV SERVICE | CURRENT SERVICE (N/M)"   — marker after pipe
+    // Old code only handled Layout A by taking split('|')[0].
+    // New code finds each marker then extracts the service name from between the
+    // nearest preceding pipe (or start of string) and the marker position.
+    MARKER_RE.lastIndex = 0;
+    let markerMatch: RegExpExecArray | null;
+    let matched = false;
+
+    while ((markerMatch = MARKER_RE.exec(headingArea)) !== null) {
+      const pageNum = parseInt(markerMatch[1]);
+      if (pageNum < 2) continue; // (1/N) = spec/pricing page — skip
+
+      // Text before the (N/M) marker, with nav arrows stripped.
+      // The PDF uses | as BOTH:
+      //   (a) navigation separator: "← PREV SERVICE | CURRENT SERVICE (N/M)"
+      //   (b) column layout break within a service name: "BUS SEMI | BRANDING (N/M)"
+      //       or even: "← PREV | CURRENT NAME PART1 | CURRENT NAME PART2 (N/M)"
+      // Strategy: split on |, then try combining segments from the end backwards
+      // until a registry match is found. This handles both cases:
+      //   "BUS SEMI | BRANDING (2/3)" → last seg="BRANDING" no match →
+      //     try "BUS SEMI BRANDING" → match ✓
+      //   "← WALL POSTER | (2/3)"    → last seg="" (empty) →
+      //     try "WALL POSTER" → match ✓
+      const textBeforeMarker = headingArea.substring(0, markerMatch.index).replace(NAV_ARROWS, '');
+      const segments = textBeforeMarker.split('|').map(s => s.trim()).filter((_s, i, arr) => {
+        // Keep all segments; empty ones at the end are the "marker-right-after-pipe" case
+        // and will be handled by combining with previous segment.
+        void i; void arr;
+        return true;
+      });
+
+      // Try combining increasing numbers of segments from the end
+      for (let numSegs = 1; numSegs <= segments.length && !matched; numSegs++) {
+        const combined = segments.slice(segments.length - numSegs).join(' ').trim();
+        if (!combined || combined.length < 2) continue;
+
+        // Try progressively stripping leading words to handle logo/icon text prefixes
+        // e.g. "bn 30 Sqft FLEX BANNER" → strip "bn" → "30 Sqft FLEX BANNER" → match ✓
+        const headingWords = combined.split(/\s+/);
+        for (let start = 0; start < headingWords.length; start++) {
+          const candidate = headingWords.slice(start).join(' ');
+          if (candidate.length < 3) break;
+          const canonical = canonicalizeServiceName(candidate);
+          if (entries[canonical]) {
+            if (!index[canonical]) index[canonical] = [];
+            if (!index[canonical].includes(page.pageNumber)) {
+              index[canonical].push(page.pageNumber);
+            }
+            matched = true;
+            break;
+          }
+        }
+      }
+      if (matched) break; // one match per page is enough
+    }
+
+    if (!matched) {
+      // Log only for pages that DID have a (N/M) marker but we couldn't match
+      MARKER_RE.lastIndex = 0;
+      const anyMarker = MARKER_RE.exec(headingArea);
+      if (anyMarker && parseInt(anyMarker[1]) >= 2) {
+        const textBefore = headingArea.substring(0, anyMarker.index).replace(NAV_ARROWS, '');
+        const segments = textBefore.split('|').map(s => s.trim()).filter(Boolean);
+        const debugHeading = segments[segments.length - 1] ?? '';
+        console.log(`⚠️ [PageIndex] "${cityKey}" Page ${page.pageNumber}: no registry match for "${debugHeading}"`);
+      }
+    }
+  }
+
+  const count = Object.keys(index).length;
+  console.log(`📇 [PageIndex] "${cityKey}": ${count}/${Object.keys(entries).length} services indexed from ${pages.length} pages`);
+  if (count > 0) {
+    console.log('📇 [PageIndex]', Object.fromEntries(Object.entries(index).map(([k, v]) => [k, `[${v.join(',')}]`])));
+  }
+  return index;
+}
 
 // ── Tiny constructors so we don't repeat the empty-shape boilerplate ─────────
 function makeBuildingRegistry(cityKey: string): CityRegistry {

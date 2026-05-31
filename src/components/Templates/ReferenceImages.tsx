@@ -1,6 +1,7 @@
 import React, { useMemo, useState, useEffect, useRef } from 'react';
 import './ReferenceImages.css';
 import { extractReviewViaGemini, cropReferencePageImage, cropPageStrippingHeaderFooter, cropSpecAboveReference, cropSpecDiagram, cropPageHalf, cropPageFromPercent } from '../../utils/pdfUtils';
+import { getCityServiceRegistry, canonicalizeServiceName, getPageIndexForCity } from '../../hooks/useCityServiceRegistry';
 
 interface ExtractedPage {
   pageNumber: number;
@@ -50,7 +51,7 @@ interface SpecGroup {
  * Looks for section headings like "BUS FULL BRANDING", "APARTMENT LIFT BRANDING" in the PDF.
  * Uses strict matching to ensure we get the right pages.
  */
-function filterPagesByCategory(pages: ExtractedPage[], category: string): ExtractedPage[] {
+function filterPagesByCategory(pages: ExtractedPage[], category: string, cityKey?: string): ExtractedPage[] {
   console.log('🔍 Filtering pages for category:', category);
 
   // Strip city prefix if present e.g. "Madurai - Auto Semi Branding - Display Price"
@@ -138,8 +139,22 @@ function filterPagesByCategory(pages: ExtractedPage[], category: string): Extrac
     'display', 'printing', 'fixing', 'design', 'creative', 'extra', 'charge', 'rate',
     'ads']); // 'ads' is a generic suffix ("Lobby Screen Ads") that never appears in PDF headings
 
+  // Size/unit tokens — always discard. They appear as PDF heading prefixes ("30 Sqft",
+  // "33x50 cm") but are never reliable discriminators AND they cause allKeywordsInHeading
+  // to fail when the PDF renders them differently ("Sq.Ft", "sq ft", "sq.ft.").
+  const sizeUnitWords = new Set<string>();
+  allWords.forEach((w, i) => {
+    if (/^\d+$/.test(w)) { sizeUnitWords.add(w); } // bare numbers: "30"
+    if (/^(sqft|sqm|sqcm|sqin|sqyd)$/.test(w)) { sizeUnitWords.add(w); } // area units
+    if (/^\d+(x|×)\d+$/.test(w)) { sizeUnitWords.add(w); } // "33x50"
+    // also drop the unit word immediately following a bare number (e.g. "30 sqft")
+    if (i > 0 && /^\d+$/.test(allWords[i - 1]) && /^(ft|cm|mm|inch|sqft|sqm|sqcm|sqin)$/.test(w)) {
+      sizeUnitWords.add(w);
+    }
+  });
+
   // Core service words — always kept regardless of length
-  const coreWords = allWords.filter(w => !pricingWords.has(w) && w.length >= 3);
+  const coreWords = allWords.filter(w => !pricingWords.has(w) && !sizeUnitWords.has(w) && w.length >= 3);
 
   // Short sub-type codes (a4, a5, a3, b4, b5, etc.) — keep ONLY if there are other
   // items in the same category that would otherwise produce identical keyword sets.
@@ -444,6 +459,11 @@ function filterPagesByCategory(pages: ExtractedPage[], category: string): Extrac
     // generic markers like "DESIGN SPECIFICATIONS" / "DISPLAY AREA" (present on every spec page)
     // would be wrongly accepted regardless of what service they actually depict.
     const headingArea = pageText.substring(0, 120);
+    // guardHeadingArea: only the PRIMARY service heading, before any navigation pipe (|).
+    // PDF pages often render navigation links like "← TRAFFIC AWARENESS BOARD | DIRECTION BOARD →"
+    // in the first 120 chars. Using the full headingArea for conflict guards causes false
+    // self-rejections (the correct page sees the neighbouring service name in its nav bar).
+    const guardHeadingArea = headingArea.split('|')[0].trim();
     const allKeywordsInHeading = requiredKeywords.every(kw => {
       if (headingArea.includes(kw)) return true;
       if (kw.endsWith('s') && kw.length > 4 && headingArea.includes(kw.slice(0, -1))) return true;
@@ -462,6 +482,73 @@ function filterPagesByCategory(pages: ExtractedPage[], category: string): Extrac
     if (!allKeywordsInHeading) {
       console.log(`❌ Page ${page.pageNumber} - Keywords not all in heading area. Heading: "${headingArea.substring(0, 60)}..."`);
       return false;
+    }
+
+    // CONFLICT GUARD: Dynamically compute sibling-discriminator exclusions from the registry.
+    // A "sibling" is a service that shares ≥2 NON-GENERIC tokens with the current query.
+    // Generic tokens (branding, board, advertisement) are so common they don't uniquely
+    // identify a sibling relationship — excluding them prevents false positives like
+    // "auto semi branding" being treated as a sibling of "bus semi branding" just
+    // because they share "semi" + "branding".
+    // Falls back to hardcoded pairs when registry is not yet loaded (safe silent fallback).
+    const GENERIC_TOKENS = new Set(['branding', 'board', 'advertisement', 'advertising']);
+    const registryConflictFound = (() => {
+      const registry = cityKey ? getCityServiceRegistry().get(cityKey) : null;
+      if (!registry || registry.status !== 'ready') {
+        console.log(`⚠️ [ConflictGuard] Registry not ready for "${cityKey}" — using static fallback`);
+        return false;
+      }
+      const queryTokens = new Set(requiredKeywords);
+      const queryNonGeneric = requiredKeywords.filter(t => !GENERIC_TOKENS.has(t));
+      console.log(`🛡️ [ConflictGuard] Page ${page.pageNumber} | query non-generic tokens: [${queryNonGeneric.join(', ')}] | guardHeading: "${guardHeadingArea.substring(0, 60)}"`);
+      for (const entry of Object.values(registry.entries)) {
+        const siblingTokens = entry.canonicalName.split(/\s+/).filter(Boolean);
+        const siblingNonGeneric = siblingTokens.filter(t => !GENERIC_TOKENS.has(t));
+        // Normalize plural/singular before comparing so "sticker" ≅ "stickers" are treated
+        // as the same token — prevents the registry singular from appearing in siblingUnique
+        // and causing a self-rejection on the correct page.
+        const normalize = (t: string) => t.endsWith('s') && t.length > 4 ? t.slice(0, -1) : t;
+        const normalizedQueryTokens = new Set([...queryTokens].map(normalize));
+        const sharedNonGeneric = siblingNonGeneric.filter(t => normalizedQueryTokens.has(normalize(t)));
+        // Only consider true siblings: share ≥2 non-generic tokens but differ in at least 1
+        if (sharedNonGeneric.length < 2) continue;
+        const siblingUnique = siblingNonGeneric.filter(t => !normalizedQueryTokens.has(normalize(t)));
+        if (siblingUnique.length === 0) continue; // same service, skip
+        // Use word-boundary regex so "sticker" does NOT match inside "stickers" and vice versa
+        const conflictingToken = siblingUnique.find(t => {
+          const wbRe = new RegExp('(?<![a-z0-9])' + t.replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + '(?![a-z0-9])', 'i');
+          return wbRe.test(guardHeadingArea);
+        });
+        if (conflictingToken) {
+          console.log(`❌ [ConflictGuard] Page ${page.pageNumber} — sibling "${entry.canonicalName}" discriminator "${conflictingToken}" found in guardHeading`);
+          return true;
+        }
+        console.log(`  ℹ️ [ConflictGuard] Sibling "${entry.canonicalName}" | unique: [${siblingUnique.join(', ')}] | not in guardHeading ✓`);
+      }
+      return false;
+    })();
+
+    if (registryConflictFound) return false;
+
+    // STATIC CONFLICT GUARD (fallback when registry not yet loaded):
+    // Hardcoded pairs for the known Chennai PDF conflicts.
+    const conflictGuards: Array<{ requiredAll: string[]; excludeIfHeadingHas: string[] }> = [
+      { requiredAll: ['sun', 'pack'],    excludeIfHeadingHas: ['dye', 'cutting'] },
+      { requiredAll: ['dye', 'cutting'], excludeIfHeadingHas: ['sun', 'pack'] },
+      { requiredAll: ['awareness'],      excludeIfHeadingHas: ['direction'] },
+      { requiredAll: ['direction'],      excludeIfHeadingHas: ['awareness'] },
+      { requiredAll: ['printing'],       excludeIfHeadingHas: ['distribution'] },
+      { requiredAll: ['distribution'],   excludeIfHeadingHas: ['printing'] },
+    ];
+    for (const guard of conflictGuards) {
+      const guardApplies = guard.requiredAll.every(t => requiredKeywords.includes(t));
+      if (guardApplies) {
+        const conflictFound = guard.excludeIfHeadingHas.some(excl => guardHeadingArea.includes(excl));
+        if (conflictFound) {
+          console.log(`❌ Page ${page.pageNumber} - Static conflict guard: guardHeading contains conflicting keyword for [${guard.excludeIfHeadingHas.join(', ')}]`);
+          return false;
+        }
+      }
     }
 
     // Check if the service heading phrase appears on this page (also try plural variant)
@@ -810,6 +897,7 @@ function extractServiceType(items: QuoteItem[]): string | null {
 function extractAllServiceTypes(items: QuoteItem[]): string[] {
   const pricingSuffixPattern = /\s*[-–—]\s*\b(display\s+price|rental\s+price|printing\s+price|fixing\s+price|design\s+price|creative\s+price|printing\s*&?\s*fixing\s*price?|per\s+month|rate|price|\w+\s+price|\w+\s+charge)\b.*$/i;
   const seen = new Set<string>();
+
   const results: string[] = [];
 
   // Known city names to strip from multi-city description prefixes
@@ -935,6 +1023,9 @@ function filterPagesByQuoteItems(pages: ExtractedPage[], items: QuoteItem[]): Ex
     console.log('⚠️ No quote items provided');
     return [];
   }
+
+  // Derive city key from item descriptions so it can be forwarded to filterPagesByCategory
+  const cityKey = extractCityFromItems(items) ?? undefined;
   
   const matchedPages = new Set<number>();
   
@@ -946,8 +1037,44 @@ function filterPagesByQuoteItems(pages: ExtractedPage[], items: QuoteItem[]): Ex
     
     // Loop through EACH service type and collect pages
     for (const serviceType of serviceTypes) {
-      console.log(`\n🔍 Searching pages for: "${serviceType}"`);
-      const matchingPages = filterPagesByCategory(pages, serviceType);
+      // ── FAST PATH: direct page-index lookup — exact, deterministic, no fuzzy matching ──
+      // The index is built once from PDF pageImages using (N/M) page markers.
+      // If a hit is found, use those page numbers directly and skip the 300-line keyword scan.
+      if (cityKey) {
+        const pageIndexMap = getPageIndexForCity(cityKey);
+        if (pageIndexMap) {
+          // Gemini descriptions often duplicate the service name:
+          //   "30 Sqft Flex Banner - 30 Sqft FLEX BANNER"
+          //   "Direction Board - DIRECTION BOARD"
+          //   "Pamphlet Printing A5 - PAMPHLET PRINTING_ A5"
+          // canonicalizeServiceName of the full string produces a doubled key that
+          // never matches the registry. Fix: try each " - " segment individually so
+          // we find the segment whose canonical matches the registry key.
+          // The underscore in "PAMPHLET PRINTING_ A5" is preserved by normalizeSvc
+          // and is part of the registry key — trying the ALLCAPS segment finds it.
+          const segments = serviceType.split(/\s+-\s+/);
+          let indexedNums: number[] | undefined;
+          let matchedCanonical = '';
+          for (const seg of segments) {
+            const c = canonicalizeServiceName(seg.trim());
+            if (pageIndexMap[c] && pageIndexMap[c].length > 0) {
+              indexedNums = pageIndexMap[c];
+              matchedCanonical = c;
+              break;
+            }
+          }
+          if (indexedNums && indexedNums.length > 0) {
+            console.log(`📇 [PageIndex] Direct hit: "${matchedCanonical}" → pages [${indexedNums.join(', ')}]`);
+            indexedNums.forEach(n => matchedPages.add(n));
+            continue; // skip keyword scan entirely
+          }
+          console.log(`📇 [PageIndex] Miss for "${serviceType}" — falling back to keyword scan`);
+        }
+      }
+
+      console.group(`🔍 [ReferenceImages] Searching pages for: "${serviceType}" | city: "${cityKey ?? 'unknown'}"`);
+      const matchingPages = filterPagesByCategory(pages, serviceType, cityKey);
+      console.groupEnd();
       
       if (matchingPages.length > 0) {
         console.log(`📊 Found ${matchingPages.length} pages matching "${serviceType}"`);
@@ -1027,7 +1154,7 @@ function filterPagesByQuoteItems(pages: ExtractedPage[], items: QuoteItem[]): Ex
         if (dashIdx <= 0) continue; // no variant suffix to strip
         const baseType = serviceType.substring(0, dashIdx).trim();
         console.log(`🔄 Variant fallback: trying base type "${baseType}" for "${serviceType}"`);
-        const fallbackPages = filterPagesByCategory(pages, baseType);
+        const fallbackPages = filterPagesByCategory(pages, baseType, cityKey);
         if (fallbackPages.length > 0) {
           console.log(`✅ Variant fallback: found ${fallbackPages.length} pages for base type "${baseType}"`);
           const queryLower = serviceType.toLowerCase();
@@ -1056,7 +1183,7 @@ function filterPagesByQuoteItems(pages: ExtractedPage[], items: QuoteItem[]): Ex
   // Fallback: Process each item individually (unchanged from original)
   items.forEach((item) => {
     console.log('🔍 Processing item:', item.description);
-    const matchingPages = filterPagesByCategory(pages, item.description);
+    const matchingPages = filterPagesByCategory(pages, item.description, cityKey);
     
     if (matchingPages.length === 0) {
       console.log(`⚠️ No pages found for "${item.description}"`);
@@ -1656,7 +1783,7 @@ function getRefImagePages(pages: ExtractedPage[]): ExtractedPage[] {
  * Skips cropped images from pages that ALSO have a reference image heading,
  * because those cropped images are real-world photos (not design diagrams).
  */
-function extractSpecSectionImage(pages: ExtractedPage[]): string | null {
+function extractSpecSectionImage(pages: ExtractedPage[]): string[] {
   const specPages = getSpecPages(pages);
 
   // Helper: does this page also contain a reference image heading?
@@ -1667,11 +1794,11 @@ function extractSpecSectionImage(pages: ExtractedPage[]): string | null {
            t.includes('example image') || t.includes('sample photo');
   };
 
-  // First pass: prefer cropped image ONLY from pages that are pure spec pages
-  // (no reference image heading on the same page — so the cropped image is a diagram, not a photo)
+  // First pass: return ALL cropped images from pure spec pages so multi-diagram
+  // services (e.g. Mobile Van LED with 4 panel diagrams) show every diagram.
   for (const page of specPages) {
     if (pageHasRefHeading(page)) continue; // skip shared pages — their cropped image is a reference photo
-    if (page.croppedImages && page.croppedImages.length > 0) return page.croppedImages[0];
+    if (page.croppedImages && page.croppedImages.length > 0) return [...page.croppedImages];
   }
 
   // Second pass: fallback to full page image only when page is diagram-heavy
@@ -1679,10 +1806,10 @@ function extractSpecSectionImage(pages: ExtractedPage[]): string | null {
   for (const page of specPages) {
     if (pageHasRefHeading(page)) continue; // skip shared pages
     const textLen = page.text.replace(/[^a-z]/gi, '').length;
-    if (textLen < 300) return page.imageDataUrl;
+    if (textLen < 300) return [page.imageDataUrl];
   }
 
-  return null;
+  return [];
 }
 
 /**
@@ -1993,6 +2120,14 @@ export const ReferenceImages: React.FC<ReferenceImagesProps> = ({ proposalPages,
       setLazyCroppedPureSpecImage(null);
       return;
     }
+    // Skip lazy crop when upload-time produced any stored crop (≥1).
+    // Upload-time Gemini Vision already found the correct content boundaries.
+    // Lazy geometric crop (13% cut) overrides those and clips headings like
+    // "Cab Branding Layout Size". Only run lazy crop for legacy PDFs with 0 crops.
+    if ((pureSpecPage.croppedImages?.length ?? 0) >= 1) {
+      setLazyCroppedPureSpecImage(null);
+      return;
+    }
     let cancelled = false;
     console.log('🔍 Triggering header/footer strip for pure spec page', pureSpecPage.pageNumber);
     cropSpecDiagram(pureSpecPage.imageDataUrl).then(cropped => {
@@ -2060,10 +2195,21 @@ export const ReferenceImages: React.FC<ReferenceImagesProps> = ({ proposalPages,
   }
 
   // specOnly: if there is no spec to display, return null so waitForPdfReady finds no element and proceeds immediately
-  if (specOnly && !hasSpecContent && !specImageUrl) return null;
+  if (specOnly && !hasSpecContent && specImageUrl.length === 0) return null;
 
   const finalRefImageUrls = lazyCroppedRefImages.length > 0 ? lazyCroppedRefImages : refImageUrls;
-  const showSingleCenteredRef = !specImageUrl && finalRefImageUrls.length === 1;
+  const showSingleCenteredRef = specImageUrl.length === 0 && finalRefImageUrls.length === 1;
+
+  // Resolved spec image sources:
+  // 1. If upload-time stored ≥1 crop, use them directly — Gemini Vision found correct
+  //    content boundaries at upload time. Skip ALL lazy crops which use dumb geometric
+  //    cuts that clip headings (e.g. "Cab Branding Layout Size").
+  // 2. Only use lazy crops for legacy PDFs with 0 stored crops.
+  const specImgSrcs: string[] =
+    specImageUrl.length >= 1 ? specImageUrl :
+    lazyCroppedPureSpecImage ? [lazyCroppedPureSpecImage] :
+    lazyCroppedSpecImage ? [lazyCroppedSpecImage] :
+    specImageUrl;
 
   // ── RENDER-TIME IMAGE COUNT DEBUG ────────────────────────────────────────
   console.log(`\n🖼️  ===== IMAGES LOADED FOR QUOTE =====`);
@@ -2137,7 +2283,7 @@ export const ReferenceImages: React.FC<ReferenceImagesProps> = ({ proposalPages,
   if (specOnly) {
     return (
       <div className="smart-reference-page" ref={containerRef}>
-        {(hasSpecContent || specImageUrl) && (
+        {(hasSpecContent || specImageUrl.length > 0) && (
           hasMetroStyleTables ? (
             <>
               {/* Heading travels with the first coach group — prevents orphan heading at page bottom */}
@@ -2152,10 +2298,16 @@ export const ReferenceImages: React.FC<ReferenceImagesProps> = ({ proposalPages,
                   {renderSingleSpecGroup(group, gi)}
                 </div>
               ))}
-              {specImageUrl && !hasMeaningfulSpec && (
+              {specImageUrl.length > 0 && (
                 <div className="smart-section" data-pdf-block="atomic">
                   <div className="ref-img-container spec-img-container">
-                    <img src={lazyCroppedPureSpecImage ?? lazyCroppedSpecImage ?? specImageUrl} alt="Design specification diagram" className="ref-img" />
+                    {specImgSrcs.length >= 2 ? (
+                      <div className="spec-img-grid">
+                        {specImgSrcs.map((s, i) => <img key={i} src={s} alt={`Specification diagram ${i + 1}`} className="ref-img spec-img-grid-item" />)}
+                      </div>
+                    ) : (
+                      <img src={specImgSrcs[0]} alt="Design specification diagram" className="ref-img" />
+                    )}
                   </div>
                 </div>
               )}
@@ -2171,9 +2323,15 @@ export const ReferenceImages: React.FC<ReferenceImagesProps> = ({ proposalPages,
                   {specGroups.map((group, gi) => renderSingleSpecGroup(group, gi))}
                 </div>
               )}
-              {specImageUrl && !hasMeaningfulSpec && (
+              {specImageUrl.length > 0 && (
                 <div className="ref-img-container spec-img-container">
-                  <img src={lazyCroppedPureSpecImage ?? lazyCroppedSpecImage ?? specImageUrl} alt="Design specification diagram" className="ref-img" />
+                  {specImgSrcs.length >= 2 ? (
+                    <div className="spec-img-grid">
+                      {specImgSrcs.map((s, i) => <img key={i} src={s} alt={`Specification diagram ${i + 1}`} className="ref-img spec-img-grid-item" />)}
+                    </div>
+                  ) : (
+                    <img src={specImgSrcs[0]} alt="Design specification diagram" className="ref-img" />
+                  )}
                 </div>
               )}
             </div>
@@ -2188,7 +2346,7 @@ export const ReferenceImages: React.FC<ReferenceImagesProps> = ({ proposalPages,
       {/* pdf-top-spacer must be a tracked block so the engine removes it from continuation pages */}
       <div className="pdf-top-spacer" data-pdf-block="atomic" />
 
-      {!noSpec && (hasSpecContent || specImageUrl) && (
+      {!noSpec && (hasSpecContent || specImageUrl.length > 0) && (
         hasMetroStyleTables ? (
           <>
             {/* Heading travels with the first coach group — prevents orphan heading at page bottom */}
@@ -2204,10 +2362,16 @@ export const ReferenceImages: React.FC<ReferenceImagesProps> = ({ proposalPages,
               </div>
             ))}
             {/* Show spec image when spec has no meaningful dimensional content */}
-            {specImageUrl && !hasMeaningfulSpec && (
+            {specImageUrl.length > 0 && (
               <div className="smart-section" data-pdf-block="atomic">
                 <div className="ref-img-container spec-img-container">
-                  <img src={lazyCroppedPureSpecImage ?? lazyCroppedSpecImage ?? specImageUrl} alt="Design specification diagram" className="ref-img" />
+                  {specImgSrcs.length >= 2 ? (
+                    <div className="spec-img-grid">
+                      {specImgSrcs.map((s, i) => <img key={i} src={s} alt={`Specification diagram ${i + 1}`} className="ref-img spec-img-grid-item" />)}
+                    </div>
+                  ) : (
+                    <img src={specImgSrcs[0]} alt="Design specification diagram" className="ref-img" />
+                  )}
                 </div>
               </div>
             )}
@@ -2223,10 +2387,16 @@ export const ReferenceImages: React.FC<ReferenceImagesProps> = ({ proposalPages,
                 {specGroups.map((group, gi) => renderSingleSpecGroup(group, gi))}
               </div>
             )}
-            {/* Show spec image when: no spec at all, OR spec has only minimal content (material only, no dimensions) */}
-            {specImageUrl && !hasMeaningfulSpec && (
+            {/* Show spec image when available */}
+            {specImageUrl.length > 0 && (
               <div className="ref-img-container spec-img-container">
-                <img src={lazyCroppedPureSpecImage ?? lazyCroppedSpecImage ?? specImageUrl} alt="Design specification diagram" className="ref-img" />
+                {specImgSrcs.length >= 2 ? (
+                  <div className="spec-img-grid">
+                    {specImgSrcs.map((s, i) => <img key={i} src={s} alt={`Specification diagram ${i + 1}`} className="ref-img spec-img-grid-item" />)}
+                  </div>
+                ) : (
+                  <img src={specImgSrcs[0]} alt="Design specification diagram" className="ref-img" />
+                )}
               </div>
             )}
           </div>
