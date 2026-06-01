@@ -2868,7 +2868,15 @@ const ChatInterface: React.FC = () => {
             <Input
               ref={inputRef}
               value={inputValue}
-              onChange={(e) => setInputValue(e.target.value)}
+              onChange={(e) => {
+                setInputValue(e.target.value);
+                // If user manually edits while in history-browse mode, exit history mode
+                // so the next ↑ press starts fresh from the newest entry.
+                if (historyIndex !== -1) {
+                  setHistoryIndex(-1);
+                  setDraftInput('');
+                }
+              }}
               onKeyPress={(e) => {
                 if (e.key === 'Enter' && !e.shiftKey) {
                   e.preventDefault();
