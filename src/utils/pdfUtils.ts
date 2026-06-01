@@ -372,6 +372,16 @@ async function extractNativeImages(
       const clampedSh = Math.min(sh, ph - clampedSy);
       if (clampedSw < 60 || clampedSh < 40) { console.log(`   ⛔ [P3] pos(${sx},${sy}) ${sw}×${sh} → clamped too small (${clampedSw}×${clampedSh})`); continue; }
 
+      // Once a layout-template sub-crop has fired on this page, ALL remaining rects
+      // are inner images embedded within that template (spec diagrams, decorative elements).
+      // Their visual content is already captured by the sub-crop result — skip them.
+      // Note: this guard is intentionally OUTSIDE the heightRatio > 0.65 block so it
+      // applies to shorter inner-template rects too (previous guard only caught tall ones).
+      if (subCropDone) {
+        console.log(`   ⏭️ [P3] SKIPPED — subCropDone fired, this rect is inner template content pos(${sx},${sy}) ${clampedSw}×${clampedSh}`);
+        continue;
+      }
+
       const heightRatio = clampedSh / ph;
       console.log(`\n   🔎 [P3] rect pos(${sx},${sy}) size(${clampedSw}×${clampedSh}) area=${((clampedSw*clampedSh)/(pw*ph)*100).toFixed(1)}% heightRatio=${heightRatio.toFixed(2)} wasMerged=${sw_wasMerged}`);
 
@@ -390,10 +400,6 @@ async function extractNativeImages(
       let finalCanvas = cropCanvas;
       let didSubCrop = false;
       if (heightRatio > 0.65 && !sw_wasMerged) {
-        if (subCropDone) {
-          console.log(`   ⏭️ [P3] SKIPPED — subCropDone already fired, this is a duplicate layout column`);
-          continue;
-        }
         console.log(`   🔬 [P3] tall single XObject (${heightRatio.toFixed(2)} > 0.65, not merged) → calling extractPhotoFromLayoutRaster`);
         // Measure top-25% whiteness before calling (to predict return value)
         const topH = Math.floor(clampedSh * 0.25);

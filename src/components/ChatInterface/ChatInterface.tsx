@@ -546,22 +546,29 @@ const ChatInterface: React.FC = () => {
   }, [user?.id]);
   // ──────────────────────────────────────────────────────────────────────────
 
+  // ── Shared helper: push any prompt text into the persistent command history ─
+  const pushToHistory = (text: string) => {
+    if (!user?.id) return;
+    setInputHistory(prev => {
+      const deduped = prev.filter(e => e.text !== text);
+      const next = [...deduped, { text, ts: Date.now() }].slice(-HISTORY_MAX);
+      savePersistedHistory(user.id!, next);
+      return next;
+    });
+    setHistoryIndex(-1);
+    setDraftInput('');
+  };
+  // ──────────────────────────────────────────────────────────────────────────
+
   // Thin wrapper: reads inputValue from state and delegates to sendMessageWithContent
   const handleSendMessage = () => {
     if (!inputValue.trim() || isLoading) return;
     const text = inputValue;
-    // ── Push to command history ──────────────────────────────────────────────
-    if (user?.id) {
-      setInputHistory(prev => {
-        const deduped = prev.filter(e => e.text !== text);
-        const next = [...deduped, { text, ts: Date.now() }].slice(-HISTORY_MAX);
-        savePersistedHistory(user.id!, next);
-        return next;
-      });
+    // Don't save pure city-only queries (e.g. "chennai", "madurai") — they just open
+    // the service list and are not useful to recall via arrow-up history.
+    if (detectCityOnlyQuery(text).length === 0) {
+      pushToHistory(text);
     }
-    setHistoryIndex(-1);
-    setDraftInput('');
-    // ────────────────────────────────────────────────────────────────────────
     setInputValue('');
     sendMessageWithContent(text);
   };
@@ -1499,6 +1506,8 @@ const ChatInterface: React.FC = () => {
       const durationSuffix = durationMatch ? ` for ${durationMatch[0]}` : '';
       const combined = `Generate quote for ${directParts.join(' and ')}${durationSuffix} [User has already specified complete service names from checkboxes]`;
       console.log('⚡ All specific — sending direct to Gemini:', combined);
+      // Save the AI-built prompt so arrow-up can recall it
+      pushToHistory(`Generate quote for ${directParts.join(' and ')}${durationSuffix}`);
       sendMessageWithContent(combined);
       return;
     }
@@ -1580,6 +1589,8 @@ const ChatInterface: React.FC = () => {
       if (pending) {
         setPendingValidMessage(null);
         setPendingMinReplacedMessage(null);
+        // Save the clean prompt (no internal flag) so arrow-up can recall it
+        pushToHistory(pending.replace(/\s*\[User has already specified complete service names from checkboxes\]/g, '').replace(/\s*\[QTY_OVERRIDE\]/g, '').trim());
         sendMessageWithContent(pending + ' [QTY_OVERRIDE]');
       }
       return;
@@ -1612,6 +1623,8 @@ const ChatInterface: React.FC = () => {
       if (newMsg) {
         setPendingValidMessage(null);
         setPendingMinReplacedMessage(null);
+        // Save the min-qty-adjusted prompt so arrow-up can recall it
+        pushToHistory(newMsg.replace(/\s*\[User has already specified complete service names from checkboxes\]/g, '').replace(/\s*\[QTY_OVERRIDE\]/g, '').trim());
         sendMessageWithContent(newMsg);
       }
       return;
@@ -1781,6 +1794,8 @@ const ChatInterface: React.FC = () => {
       return newState;
     });
     setInputValue('');
+    // Save the AI-built prompt so arrow-up can recall it
+    pushToHistory(`Generate quote for ${parts.join(' and ')}${durationSuffix}`);
     sendMessageWithContent(combinedRequest);
   };
 
@@ -2867,6 +2882,8 @@ const ChatInterface: React.FC = () => {
               }}
               onKeyDown={handleInputKeyDown}
               onFocus={(e) => {
+                // Select all text on focus so the user can instantly replace it
+                e.target.select();
                 // Auto-scroll input into view when keyboard appears
                 if (Capacitor.isNativePlatform() || window.innerWidth <= 768) {
                   setTimeout(() => {
@@ -3368,6 +3385,8 @@ const ChatInterface: React.FC = () => {
                   if (pendingValidMessage) {
                     const msg = pendingValidMessage;
                     setPendingValidMessage(null);
+                    // Save prompt so arrow-up can recall it
+                    pushToHistory(msg.replace(/\s*\[User has already specified complete service names from checkboxes\]/g, '').replace(/\s*\[QTY_OVERRIDE\]/g, '').trim());
                     sendMessageWithContent(msg);
                   }
                 }}
