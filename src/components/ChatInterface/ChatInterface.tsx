@@ -360,10 +360,11 @@ const ChatInterface: React.FC = () => {
 
     console.log(`📋 [Registry] "${cityKey}" services (${entry.services.length}):`, entry.services);
 
-    // Clean query: strip city name, numbers, filler words
+    // Clean query: strip city name, standalone numbers, filler words
+    // Use \b\d+\b (not \d+) so alphanumeric tokens like "a4"/"a5" are preserved
     const cleaned = querySegment
       .replace(new RegExp(`\\b${cityKey}\\b`, 'gi'), '')
-      .replace(/\d+/g, '')
+      .replace(/\b\d+\b/g, '')
       .replace(/\b(need|for|the|a|an|in|at|of|and|months?|days?|weeks?|years?|i|want|please|generate|quote|services?|ads?|advertising|outdoor|campaign|some|any)\b/gi, '')
       .toLowerCase()
       .trim();
@@ -424,9 +425,10 @@ const ChatInterface: React.FC = () => {
     if (!entry || entry.status !== 'ready' || entry.services.length === 0) {
       return { state: 'registry_unavailable' };
     }
+    // Use \b\d+\b (not \d+) so alphanumeric tokens like "a4"/"a5" are preserved
     const cleaned = segText
       .replace(new RegExp(`\\b${cityKey}\\b`, 'gi'), '')
-      .replace(/\d+/g, '')
+      .replace(/\b\d+\b/g, '')
       .replace(/\b(need|for|the|a|an|in|at|of|and|months?|days?|weeks?|years?|i|want|please|generate|quote|services?|ads?|advertising|outdoor|campaign|some|any)\b/gi, '')
       .toLowerCase().trim();
     const userWords = cleaned.split(/\s+/).filter(w => w.length >= 2);
@@ -850,6 +852,10 @@ const ChatInterface: React.FC = () => {
                   // single match → specific (auto-confirm)
                   validSegmentRaws.push(seg.raw);
                   validSegmentLabels.push(`${qty} ${titleCaseSvc(found[0])} (${cityLabel})`);
+                } else if (isCheckboxConfirmedFlag) {
+                  // Already confirmed via checkboxes — bypass checkbox UI, send to Gemini
+                  validSegmentRaws.push(seg.raw);
+                  validSegmentLabels.push(seg.raw);
                 } else {
                   vagueSegments.push({ seg, cityKey, matches: found, qty });
                 }
@@ -877,8 +883,14 @@ const ChatInterface: React.FC = () => {
             continue;
           }
 
-          // — vague → checkbox group —
+          // — vague → checkbox group (bypass when already confirmed via checkboxes) —
           if (cls.state === 'vague') {
+            if (isCheckboxConfirmedFlag) {
+              // User already confirmed these services via checkboxes — skip checkbox UI
+              validSegmentRaws.push(seg.raw);
+              validSegmentLabels.push(seg.raw);
+              continue;
+            }
             const qtyMatch = seg.raw.match(/(\d+)/);
             const qty = qtyMatch ? parseInt(qtyMatch[1]) : 1;
             vagueSegments.push({ seg, cityKey, matches: cls.matches, qty });
