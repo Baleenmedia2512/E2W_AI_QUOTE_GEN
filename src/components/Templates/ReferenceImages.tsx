@@ -1705,6 +1705,7 @@ function extractCustomerReview(pages: ExtractedPage[]): CustomerReviewData | nul
 
 /** Pages that belong to the Design Specification section (not Reference Image pages) */
 function getSpecPages(pages: ExtractedPage[]): ExtractedPage[] {
+  console.log(`\n🔬 [SPEC-DEBUG] getSpecPages: checking ${pages.length} filtered page(s)`);
   return pages.filter(page => {
     const text = page.text.toLowerCase().replace(/\s*\|\s*/g, ' ');
     const hasSpec = text.includes('design specification') ||
@@ -1722,6 +1723,7 @@ function getSpecPages(pages: ExtractedPage[]): ExtractedPage[] {
                     text.includes('column cm') ||
                     text.includes('ad size') ||
                     text.includes('creative size');
+    console.log(`   [SPEC-DEBUG] Page ${page.pageNumber}: textLen=${page.text.length} hasSpecKeyword=${hasSpec} first200="${page.text.substring(0, 200).replace(/\n/g, '|')}"`);
     if (!hasSpec) return false;
     const hasRefImg = text.includes('reference image') || text.includes('reference images') ||
                       text.includes('ad visual') || text.includes('sample ad') ||
@@ -1785,6 +1787,11 @@ function getRefImagePages(pages: ExtractedPage[]): ExtractedPage[] {
  */
 function extractSpecSectionImage(pages: ExtractedPage[]): string[] {
   const specPages = getSpecPages(pages);
+  console.log(`\n📐 [SPEC-DEBUG] extractSpecSectionImage: ${specPages.length} spec page(s) found`);
+  specPages.forEach(p => {
+    const hasRef = p.text.toLowerCase().includes('reference image') || p.text.toLowerCase().includes('reference images');
+    console.log(`   [SPEC-DEBUG] Spec page ${p.pageNumber}: croppedImages=${p.croppedImages?.length ?? 0} hasRefHeading=${hasRef} textLen=${p.text.length}`);
+  });
 
   // Helper: does this page also contain a reference image heading?
   const pageHasRefHeading = (page: ExtractedPage): boolean => {
@@ -1996,6 +2003,9 @@ export const ReferenceImages: React.FC<ReferenceImagesProps> = ({ proposalPages,
   // Fires only when the ref page has no croppedImages (upload-time crop was skipped or returned empty).
   // Does NOT affect spec image, customer review, or filteredPages logic.
   const [lazyCroppedRefImages, setLazyCroppedRefImages] = useState<string[]>([]);
+  // true while Gemini lazy crop is in-flight — suppresses the full-page fallback so the
+  // raw PDF page (with header/watermark) never flashes before the clean crop arrives.
+  const [refImagesLoading, setRefImagesLoading] = useState<boolean>(false);
   useEffect(() => {
     // Find the reference image page inside filteredPages (including new heading variants)
     const refPage = filteredPages.find(p => {
@@ -2006,19 +2016,23 @@ export const ReferenceImages: React.FC<ReferenceImagesProps> = ({ proposalPages,
     });
     // Fire lazy re-crop if:
     // - ref page has 0 cropped images (upload-time crop was skipped/empty), OR
-    // - ref page has only 1 cropped image (upload-time Gemini may have missed others on the same page), OR
     // - ref page has 5+ cropped images (likely Gemini returned duplicate bounding boxes at upload time)
-    // Skip only when upload found 2-4 images (reasonable range, assumed correct)
+    // Skip when upload found 1-4 images (native extraction produced reliable crops)
     if (!refPage) {
+      setRefImagesLoading(false);
       setLazyCroppedRefImages([]);
       return;
     }
     const storedCount = refPage.croppedImages?.length ?? 0;
     if (storedCount >= 1 && storedCount <= 4) {
       // Native extraction produced at least 1 crop — trust it, skip Gemini re-crop
+      setRefImagesLoading(false);
       setLazyCroppedRefImages([]);
       return;
     }
+    // storedCount === 0 or >= 5 — Gemini re-crop needed.
+    // Set loading=true NOW so the full-page fallback is suppressed during the async wait.
+    setRefImagesLoading(true);
     console.log(`🔁 Lazy re-crop triggered: stored count = ${storedCount} (${storedCount === 0 ? 'empty' : 'suspicious duplicate count'})`);
     let cancelled = false;
     console.log('🔍 Triggering lazy Gemini Vision crop for reference page', refPage.pageNumber);
@@ -2027,11 +2041,15 @@ export const ReferenceImages: React.FC<ReferenceImagesProps> = ({ proposalPages,
       if (cropped.length > 0) {
         console.log('✅ Lazy crop: got', cropped.length, 'image(s) from reference page', refPage.pageNumber);
         setLazyCroppedRefImages(cropped);
+        setRefImagesLoading(false);
       } else {
         // Gemini Vision returned nothing — use geometric header/footer strip as fallback
         console.log('⚠️ Gemini Vision empty, using geometric strip for reference page', refPage.pageNumber);
         const stripped = await cropPageStrippingHeaderFooter(refPage.imageDataUrl);
-        if (!cancelled) setLazyCroppedRefImages([stripped]);
+        if (!cancelled) {
+          setLazyCroppedRefImages([stripped]);
+          setRefImagesLoading(false);
+        }
       }
     });
     return () => { cancelled = true; };
@@ -2197,7 +2215,11 @@ export const ReferenceImages: React.FC<ReferenceImagesProps> = ({ proposalPages,
   // specOnly: if there is no spec to display, return null so waitForPdfReady finds no element and proceeds immediately
   if (specOnly && !hasSpecContent && specImageUrl.length === 0) return null;
 
-  const finalRefImageUrls = lazyCroppedRefImages.length > 0 ? lazyCroppedRefImages : refImageUrls;
+  // While Gemini lazy crop is in-flight, suppress the full-page fallback (refImageUrls would
+  // contain the raw PDF page with header/watermark). Show nothing until the clean crop arrives.
+  const finalRefImageUrls = lazyCroppedRefImages.length > 0 ? lazyCroppedRefImages
+                          : refImagesLoading                 ? []
+                          :                                    refImageUrls;
   const showSingleCenteredRef = specImageUrl.length === 0 && finalRefImageUrls.length === 1;
 
   // Resolved spec image sources:
