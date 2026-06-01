@@ -150,6 +150,7 @@ async function extractNativeImages(
   pdfPage: any,
   renderedCanvas: HTMLCanvasElement,
   pageNumber: number,
+  templateObjIds: Set<string> = new Set(),
 ): Promise<string[]> {
   const results: string[] = [];
 
@@ -249,8 +250,18 @@ async function extractNativeImages(
     const pdfH = viewport.viewBox[3];  // PDF page height in PDF units
 
     const seenHashes = new Set<string>();
+    // Deduplicates the same XObject binary painted at multiple canvas positions.
+    // Madurai/CBE PDFs place the same photo XObject at two different column positions
+    // (different sx) — they survive position-hash dedup but are visually identical.
+    // Chennai is unaffected: its two photos are always different XObjects (different objIds).
+    const seenObjIds = new Set<string>();
     // Phase 1: collect bounding rects (pass basic filters, defer cropping)
-    const cropRects: { sx: number; sy: number; sw: number; sh: number; wasMerged: boolean }[] = [];
+    // Each rect is tagged isTemplate=true when its objId appears on multiple PDF pages
+    // (these are layout Form XObjects — the full page template baked as one raster).
+    // If any non-template (real) rects exist, template rects are dropped entirely.
+    const cropRects: { sx: number; sy: number; sw: number; sh: number; wasMerged: boolean; isTemplate: boolean }[] = [];
+
+    console.log(`\n🔬 [P1-DEBUG] Page ${pageNumber}: ${imagePaintOps.length} paint op(s) — page canvas ${pw}×${ph}, templateObjIds=[${[...templateObjIds].join(',')}]`);
 
     for (const { objId, transform } of imagePaintOps) {
       try {
@@ -263,7 +274,7 @@ async function extractNativeImages(
         const sw = Math.round(Math.abs(a) * scaleX);
         const sh = Math.round(Math.abs(d) * scaleY);
 
-        if (sw < 80 || sh < 60) continue;
+        if (sw < 80 || sh < 60) { console.log(`   ⛔ [P1] "${objId}" → too small raw (${sw}×${sh})`); continue; }
         // No explicit off-page rejection here — rely on clamped size check below.
         // Images with huge CTM can have sy < 0 or sy > ph yet still show a
         // significant visible area on the canvas once clamped to page bounds.
@@ -272,27 +283,47 @@ async function extractNativeImages(
         // than the page are clipped to page bounds; their raw area would exceed 97%
         const clSx = Math.max(0, sx), clSy = Math.max(0, sy);
         const clSw = Math.min(sw, pw - clSx), clSh = Math.min(sh, ph - clSy);
-        if (clSw < 60 || clSh < 40) continue;
+        if (clSw < 60 || clSh < 40) { console.log(`   ⛔ [P1] "${objId}" → too small clamped (${clSw}×${clSh})`); continue; }
         const areaRatio = (clSw * clSh) / (pw * ph);
-        if (areaRatio < 0.05 || areaRatio > 0.99) continue;
+        if (areaRatio < 0.05 || areaRatio > 0.99) { console.log(`   ⛔ [P1] "${objId}" → area ratio ${(areaRatio*100).toFixed(1)}% out of range`); continue; }
 
         const ar = clSw / clSh;
-        if (ar < 0.15 || ar > 7) continue;
+        if (ar < 0.15 || ar > 7) { console.log(`   ⛔ [P1] "${objId}" → aspect ratio ${ar.toFixed(2)} out of range`); continue; }
 
         const hash = `${objId}:${sw}:${sh}:${sx}:${sy}`;
-        if (seenHashes.has(hash)) continue;
+        if (seenHashes.has(hash)) { console.log(`   ⛔ [P1] "${objId}" → exact duplicate hash (same pos+size)`); continue; }
         seenHashes.add(hash);
 
-        cropRects.push({ sx, sy, sw, sh, wasMerged: false });
+        // Skip same XObject binary painted again at a different position (duplicate column)
+        if (seenObjIds.has(objId)) {
+          console.log(`   🔁 [P1] "${objId}" → SAME OBJID seen before — duplicate column skip pos(${sx},${sy}) size(${clSw}×${clSh}) area=${(areaRatio*100).toFixed(1)}%`);
+          continue;
+        }
+        seenObjIds.add(objId);
+
+        const isTemplate = templateObjIds.has(objId);
+        console.log(`   ✅ [P1] "${objId}" → KEPT pos(${sx},${sy}) rawSize(${sw}×${sh}) clampedSize(${clSw}×${clSh}) area=${(areaRatio*100).toFixed(1)}% ar=${ar.toFixed(2)} isTemplate=${isTemplate}`);
+        cropRects.push({ sx, sy, sw, sh, wasMerged: false, isTemplate });
       } catch {
         // skip malformed object
       }
     }
 
+    // Template suppression: if the page has at least one real (non-template) photo,
+    // drop all template rects — they are duplicates of the real photos baked into the
+    // page layout Form XObject (Canva/Illustrator master page pattern).
+    const realRects  = cropRects.filter(r => !r.isTemplate);
+    const tmplRects  = cropRects.filter(r =>  r.isTemplate);
+    const activeRects = realRects.length > 0 ? realRects : cropRects;
+    if (realRects.length > 0 && tmplRects.length > 0) {
+      console.log(`   🧹 [P1] Template suppression: ${tmplRects.length} template rect(s) dropped — ${realRects.length} real photo(s) present on this page`);
+    }
+    console.log(`   📦 [P1] ${activeRects.length} rect(s) after Phase 1 filters (${realRects.length} real, ${tmplRects.length} template)`);
+
     // Phase 2: merge adjacent rects — handles one visual split across two XObjects
     // (e.g. a spec diagram or wide photo embedded as two side-by-side images)
     const MERGE_TOL = 35; // px gap tolerance
-    let mergedRects = cropRects.map(r => ({ ...r })) as { sx: number; sy: number; sw: number; sh: number; wasMerged: boolean }[];
+    let mergedRects = activeRects.map(r => ({ ...r })) as { sx: number; sy: number; sw: number; sh: number; wasMerged: boolean }[];
     let merging = true;
     while (merging) {
       merging = false;
@@ -308,7 +339,10 @@ async function extractNativeImages(
           const vGap = Math.min(Math.abs(aBottom - b.sy), Math.abs(bBottom - a.sy));
           const widthSim  = Math.abs(a.sw - b.sw) / Math.max(a.sw, b.sw, 1);
 
-          if ((hGap < MERGE_TOL && heightSim < 0.25) || (vGap < MERGE_TOL && widthSim < 0.25)) {
+          const willMerge = (hGap < MERGE_TOL && heightSim < 0.25) || (vGap < MERGE_TOL && widthSim < 0.25);
+          console.log(`   🔗 [P2] rect[${i}] pos(${a.sx},${a.sy}) ${a.sw}×${a.sh}  ↔  rect[${j}] pos(${b.sx},${b.sy}) ${b.sw}×${b.sh} | hGap=${hGap} heightSim=${heightSim.toFixed(2)} vGap=${vGap} widthSim=${widthSim.toFixed(2)} → ${willMerge ? '✅ MERGE' : '❌ no merge'}`);
+
+          if (willMerge) {
             mergedRects[i] = {
               sx: Math.min(a.sx, b.sx),
               sy: Math.min(a.sy, b.sy),
@@ -316,6 +350,7 @@ async function extractNativeImages(
               sh: Math.max(aBottom, bBottom) - Math.min(a.sy, b.sy),
               wasMerged: true,  // formed by merging 2+ real XObjects — never sub-crop
             };
+            console.log(`      → merged into pos(${mergedRects[i].sx},${mergedRects[i].sy}) ${mergedRects[i].sw}×${mergedRects[i].sh}`);
             mergedRects.splice(j, 1);
             merging = true;
             break outer;
@@ -323,17 +358,22 @@ async function extractNativeImages(
         }
       }
     }
+    console.log(`   📦 [P2] ${mergedRects.length} rect(s) after Phase 2 merge`);
 
     // Phase 3: crop each merged rect + filter near-blank (white/empty) images
     // subCropDone: once a layout-raster sub-crop fires, skip any further tall
     // single-XObject rects on the same page (they are duplicate layout columns).
     let subCropDone = false;
+    console.log(`\n🔬 [P3-DEBUG] Page ${pageNumber}: processing ${mergedRects.length} rect(s)`);
     for (const { sx, sy, sw, sh, wasMerged: sw_wasMerged } of mergedRects) {
       const clampedSx = Math.max(0, sx);
       const clampedSy = Math.max(0, sy);
       const clampedSw = Math.min(sw, pw - clampedSx);
       const clampedSh = Math.min(sh, ph - clampedSy);
-      if (clampedSw < 60 || clampedSh < 40) continue;
+      if (clampedSw < 60 || clampedSh < 40) { console.log(`   ⛔ [P3] pos(${sx},${sy}) ${sw}×${sh} → clamped too small (${clampedSw}×${clampedSh})`); continue; }
+
+      const heightRatio = clampedSh / ph;
+      console.log(`\n   🔎 [P3] rect pos(${sx},${sy}) size(${clampedSw}×${clampedSh}) area=${((clampedSw*clampedSh)/(pw*ph)*100).toFixed(1)}% heightRatio=${heightRatio.toFixed(2)} wasMerged=${sw_wasMerged}`);
 
       const cropCanvas = document.createElement('canvas');
       cropCanvas.width = clampedSw;
@@ -347,20 +387,38 @@ async function extractNativeImages(
       // Merged rects are already multiple real photos — never sub-crop them.
       // If a sub-crop already fired this page, skip any further tall single XObjects
       // (they are duplicate layout columns — same content, different position).
-      const heightRatio = clampedSh / ph;
       let finalCanvas = cropCanvas;
       let didSubCrop = false;
       if (heightRatio > 0.65 && !sw_wasMerged) {
         if (subCropDone) {
-          console.log(`   ⏭️ Page ${pageNumber}: skipped duplicate layout column (${clampedSw}×${clampedSh})`);
+          console.log(`   ⏭️ [P3] SKIPPED — subCropDone already fired, this is a duplicate layout column`);
           continue;
         }
+        console.log(`   🔬 [P3] tall single XObject (${heightRatio.toFixed(2)} > 0.65, not merged) → calling extractPhotoFromLayoutRaster`);
+        // Measure top-25% whiteness before calling (to predict return value)
+        const topH = Math.floor(clampedSh * 0.25);
+        const preData = cropCtx.getImageData(0, 0, clampedSw, topH);
+        const ppx = preData.data;
+        const pStep = Math.max(1, Math.floor(ppx.length / (4 * 1000)));
+        let pWhite = 0, pTot = 0;
+        for (let p = 0; p < ppx.length; p += 4 * pStep) {
+          if (ppx[p] > 230 && ppx[p+1] > 230 && ppx[p+2] > 230) pWhite++;
+          pTot++;
+        }
+        const topWhiteRatio = pTot > 0 ? pWhite / pTot : 0;
+        console.log(`      top-25% white ratio = ${(topWhiteRatio*100).toFixed(1)}% (need >55% for sub-crop to fire; <55% = real photo at top → null returned)`);
+
         const subCropped = extractPhotoFromLayoutRaster(cropCtx, clampedSw, clampedSh);
         if (subCropped) {
           finalCanvas = subCropped;
           didSubCrop = true;
-          console.log(`   ✂️ Page ${pageNumber}: sub-cropped layout raster ${clampedSw}×${clampedSh} → ${subCropped.width}×${subCropped.height}`);
+          console.log(`   ✂️ [P3] sub-crop FIRED → ${clampedSw}×${clampedSh} → ${subCropped.width}×${subCropped.height}`);
+        } else {
+          console.log(`   ⚠️ [P3] sub-crop returned NULL (real photo at top) → full rect will be output as-is`);
         }
+      } else {
+        if (sw_wasMerged) console.log(`   ℹ️ [P3] wasMerged=true → no sub-crop attempt`);
+        else console.log(`   ℹ️ [P3] heightRatio ${heightRatio.toFixed(2)} ≤ 0.65 → no sub-crop attempt`);
       }
 
       // Run blank filter on finalCanvas (which may be the sub-cropped version)
@@ -374,8 +432,10 @@ async function extractNativeImages(
           if (fp[p] > 230 && fp[p + 1] > 230 && fp[p + 2] > 230) fWhite++;
           fTotal++;
         }
-        if (fWhite / fTotal > 0.90) {
-          console.log(`   🚫 Page ${pageNumber}: skipped near-blank${didSubCrop ? ' sub-crop' : ''} (${finalCanvas.width}×${finalCanvas.height})`);
+        const blankRatio = fTotal > 0 ? fWhite / fTotal : 0;
+        console.log(`      blank filter: ${(blankRatio*100).toFixed(1)}% white (>90% = skip)`);
+        if (blankRatio > 0.90) {
+          console.log(`   🚫 [P3] SKIPPED near-blank${didSubCrop ? ' sub-crop' : ''} (${finalCanvas.width}×${finalCanvas.height})`);
           continue;
         }
       }
@@ -385,7 +445,7 @@ async function extractNativeImages(
 
       const areaRatio = (clampedSw * clampedSh) / (pw * ph);
       results.push(finalCanvas.toDataURL('image/jpeg', 0.88));
-      console.log(`   📷 Page ${pageNumber}: native image — pos(${sx},${sy}) size(${clampedSw}×${clampedSh}) area=${(areaRatio * 100).toFixed(1)}%`);
+      console.log(`   📷 [P3] OUTPUT #${results.length} — pos(${sx},${sy}) size(${clampedSw}×${clampedSh}) area=${(areaRatio * 100).toFixed(1)}% didSubCrop=${didSubCrop} wasMerged=${sw_wasMerged}`);
     }
   } catch (opErr) {
     console.warn(`   ⚠️ Page ${pageNumber}: getOperatorList failed:`, opErr);
@@ -1006,6 +1066,39 @@ export const extractPDFContent = async (file: File, maxImagePages?: number): Pro
       allPageTexts.push({ pageNumber: i, text: pageText, pdfPage: page });
     }
 
+    // ── Pass 0: Build template XObject set ───────────────────────────────────
+    // Scan every page's operator list cheaply (no rendering) to find objIds that
+    // appear on 2+ pages — these are PDF Form XObjects used as page layout templates
+    // (Canva/Illustrator master page pattern: full-page composite raster reused on
+    // every page, containing the photos baked in alongside the real standalone photos).
+    // PDF.js caches operator lists after the first getOperatorList() call, so the
+    // second call in extractNativeImages is free (no re-parse).
+    const objIdPageCount = new Map<string, Set<number>>();
+    try {
+      const OPS_pre = pdfjsLib.OPS as any;
+      for (const { pageNumber: pn, pdfPage: pp } of allPageTexts) {
+        try {
+          const opList = await pp.getOperatorList();
+          for (let k = 0; k < opList.fnArray.length; k++) {
+            const fn = opList.fnArray[k];
+            if (fn === OPS_pre.paintImageXObject || fn === OPS_pre.paintJpegXObject || fn === OPS_pre.paintImageXObjectRepeat) {
+              const oid = opList.argsArray[k][0] as string;
+              if (!objIdPageCount.has(oid)) objIdPageCount.set(oid, new Set());
+              objIdPageCount.get(oid)!.add(pn);
+            }
+          }
+        } catch { /* skip page on error */ }
+      }
+    } catch { /* skip pass 0 entirely on error */ }
+    const templateObjIds = new Set<string>();
+    for (const [oid, pages] of objIdPageCount) {
+      if (pages.size >= 2) templateObjIds.add(oid);
+    }
+    if (templateObjIds.size > 0) {
+      console.log(`🗂️ [Pass0] Detected ${templateObjIds.size} template XObject(s) (appear on 2+ pages): [${[...templateObjIds].join(', ')}]`);
+    }
+    // ─────────────────────────────────────────────────────────────────────────
+
     // Phase 2 + 3: Render ALL pages as images AND extract native embedded images in one pass.
     // Native extraction runs in the same loop so pdfPage objects are still open.
     console.log(`🖼️ Rendering + native image extraction for all ${allPageTexts.length} pages`);
@@ -1029,7 +1122,7 @@ export const extractPDFContent = async (file: File, maxImagePages?: number): Pro
         // operator list + object cache. No Gemini API call needed.
         let croppedImages: string[] | undefined;
         try {
-          const nativeImgs = await extractNativeImages(pdfPage, canvas, pageNumber);
+          const nativeImgs = await extractNativeImages(pdfPage, canvas, pageNumber, templateObjIds);
           if (nativeImgs.length > 0) {
             croppedImages = nativeImgs;
             nativeSuccessCount++;
