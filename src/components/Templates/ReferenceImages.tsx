@@ -464,6 +464,14 @@ function filterPagesByCategory(pages: ExtractedPage[], category: string, cityKey
     // in the first 120 chars. Using the full headingArea for conflict guards causes false
     // self-rejections (the correct page sees the neighbouring service name in its nav bar).
     const guardHeadingArea = headingArea.split('|')[0].trim();
+
+    // ════════════ DEBUG: dump what the guards actually see ════════════
+    console.group(`🔬 [DEBUG] Page ${page.pageNumber} guard inputs`);
+    console.log('  pageText[0..120]  (pipe-stripped):', JSON.stringify(headingArea));
+    console.log('  guardHeadingArea  (after split|[0]):', JSON.stringify(guardHeadingArea));
+    console.log('  raw page.text[0..300]:', JSON.stringify(page.text.substring(0, 300)));
+    console.groupEnd();
+    // ═════════════════════════════════════════════════════════════════
     const allKeywordsInHeading = requiredKeywords.every(kw => {
       if (headingArea.includes(kw)) return true;
       if (kw.endsWith('s') && kw.length > 4 && headingArea.includes(kw.slice(0, -1))) return true;
@@ -480,7 +488,10 @@ function filterPagesByCategory(pages: ExtractedPage[], category: string, cityKey
       return false;
     });
     if (!allKeywordsInHeading) {
-      console.log(`❌ Page ${page.pageNumber} - Keywords not all in heading area. Heading: "${headingArea.substring(0, 60)}..."`);
+      console.warn(`❌ [HEADING-REJECT] Page ${page.pageNumber}`);
+      console.warn('   headingArea (pipe-stripped):', JSON.stringify(headingArea));
+      console.warn('   raw page.text[0..300]:', JSON.stringify(page.text.substring(0, 300)));
+      console.warn('   requiredKeywords:', requiredKeywords);
       return false;
     }
 
@@ -520,7 +531,9 @@ function filterPagesByCategory(pages: ExtractedPage[], category: string, cityKey
           return wbRe.test(guardHeadingArea);
         });
         if (conflictingToken) {
-          console.log(`❌ [ConflictGuard] Page ${page.pageNumber} — sibling "${entry.canonicalName}" discriminator "${conflictingToken}" found in guardHeading`);
+          console.warn(`❌ [CONFLICT-GUARD] Page ${page.pageNumber} — sibling "${entry.canonicalName}" discriminator "${conflictingToken}" found in guardHeading`);
+          console.warn('   guardHeadingArea:', JSON.stringify(guardHeadingArea));
+          console.warn('   raw page.text[0..300]:', JSON.stringify(page.text.substring(0, 300)));
           return true;
         }
         console.log(`  ℹ️ [ConflictGuard] Sibling "${entry.canonicalName}" | unique: [${siblingUnique.join(', ')}] | not in guardHeading ✓`);
@@ -545,7 +558,9 @@ function filterPagesByCategory(pages: ExtractedPage[], category: string, cityKey
       if (guardApplies) {
         const conflictFound = guard.excludeIfHeadingHas.some(excl => guardHeadingArea.includes(excl));
         if (conflictFound) {
-          console.log(`❌ Page ${page.pageNumber} - Static conflict guard: guardHeading contains conflicting keyword for [${guard.excludeIfHeadingHas.join(', ')}]`);
+          console.warn(`❌ [STATIC-CONFLICT] Page ${page.pageNumber} - guardHeading contains conflicting keyword for [${guard.excludeIfHeadingHas.join(', ')}]`);
+          console.warn('   guardHeadingArea:', JSON.stringify(guardHeadingArea));
+          console.warn('   raw page.text[0..300]:', JSON.stringify(page.text.substring(0, 300)));
           return false;
         }
       }
@@ -624,12 +639,18 @@ function filterPagesByCategory(pages: ExtractedPage[], category: string, cityKey
       const headingWindow = pageText.substring(windowStart, windowEnd);
       // Check if any negation word precedes a required keyword in that window
       // 'no' excluded — it is part of product names ("No Parking"), not a variant negator.
+      // ── DEBUG ──
+      console.log(`🔬 [NEGATION-CHECK] Page ${page.pageNumber} headingWindow: ${JSON.stringify(headingWindow)}`);
       const negationPattern = /\b(non|without|not)\s+\w+/g;
       let negMatch: RegExpExecArray | null;
       while ((negMatch = negationPattern.exec(headingWindow)) !== null) {
         const wordAfterNeg = negMatch[0].split(/\s+/)[1];
         if (requiredKeywords.some(kw => wordAfterNeg.startsWith(kw.substring(0, 3)))) {
-          console.log(`❌ Page ${page.pageNumber} - Negation guard: page heading has "${negMatch[0]}" but query requires positive match`);
+          console.warn(`❌ [NEGATION-REJECT] Page ${page.pageNumber} - matched "${negMatch[0]}" in headingWindow`);
+          console.warn('   headingWindow:', JSON.stringify(headingWindow));
+          console.warn('   windowStart:', windowStart, 'windowEnd:', windowEnd);
+          console.warn('   clusterPositions:', clusterPositions);
+          console.warn('   raw page.text[0..400]:', JSON.stringify(page.text.substring(0, 400)));
           return false;
         }
       }
