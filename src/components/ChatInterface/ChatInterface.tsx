@@ -132,13 +132,14 @@ const ChatInterface: React.FC = () => {
 
   // Minimum quantity warning dialog state
   const [minQtyWarning, setMinQtyWarning] = useState<{
-    items: Array<{ description: string; requested: number; minimum: number }>;
+    items: Array<{ description: string; requested: number; originalRequested: number; minimum: number }>;
     pendingQuote: Quote;
   } | null>(null);
 
   // State to track which item is being edited in the min qty warning modal
   const [editingItemIndex, setEditingItemIndex] = useState<number | null>(null);
   const [editedQuantity, setEditedQuantity] = useState<string>('');
+
 
   // Unavailable service alert state: shown when a service doesn't exist in a city's rate card
   const [unavailableServices, setUnavailableServices] = useState<Array<{ city: string; service: string }>>([]);
@@ -959,6 +960,7 @@ const ChatInterface: React.FC = () => {
             items: belowMinSegments.map(bm => ({
               description: `${bm.svcLabel} - ${bm.cityLabel}`,
               requested: bm.requestedQty,
+              originalRequested: bm.requestedQty,
               minimum: bm.minQty,
             })),
             pendingQuote: null as any,
@@ -1616,43 +1618,19 @@ const ChatInterface: React.FC = () => {
     if (!minQtyWarning || editingItemIndex !== index) return;
     
     const newQty = parseInt(editedQuantity, 10);
+
     if (isNaN(newQty) || newQty <= 0) {
-      alert('Please enter a valid quantity');
       return;
     }
 
-    // Update the item's requested quantity
-    const updatedItems = [...minQtyWarning.items];
-    updatedItems[index] = { ...updatedItems[index], requested: newQty };
-    
-    // Filter out items that now meet the minimum
-    const stillBelowMin = updatedItems.filter(item => item.requested < item.minimum);
-    
-    if (stillBelowMin.length === 0) {
-      // All items now meet minimum, close modal and proceed
-      setMinQtyWarning(null);
-      setEditingItemIndex(null);
-      setEditedQuantity('');
-      // If there's a pending quote, update it and navigate
-      if (minQtyWarning.pendingQuote) {
-        const updatedQuote = { ...minQtyWarning.pendingQuote };
-        updatedQuote.items = updatedQuote.items.map((qItem, i) => {
-          const warningItem = updatedItems[i];
-          if (warningItem) {
-            const duration = qItem.duration || 1;
-            return { ...qItem, quantity: newQty, total: newQty * qItem.rate * duration };
-          }
-          return qItem;
-        });
-        setCurrentQuote(updatedQuote);
-        setTimeout(() => { history.push('/quote'); }, 300);
-      }
-    } else {
-      // Still have items below minimum, update the warning
-      setMinQtyWarning({ ...minQtyWarning, items: stillBelowMin });
-      setEditingItemIndex(null);
-      setEditedQuantity('');
-    }
+    // Update the item's requested quantity in the list — keep modal open so user can see all items
+    const updatedItems = minQtyWarning.items.map((item, i) =>
+      i === index ? { ...item, requested: newQty } : item
+    );
+
+    setMinQtyWarning({ ...minQtyWarning, items: updatedItems });
+    setEditingItemIndex(null);
+    setEditedQuantity('');
   };
 
   // Handle canceling edit
@@ -1665,24 +1643,49 @@ const ChatInterface: React.FC = () => {
   const handleMinQtyContinue = () => {
     if (!minQtyWarning) return;
     const pending = pendingValidMessage;
+    const currentItems = minQtyWarning.items;
     setMinQtyWarning(null);
     setEditingItemIndex(null);
     setEditedQuantity('');
 
-    // Pre-Gemini path: pendingQuote is null — send pending FULL message (all segments) to Gemini.
-    // Append [QTY_OVERRIDE] so the pre-Gemini qty check is skipped (user confirmed the qty).
+    // Pre-Gemini path: pendingQuote is null — send pending FULL message to Gemini.
+    // Rewrite any edited quantities into the message before sending.
     if (!minQtyWarning.pendingQuote) {
       if (pending) {
+        // Replace original requested qty with current (possibly edited) qty for each item
+        let rewrittenMsg = pending;
+        currentItems.forEach((item) => {
+          if (item.originalRequested !== item.requested) {
+            rewrittenMsg = rewrittenMsg.replace(
+              new RegExp(`\\b${item.originalRequested}\\b`),
+              String(item.requested)
+            );
+          }
+        });
         setPendingValidMessage(null);
         setPendingMinReplacedMessage(null);
-        // Save the clean prompt (no internal flag) so arrow-up can recall it
-        pushToHistory(pending.replace(/\s*\[User has already specified complete service names from checkboxes\]/g, '').replace(/\s*\[QTY_OVERRIDE\]/g, '').trim());
-        sendMessageWithContent(pending + ' [QTY_OVERRIDE]');
+        pushToHistory(rewrittenMsg.replace(/\s*\[User has already specified complete service names from checkboxes\]/g, '').replace(/\s*\[QTY_OVERRIDE\]/g, '').trim());
+        sendMessageWithContent(rewrittenMsg + ' [QTY_OVERRIDE]');
       }
       return;
     }
 
-    // Post-Gemini path: quote already generated by Gemini, just navigate
+    // Post-Gemini path: quote already generated by Gemini, update edited quantities then navigate
+    const updatedQuote = { ...minQtyWarning.pendingQuote };
+    updatedQuote.items = updatedQuote.items.map(qItem => {
+      const warningItem = currentItems.find(w => w.description === qItem.description);
+      if (warningItem) {
+        const duration = qItem.duration || 1;
+        return { ...qItem, quantity: warningItem.requested, total: warningItem.requested * qItem.rate * duration };
+      }
+      return qItem;
+    });
+    const newSubtotal = updatedQuote.items.reduce((sum, i) => sum + i.total, 0);
+    const newGst = newSubtotal * (updatedQuote.gstPercentage / 100);
+    updatedQuote.subtotal = newSubtotal;
+    updatedQuote.gstAmount = newGst;
+    updatedQuote.total = newSubtotal + newGst;
+    setCurrentQuote(updatedQuote);
     setTimeout(() => { history.push('/quote'); }, 1500);
   };
 
@@ -1690,36 +1693,42 @@ const ChatInterface: React.FC = () => {
   const handleMinQtyUseMinimum = () => {
     if (!minQtyWarning) return;
     const pending = pendingValidMessage;
-    const minReplaced = pendingMinReplacedMessage;
+    const currentItems = minQtyWarning.items;
 
-    // Pre-Gemini path: pendingQuote is null — send the pre-rewritten FULL message that
-    // already has each below-min segment's qty bumped to its registry minimum.
+    // Pre-Gemini path: pendingQuote is null — rewrite the pending message using:
+    //   - user's edited qty if they changed it via the pencil icon
+    //   - the minimum qty for items they didn't edit
     if (!minQtyWarning.pendingQuote) {
       setMinQtyWarning(null);
       setEditingItemIndex(null);
       setEditedQuantity('');
-      // Prefer the pre-rewritten multi-segment message; fall back to legacy single-segment behavior.
-      const newMsg = minReplaced
-        ?? (pending ? pending.replace(/\b\d+\b/, String(minQtyWarning.items[0]?.minimum ?? 1)) : null);
-      if (newMsg) {
+      if (pending) {
+        let newMsg = pending;
+        currentItems.forEach((item) => {
+          const origQty = item.originalRequested;
+          const useQty = item.requested !== item.originalRequested ? item.requested : item.minimum;
+          newMsg = newMsg.replace(new RegExp(`\\b${origQty}\\b`), String(useQty));
+        });
         setPendingValidMessage(null);
         setPendingMinReplacedMessage(null);
-        // Save the min-qty-adjusted prompt so arrow-up can recall it
         pushToHistory(newMsg.replace(/\s*\[User has already specified complete service names from checkboxes\]/g, '').replace(/\s*\[QTY_OVERRIDE\]/g, '').trim());
-        sendMessageWithContent(newMsg);
+        sendMessageWithContent(newMsg + ' [QTY_OVERRIDE]');
       }
       return;
     }
 
-    // Post-Gemini path: update quote item quantities to their minimums
+    // Post-Gemini path: update quote item quantities — use edited qty or minimum
     const updatedQuote = { ...minQtyWarning.pendingQuote };
-    updatedQuote.items = updatedQuote.items.map(item => {
-      if (item.minimumQuantity && item.quantity < item.minimumQuantity) {
-        const newQty = item.minimumQuantity;
-        const duration = item.duration || 1;
-        return { ...item, quantity: newQty, total: newQty * item.rate * duration };
+    updatedQuote.items = updatedQuote.items.map(qItem => {
+      const warningItem = currentItems.find(w => w.description === qItem.description);
+      if (warningItem) {
+        const useQty = warningItem.requested !== warningItem.originalRequested
+          ? warningItem.requested
+          : (warningItem.minimum);
+        const duration = qItem.duration || 1;
+        return { ...qItem, quantity: useQty, total: useQty * qItem.rate * duration };
       }
-      return item;
+      return qItem;
     });
     const newSubtotal = updatedQuote.items.reduce((sum, i) => sum + i.total, 0);
     const newGst = newSubtotal * (updatedQuote.gstPercentage / 100);
@@ -3523,23 +3532,23 @@ const ChatInterface: React.FC = () => {
           display="flex"
           alignItems="center"
           justifyContent="center"
-          px={{ base: 3, md: 4 }}
-          py={{ base: 3, md: 4 }}
+          px={{ base: 2, md: 4 }}
+          py={{ base: 2, md: 4 }}
         >
           <Box
             bg="white"
-            borderRadius={{ base: "12px", md: "14px" }}
-            maxW={{ base: "95%", sm: "420px" }}
+            borderRadius={{ base: "14px", md: "14px" }}
+            maxW={{ base: "100%", sm: "420px" }}
             w="100%"
             boxShadow="0 8px 32px rgba(0,0,0,0.18)"
             display="flex"
             flexDirection="column"
-            maxH={{ base: "85vh", md: "90vh" }}
+            maxH={{ base: "90vh", md: "90vh" }}
             overflow="hidden"
           >
             {/* Sticky Header */}
-            <Box px={{ base: 4, md: 6 }} pt={{ base: 4, md: 6 }} pb={{ base: 2, md: 3 }} flexShrink={0} display="flex" alignItems="center" justifyContent="space-between" gap={2}>
-              <Text fontSize={{ base: "13px", md: "15px" }} fontWeight="700" color="#c0392b" lineHeight="1.3">
+            <Box px={{ base: 3, md: 6 }} pt={{ base: 3, md: 6 }} pb={{ base: 2, md: 3 }} flexShrink={0} display="flex" alignItems="center" justifyContent="space-between" gap={2}>
+              <Text fontSize={{ base: "14px", md: "15px" }} fontWeight="700" color="#c0392b" lineHeight="1.3">
                 ⚠️ Below Minimum Quantity
               </Text>
               <Box flexShrink={0}>
@@ -3551,23 +3560,23 @@ const ChatInterface: React.FC = () => {
                   onClick={handleMinQtyClose}
                   _hover={{ bg: 'gray.100' }}
                   color="gray.500"
-                  w="20px"
-                  h="20px"
-                  minW="20px"
-                  fontSize="13px"
+                  w="24px"
+                  h="24px"
+                  minW="24px"
+                  fontSize="14px"
                 />
               </Box>
             </Box>
 
             {/* Scrollable Items Body */}
-            <Box flex={1} overflowY="auto" px={{ base: 4, md: 6 }} pb={2}>
+            <Box flex={1} overflowY="auto" px={{ base: 3, md: 6 }} pb={2}>
               {minQtyWarning.items.map((item, i) => (
                 <Box 
                   key={i} 
                   mb={{ base: 2, md: 3 }} 
-                  p={{ base: 2.5, md: 3 }} 
+                  p={{ base: 3, md: 3 }} 
                   bg="#fff5f5" 
-                  borderRadius={{ base: "6px", md: "8px" }} 
+                  borderRadius={{ base: "8px", md: "8px" }} 
                   borderLeft="3px solid #c0392b"
                   display="flex"
                   alignItems="center"
@@ -3576,7 +3585,7 @@ const ChatInterface: React.FC = () => {
                 >
                   <Box flex={1} minW={0}>
                     <Text 
-                      fontSize={{ base: "11px", md: "13px" }} 
+                      fontSize={{ base: "12px", md: "13px" }} 
                       fontWeight="600" 
                       color="#2d3436"
                       lineHeight="1.4"
@@ -3584,45 +3593,58 @@ const ChatInterface: React.FC = () => {
                       {item.description}
                     </Text>
                       {editingItemIndex === i ? (
-                        <VStack mt={2} spacing={1.5} align="stretch">
-                          <Input
-                            size="xs"
-                            type="number"
-                            value={editedQuantity}
-                            onChange={(e) => setEditedQuantity(e.target.value)}
-                            placeholder="Enter quantity"
-                            fontSize={{ base: "11px", md: "13px" }}
-                            h={{ base: "28px", md: "32px" }}
-                            autoFocus
-                          />
-                          <HStack spacing={1.5}>
-                            <Button 
-                              size="xs" 
-                              colorScheme="green" 
+                        <Box mt={1.5}>
+                          <HStack spacing={1.5} align="center">
+                            <Input
+                              size="xs"
+                              type="number"
+                              value={editedQuantity}
+                              onChange={(e) => setEditedQuantity(e.target.value)}
+                              placeholder="Qty"
+                              fontSize={{ base: "12px", md: "12px" }}
+                              h={{ base: "32px", md: "30px" }}
+                              w={{ base: "90px", md: "100px" }}
+                              borderColor="#c0392b"
+                              borderWidth="1.5px"
+                              borderRadius="8px"
+                              _focus={{ borderColor: "#c0392b", boxShadow: "0 0 0 1px #c0392b" }}
+                              textAlign="center"
+                              autoFocus
+                            />
+                            <Button
+                              size="xs"
+                              bg="#1a3a5c"
+                              color="white"
                               onClick={() => handleSaveEditedQuantity(i)}
-                              flex={1}
-                              fontSize={{ base: "10px", md: "11px" }}
-                              h={{ base: "24px", md: "28px" }}
-                              px={2}
+                              fontSize="11px"
+                              h={{ base: "32px", md: "30px" }}
+                              w="fit-content"
+                              minW="44px"
+                              px={3}
+                              borderRadius="8px"
+                              _hover={{ bg: '#1e4d78' }}
                             >
                               Save
                             </Button>
-                            <Button 
-                              size="xs" 
-                              variant="ghost" 
+                            <Button
+                              size="xs"
+                              variant="ghost"
+                              color="gray.500"
                               onClick={handleCancelEdit}
-                              flex={1}
-                              fontSize={{ base: "10px", md: "11px" }}
-                              h={{ base: "24px", md: "28px" }}
+                              fontSize="11px"
+                              h={{ base: "32px", md: "30px" }}
+                              w="fit-content"
+                              minW="52px"
                               px={2}
+                              borderRadius="8px"
                             >
                               Cancel
                             </Button>
                           </HStack>
-                        </VStack>
+                        </Box>
                       ) : (
                         <Text 
-                          fontSize={{ base: "10px", md: "12px" }} 
+                          fontSize={{ base: "11px", md: "12px" }} 
                           color="#636e72" 
                           mt={1}
                           lineHeight="1.5"
@@ -3640,11 +3662,11 @@ const ChatInterface: React.FC = () => {
                       color="#1a3a5c"
                       onClick={() => handleEditItemQuantity(i)}
                       _hover={{ bg: 'gray.100' }}
-                      fontSize="13px"
+                      fontSize={{ base: "14px", md: "13px" }}
                       flexShrink={0}
-                      w="24px"
-                      h="24px"
-                      minW="24px"
+                      w={{ base: "28px", md: "24px" }}
+                      h={{ base: "28px", md: "24px" }}
+                      minW={{ base: "28px", md: "24px" }}
                     />
                   )}
                 </Box>
@@ -3653,7 +3675,7 @@ const ChatInterface: React.FC = () => {
 
             {/* Sticky Footer */}
             <Box 
-              px={{ base: 4, md: 6 }} 
+              px={{ base: 3, md: 6 }} 
               pt={{ base: 3, md: 3 }} 
               pb={{ base: 4, md: 6 }} 
               flexShrink={0} 
@@ -3661,7 +3683,7 @@ const ChatInterface: React.FC = () => {
               borderColor="gray.100"
             >
               <Text 
-                fontSize={{ base: "11.5px", md: "12.5px" }} 
+                fontSize={{ base: "11px", md: "12.5px" }} 
                 color="#636e72" 
                 mb={{ base: 3, md: 4 }}
                 lineHeight="1.5"
@@ -3681,12 +3703,18 @@ const ChatInterface: React.FC = () => {
                   onClick={handleMinQtyContinue}
                   _hover={{ bg: '#fff5f5' }}
                   w={{ base: "100%", sm: "auto" }}
-                  fontSize={{ base: "12px", md: "14px" }}
+                  h={{ base: "40px", sm: "36px" }}
+                  fontSize={{ base: "13px", md: "14px" }}
+                  borderRadius="10px"
                   order={{ base: 2, sm: 1 }}
                 >
-                  {minQtyWarning.items.length > 1
-                    ? `Continue with requested (${minQtyWarning.items.length})`
-                    : `Continue with ${minQtyWarning.items[0].requested}`}
+                  {(() => {
+                    const qtys = minQtyWarning.items.map(it => it.requested);
+                    const allSame = qtys.every(q => q === qtys[0]);
+                    return minQtyWarning.items.length === 1 || allSame
+                      ? `Continue with ${qtys[0]}`
+                      : `Generate as Requested`;
+                  })()}
                 </Button>
                 <Button
                   size="sm"
@@ -3695,12 +3723,14 @@ const ChatInterface: React.FC = () => {
                   onClick={handleMinQtyUseMinimum}
                   _hover={{ bg: '#1e4d78' }}
                   w={{ base: "100%", sm: "auto" }}
-                  fontSize={{ base: "12px", md: "14px" }}
+                  h={{ base: "40px", sm: "36px" }}
+                  fontSize={{ base: "13px", md: "14px" }}
+                  borderRadius="10px"
                   order={{ base: 1, sm: 2 }}
                 >
-                  {minQtyWarning.items.length > 1
-                    ? `Use Minimums (${minQtyWarning.items.length})`
-                    : `Use Minimum (${minQtyWarning.items[0].minimum})`}
+                  {minQtyWarning.items.length === 1
+                    ? `Use Minimum (${minQtyWarning.items[0].minimum})`
+                    : `Use Minimums`}
                 </Button>
               </Stack>
             </Box>
