@@ -1346,11 +1346,21 @@ const ChatInterface: React.FC = () => {
         content: err.message || 'Sorry, I encountered an error. Please try again.',
         timestamp: new Date(),
         isError: true,
+        failedInput: text, // Store the original input for retry
       };
       setMessages(prev => [...prev, errorMessage]);
     } finally {
       setIsLoading(false);
     }
+  };
+
+  // Retry handler: resend a failed message
+  const handleRetry = (messageId: string) => {
+    const message = messages.find(m => m.id === messageId);
+    if (!message || !message.failedInput) return;
+    
+    // Set the input value and send
+    sendMessageWithContent(message.failedInput);
   };
 
   // Find the activeProposal whose fileName contains the given city name
@@ -2067,43 +2077,69 @@ const ChatInterface: React.FC = () => {
                     maxW={message.role === 'user' ? '80%' : '90%'}
                   >
                     <Box>
-                        {!message.isCityPicker && !message.isMultipleMatch && <Box
-                          bgGradient={message.role === 'user' 
-                            ? 'linear(135deg, #dc2626 0%, #be123c 50%, #9f1239 100%)' 
-                            : undefined
-                          }
-                          bg={message.role === 'user' ? undefined : 'white'}
-                          border={message.role === 'user' ? 'none' : '1px solid'}
-                          borderColor={message.role === 'user' ? undefined : 'gray.200'}
-                          color={message.role === 'user' ? 'white' : 'gray.800'}
-                          px={{ base: 4, md: 5 }}
-                          py={{ base: 3.5, md: 4 }}
-                          borderRadius={message.role === 'user' ? '20px 20px 4px 20px' : '4px 16px 16px 16px'}
-                          boxShadow={message.role === 'user' 
-                            ? '0 8px 16px rgba(220, 38, 38, 0.25), 0 2px 4px rgba(220, 38, 38, 0.1)' 
-                            : '0 4px 12px rgba(0, 0, 0, 0.06), 0 1px 3px rgba(0, 0, 0, 0.08)'
-                          }
-                        >
-                          <Text 
-                            fontSize="14px" 
-                            whiteSpace="pre-wrap"
-                            lineHeight="1.6"
-                            fontWeight="500"
+                        {!message.isCityPicker && !message.isMultipleMatch && <Box>
+                          <Box
+                            bgGradient={message.role === 'user' 
+                              ? 'linear(135deg, #dc2626 0%, #be123c 50%, #9f1239 100%)' 
+                              : undefined
+                            }
+                            bg={message.role === 'user' ? undefined : (message.isError ? 'red.50' : 'white')}
+                            border={message.role === 'user' ? 'none' : '1px solid'}
+                            borderColor={message.role === 'user' ? undefined : (message.isError ? 'red.300' : 'gray.200')}
+                            color={message.role === 'user' ? 'white' : (message.isError ? 'red.700' : 'gray.800')}
+                            px={{ base: 4, md: 5 }}
+                            py={{ base: 3.5, md: 4 }}
+                            borderRadius={message.role === 'user' ? '20px 20px 4px 20px' : '4px 16px 16px 16px'}
+                            boxShadow={message.role === 'user' 
+                              ? '0 8px 16px rgba(220, 38, 38, 0.25), 0 2px 4px rgba(220, 38, 38, 0.1)' 
+                              : (message.isError ? '0 4px 12px rgba(239, 68, 68, 0.15)' : '0 4px 12px rgba(0, 0, 0, 0.06), 0 1px 3px rgba(0, 0, 0, 0.08)')
+                            }
                           >
-                            {message.content}
-                          </Text>
-                          <Text
-                            fontSize="11px"
-                            mt={2}
-                            opacity={message.role === 'user' ? 0.75 : 0.6}
-                            fontWeight="500"
-                            letterSpacing="tight"
-                          >
-                            {message.timestamp.toLocaleTimeString([], {
-                              hour: '2-digit',
-                              minute: '2-digit',
-                            })}
-                          </Text>
+                            <HStack spacing={2} mb={message.isError ? 1 : 0}>
+                              {message.isError && <Text fontSize="16px">❌</Text>}
+                              <Text 
+                                fontSize="14px" 
+                                whiteSpace="pre-wrap"
+                                lineHeight="1.6"
+                                fontWeight={message.isError ? "600" : "500"}
+                                flex={1}
+                              >
+                                {message.content}
+                              </Text>
+                            </HStack>
+                            <Text
+                              fontSize="11px"
+                              mt={2}
+                              opacity={message.role === 'user' ? 0.75 : 0.6}
+                              fontWeight="500"
+                              letterSpacing="tight"
+                            >
+                              {message.timestamp.toLocaleTimeString([], {
+                                hour: '2-digit',
+                                minute: '2-digit',
+                              })}
+                            </Text>
+                          </Box>
+                          
+                          {/* Retry button for error messages */}
+                          {message.isError && message.failedInput && (
+                            <Button
+                              mt={3}
+                              size="sm"
+                              colorScheme="red"
+                              variant="solid"
+                              onClick={() => handleRetry(message.id)}
+                              isDisabled={isLoading}
+                              leftIcon={<Text fontSize="14px">🔄</Text>}
+                              _hover={{
+                                transform: 'translateY(-1px)',
+                                boxShadow: '0 4px 12px rgba(220, 38, 38, 0.3)',
+                              }}
+                              transition="all 0.2s ease"
+                            >
+                              Retry
+                            </Button>
+                          )}
                         </Box>}
 
                         {/* 2️⃣ MULTIPLE_MATCH - Show grouped services with checkboxes (multi-select per group) */}

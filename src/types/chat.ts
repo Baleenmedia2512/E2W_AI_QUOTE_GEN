@@ -21,6 +21,7 @@ export interface Message {
   content: string;
   timestamp: Date;
   isError?: boolean;
+  failedInput?: string; // Stores original user input when error occurs (for retry functionality)
   matchType?: string; // "exact", "multiple", "partial", "none"
   
   // MULTIPLE_MATCH
