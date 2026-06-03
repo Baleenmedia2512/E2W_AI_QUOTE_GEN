@@ -433,8 +433,9 @@
   font-size: 13px;
   font-weight: 600;
   color: #4a5568;
-  min-width: 140px;
+  min-width: 200px;
   flex-shrink: 0;
+  padding-right: 16px;
 }
 
 .spec-label--group {
