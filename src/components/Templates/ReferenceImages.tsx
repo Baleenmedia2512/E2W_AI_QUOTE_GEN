@@ -747,10 +747,26 @@ function filterPagesByCategory(pages: ExtractedPage[], category: string, cityKey
   matchedPages.forEach((page) => {
     const pageText = page.text.toLowerCase().replace(/\s*\|\s*/g, '').replace(/\s+/g, ' ');
     
-    // Check if this page has (1/X) pattern - skip it entirely
+    // Check if this page has (1/X) pattern - normally a pricing-summary page we skip.
+    // EXCEPTION: some proposals put SPECIFICATION on the same page as the pricing
+    // (e.g. BaleenMedia LED Hoardings 1/3 has DISPLAY PRICE + SPECIFICATION together).
+    // Keep it so spec text / spec image can be extracted.
     const hasFirstPagePattern = pageText.match(/\(1\/\d+\)/);
     if (hasFirstPagePattern) {
-      console.log(`🔄 Page ${page.pageNumber} - Excluded (1/X pattern)`);
+      const hasSpecOnFirstPage = pageText.includes('specification') ||
+                                 pageText.includes('design spec') ||
+                                 pageText.includes('display area') ||
+                                 pageText.includes('ad specification') ||
+                                 pageText.includes('creative specification') ||
+                                 pageText.includes('size specification') ||
+                                 pageText.includes('ad size') ||
+                                 pageText.includes('creative size');
+      if (!hasSpecOnFirstPage) {
+        console.log(`🔄 Page ${page.pageNumber} - Excluded (1/X pattern)`);
+        return;
+      }
+      console.log(`✅ Page ${page.pageNumber} - (1/X) kept because it contains SPECIFICATION`);
+      pageNumbersToInclude.add(page.pageNumber);
       return;
     }
     
@@ -1490,7 +1506,7 @@ function extractDesignSpecFields(pages: ExtractedPage[]): SpecGroup[] {
                    || text.match(/creative\s*size[^\n]*/i);
     if (!specMatch || specMatch.index === undefined) continue;
     const afterSpec = text.substring(specMatch.index + specMatch[0].length);
-    const endMatch = afterSpec.match(/\n(reference\s*image|ad\s*visual|sample\s*ad|newspaper\s*sample|customer review|click here)/i);
+    const endMatch = afterSpec.match(/\n(reference\s*image|ad\s*visual|sample\s*ad|newspaper\s*sample|customer review|click here|terms\s*&?\s*conditions?|google\s+review)/i);
     const specSection = endMatch && endMatch.index !== undefined ? afterSpec.substring(0, endMatch.index) : afterSpec;
 
     // ── Metro multi-table detection (coach-group style, e.g. Metro Train Inside Branding) ──
@@ -1518,15 +1534,87 @@ function extractDesignSpecFields(pages: ExtractedPage[]): SpecGroup[] {
       return false;
     };
 
-    const lines = specSection.split('\n').map(l => l.trim()).filter(Boolean);
+    const rawLines = specSection.split('\n').map(l => l.trim()).filter(Boolean);
+    console.log('🔍 [SPEC-PARSE] Raw lines from spec section:', rawLines);
+    // Pre-merge orphan label lines (PDF extractor often breaks "Operations Timing" into
+    // two lines: "Operations" then "Timing : 13 hours of display") and pull continuation
+    // lines into the previous value (e.g. "time between 07.00 – 23.00" belongs to the
+    // previous "Operations Timing" entry).
+    const lines: string[] = [];
+    for (let li = 0; li < rawLines.length; li++) {
+      const cur = rawLines[li];
+      const next = rawLines[li + 1];
+      // Orphan label merge: short word-only line (no colon, no pipe) + next line starting with colon-bearing pattern.
+      // "Operations" + "Timing : 13 hours" → "Operations Timing : 13 hours"
+      if (next && !cur.includes(':') && !cur.includes('|') && cur.length <= 25 &&
+          /^[A-Za-z][A-Za-z.]*(\s+[A-Za-z][A-Za-z.]*){0,2}$/.test(cur) &&
+          /:/.test(next)) {
+        const merged = `${cur} ${next}`;
+        console.log(`🔗 [ORPHAN-MERGE] "${cur}" + "${next}" → "${merged}"`);
+        lines.push(merged);
+        li++;
+        continue;
+      }
+      // Continuation merge: current line has no colon-label pattern (i.e. it's not a
+      // new "Label: value" entry) and previous line had a colon → append to previous
+      // line's value. Allow pipes in current line (PDF often splits values like
+      // "time between 07.00 | to 23.00" with tab-pipe-tab). Skip if current looks
+      // like a heading (ALL CAPS) or starts with a label-colon pattern.
+      const prev = lines[lines.length - 1];
+      const looksLikeHeading = /^[A-Z][A-Z0-9 &\-\/]{2,}$/.test(cur);
+      // Strip pipes when checking for a colon-bearing label (so "time between 07.00 | to 23.00"
+      // is not treated as a new entry just because it has a pipe).
+      const curStripped = cur.replace(/\s*\|\s*/g, ' ').trim();
+      const isNewLabelEntry = /^[A-Za-z][A-Za-z\s.]{1,40}:\s*\S/.test(curStripped);
+      if (prev && prev.includes(':') && !isNewLabelEntry && !looksLikeHeading) {
+        lines[lines.length - 1] = `${prev} ${curStripped}`;
+        console.log(`🔗 [CONTINUATION-MERGE] "${cur}" → appended to previous line → "${lines[lines.length - 1]}"`);
+        continue;
+      }
+      lines.push(cur);
+    }
+    console.log('✅ [SPEC-PARSE] Merged lines:', lines);
     for (const line of lines) {
       // Split line on pipe separators (tab-pipe-tab, space-pipe-space, or bare pipe)
       const parts = line.split(/\t\|\t|\s\|\s|\|/).map(p => p.trim()).filter(p => p.length > 0);
 
       if (parts.length === 1) {
         // Single column — classify by content
-        const part = parts[0];
+        let part = parts[0];
         if (/^materials?\s*:?\s*$/i.test(part)) continue;
+
+        // Two-column PDF layout: extractor may have concatenated left-column "Label: value"
+        // with right-column "Label: value" / "Material:" onto the same physical line.
+        // Detect a SECOND "Label: value" pattern starting after the first value and split.
+        // e.g. "Right side: 18x18 (wxh) inches Material:" → ["Right side: 18x18 (wxh) inches", "Material:"]
+        // e.g. "Back side: 44x20 (wxh) inches 3 sides: Rexine" → ["Back side: ...", "3 sides: Rexine"]
+        const secondColonRe = /\s+([A-Z0-9][A-Za-z0-9 ]{1,30}):\s*/g;
+        secondColonRe.lastIndex = 0;
+        const firstColon = part.indexOf(':');
+        if (firstColon !== -1) {
+          secondColonRe.lastIndex = firstColon + 1;
+          const m2 = secondColonRe.exec(part);
+          if (m2 && m2.index > firstColon) {
+            const leftPart = part.substring(0, m2.index).trim();
+            const rightPart = part.substring(m2.index).trim();
+            console.log(`✂️ [2COL-SPLIT] "${part}" → ["${leftPart}", "${rightPart}"]`);
+            // Process leftPart now, push rightPart back into queue by appending a second iteration
+            part = leftPart;
+            // Recursively handle the right part by inlining the same logic
+            const rightColon = rightPart.match(/^([^:]{1,50}):\s*(.*)$/);
+            if (rightColon) {
+              const rLabel = rightColon[1].trim();
+              const rValue = rightColon[2].trim();
+              if (rValue && !/^materials?$/i.test(rLabel)) {
+                const rIsDim = /\d["'x×(]/i.test(rValue) || /\d\s+[x×]\s+\d/i.test(rValue) || /side|front|back|top|bottom|left|right|dimension|size/i.test(rLabel);
+                if (rIsDim) dimensionFields.push({ label: rLabel, value: rValue });
+                else materialFields.push({ label: rLabel, value: rValue });
+              }
+              // bare "Material:" with no value → drop, used only as section header
+            }
+          }
+        }
+
         const colonMatch = part.match(/^([^:]{1,50}):\s*(.+)$/);
         if (colonMatch) {
           const label = colonMatch[1].trim();
@@ -1645,7 +1733,12 @@ function extractDesignSpecFields(pages: ExtractedPage[]): SpecGroup[] {
     }
 
     if (dimensionFields.length > 0) groups.push({ heading: null, fields: dimensionFields });
-    if (materialFields.length > 0) groups.push({ heading: 'Material', fields: materialFields });
+    if (materialFields.length > 0) {
+      // Only attach the "Material" heading when dimensions also exist (i.e. it's a real
+      // two-section spec). For pure operational/info spec blocks the heading is misleading.
+      const matHeading = dimensionFields.length > 0 ? 'Material' : null;
+      groups.push({ heading: matHeading, fields: materialFields });
+    }
     if (groups.length > 0) return groups;
   }
   return [];
@@ -1830,9 +1923,23 @@ function extractSpecSectionImage(pages: ExtractedPage[]): string[] {
   }
 
   // Second pass: fallback to full page image only when page is diagram-heavy
-  // (very little text AND no reference image heading — means it's a layout/measurement slide)
+  // (very little text AND no reference image heading — means it's a layout/measurement slide).
+  // Skip when the page is actually a mixed pricing + spec text page (e.g. BaleenMedia
+  // LED Hoardings 1/3 with DISPLAY PRICE + SPECIFICATION + Terms together) — those
+  // pages have no diagram, so showing the raw page raster is wrong.
+  const isMixedPricingPage = (page: ExtractedPage): boolean => {
+    const t = page.text.toLowerCase();
+    return t.includes('display price') ||
+           t.includes('rental price') ||
+           t.includes('printing & fixing') ||
+           t.includes('min. quantity') ||
+           t.includes('min quantity') ||
+           /₹\s*[\d,]/.test(page.text) ||
+           (t.includes('terms') && t.includes('conditions'));
+  };
   for (const page of specPages) {
     if (pageHasRefHeading(page)) continue; // skip shared pages
+    if (isMixedPricingPage(page)) continue; // skip pricing+spec pages
     const textLen = page.text.replace(/[^a-z]/gi, '').length;
     if (textLen < 300) return [page.imageDataUrl];
   }
@@ -1960,9 +2067,45 @@ export const ReferenceImages: React.FC<ReferenceImagesProps> = ({ proposalPages,
     return [...filteredPages, ...extra];
   }, [resolvedPages, filteredPages]);
 
+  // Augment filteredPages with sibling (1/N) pages from the same service that contain
+  // SPECIFICATION text. Some proposals (e.g. BaleenMedia LED Hoardings) place
+  // DISPLAY PRICE + SPECIFICATION + Terms together on the 1/N page — that page is
+  // (correctly) excluded from reference-image picks but still holds the spec we need.
+  const specSourcePages = useMemo(() => {
+    if (!resolvedPages || filteredPages.length === 0) return filteredPages;
+    const SPEC_RE = /(design\s*spec|specification|display\s*area|ad\s*spec|creative\s*spec|size\s*spec|col\.?\s*cm|column\s*size|ad\s*size|creative\s*size)/i;
+    const HEADING_RE = /^([A-Z][A-Z0-9 &\-\/]{2,})\s*\(\d+\/\d+\)/m;
+    const existingNums = new Set(filteredPages.map(p => p.pageNumber));
+    const extras: ExtractedPage[] = [];
+
+    // Build heading prefixes from filteredPages (e.g. "LED HOARDINGS")
+    const headingPrefixes = new Set<string>();
+    for (const fp of filteredPages) {
+      const m = fp.text.match(HEADING_RE);
+      if (m) headingPrefixes.add(m[1].trim().toUpperCase());
+    }
+
+    for (const page of resolvedPages) {
+      if (existingNums.has(page.pageNumber)) continue;
+      // Must be a (1/N) page
+      if (!/\(1\/\d+\)/.test(page.text)) continue;
+      // Must contain spec text
+      if (!SPEC_RE.test(page.text)) continue;
+      // Heading must match one of the filtered service headings
+      const m = page.text.match(HEADING_RE);
+      if (!m) continue;
+      const heading = m[1].trim().toUpperCase();
+      if (!headingPrefixes.has(heading)) continue;
+      console.log(`📐 [SPEC] Including sibling (1/N) page ${page.pageNumber} for heading "${heading}"`);
+      extras.push(page);
+    }
+
+    return extras.length > 0 ? [...filteredPages, ...extras] : filteredPages;
+  }, [resolvedPages, filteredPages]);
+
   // Smart content extraction from parsed text — section-aware
-  // specGroups and image extraction use filteredPages ONLY (unchanged behaviour)
-  const specGroups = useMemo(() => extractDesignSpecFields(filteredPages), [filteredPages]);
+  // specGroups and image extraction use specSourcePages (filteredPages + sibling 1/N spec pages)
+  const specGroups = useMemo(() => extractDesignSpecFields(specSourcePages), [specSourcePages]);
   // Require at least one field with a non-empty value (a heading-only group is not "content")
   const hasSpecContent = specGroups.some(g =>
     g.fields.some(f => (f.value || '').trim().length > 0) ||
@@ -1981,7 +2124,7 @@ export const ReferenceImages: React.FC<ReferenceImagesProps> = ({ proposalPages,
     ));
   }, [specGroups, hasSpecContent]);
   // Spec image: only from Design Specification pages
-  const specImageUrl = useMemo(() => extractSpecSectionImage(filteredPages), [filteredPages]);
+  const specImageUrl = useMemo(() => extractSpecSectionImage(specSourcePages), [specSourcePages]);
   // Reference images: ALL images from Reference Image pages — never falls back to spec pages
   const refImageUrls = useMemo(() => extractRefSectionImages(filteredPages), [filteredPages]);
   // Customer review uses reviewPages (filteredPages + any customer review pages from full proposal)
