@@ -45,7 +45,6 @@ const PDF_FONT_LOAD_SPECS = [
  * on one line.
  */
 const PDF_FONT_SCALE = 1.45;
-.0
 const PDF_FONT_MIN_PX = 14;
 const PDF_FONT_MAX_PX = 44;
 // Subtrees whose font-size must stay exactly as the template CSS declared it.
@@ -592,7 +591,18 @@ const computeVirtualPagesWithTableRows = (
     const { theadHeight, tfootHeight, rows } = block.tableData;
 
     // Fast path: entire table fits in remaining space Ã¢â‚¬â€ no splitting needed
-    if (current.totalContentHeight + block.height + block.marginBottom <= usableHeight) {
+    // Fast path: entire table fits in remaining space — no splitting needed.
+    // Reserve a VERY generous safety margin (full tfoot height + 60px) because
+    // html2canvas frequently renders wrapped table cells taller than the live DOM
+    // measured them — without this cushion the TOTAL row gets clipped at the
+    // bottom of the page. The cost of false-positives (splitting a table that
+    // would have fit) is just an extra page break; the cost of a false-negative
+    // is a missing TOTAL.
+    const TABLE_FAST_PATH_SAFETY_PX = tfootHeight + 60;
+    if (
+      current.totalContentHeight + block.height + block.marginBottom + TABLE_FAST_PATH_SAFETY_PX
+        <= usableHeight
+    ) {
       current.blockIndices.push(i);
       current.totalContentHeight += block.height + block.marginBottom;
       continue;
@@ -612,7 +622,10 @@ const computeVirtualPagesWithTableRows = (
 
     while (rowCursor < rows.length) {
       const remaining = usableHeight - current.totalContentHeight;
-      const rowBudget = remaining - theadHeight;
+      // Subtract a render-overflow safety margin so we don't pack rows so tight
+      // that html2canvas's slightly-taller render clips the bottom of the page.
+      const ROW_BUDGET_SAFETY_PX = 30;
+      const rowBudget = remaining - theadHeight - ROW_BUDGET_SAFETY_PX;
 
       let tally = 0;
       let segEnd = rowCursor - 1; // last row index committed to this segment
@@ -637,6 +650,18 @@ const computeVirtualPagesWithTableRows = (
 
       // Clamp to a valid row index
       if (segEnd < rowCursor) segEnd = rowCursor;
+
+      // Keep last data row attached to the TOTAL (tfoot) — avoid orphaned totals.
+      // If this segment would contain every row EXCEPT the last one, pull the
+      // previous row out too so the final page renders [secondToLast row + last row + tfoot].
+      // Only do this when the segment has more than one row (otherwise we'd loop).
+      const wouldOrphanLastRow =
+        segEnd === rows.length - 2 &&         // committed up to second-to-last row
+        segEnd > rowCursor;                    // segment has at least 2 rows we can give up one
+      if (wouldOrphanLastRow) {
+        tally -= rows[segEnd].height;
+        segEnd -= 1;
+      }
 
       const includesTfoot = segEnd === rows.length - 1;
       const segmentHeight = theadHeight + tally + (includesTfoot ? tfootHeight : 0);

@@ -105,6 +105,13 @@ export const UserProfile: React.FC = () => {
           </Badge>
         </Box>
         <MenuDivider />
+        <MenuItem 
+          icon={<Text fontSize="sm">📊</Text>}
+          onClick={() => history.push('/token-usage')}
+        >
+          AI Token Usage
+        </MenuItem>
+        <MenuDivider />
         <MenuItem onClick={handleLogout} color="red.600">
           Logout
         </MenuItem>

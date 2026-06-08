@@ -321,11 +321,14 @@
   font-size: 12.5px;
   vertical-align: top;
   padding-right: 8px;
+  /* Wrap on word boundaries; only break long unbreakable tokens */
   word-wrap: break-word;
   overflow-wrap: break-word;
-  word-break: break-word;
+  word-break: normal;
   white-space: normal;
   overflow: hidden;
+  line-height: 1.5;
+  hyphens: auto;
 }
 
 /* ─── Wide table variant: GST columns present — fits all 7-8 cols inside A4 width ─── */
@@ -349,8 +352,8 @@
   font-size: 18px;
 }
 .template-corporate-minimal .items-table--gst .col-description {
-  width: 32%;
-  max-width: 32%;
+  width: 28%;
+  max-width: 28%;
 }
 .template-corporate-minimal .items-table--gst .col-quantity {
   width: 9%;
@@ -358,8 +361,8 @@
   white-space: nowrap;
 }
 .template-corporate-minimal .items-table--gst .col-rate {
-  width: 15%;
-  max-width: 15%;
+  width: 12%;
+  max-width: 12%;
 }
 .template-corporate-minimal .items-table--gst .col-duration {
   width: 5%;
@@ -370,20 +373,37 @@
   max-width: 11%;
 }
 .template-corporate-minimal .items-table--gst .col-gst-pct {
-  width: 8%;
-  max-width: 8%;
+  width: 7%;
+  max-width: 7%;
 }
 .template-corporate-minimal .items-table--gst .col-gst {
   width: 11%;
   max-width: 11%;
 }
 .template-corporate-minimal .items-table--gst .col-final {
-  width: 18%;
-  max-width: 18%;
+  width: 16%;
+  max-width: 16%;
 }
 .template-corporate-minimal .items-table--gst .col-remark {
-  width: 14%;
-  max-width: 14%;
+  width: 22%;
+  max-width: 22%;
+}
+/* When the remark column is shown, shrink description a bit more so remarks read naturally */
+.template-corporate-minimal .items-table--gst.items-table--has-remark .col-description {
+  width: 24%;
+  max-width: 24%;
+}
+.template-corporate-minimal .items-table--gst.items-table--has-remark .col-remark {
+  width: 26%;
+  max-width: 26%;
+}
+.template-corporate-minimal .items-table--gst .item-remark {
+  font-size: 13px;
+  line-height: 1.5;
+  padding: 8px 6px;
+  word-break: normal;
+  overflow-wrap: break-word;
+  white-space: normal;
 }
 .template-corporate-minimal .items-table--gst .item-title {
   font-size: 18px;
@@ -392,12 +412,16 @@
   font-size: 17px;
 }
 /* Remove nowrap so numbers can wrap within tight columns */
-.template-corporate-minimal .items-table--gst .item-quantity,
 .template-corporate-minimal .items-table--gst .item-rate,
 .template-corporate-minimal .items-table--gst .item-total,
 .template-corporate-minimal .items-table--gst .item-gst,
 .template-corporate-minimal .items-table--gst .item-final {
   white-space: normal;
+}
+/* Keep QTY and GST% on a single line — they're short values and shouldn't split */
+.template-corporate-minimal .items-table--gst .item-quantity,
+.template-corporate-minimal .items-table--gst .item-gst-pct {
+  white-space: nowrap;
 }
 /* Keep total row numbers on one line — never break mid-digit */
 .template-corporate-minimal .items-table--gst .tfoot-label,
@@ -807,6 +831,27 @@
     min-width: 700px; /* prevents columns from collapsing */
   }
 
+  /* Wider min-width when the remark column is present so remarks don't squeeze */
+  .template-corporate-minimal .items-table--has-remark {
+    min-width: 880px;
+  }
+  .template-corporate-minimal .items-table--has-remark.items-table--gst {
+    min-width: 980px;
+  }
+  .template-corporate-minimal .items-table--has-remark .col-remark,
+  .template-corporate-minimal .items-table--has-remark.items-table--gst .col-remark {
+    width: 22%;
+    max-width: 22%;
+    min-width: 160px;
+  }
+  .template-corporate-minimal .items-table--has-remark .item-remark {
+    font-size: 12px;
+    line-height: 1.5;
+    white-space: normal;
+    word-break: normal;
+    overflow-wrap: break-word;
+  }
+
   .template-corporate-minimal .template-header {
     flex-direction: column;
     gap: 20px;
@@ -1013,6 +1058,20 @@
     font-size: 13px;
     border-radius: 4px;
     min-width: 700px;
+  }
+
+  /* Keep wider min-width for remark column at small breakpoint too */
+  .template-corporate-minimal .items-table--has-remark {
+    min-width: 860px;
+  }
+  .template-corporate-minimal .items-table--has-remark.items-table--gst {
+    min-width: 960px;
+  }
+  .template-corporate-minimal .items-table--has-remark .col-remark {
+    min-width: 150px;
+  }
+  .template-corporate-minimal .items-table--has-remark .item-remark {
+    font-size: 11.5px;
   }
 
   .template-corporate-minimal .items-table thead {

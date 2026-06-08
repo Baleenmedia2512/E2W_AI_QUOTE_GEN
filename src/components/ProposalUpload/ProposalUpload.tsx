@@ -338,6 +338,34 @@ const ProposalUpload: React.FC = () => {
       console.log('Updating proposal store with:', proposalData);
       setProposal(proposalData);
 
+      // ⚡ AUTO-LOAD: Wait for proposal to be saved, then add to activeProposals
+      // This ensures reference images show immediately after upload
+      const autoLoadProposal = async () => {
+        let attempts = 0;
+        const maxAttempts = 10;
+        const pollInterval = 500; // ms
+
+        while (attempts < maxAttempts) {
+          await new Promise(resolve => setTimeout(resolve, pollInterval));
+          await loadRecentProposals(); // Refresh to get the new proposal with ID
+          
+          const state = useAppStore.getState();
+          const newProposal = state.recentProposals.find(p => p.fileName === file.name);
+          
+          if (newProposal && newProposal.id) {
+            console.log('🎯 Auto-loading uploaded proposal to activeProposals:', newProposal.fileName);
+            await addActiveProposal(newProposal.id);
+            return; // Success - exit
+          }
+          
+          attempts++;
+        }
+        
+        console.warn('⚠️ Auto-load timeout: proposal not found in recentProposals after 5 seconds');
+      };
+      
+      autoLoadProposal(); // Run async without blocking
+
       toast({
         title: 'Success',
         description: successMessage,

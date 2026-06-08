@@ -90,7 +90,7 @@ export const CorporateMinimal: React.FC<TemplateProps> = ({ data, editable: _edi
     const inclGST = subtotal + gstAmt;
     return (
       <div className="table-scroll-wrap">
-      <table className={`items-table${quote.gstEnabled ? ' items-table--gst' : ''}`}>
+      <table className={`items-table${quote.gstEnabled ? ' items-table--gst' : ''}${hasRemark ? ' items-table--has-remark' : ''}`}>
         <thead>
           <tr>
             <th className="col-description">Description</th>
