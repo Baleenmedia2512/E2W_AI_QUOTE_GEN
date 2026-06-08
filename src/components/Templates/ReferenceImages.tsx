@@ -1,6 +1,6 @@
 import React, { useMemo, useState, useEffect, useRef } from 'react';
 import './ReferenceImages.css';
-import { extractReviewViaGemini, cropReferencePageImage, cropPageStrippingHeaderFooter, cropSpecAboveReference, cropSpecDiagram, cropPageHalf, cropPageFromPercent } from '../../utils/pdfUtils';
+import { extractReviewViaGemini, cropReferencePageImage, cropPageStrippingHeaderFooter, cropSpecAboveReference, cropSpecDiagram, cropPageHalf, cropPageFromPercent, cropPageSlice } from '../../utils/pdfUtils';
 import { getCityServiceRegistry, canonicalizeServiceName, getPageIndexForCity } from '../../hooks/useCityServiceRegistry';
 
 interface ExtractedPage {
@@ -1505,13 +1505,46 @@ function extractDesignSpecFields(pages: ExtractedPage[]): SpecGroup[] {
                    || text.match(/ad\s*size[^\n]*/i)
                    || text.match(/creative\s*size[^\n]*/i);
     if (!specMatch || specMatch.index === undefined) continue;
+
+    // Extract context data BEFORE the spec section (e.g., passenger footfall, reach data)
+    const beforeSpec = text.substring(0, specMatch.index);
+    const contextFields: Array<{ label: string; value: string }> = [];
+    let contextHeading = '';
+    
+    // Look for reach/context section headings (monthly footfall, viewership, etc.)
+    const contextMatch = beforeSpec.match(/(MONTHLY\s+AVERAGE\s+PASSENGER\s+FOOTFALL|VIEWERSHIP\s+DATA|REACH\s+DATA|PASSENGER\s+DATA)/i);
+    if (contextMatch && contextMatch.index !== undefined) {
+      contextHeading = contextMatch[1]; // Capture the actual heading text
+      const contextSection = beforeSpec.substring(contextMatch.index);
+      const contextLines = contextSection.split('\n').map(l => l.trim()).filter(Boolean);
+      
+      // Skip the heading itself, extract data lines
+      for (let i = 1; i < contextLines.length; i++) {
+        const line = contextLines[i];
+        // Stop if we hit another section or empty line pattern
+        if (/^(DESIGN|SPECIFICATION|DISPLAY|MATERIAL)/i.test(line)) break;
+        
+        // Match "Label: Value" pattern (e.g., "Blue Line Stations: 39,34,816")
+        const colonMatch = line.match(/^([^:]{1,60}):\s*(.+)$/);
+        if (colonMatch) {
+          contextFields.push({ label: colonMatch[1].trim(), value: colonMatch[2].trim() });
+        }
+      }
+    }
+
     const afterSpec = text.substring(specMatch.index + specMatch[0].length);
     const endMatch = afterSpec.match(/\n(reference\s*image|ad\s*visual|sample\s*ad|newspaper\s*sample|customer review|click here|terms\s*&?\s*conditions?|google\s+review)/i);
     const specSection = endMatch && endMatch.index !== undefined ? afterSpec.substring(0, endMatch.index) : afterSpec;
 
     // ── Metro multi-table detection (coach-group style, e.g. Metro Train Inside Branding) ──
     const metroGroups = extractMetroMultiTableSpec(specSection);
-    if (metroGroups) return metroGroups;
+    if (metroGroups) {
+      // If context fields exist, prepend them as a SEPARATE group with proper heading
+      if (contextFields.length > 0) {
+        return [{ heading: contextHeading, fields: contextFields }, ...metroGroups];
+      }
+      return metroGroups;
+    }
     // ────────────────────────────────────────────────────────────────────────────────────────
 
     const dimensionFields: Array<{ label: string; value: string }> = [];
@@ -1719,6 +1752,10 @@ function extractDesignSpecFields(pages: ExtractedPage[]): SpecGroup[] {
         groups.push({ heading: containerField.label, fields: sizeGroupFields });
         if (remainingDimFields.length > 0) groups.push({ heading: null, fields: remainingDimFields });
         if (materialFields.length > 0) groups.push({ heading: 'Material', fields: materialFields });
+        // Prepend context fields if they exist as SEPARATE group
+        if (contextFields.length > 0) {
+          return [{ heading: contextHeading, fields: contextFields }, ...groups];
+        }
         return groups;
       }
 
@@ -1729,6 +1766,10 @@ function extractDesignSpecFields(pages: ExtractedPage[]): SpecGroup[] {
       groups.push({ heading: containerField.label, fields: [{ label: containerField.label, value: containerField.value }] });
       if (remainingDimFields.length > 0) groups.push({ heading: null, fields: remainingDimFields });
       if (materialFields.length > 0) groups.push({ heading: 'Material', fields: materialFields });
+      // Prepend context fields if they exist as SEPARATE group
+      if (contextFields.length > 0) {
+        return [{ heading: contextHeading, fields: contextFields }, ...groups];
+      }
       return groups;
     }
 
@@ -1739,22 +1780,40 @@ function extractDesignSpecFields(pages: ExtractedPage[]): SpecGroup[] {
       const matHeading = dimensionFields.length > 0 ? 'Material' : null;
       groups.push({ heading: matHeading, fields: materialFields });
     }
+    // Prepend context fields if they exist as SEPARATE group
+    if (contextFields.length > 0) {
+      const allGroups = [{ heading: contextHeading, fields: contextFields }, ...groups];
+      if (allGroups.length > 1) return allGroups; // Has context + spec data
+    }
     if (groups.length > 0) return groups;
   }
   return [];
 }
 
 // Matches any heading that indicates a customer/google review section
-const REVIEW_HEADING_PATTERN = /customer\s+review|client\s+review|google\s+review\s+feedback|google\s+review|review\s+feedback\s+for|testimonials?|client\s+feedback|customer\s+feedback/i;
+// Uses flexible whitespace matching (\s*) to handle tabs, pipes, and formatting from PDF extraction
+const REVIEW_HEADING_PATTERN = /customer[\s|]*review|client[\s|]*review|google[\s|]*review[\s|]*feedback|google[\s|]*review|review[\s|]*feedback[\s|]*for|testimonials?|client[\s|]*feedback|customer[\s|]*feedback/i;
 
 function extractCustomerReview(pages: ExtractedPage[]): CustomerReviewData | null {
   for (const page of pages) {
     const text = page.text;
-    if (!REVIEW_HEADING_PATTERN.test(text)) continue;
-    const reviewMatch = text.match(/(?:customer review|client review|google review[^\n]*|review feedback[^\n]*|testimonials?|client feedback|customer feedback)/i);
-    if (!reviewMatch || reviewMatch.index === undefined) continue;
+    console.log(`🔍 [REVIEW-EXTRACT] Checking page ${page.pageNumber}, text preview:`, text.substring(0, 150));
+    if (!REVIEW_HEADING_PATTERN.test(text)) {
+      console.log(`   ❌ Page ${page.pageNumber}: No review heading pattern match`);
+      continue;
+    }
+    console.log(`   ✅ Page ${page.pageNumber}: Review heading pattern MATCHED!`);
+    const reviewMatch = text.match(/(?:customer[\s|]*review|client[\s|]*review|google[\s|]*review[^\n]*|review[\s|]*feedback[^\n]*|testimonials?|client[\s|]*feedback|customer[\s|]*feedback)/i);
+    if (!reviewMatch || reviewMatch.index === undefined) {
+      console.log(`   ❌ Page ${page.pageNumber}: No detailed review match found`);
+      continue;
+    }
+    console.log(`   ✅ Page ${page.pageNumber}: Review match found at index ${reviewMatch.index}, matched text: "${reviewMatch[0]}"`);
     const afterReview = text.substring(reviewMatch.index + reviewMatch[0].length);
     const lines = afterReview.split('\n').map(l => l.trim()).filter(Boolean);
+    
+    console.log(`   📝 Page ${page.pageNumber}: Found ${lines.length} lines after review heading`);
+    console.log(`   📝 First 10 lines:`, lines.slice(0, 10));
 
     let reviewerName = '';
     let starCount = 0;
@@ -1764,33 +1823,49 @@ function extractCustomerReview(pages: ExtractedPage[]): CustomerReviewData | nul
     // Lines that are UI/navigation/metadata — never treat as name or review text
     const isSkippable = (line: string): boolean => {
       if (/^back\s+to\s+summary/i.test(line)) return true;
-      if (/^click here|^see the review|^view review|^click here to view/i.test(line)) return true;
+      if (/^click here|^see the review|^view review|^click here to view|click.*here.*view.*google.*review/i.test(line)) return true;
       if (/edited\s+\d+|\d+\s*(week|month|day|hour|year)s?\s+ago/i.test(line)) return true;
       if (/^page\s*\d+$/i.test(line)) return true;
       if (/^\d+$/.test(line)) return true; // bare page number
       if (line.length <= 1) return true;
+      // Skip heading continuation lines like "| FOR OUR | SERVICE"
+      if (/^[|\s]*for\s*[|\s]*our\s*[|\s]*service/i.test(line)) return true;
       return false;
     };
 
     for (const line of lines) {
+      console.log(`      🔍 Processing line: "${line}"`);
+      
       // 1. Extract URL first
       const urlMatch = line.match(/https?:\/\/[^\s]+/);
-      if (urlMatch) { reviewUrl = urlMatch[0]; continue; }
+      if (urlMatch) { 
+        reviewUrl = urlMatch[0]; 
+        console.log(`         ✅ Found URL: ${reviewUrl}`);
+        continue; 
+      }
 
       // 2. Skip navigation / metadata
-      if (isSkippable(line)) continue;
+      if (isSkippable(line)) {
+        console.log(`         ⏭️  Skipped (metadata/navigation)`);
+        continue;
+      }
 
       // 3. Extract star count — supports ★, ☆, ⭐ emoji
       if (starCount === 0) {
         const filledStars = (line.match(/[★⭐]/g) || []).length;
         if (filledStars > 0) {
           starCount = filledStars;
+          console.log(`         ⭐ Found ${starCount} stars`);
           // If line has real text after the stars (not just timestamp), add it as review text
           const afterStars = line
             .replace(/^[★☆⭐✩\s]+/, '')
             .replace(/edited\s+\d+.*/i, '')
             .trim();
-          if (afterStars.length > 15) reviewLines.push(afterStars);
+          console.log(`         📄 Text after stars: "${afterStars}" (length: ${afterStars.length})`);
+          if (afterStars.length > 15) {
+            reviewLines.push(afterStars);
+            console.log(`         ✅ Added to review text`);
+          }
           continue;
         }
       }
@@ -1798,22 +1873,41 @@ function extractCustomerReview(pages: ExtractedPage[]): CustomerReviewData | nul
       // 4. Extract reviewer name — first short capitalised line that looks like a person name
       if (!reviewerName && line.length <= 50 && line.split(' ').length <= 5 && !/^\d/.test(line) && /[A-Z]/.test(line)) {
         reviewerName = line;
+        console.log(`         ✅ Set as reviewer name: "${reviewerName}"`);
         continue;
       }
 
       // 5. Collect review body text
-      if (line.length > 15) reviewLines.push(line);
+      if (line.length > 15) {
+        reviewLines.push(line);
+        console.log(`         ✅ Added to review body: "${line}"`);
+      } else {
+        console.log(`         ⏭️  Skipped (too short: ${line.length} chars)`);
+      }
     }
 
+    console.log(`   📊 Extraction summary:`, {
+      reviewerName,
+      starCount,
+      reviewLinesCount: reviewLines.length,
+      reviewLines,
+      reviewUrl
+    });
+
     if (reviewerName || reviewLines.length > 0 || reviewUrl) {
-      return {
+      const review = {
         reviewerName: reviewerName || 'Customer',
         starCount: Math.min(5, Math.max(1, starCount || 5)),
         reviewText: reviewLines.join(' '),
         reviewUrl,
       };
+      console.log(`   🎉 Page ${page.pageNumber}: Successfully extracted review:`, review);
+      return review;
+    } else {
+      console.log(`   ⚠️ Page ${page.pageNumber}: Review heading found but no content extracted`);
     }
   }
+  console.log('❌ [REVIEW-EXTRACT] No review found in any of the pages checked');
   return null;
 }
 
@@ -1915,10 +2009,19 @@ function extractSpecSectionImage(pages: ExtractedPage[]): string[] {
            t.includes('example image') || t.includes('sample photo');
   };
 
+  // Helper: is this a text-only spec page (no diagram needed)?
+  const isTextOnlySpecPage = (page: ExtractedPage): boolean => {
+    const t = page.text.toLowerCase();
+    return t.includes('monthly average passenger') || t.includes('viewership data') ||
+           (t.includes('content type') && t.includes('content format') && !t.includes('wxh') && !t.includes('x ') && !/\d+\s*x\s*\d+/i.test(t));
+  };
+
   // First pass: return ALL cropped images from pure spec pages so multi-diagram
   // services (e.g. Mobile Van LED with 4 panel diagrams) show every diagram.
+  // Skip text-only pages.
   for (const page of specPages) {
     if (pageHasRefHeading(page)) continue; // skip shared pages — their cropped image is a reference photo
+    if (isTextOnlySpecPage(page)) continue; // skip text-only pages — data already in table
     if (page.croppedImages && page.croppedImages.length > 0) return [...page.croppedImages];
   }
 
@@ -1939,6 +2042,7 @@ function extractSpecSectionImage(pages: ExtractedPage[]): string[] {
   };
   for (const page of specPages) {
     if (pageHasRefHeading(page)) continue; // skip shared pages
+    if (isTextOnlySpecPage(page)) continue; // skip text-only pages
     if (isMixedPricingPage(page)) continue; // skip pricing+spec pages
     const textLen = page.text.replace(/[^a-z]/gi, '').length;
     if (textLen < 300) return [page.imageDataUrl];
@@ -1951,39 +2055,58 @@ function extractSpecSectionImage(pages: ExtractedPage[]): string[] {
  * Extract ALL reference images from Reference Image section pages.
  * ONLY picks from pages that have "Reference Image" heading.
  * Never falls back to spec page images.
+ * SKIPS shared pages (both spec AND ref headings) - those go to spec section.
  * Returns an array so all cropped images (not just index 0) are shown.
  */
 function extractRefSectionImages(pages: ExtractedPage[]): string[] {
   const refPages = getRefImagePages(pages);
   if (refPages.length === 0) return [];
 
+  // Helper: does this page have a spec heading?
+  const pageHasSpecHeading = (page: ExtractedPage): boolean => {
+    const t = page.text.toLowerCase().replace(/\s*\|\s*/g, ' ');
+    return t.includes('design specification') || t.includes('design specifications') ||
+           t.includes('design specs') || t.includes('specification') || t.includes('display area');
+  };
+
   // ── PER-PAGE STORED CROP DEBUG ───────────────────────────────────────────
   console.log(`📸 Ref pages found: ${refPages.length}`);
   refPages.forEach(p => {
     const n = p.croppedImages?.length ?? 0;
-    console.log(`   Ref page ${p.pageNumber}: ${n > 0 ? `✅ ${n} stored cropped image(s)` : '⚠️  0 stored (will trigger lazy re-crop)'}`);
+    const isShared = pageHasSpecHeading(p);
+    console.log(`   Ref page ${p.pageNumber}: ${n > 0 ? `✅ ${n} stored cropped image(s)` : '⚠️  0 stored (will trigger lazy re-crop)'}${isShared ? ' [SHARED - SKIPPED]' : ''}`);
   });
   // ─────────────────────────────────────────────────────────────────────────
 
-  // Collect ALL cropped images from ALL ref pages
+  // Collect ALL cropped images from PURE ref pages only (skip shared spec+ref pages)
   const allCropped: string[] = [];
   for (const page of refPages) {
+    // Skip shared pages - spec diagrams on these pages belong in spec section
+    if (pageHasSpecHeading(page)) {
+      console.log(`   ⏭️  Skipping ref images from shared page ${page.pageNumber} (has spec heading)`);
+      continue;
+    }
+    
     if (page.croppedImages && page.croppedImages.length > 0) {
       allCropped.push(...page.croppedImages);
     }
   }
   if (allCropped.length > 0) {
-    // If additional ref pages have no croppedImages, include their full page image
+    // If additional PURE ref pages have no croppedImages, include their full page image
     // (handles multi-page reference image sections where only some pages were cropped at upload time)
     for (const page of refPages) {
+      // Skip shared pages here too
+      if (pageHasSpecHeading(page)) continue;
+      
       if (!page.croppedImages || page.croppedImages.length === 0) {
         allCropped.push(page.imageDataUrl);
       }
     }
     return allCropped;
   }
-  // Fallback: full page image of first reference page (contains all photos as one tall image)
-  return [refPages[0].imageDataUrl];
+  // Fallback: full page image of first PURE reference page (not shared)
+  const firstPureRefPage = refPages.find(p => !pageHasSpecHeading(p));
+  return firstPureRefPage ? [firstPureRefPage.imageDataUrl] : [];
 }
 
 // Known city names for multi-location quote extraction
@@ -2017,6 +2140,16 @@ function getPagesForCity(proposalPageMap: Record<string, ExtractedPage[]>, city:
 }
 
 export const ReferenceImages: React.FC<ReferenceImagesProps> = ({ proposalPages, proposalPageMap, items, terms = [], specOnly = false, noSpec = false }) => {
+  // DEBUG: Log incoming props
+  console.log('🎬 DEBUG: ReferenceImages component mounted/updated with props:', {
+    proposalPagesCount: proposalPages?.length || 0,
+    proposalPageMapKeys: proposalPageMap ? Object.keys(proposalPageMap) : [],
+    itemsCount: items?.length || 0,
+    termsCount: terms.length,
+    specOnly,
+    noSpec
+  });
+  
   // Determine which pages to use: city-isolated from map, or all flat pages
   const resolvedPages = useMemo(() => {
     if (proposalPageMap && items && items.length > 0) {
@@ -2029,6 +2162,17 @@ export const ReferenceImages: React.FC<ReferenceImagesProps> = ({ proposalPages,
         }
       }
     }
+    
+    // DEBUG: Log all page headings/titles for inspection
+    if (proposalPages && proposalPages.length > 0) {
+      console.log('📚 DEBUG: All available proposal pages:');
+      proposalPages.forEach((page, idx) => {
+        const firstLine = page.text.split('\n')[0] || '';
+        const hasReview = REVIEW_HEADING_PATTERN.test(page.text);
+        console.log(`   Page ${page.pageNumber}: "${firstLine.substring(0, 80)}" ${hasReview ? '⭐ HAS REVIEW!' : ''}`);
+      });
+    }
+    
     return proposalPages;
   }, [proposalPages, proposalPageMap, items]);
 
@@ -2055,16 +2199,44 @@ export const ReferenceImages: React.FC<ReferenceImagesProps> = ({ proposalPages,
   }, [resolvedPages, items]);
   // This is separate from filteredPages so spec/ref image logic is completely unaffected.
   const reviewPages = useMemo(() => {
-    if (!resolvedPages) return [];
-    const filteredPageNums = new Set(filteredPages.map(p => p.pageNumber));
-    const extra = resolvedPages.filter(p =>
-      !filteredPageNums.has(p.pageNumber) &&
-      REVIEW_HEADING_PATTERN.test(p.text)
-    );
-    if (extra.length > 0) {
-      console.log('📝 ReferenceImages: Found', extra.length, 'customer review page(s) outside filtered set');
+    if (!resolvedPages) {
+      console.log('❌ DEBUG: No resolvedPages available for review extraction');
+      return [];
     }
-    return [...filteredPages, ...extra];
+    console.log('🔍 DEBUG: Building reviewPages from', resolvedPages.length, 'resolved pages');
+    console.log('🔍 DEBUG: filteredPages count:', filteredPages.length);
+    
+    // Scan ALL pages for review content (not just filtered ones)
+    console.log('🔎 [REVIEW-SCAN] Scanning all', resolvedPages.length, 'pages for review headings...');
+    const pagesWithReviews: ExtractedPage[] = [];
+    const filteredPageNums = new Set(filteredPages.map(p => p.pageNumber));
+    
+    resolvedPages.forEach((page, idx) => {
+      const hasReview = REVIEW_HEADING_PATTERN.test(page.text);
+      const isInFiltered = filteredPageNums.has(page.pageNumber);
+      
+      if (hasReview) {
+        console.log(`   ⭐ Page ${page.pageNumber}: HAS REVIEW HEADING! ${isInFiltered ? '(already in filtered)' : '(will be added)'}`);
+        if (!isInFiltered) {
+          pagesWithReviews.push(page);
+        }
+      }
+      
+      // Log progress every 20 pages
+      if ((idx + 1) % 20 === 0) {
+        console.log(`   📊 Scanned ${idx + 1}/${resolvedPages.length} pages, found ${pagesWithReviews.length} review pages so far...`);
+      }
+    });
+    
+    console.log(`✅ [REVIEW-SCAN] Scan complete: Found ${pagesWithReviews.length} review page(s) outside filtered set`);
+    
+    // Combine: filtered pages + any additional pages with reviews
+    const result = [...filteredPages, ...pagesWithReviews];
+    console.log('🎯 DEBUG: Total reviewPages count:', result.length);
+    console.log('   - From filtered pages:', filteredPages.length);
+    console.log('   - Additional review pages:', pagesWithReviews.length);
+    
+    return result;
   }, [resolvedPages, filteredPages]);
 
   // Augment filteredPages with sibling (1/N) pages from the same service that contain
@@ -2128,7 +2300,20 @@ export const ReferenceImages: React.FC<ReferenceImagesProps> = ({ proposalPages,
   // Reference images: ALL images from Reference Image pages — never falls back to spec pages
   const refImageUrls = useMemo(() => extractRefSectionImages(filteredPages), [filteredPages]);
   // Customer review uses reviewPages (filteredPages + any customer review pages from full proposal)
-  const customerReview = useMemo(() => extractCustomerReview(reviewPages), [reviewPages]);
+  const customerReview = useMemo(() => {
+    console.log('🔍 DEBUG: Extracting customer review from', reviewPages.length, 'pages');
+    reviewPages.forEach((page, idx) => {
+      console.log(`📄 DEBUG: Review page ${idx + 1} (page ${page.pageNumber}):`, {
+        hasReviewHeading: REVIEW_HEADING_PATTERN.test(page.text),
+        textPreview: page.text.substring(0, 300),
+        sourceId: page.sourceId,
+        sourceName: page.sourceName
+      });
+    });
+    const result = extractCustomerReview(reviewPages);
+    console.log('🎯 DEBUG: Customer review extraction result:', result);
+    return result;
+  }, [reviewPages]);
 
   // Gemini OCR fallback: fires only when pdfjs text extraction couldn't get name or review body.
   // Does NOT affect filteredPages, specGroups, specImageUrl, or refImageUrl.
@@ -2136,13 +2321,19 @@ export const ReferenceImages: React.FC<ReferenceImagesProps> = ({ proposalPages,
   useEffect(() => {
     // Only run if review card data is incomplete (name fell back to "Customer" or text is empty)
     const needsOCR = customerReview && (
-      customerReview.reviewerName === 'Customer' || customerReview.reviewText === ''
+      customerReview.reviewerName === 'Customer' || 
+      customerReview.reviewText === '' ||
+      customerReview.reviewText.toLowerCase().includes('click') // Navigation text detected
     );
+    console.log('🔍 DEBUG: Gemini OCR check - needsOCR:', needsOCR, 'customerReview:', customerReview);
     if (!needsOCR) { setGeminiReview(null); return; }
 
     // Find the review page image to send to Gemini
     const reviewPage = reviewPages.find(p => REVIEW_HEADING_PATTERN.test(p.text));
-    if (!reviewPage) return;
+    if (!reviewPage) {
+      console.log('❌ DEBUG: No review page found in reviewPages for Gemini OCR');
+      return;
+    }
 
     let cancelled = false;
     console.log('🔍 Triggering Gemini OCR for review page', reviewPage.pageNumber);
@@ -2162,6 +2353,8 @@ export const ReferenceImages: React.FC<ReferenceImagesProps> = ({ proposalPages,
     starCount:    geminiReview?.starCount    ?? customerReview.starCount,
     reviewText:   geminiReview?.reviewText   || customerReview.reviewText,
   } : null;
+  
+  console.log('🎯 DEBUG: Final review data:', finalReview);
 
   // Lazy Gemini Vision crop for Reference Image section.
   // Fires only when the ref page has no croppedImages (upload-time crop was skipped or returned empty).
@@ -2237,10 +2430,10 @@ export const ReferenceImages: React.FC<ReferenceImagesProps> = ({ proposalPages,
     });
     if (sharedPage) {
       let cancelled = false;
-      console.log('🔍 Triggering lazy top-half crop for shared spec/ref page', sharedPage.pageNumber);
-      cropPageHalf(sharedPage.imageDataUrl, 'top').then(cropped => {
+      console.log('🔍 Triggering lazy spec slice crop for shared spec/ref page', sharedPage.pageNumber, '(25%-60%)');
+      cropPageSlice(sharedPage.imageDataUrl, 0.25, 0.60).then(cropped => {
         if (!cancelled) {
-          console.log('✅ Lazy spec top-half crop done for page', sharedPage.pageNumber);
+          console.log('✅ Lazy spec slice crop done for page', sharedPage.pageNumber);
           setLazyCroppedSpecImage(cropped);
         }
       });
@@ -2259,10 +2452,13 @@ export const ReferenceImages: React.FC<ReferenceImagesProps> = ({ proposalPages,
       const hasRef  = t.includes('reference image') || t.includes('reference images') ||
                       t.includes('reference photo') || t.includes('reference photos') ||
                       t.includes('example image') || t.includes('sample photo');
+      // Skip text-only spec pages (data already shown in table) - only crop if there's a diagram
+      const isTextOnly = t.includes('monthly average passenger') || t.includes('viewership data') ||
+                        (t.includes('content type') && t.includes('content format') && !t.includes('wxh') && !t.includes('x ') && !/\d+\s*x\s*\d+/i.test(t));
       // Pure spec page only (not shared). Always strip — even if upload-time Gemini Vision
       // already produced croppedImages, those were photo-only crops that destroy the
       // annotated SIZE CHART diagram. cropPageStrippingHeaderFooter is always correct here.
-      return hasSpec && !hasRef;
+      return hasSpec && !hasRef && !isTextOnly;
     });
     if (!pureSpecPage) {
       setLazyCroppedSpecImage(null);
@@ -2293,10 +2489,13 @@ export const ReferenceImages: React.FC<ReferenceImagesProps> = ({ proposalPages,
       const hasRef  = t.includes('reference image') || t.includes('reference images') ||
                       t.includes('reference photo') || t.includes('reference photos') ||
                       t.includes('example image') || t.includes('sample photo');
+      // Skip text-only spec pages (data already shown in table) - only crop if there's a diagram
+      const isTextOnly = t.includes('monthly average passenger') || t.includes('viewership data') ||
+                        (t.includes('content type') && t.includes('content format') && !t.includes('wxh') && !t.includes('x ') && !/\d+\s*x\s*\d+/i.test(t));
       // Pure spec pages (no reference image heading) — always run the full-page
       // header/footer strip, because pre-cropped images may capture only the
       // first diagram strip (driver side) and miss conductor side / bus back.
-      return hasSpec && !hasRef;
+      return hasSpec && !hasRef && !isTextOnly;
     });
     if (!pureSpecPage) {
       setLazyCroppedPureSpecImage(null);
@@ -2469,7 +2668,7 @@ export const ReferenceImages: React.FC<ReferenceImagesProps> = ({ proposalPages,
   if (specOnly) {
     return (
       <div className="smart-reference-page" ref={containerRef}>
-        {(hasSpecContent || specImageUrl.length > 0) && (
+        {(hasSpecContent || specImgSrcs.length > 0) && (
           hasMetroStyleTables ? (
             <>
               {/* Heading travels with the first coach group — prevents orphan heading at page bottom */}
@@ -2484,7 +2683,7 @@ export const ReferenceImages: React.FC<ReferenceImagesProps> = ({ proposalPages,
                   {renderSingleSpecGroup(group, gi)}
                 </div>
               ))}
-              {specImageUrl.length > 0 && (
+              {specImgSrcs.length > 0 && (
                 <div className="smart-section" data-pdf-block="atomic">
                   <div className="ref-img-container spec-img-container">
                     {specImgSrcs.length >= 2 ? (
@@ -2509,7 +2708,7 @@ export const ReferenceImages: React.FC<ReferenceImagesProps> = ({ proposalPages,
                   {specGroups.map((group, gi) => renderSingleSpecGroup(group, gi))}
                 </div>
               )}
-              {specImageUrl.length > 0 && (
+              {specImgSrcs.length > 0 && (
                 <div className="ref-img-container spec-img-container">
                   {specImgSrcs.length >= 2 ? (
                     <div className="spec-img-grid">
@@ -2532,7 +2731,7 @@ export const ReferenceImages: React.FC<ReferenceImagesProps> = ({ proposalPages,
       {/* pdf-top-spacer must be a tracked block so the engine removes it from continuation pages */}
       <div className="pdf-top-spacer" data-pdf-block="atomic" />
 
-      {!noSpec && (hasSpecContent || specImageUrl.length > 0) && (
+      {!noSpec && (hasSpecContent || specImgSrcs.length > 0) && (
         hasMetroStyleTables ? (
           <>
             {/* Heading travels with the first coach group — prevents orphan heading at page bottom */}
@@ -2548,7 +2747,7 @@ export const ReferenceImages: React.FC<ReferenceImagesProps> = ({ proposalPages,
               </div>
             ))}
             {/* Show spec image when spec has no meaningful dimensional content */}
-            {specImageUrl.length > 0 && (
+            {specImgSrcs.length > 0 && (
               <div className="smart-section" data-pdf-block="atomic">
                 <div className="ref-img-container spec-img-container">
                   {specImgSrcs.length >= 2 ? (
@@ -2574,7 +2773,7 @@ export const ReferenceImages: React.FC<ReferenceImagesProps> = ({ proposalPages,
               </div>
             )}
             {/* Show spec image when available */}
-            {specImageUrl.length > 0 && (
+            {specImgSrcs.length > 0 && (
               <div className="ref-img-container spec-img-container">
                 {specImgSrcs.length >= 2 ? (
                   <div className="spec-img-grid">
@@ -2597,7 +2796,7 @@ export const ReferenceImages: React.FC<ReferenceImagesProps> = ({ proposalPages,
           {idx === 0 && (
             <h3 className="smart-section-heading">
               <span className="smart-heading-bar" />
-              3. Reference Images
+              3. Reference Image(s)
             </h3>
           )}
           <div className="ref-img-container ref-img-single-center">
@@ -2643,6 +2842,17 @@ export const ReferenceImages: React.FC<ReferenceImagesProps> = ({ proposalPages,
           </div>
         </div>
       )}
+      {!finalReview && (
+        <div style={{ padding: '16px', backgroundColor: '#e3f2fd', border: '1px solid #2196f3', borderRadius: '4px', margin: '20px 0' }}>
+          <h4 style={{ margin: '0 0 10px 0', color: '#1565c0' }}>ℹ️ Review Card Status</h4>
+          <p style={{ margin: '5px 0', fontSize: '14px' }}><strong>Status:</strong> No review found in PDF</p>
+          <p style={{ margin: '5px 0', fontSize: '14px' }}><strong>Pages Scanned:</strong> {resolvedPages?.length || 0}</p>
+          <p style={{ margin: '5px 0', fontSize: '14px' }}><strong>Review Pages Found:</strong> {reviewPages.length}</p>
+          <p style={{ margin: '5px 0', fontSize: '12px', color: '#666', marginTop: '10px' }}>
+            The system scanned all pages in your PDF for review content. Check the browser console (F12) for detailed scanning logs.
+          </p>
+        </div>
+      )}
 
       {terms.length > 0 && (
         <div className="smart-section" data-pdf-block="atomic">
@@ -2662,11 +2872,11 @@ export const ReferenceImages: React.FC<ReferenceImagesProps> = ({ proposalPages,
 
       {/* Fallback: show full-page images when text extraction yields nothing.
           Each fallback image is its own block to prevent splitting. */}
-      {!hasSpecContent && !customerReview && filteredPages.length > 0 && (
+      {/* {!hasSpecContent && !customerReview && filteredPages.length > 0 && (
         <div className="smart-section" data-pdf-block="atomic">
           <h3 className="smart-section-heading">
             <span className="smart-heading-bar" />
-            3. Reference Images from Proposal
+            3. Reference Image(s) from Proposal
           </h3>
           {filteredPages.map(page => (
             <div key={page.pageNumber} data-pdf-block="atomic">
@@ -2674,7 +2884,7 @@ export const ReferenceImages: React.FC<ReferenceImagesProps> = ({ proposalPages,
             </div>
           ))}
         </div>
-      )}
+      )} */}
     </div>
   );
 };

@@ -19,6 +19,7 @@
 
 import { useEffect } from 'react';
 import { useAppStore } from '../store';
+import { trackTokenUsage } from '../services/tokenMonitorService';
 
 // ── Shared types ─────────────────────────────────────────────────────────────
 export interface ServiceQuantity { min: number; max: number | null; }
@@ -625,8 +626,24 @@ IMPORTANT FOR THIS RUN:
 Rate card content:
 ${proposal.textContent.slice(0, 50000)}`;
 
+          const startTime = performance.now();
           const result = await model.generateContent(prompt);
           const raw = result.response.text().trim();
+          const processingTimeMs = performance.now() - startTime;
+
+          // Track token usage for service extraction
+          const usageMetadata = result.response.usageMetadata;
+          trackTokenUsage({
+            operationType: 'service_extraction',
+            operationDetails: `Service registry build for ${cityKey}`,
+            inputTokens: usageMetadata?.promptTokenCount || 0,
+            outputTokens: usageMetadata?.candidatesTokenCount || 0,
+            processingTimeMs,
+            contextSize: prompt.length,
+            responseSize: raw.length,
+            pdfFileName: proposal.fileName
+          });
+
           console.log(`🤖 [Registry] "${cityKey}" raw Gemini response (${raw.length} chars):\n${raw.slice(0, 2000)}${raw.length > 2000 ? '\n…(truncated)' : ''}`);
           const jsonStr = raw.replace(/^```(?:json)?\s*/i, '').replace(/\s*```$/i, '').trim();
           const parsed = JSON.parse(jsonStr);

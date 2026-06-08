@@ -1,12 +1,22 @@
 import * as pdfjsLib from 'pdfjs-dist';
 import { GoogleGenerativeAI } from '@google/generative-ai';
+import { trackTokenUsage } from '../services/tokenMonitorService';
+
+// ═══════════════════════════════════════════════════════════════════════════
+// 🧪 IMAGE EXTRACTION MODE TOGGLE
+// ═══════════════════════════════════════════════════════════════════════════
+const USE_GEMINI_VISION_ONLY = false;  // Set to true for token cost testing
+// false = Native PDF.js extraction first (0 tokens), Gemini Vision fallback
+// true  = Gemini Vision API only (enables full token cost comparison)
+// ═══════════════════════════════════════════════════════════════════════════
 
 // Configure PDF.js worker - Use unpkg CDN as fallback with proper configuration
 // Try multiple CDN sources for better reliability
 const workerSrc = `https://unpkg.com/pdfjs-dist@${pdfjsLib.version}/build/pdf.worker.min.mjs`;
 pdfjsLib.GlobalWorkerOptions.workerSrc = workerSrc;
 
-console.log('PDF.js worker configured:', workerSrc);
+const mode = USE_GEMINI_VISION_ONLY ? 'Gemini Vision ONLY (testing)' : 'Native + Gemini fallback';
+console.log(`📦 PDF.js worker configured - Mode: ${mode}`);
 
 export interface ExtractedPage {
   pageNumber: number;
@@ -461,7 +471,8 @@ async function extractNativeImages(
 }
 // ── End Native Image Extraction ───────────────────────────────────────────────
 
-async function detectImageRegions(imageDataUrl: string, pageNumber: number): Promise<ImageBoundingBox[]> {
+async function detectImageRegions(imageDataUrl: string, pageNumber: number, pdfFileName?: string): Promise<ImageBoundingBox[]> {
+  const startTime = performance.now();
   try {
     const apiKey = import.meta.env.VITE_GEMINI_API_KEY;
     if (!apiKey || apiKey.trim() === '') return [];
@@ -504,6 +515,20 @@ If no photos or mockup images are found, return exactly: []`;
 
     const response = await result.response;
     const text = response.text().trim();
+    const processingTimeMs = performance.now() - startTime;
+
+    // Track token usage for image detection
+    const usageMetadata = response.usageMetadata;
+    trackTokenUsage({
+      operationType: 'image_detection',
+      operationDetails: `Image detection on page ${pageNumber}`,
+      inputTokens: usageMetadata?.promptTokenCount || 0,
+      outputTokens: usageMetadata?.candidatesTokenCount || 0,
+      processingTimeMs,
+      contextSize: prompt.length,
+      responseSize: text.length,
+      pdfFileName
+    });
 
     console.log(`📦 Gemini Vision response for page ${pageNumber}:`, text.substring(0, 200));
 
@@ -728,8 +753,8 @@ function cropImageRegions(imageDataUrl: string, boxes: ImageBoundingBox[]): Prom
  * Called lazily at render time when upload-time cropping was skipped or returned empty.
  * Does NOT affect the main extractPDFContent upload flow.
  */
-export async function cropReferencePageImage(imageDataUrl: string, pageNumber: number): Promise<string[]> {
-  const boxes = await detectImageRegions(imageDataUrl, pageNumber);
+export async function cropReferencePageImage(imageDataUrl: string, pageNumber: number, pdfFileName?: string): Promise<string[]> {
+  const boxes = await detectImageRegions(imageDataUrl, pageNumber, pdfFileName);
   if (boxes.length === 0) return [];
   return cropImageRegions(imageDataUrl, boxes);
 }
@@ -937,6 +962,34 @@ export function cropPageFromPercent(imageDataUrl: string, fromTopPercent: number
   });
 }
 
+/**
+ * Crop a vertical slice from a page between two percentage points.
+ * E.g. cropPageSlice(url, 0.25, 0.60) returns the middle section from 25% to 60% of page height.
+ * Used for shared spec+ref pages where spec diagrams sit in the middle between header and ref photo.
+ */
+export function cropPageSlice(imageDataUrl: string, fromPercent: number, toPercent: number): Promise<string> {
+  return new Promise((resolve) => {
+    const img = new Image();
+    img.onload = () => {
+      const w = img.naturalWidth;
+      const h = img.naturalHeight;
+      const sy = Math.round(h * fromPercent);
+      const ey = Math.round(h * toPercent);
+      const newH = ey - sy;
+      if (newH < 50) { resolve(imageDataUrl); return; }
+      const canvas = document.createElement('canvas');
+      canvas.width = w;
+      canvas.height = newH;
+      const ctx = canvas.getContext('2d');
+      if (!ctx) { resolve(imageDataUrl); return; }
+      ctx.drawImage(img, 0, sy, w, newH, 0, 0, w, newH);
+      resolve(canvas.toDataURL('image/jpeg', 0.85));
+    };
+    img.onerror = () => resolve(imageDataUrl);
+    img.src = imageDataUrl;
+  });
+}
+
 // --- End Auto-Crop Helpers ---
 
 // --- Customer Review OCR via Gemini Vision ---
@@ -952,6 +1005,7 @@ export interface GeminiReviewData {
  * Only called when pdfjs text extraction could not find reviewer name / review body.
  */
 export async function extractReviewViaGemini(imageDataUrl: string): Promise<GeminiReviewData | null> {
+  const startTime = performance.now();
   try {
     const apiKey = import.meta.env.VITE_GEMINI_API_KEY;
     if (!apiKey || apiKey.trim() === '') return null;
@@ -980,6 +1034,19 @@ If you cannot find any review content, return exactly: null`;
 
     const response = await result.response;
     const text = response.text().trim();
+    const processingTimeMs = performance.now() - startTime;
+
+    // Track token usage for review OCR
+    const usageMetadata = response.usageMetadata;
+    trackTokenUsage({
+      operationType: 'review_ocr',
+      operationDetails: 'Customer review OCR via Gemini Vision',
+      inputTokens: usageMetadata?.promptTokenCount || 0,
+      outputTokens: usageMetadata?.candidatesTokenCount || 0,
+      processingTimeMs,
+      contextSize: prompt.length,
+      responseSize: text.length
+    });
 
     console.log('🔍 Gemini review OCR response:', text.substring(0, 300));
 
@@ -1123,37 +1190,64 @@ export const extractPDFContent = async (file: File, maxImagePages?: number): Pro
         await pdfPage.render({ canvasContext: ctx, viewport }).promise;
         const imageDataUrl = canvas.toDataURL('image/jpeg', 0.92);
 
-        // ── Native image extraction (Option A) ───────────────────────────────
-        // Extract images physically embedded in the PDF binary using PDF.js
-        // operator list + object cache. No Gemini API call needed.
+        // ── Image extraction (mode controlled by USE_GEMINI_VISION_ONLY flag) ──
         let croppedImages: string[] | undefined;
-        try {
-          const nativeImgs = await extractNativeImages(pdfPage, canvas, pageNumber, templateObjIds);
-          if (nativeImgs.length > 0) {
-            croppedImages = nativeImgs;
-            nativeSuccessCount++;
-            console.log(`✅ Page ${pageNumber}/${pageCount}: ${nativeImgs.length} native image(s) extracted`);
-          } else {
-            console.log(`○  Page ${pageNumber}/${pageCount}: no embedded images found`);
-          }
-        } catch (nativeErr) {
-          console.warn(`⚠️ Page ${pageNumber}: native extraction error, falling back to Gemini:`, nativeErr);
-          // ── Fallback: Gemini Vision (only fires if native extraction threw) ──
-          if (shouldAttemptCropping(text)) {
-            try {
-              const boxes = await detectImageRegions(imageDataUrl, pageNumber);
-              if (boxes.length > 0) {
-                const cropped = await cropImageRegions(imageDataUrl, boxes);
-                if (cropped.length > 0) {
-                  croppedImages = cropped;
-                  console.log(`✅ Page ${pageNumber}: Gemini fallback got ${cropped.length} image(s)`);
-                }
-              }
-            } catch (geminiErr) {
-              console.warn(`⚠️ Page ${pageNumber}: Gemini fallback also failed:`, geminiErr);
+        
+        console.log(`\n🔍 [IMAGE-DEBUG] Page ${pageNumber}/${pageCount} ════════════════════════`);
+        console.log(`   Mode: ${USE_GEMINI_VISION_ONLY ? 'GEMINI ONLY (testing)' : 'Native + Gemini fallback'}`);
+        console.log(`   shouldAttemptCropping: ${shouldAttemptCropping(text)}`);
+        console.log(`   Page text preview: "${text.substring(0, 100).replace(/\n/g, ' ')}..."`);
+        
+        // Native extraction (skip if USE_GEMINI_VISION_ONLY = true)
+        if (!USE_GEMINI_VISION_ONLY) {
+          console.log(`   🔧 [NATIVE] Starting native PDF.js extraction...`);
+          try {
+            const nativeImgs = await extractNativeImages(pdfPage, canvas, pageNumber, templateObjIds);
+            if (nativeImgs.length > 0) {
+              croppedImages = nativeImgs;
+              nativeSuccessCount++;
+              console.log(`   ✅ [NATIVE] SUCCESS: ${nativeImgs.length} native image(s) extracted`);
+              console.log(`   ⏭️  [GEMINI] SKIPPED (native extraction succeeded)`);
+            } else {
+              console.log(`   ○  [NATIVE] EMPTY: no embedded images found`);
+              console.log(`   ⏩ [GEMINI] Will attempt fallback if shouldAttemptCropping=true`);
             }
+          } catch (nativeErr) {
+            console.log(`   ⚠️ [NATIVE] ERROR:`, nativeErr);
+            console.warn(`   ⏩ [GEMINI] Will attempt fallback due to native error`);
           }
+        } else {
+          console.log(`   ⏭️  [NATIVE] SKIPPED (USE_GEMINI_VISION_ONLY = true)`);
         }
+        
+        // Gemini Vision API (fallback OR primary based on flag)
+        if (!croppedImages && shouldAttemptCropping(text)) {
+          const reason = USE_GEMINI_VISION_ONLY ? 'PRIMARY (testing mode)' : 'FALLBACK (native returned empty)';
+          console.log(`   🔄 [GEMINI] Starting Gemini Vision API - ${reason}`);
+          try {
+            const boxes = await detectImageRegions(imageDataUrl, pageNumber, file.name);
+            console.log(`   📦 [GEMINI] Detected ${boxes.length} bounding box(es)`);
+            if (boxes.length > 0) {
+              const cropped = await cropImageRegions(imageDataUrl, boxes);
+              console.log(`   ✂️  [GEMINI] Cropped ${cropped.length} image(s) from boxes`);
+              if (cropped.length > 0) {
+                croppedImages = cropped;
+                console.log(`   ✅ [GEMINI] SUCCESS: ${cropped.length} image(s) extracted`);
+              } else {
+                console.log(`   ○  [GEMINI] EMPTY: cropping returned no images`);
+              }
+            } else {
+              console.log(`   ○  [GEMINI] EMPTY: no bounding boxes detected`);
+            }
+          } catch (geminiErr) {
+            console.log(`   ⚠️ [GEMINI] ERROR:`, geminiErr);
+          }
+        } else if (!croppedImages) {
+          console.log(`   ⏭️  [GEMINI] SKIPPED (shouldAttemptCropping=false)`);
+        }
+        
+        console.log(`   📊 [RESULT] Page ${pageNumber}: ${croppedImages?.length || 0} image(s) total`);
+        console.log(`════════════════════════════════════════════════════════\n`);
 
         pageImages.push({ pageNumber, text, imageDataUrl, croppedImages });
         console.log(`Page ${pageNumber}/${pageCount} rendered`);
