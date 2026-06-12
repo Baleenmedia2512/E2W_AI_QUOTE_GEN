@@ -248,19 +248,32 @@ export const useAppStore = create<AppState>((set) => ({
   
   loadRecentProposals: async () => {
     try {
+      console.log('🔍 DEBUG [loadRecentProposals]: Starting to load proposals');
+      
       // Check if cloud storage is available first
       const state = useAppStore.getState();
+      console.log('   Cloud storage enabled:', state.cloudStorageEnabled);
+      
       let cloudProposals: StoredProposal[] = [];
       let useCloudOnly = false;
       
       if (state.cloudStorageEnabled) {
         try {
+          console.log('   ☁️ Attempting to load from Supabase `proposals` table...');
           const rawCloudProposals = await loadAllProposalsFromCloud();
           cloudProposals = rawCloudProposals.map(cloudProposalToStored);
-          console.log(`☁️ Loaded ${cloudProposals.length} cloud proposals from Supabase`);
+          console.log(`   ✅ Loaded ${cloudProposals.length} cloud proposals from Supabase`);
+          
+          if (cloudProposals.length > 0) {
+            console.log('   📋 Cloud proposal filenames:');
+            cloudProposals.forEach((p, idx) => {
+              console.log(`      ${idx + 1}. "${p.fileName}" (${p.pageCount} pages, uploaded ${p.uploadedAt.toLocaleDateString()})`);
+            });
+          }
+          
           useCloudOnly = true; // Successfully loaded from cloud, use cloud only
         } catch (error) {
-          console.warn('⚠️ Failed to load cloud proposals, falling back to local:', error);
+          console.warn('   ⚠️ Failed to load cloud proposals, falling back to local:', error);
           useCloudOnly = false;
         }
       }
@@ -270,18 +283,30 @@ export const useAppStore = create<AppState>((set) => ({
       if (useCloudOnly) {
         // Use ONLY cloud proposals when cloud is available
         finalProposals = cloudProposals.sort((a, b) => b.uploadedAt.getTime() - a.uploadedAt.getTime());
-        console.log(`📚 Showing ${finalProposals.length} cloud proposals only`);
+        console.log(`   📚 Using ${finalProposals.length} cloud proposals only (local proposals ignored)`);
       } else {
         // Fall back to local proposals if cloud is unavailable
+        console.log('   💾 Loading from local IndexedDB...');
         const localProposals = await loadProposalsFromDB();
-        console.log(`💾 Loaded ${localProposals.length} local proposals from IndexedDB`);
+        console.log(`   ✅ Loaded ${localProposals.length} local proposals from IndexedDB`);
+        
+        if (localProposals.length > 0) {
+          console.log('   📋 Local proposal filenames:');
+          localProposals.forEach((p, idx) => {
+            console.log(`      ${idx + 1}. "${p.fileName}" (${p.pageCount} pages)`);
+          });
+        }
+        
         finalProposals = localProposals.sort((a, b) => b.uploadedAt.getTime() - a.uploadedAt.getTime());
-        console.log(`📚 Showing ${finalProposals.length} local proposals (cloud unavailable)`);
+        console.log(`   📚 Using ${finalProposals.length} local proposals (cloud unavailable)`);
       }
       
+      console.log('   ✅ Setting recentProposals in store');
       set({ recentProposals: finalProposals });
+      
+      console.log('🏁 DEBUG [loadRecentProposals]: Complete - stored', finalProposals.length, 'proposals');
     } catch (error) {
-      console.error('Failed to load recent proposals:', error);
+      console.error('❌ DEBUG [loadRecentProposals]: Failed to load recent proposals:', error);
       set({ recentProposals: [] });
     }
   },
@@ -577,32 +602,59 @@ export const useAppStore = create<AppState>((set) => ({
 
   restoreActiveProposals: async () => {
     try {
+      console.log('🔄 DEBUG [restoreActiveProposals]: Starting restore process');
+      
       const savedIds = loadActiveProposalIds();
-      if (savedIds.length === 0) return;
+      console.log('   Saved proposal IDs from localStorage:', savedIds);
+      
+      if (savedIds.length === 0) {
+        console.log('   ℹ️ No saved proposal IDs - nothing to restore');
+        return;
+      }
 
-      console.log(`🔄 Restoring ${savedIds.length} active proposals from storage...`);
+      console.log(`   🔍 Attempting to restore ${savedIds.length} active proposals from IndexedDB...`);
       const state = useAppStore.getState();
+      console.log('   Current activeProposals in memory:', state.activeProposals.length);
+      console.log('   Current recentProposals in memory:', state.recentProposals.length);
+      
       const restoredProposals: ActiveProposal[] = [];
 
       for (const id of savedIds) {
+        console.log(`   \n   📦 Processing proposal ID: ${id.substring(0, 8)}...`);
+        
         // Skip if already in memory
-        if (state.activeProposals.find(p => p.id === id)) continue;
+        if (state.activeProposals.find(p => p.id === id)) {
+          console.log('      ⏭️ Already in memory, skipping');
+          continue;
+        }
 
         // Load pages from IndexedDB by ID
+        console.log('      💾 Loading page images from IndexedDB...');
         const pages = await loadPageImagesById(id);
+        console.log(`      📄 Loaded ${pages.length} page images from IndexedDB`);
+        
         if (pages.length === 0) {
-          console.warn(`⚠️ No cached pages for proposal ${id}, skipping restore`);
+          console.warn(`      ⚠️ No cached pages for proposal ${id}, skipping restore`);
           continue;
+        }
+        
+        // Debug: Show sample page data
+        if (pages.length > 0) {
+          console.log(`      🖼️ Sample page: Page Number=${pages[0].pageNumber}, Source="${pages[0].sourceName || 'Unknown'}"`);
         }
 
         // Get metadata: first try recentProposals, then fall back to saved meta
+        console.log('      🔍 Looking for metadata...');
         const recentMeta = useAppStore.getState().recentProposals.find(p => p.id === id);
         const savedMeta = loadActiveProposalMeta().find(m => m.id === id);
         const meta = recentMeta || savedMeta;
+        
         if (!meta) {
-          console.warn(`⚠️ No metadata for proposal ${id}, skipping restore`);
+          console.warn(`      ⚠️ No metadata for proposal ${id}, skipping restore`);
           continue;
         }
+        
+        console.log(`      ✅ Found metadata: "${meta.fileName}" (${meta.pageCount} pages)`);
 
         restoredProposals.push({
           id: meta.id,
@@ -613,20 +665,71 @@ export const useAppStore = create<AppState>((set) => ({
           fileUrl: meta.fileUrl || '',
           pageImages: pages,
         });
-        console.log(`✅ Restored: ${meta.fileName} (${pages.length} pages)`);
+        console.log(`      ✅ Restored: ${meta.fileName} (${pages.length} pages)`);
       }
 
+      console.log(`   \n   📊 Restore summary: ${restoredProposals.length} proposals successfully restored`);
+      
       if (restoredProposals.length > 0) {
+        console.log('   📋 Restored proposal list:');
+        restoredProposals.forEach((p, idx) => {
+          console.log(`      ${idx + 1}. "${p.fileName}" - ${p.pageImages?.length || 0} page images`);
+        });
+        
         set(state => ({
           activeProposals: [
             ...state.activeProposals,
             ...restoredProposals.filter(r => !state.activeProposals.find(p => p.id === r.id)),
           ],
         }));
-        console.log(`📦 Restored ${restoredProposals.length} active proposals`);
+        
+        const finalCount = useAppStore.getState().activeProposals.length;
+        console.log(`   ✅ Updated store: now have ${finalCount} total active proposals`);
+        console.log(`🏁 DEBUG [restoreActiveProposals]: Complete`);
+      } else {
+        console.log('   ⚠️ No proposals were restored (all skipped or failed)');
       }
     } catch (error) {
       console.warn('⚠️ Failed to restore active proposals:', error);
+    }
+  },
+
+  // ── Cloud Service Pages (PRIMARY DATA SOURCE from proposal_chunks) ──
+  cloudServicePages: [],
+
+  loadCloudServices: async () => {
+    try {
+      console.log('☁️ DEBUG [loadCloudServices]: Loading from proposal_chunks table...');
+      
+      const { loadAllServicesFromCloud, transformServicesToPages } = await import('../services/supabaseProposalService');
+      
+      // Load services from proposal_chunks
+      const services = await loadAllServicesFromCloud();
+      console.log(`   ✅ Loaded ${services.length} services from cloud`);
+      
+      // Transform to ExtractedPage format
+      const pages = transformServicesToPages(services);
+      console.log(`   📄 Transformed to ${pages.length} page objects`);
+      
+      // Show sample pages for debugging
+      if (pages.length > 0) {
+        console.log('   📋 Sample cloud pages:');
+        pages.slice(0, 3).forEach((page, idx) => {
+          console.log(`      ${idx + 1}. "${page.serviceName}" - ${page.city} - ${page.imageUrl ? 'Has image' : 'No image'}`);
+        });
+      } else {
+        console.log('   ⚠️ No pages generated from services (check if metadata.images is empty)');
+      }
+      
+      // Store in state
+      set({ cloudServicePages: pages });
+      console.log('🏁 DEBUG [loadCloudServices]: Complete');
+      
+      return pages;
+    } catch (error) {
+      console.error('❌ DEBUG [loadCloudServices]: Failed to load cloud services:', error);
+      set({ cloudServicePages: [] });
+      return [];
     }
   },
 }));

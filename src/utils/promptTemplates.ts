@@ -22,6 +22,9 @@ Analyze the conversation and determine if the user wants to generate a quote. If
 }
 
 IMPORTANT: When prices are per-month and user requests multiple months, include "duration" field with the number of months AND "durationUnit": "months". When prices are per-day and user requests multiple days, include "duration" field with the number of days AND "durationUnit": "days". Total = quantity × unitPrice × duration.
+
+🔴 CRITICAL "30 DAYS" CAMPAIGN PRICING: When a proposal shows "₹X for 30 days" or "per month (30 days)", treat this as a MONTHLY campaign price where 1 month = 30 days base unit. Set duration = 1 for the base 30-day period. For 60-day campaigns, set duration = 2 (2 months). For 90 days, duration = 3, etc. The user can adjust the duration multiplier in the preview if needed.
+
 If the proposal mentions a minimum quantity for a service (e.g., "Min. Quantity: 10 buses"), include it as "minimumQuantity" in the line item JSON. If no minimum is mentioned, omit the field.
 
 If the user is asking a general question, provide a helpful answer without generating a quote structure.`;
@@ -1017,13 +1020,18 @@ RULES:
 - CRITICAL DAILY RATE CONVERSION RULE:
   * IMPORTANT: Some campaigns (like Mobile Van LED) show "per day" rates with a "Total Price" column that represents the monthly cost (daily rate × 30 days OR daily rate × days in month).
   * DETECTION: If the proposal says "per day month" or "Price: ₹X per day month" with a separate "Total Price: ₹Y per van month" or "Total Price: ₹Y", this is a DAILY RATE campaign.
+  * 🔴 CRITICAL: "30 days" campaign pricing should be treated as 1 MONTH. When the proposal shows "₹X for 30 days" or "Min. Quantity: 1 Van" with "Unit Price: ₹3,25,500 per month", this is a monthly campaign price where 30 days = 1 month.
   * TWO BRANCHES based on what the USER requests:
 
-  BRANCH A — User requests in MONTHS (e.g., "5 mobile van led 3 months"):
-    → Use the "Total Price" (monthly total) as unitPrice. Duration = number of months.
+  BRANCH A — User requests in MONTHS (e.g., "5 mobile van led 3 months") OR proposal shows "30 days" pricing:
+    → Use the "Total Price" (monthly total / 30-day campaign price) as unitPrice. Duration = number of months.
     → Example: Proposal shows daily rate ₹10,850 and Total Price ₹3,25,500/month. User asks 3 months.
       Output: {"unitPrice": 325500, "duration": 3, "durationUnit": "months"}
       Total = 5 × 3,25,500 × 3 = ₹48,82,500 ✅
+    → Example: Proposal shows "₹3,25,500 for 30 days". User asks default/no duration specified.
+      Output: {"unitPrice": 325500, "duration": 1, "durationUnit": "months"} (treating 30 days as 1 month base unit)
+      Total = 1 × 3,25,500 × 1 = ₹3,25,500 ✅
+    → For 60-day campaigns: duration = 2, Total = 1 × 3,25,500 × 2 = ₹6,51,000 ✅
     → DO NOT use daily rate (10,850) with months — that mixes units and gives wrong result ❌
 
   BRANCH B — User requests in DAYS (e.g., "1 mobile van led 15 days"):
@@ -1038,6 +1046,7 @@ RULES:
     User says "X months" + proposal has daily rate → use monthly total as unitPrice × X months
     User says "X days"  + proposal has daily rate → use daily rate as unitPrice × X days
     User says "X days"  + proposal has ONLY monthly rate → derive daily = monthly ÷ 30, use × X days
+    Proposal shows "30 days" campaign price → treat as monthly rate, duration = 1 (30 days = 1 month base unit)
 - CRITICAL DURATION/MONTHS RULES:
   * When the proposal prices are "per month" (e.g., "per frame month", "per screen month", "per bus per month") and the user requests a multi-month campaign (e.g., "3 months", "6 months"), you MUST include the "duration" field with the number of months AND "durationUnit": "months".
   * When the proposal prices are "per day" (e.g., "per day", "per van day", "per day rate") and the user requests a number of days (e.g., "12 days", "7 days"), you MUST include the "duration" field with the number of days AND "durationUnit": "days".

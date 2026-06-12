@@ -65,6 +65,16 @@ export interface Message {
     services: Array<{ name: string; minQty: number }>;
   }>;
 
+  // RAG SEARCH RESULT — shown when user searches for services in RAG database
+  isRagSearchResult?: boolean;
+  ragResults?: Array<{
+    service_name: string;
+    service_id: string;
+    content: string;
+    similarity: number;
+    metadata?: any;
+  }>;
+
   // DEPRECATED (kept for backward compatibility)
   isServiceNotFound?: boolean;
   availableServices?: ServiceSuggestion[];

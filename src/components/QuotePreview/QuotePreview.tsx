@@ -513,21 +513,20 @@ const QuotePreview: React.FC<QuotePreviewProps> = ({ quote, onUpdate, onSave }) 
                               />
                             </NumberInput>
                           </Box>
-                          {lineItem.duration && lineItem.duration > 1 && (
-                            <Box flex={1}>
-                              <Text fontSize="11px" fontWeight="600" color="gray.500" textTransform="uppercase" letterSpacing="0.5px" mb={1}>
-                                Months
-                              </Text>
-                              <NumberInput
-                                value={lineItem.duration}
-                                onChange={(_, value) =>
-                                  updateLineItem(itemIndex, lineItemIndex, 'duration' as keyof LineItem, value)
-                                }
-                                min={1}
-                                size="sm"
-                              >
-                                <NumberInputField
-                                  textAlign="right"
+                          <Box flex={1}>
+                            <Text fontSize="11px" fontWeight="600" color="gray.500" textTransform="uppercase" letterSpacing="0.5px" mb={1} title="Campaign duration: 1 = 30 days, 2 = 60 days. Multiply rate by duration.">
+                              Duration
+                            </Text>
+                            <NumberInput
+                              value={lineItem.duration || 1}
+                              onChange={(_, value) =>
+                                updateLineItem(itemIndex, lineItemIndex, 'duration' as keyof LineItem, value)
+                              }
+                              min={1}
+                              size="sm"
+                            >
+                              <NumberInputField
+                                textAlign="right"
                                   bg="white"
                                   borderColor="gray.200"
                                   borderRadius="6px"
@@ -538,7 +537,7 @@ const QuotePreview: React.FC<QuotePreviewProps> = ({ quote, onUpdate, onSave }) 
                                 />
                               </NumberInput>
                             </Box>
-                          )}
+
                         </Flex>
 
                         {/* Remark */}
@@ -594,11 +593,9 @@ const QuotePreview: React.FC<QuotePreviewProps> = ({ quote, onUpdate, onSave }) 
                           <Th color="gray.600" fontWeight="600" fontSize="xs" textTransform="uppercase" isNumeric width="15%">
                             Rate
                           </Th>
-                          {getLineItemsForDisplay(item).some(li => li.duration && li.duration > 1) && (
-                            <Th color="gray.600" fontWeight="600" fontSize="xs" textTransform="uppercase" isNumeric width="12%">
-                              Months
-                            </Th>
-                          )}
+                          <Th color="gray.600" fontWeight="600" fontSize="xs" textTransform="uppercase" isNumeric width="12%" title="Campaign duration: 1 = 30 days, 2 = 60 days, etc.">
+                            Duration
+                          </Th>
                           <Th color="gray.600" fontWeight="600" fontSize="xs" textTransform="uppercase" isNumeric width="18%">
                             Amount
                           </Th>
@@ -681,27 +678,26 @@ const QuotePreview: React.FC<QuotePreviewProps> = ({ quote, onUpdate, onSave }) 
                                 />
                               </NumberInput>
                             </Td>
-                            {getLineItemsForDisplay(item).some(li => li.duration && li.duration > 1) && (
-                              <Td isNumeric>
-                                <NumberInput
-                                  value={lineItem.duration || 1}
-                                  onChange={(_, value) =>
-                                    updateLineItem(itemIndex, lineItemIndex, 'duration' as keyof LineItem, value)
-                                  }
-                                  min={1}
-                                  size="sm"
-                                >
-                                  <NumberInputField
-                                    textAlign="right"
-                                    inputMode="numeric"
-                                    pattern="[0-9]*"
-                                    onFocus={(e) => { const t = e.target; setTimeout(() => t.select(), 300); }}
-                                    _focus={{ bg: 'white', border: '1px solid', borderColor: '#750926' }}
-                                    px={2}
+                            <Td isNumeric>
+                              <NumberInput
+                                value={lineItem.duration || 1}
+                                onChange={(_, value) =>
+                                  updateLineItem(itemIndex, lineItemIndex, 'duration' as keyof LineItem, value)
+                                }
+                                min={1}
+                                size="sm"
+                              >
+                                <NumberInputField
+                                  textAlign="right"
+                                  inputMode="numeric"
+                                  pattern="[0-9]*"
+                                  onFocus={(e) => { const t = e.target; setTimeout(() => t.select(), 300); }}
+                                  _focus={{ bg: 'white', border: '1px solid', borderColor: '#750926' }}
+                                  px={2}
+                                  title="For 60-day campaigns, set to 2 months"
                                   />
                                 </NumberInput>
                               </Td>
-                            )}
                             <Td isNumeric fontWeight="500">
                               {formatCurrency(calculateLineItemTotal(lineItem))}
                             </Td>

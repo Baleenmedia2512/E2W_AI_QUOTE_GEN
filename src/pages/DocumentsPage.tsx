@@ -13,6 +13,7 @@ import { useHistory } from 'react-router-dom';
 import ProposalUpload from '../components/ProposalUpload/ProposalUpload';
 import MultiProposalViewer from '../components/MultiProposalViewer/MultiProposalViewer';
 import { UserProfile } from '../components/UserProfile';
+import { PDFUploader } from '../components/PDFUploader';
 
 const DocumentsPage: React.FC = () => {
   const history = useHistory();
@@ -222,6 +223,16 @@ const DocumentsPage: React.FC = () => {
 
           {/* Upload Proposal */}
           <ProposalUpload />
+          
+          {/* RAG PDF Upload - Extract & Embed Services */}
+          <Box
+            bg="white"
+            borderRadius="16px"
+            overflow="hidden"
+            boxShadow="0 2px 8px rgba(0, 0, 0, 0.08)"
+          >
+            <PDFUploader />
+          </Box>
         </Box>
 
         {/* RIGHT PANEL - PDF Viewer */}

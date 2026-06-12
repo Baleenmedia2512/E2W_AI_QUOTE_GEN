@@ -38,6 +38,7 @@ import {
 } from '../../utils/fileUtils';
 import { findDuplicateProposal } from '../../utils/proposalStorage';
 import { findCloudDuplicate, cloudProposalToStored } from '../../services/supabaseProposalService';
+import { processProposalForRAG, detectCityFromFileName } from '../../services/pdfEmbeddingService';
 
 
 const ProposalUpload: React.FC = () => {
@@ -48,6 +49,9 @@ const ProposalUpload: React.FC = () => {
   const [batchProgress, setBatchProgress] = useState<{ current: number; total: number } | null>(null);
   const [showRecent, setShowRecent] = useState(false);
   const { proposal, setProposal, recentProposals, loadRecentProposals, selectProposal, deleteProposalFromLibrary, activeProposals, addActiveProposal, removeActiveProposal } = useAppStore();
+
+  // 🆕 DEBUG: Verify RAG function is imported
+  console.log('🔍 [COMPONENT-MOUNT] processProposalForRAG imported:', typeof processProposalForRAG);
 
   // Load recent proposals on mount and check cloud storage availability
   
@@ -366,6 +370,37 @@ const ProposalUpload: React.FC = () => {
       
       autoLoadProposal(); // Run async without blocking
 
+      // 🆕 PARALLEL STORAGE: Trigger RAG enhancement immediately (not after delay)
+      // Uploads images to cloud in organized folders (service/type/page.jpg) 
+      // while local storage happens via setProposal above
+      console.log('🔍 [RAG-TRIGGER-CHECK]', {
+        fileType,
+        textContentLength: textContent.length,
+        pageImagesLength: pageImages.length,
+        isPDF: fileType === 'pdf',
+        hasText: textContent.length > 0,
+        hasImages: pageImages.length > 0,
+        willTrigger: fileType === 'pdf' && textContent.length > 0 && pageImages.length > 0
+      });
+      
+      if (fileType === 'pdf' && textContent.length > 0 && pageImages.length > 0) {
+        console.log('✅ [RAG-TRIGGER] Triggering parallel cloud upload for:', file.name);
+        // Generate a temporary ID for the proposal (will be replaced by actual ID later)
+        const tempProposalId = `proposal_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+        
+        enhanceProposalWithRAG({
+          textContent,
+          pageImages,
+          proposalId: tempProposalId,
+          fileName: file.name
+        }).catch(err => {
+          console.warn('⚠️ Cloud upload failed (non-critical):', err);
+          // Don't show error to user - OLD method still works perfectly
+        });
+      } else {
+        console.log('❌ [RAG-TRIGGER] Skipped cloud upload - conditions not met');
+      }
+
       toast({
         title: 'Success',
         description: successMessage,
@@ -385,6 +420,131 @@ const ProposalUpload: React.FC = () => {
       console.error('File processing error:', err);
     } finally {
       setLoading(false);
+    }
+  };
+
+  // 🆕 PARALLEL CLOUD UPLOAD: Process uploaded proposal for semantic search
+  // Runs in parallel with local storage (no waiting)
+  const enhanceProposalWithRAG = async (data: {
+    textContent: string;
+    pageImages: any[];
+    proposalId: string;
+    fileName: string;
+  }) => {
+    console.log('🚀 [RAG-ENHANCE] ===== STARTING PARALLEL CLOUD UPLOAD =====');
+    console.log('    [RAG-ENHANCE] File:', data.fileName);
+    console.log('    [RAG-ENHANCE] Text length:', data.textContent?.length);
+    console.log('    [RAG-ENHANCE] Images count:', data.pageImages?.length);
+    
+    try {
+      // 🌆 CITY DETECTION: Auto-detect from filename or ask user
+      let city = detectCityFromFileName(data.fileName);
+      
+      if (!city) {
+        console.log('⚠️  [CITY-DETECT] No city detected, asking user...');
+        
+        // Dynamically import vscode_askQuestions (only available in VS Code environment)
+        try {
+          // Ask user for city using VS Code input
+          const cityInput = await new Promise<string>((resolve) => {
+            // Show native browser prompt as fallback
+            const userCity = prompt(
+              '🌆 City not detected in filename.\n\nWhich city is this proposal for?\n(e.g., Chennai, Bangalore, Mumbai)',
+              ''
+            );
+            resolve(userCity?.trim().toLowerCase() || '');
+          });
+          
+          if (cityInput && cityInput.length > 0) {
+            // Normalize city name
+            city = cityInput.replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '');
+            console.log(`✅ [CITY-DETECT] User provided city: ${city}`);
+            
+            toast({
+              title: '🌆 City Set',
+              description: `Images will be organized under "${city}" folder`,
+              status: 'info',
+              duration: 2000,
+              isClosable: true,
+            });
+          } else {
+            console.log('⚠️  [CITY-DETECT] No city provided by user, storing in root folder');
+          }
+        } catch (err) {
+          console.warn('⚠️  [CITY-DETECT] Failed to prompt user:', err);
+        }
+      }
+      
+      // Get current user ID from auth store if available
+      console.log('👤 [RAG-ENHANCE] Getting user ID...');
+      let userId: string | undefined;
+      try {
+        const { useAuthStore } = await import('../../store/authStore');
+        const authState = useAuthStore.getState();
+        userId = authState.user?.id;
+        console.log('✅ [RAG-ENHANCE] User ID:', userId || 'anonymous');
+      } catch (authErr) {
+        console.warn('⚠️ [RAG-ENHANCE] Auth not available:', authErr);
+        userId = undefined;
+      }
+      
+      // Process for RAG using already-extracted data
+      console.log('🎯 [RAG-ENHANCE] ===== CALLING processProposalForRAG =====');
+      console.log('    Parameters:', {
+        textContentLength: data.textContent?.length,
+        pageImagesCount: data.pageImages?.length,
+        proposalId: data.proposalId,
+        fileName: data.fileName,
+        userId,
+        city: city || '(none - root folder)'
+      });
+      
+      const result = await processProposalForRAG({
+        textContent: data.textContent,
+        pageImages: data.pageImages || [],
+        proposalId: data.proposalId,
+        fileName: data.fileName,
+        userId: userId,
+        city: city || undefined, // 🌆 Pass city for folder organization
+        onProgress: (progress, message) => {
+          console.log(`  📊 RAG Progress: ${progress}% - ${message}`);
+        }
+      });
+      
+      console.log('✅ [RAG-ENHANCE] processProposalForRAG returned:', result);
+      console.log('🎉 [RAG-ENHANCE] ===== RAG ENHANCEMENT SUCCESS =====');
+      
+      // Show success notification with city info
+      const cityMsg = city ? ` (organized under ${city})` : '';
+      toast({
+        title: '✅ Advanced Search Ready',
+        description: `${data.fileName} is now searchable with AI${cityMsg}`,
+        status: 'success',
+        duration: 3000,
+        isClosable: true,
+        position: 'bottom-right'
+      });
+      
+      console.log('🎉 [RAG-ENHANCE] Toast notification shown, enhancement complete!');
+      
+    } catch (error: any) {
+      console.error('❌ [RAG-ENHANCE] ===== RAG ENHANCEMENT FAILED =====');
+      console.error('    File:', data.fileName);
+      console.error('    Error:', error);
+      console.error('    Error name:', error?.name);
+      console.error('    Error message:', error?.message);
+      console.error('    Error stack (first 5 lines):', error?.stack?.split('\n').slice(0, 5));
+      console.error('    Error cause:', error?.cause);
+      
+      // Show error details in a more structured way
+      console.group('❌ [RAG-ENHANCE] Full Error Details');
+      console.error('Type:', error?.constructor?.name);
+      console.error('Message:', error?.message);
+      console.error('Stack:', error?.stack);
+      console.groupEnd();
+      
+      // Don't show error toast - this is a background enhancement
+      // The OLD method still works perfectly for quote generation
     }
   };
 

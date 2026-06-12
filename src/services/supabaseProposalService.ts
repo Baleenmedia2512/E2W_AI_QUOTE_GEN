@@ -309,3 +309,192 @@ export function cloudProposalToStored(cloud: CloudProposal): StoredProposal {
     uploadedByName: cloud.uploaded_by_name,
   };
 }
+
+/**
+ * Save Gemini OCR review data back to proposal_chunks metadata.
+ * Called once after first OCR — subsequent renders use DB data (no extra API call).
+ */
+export async function saveReviewToCloud(
+  serviceId: string,
+  reviewData: { reviewerName: string; starCount: number; reviewText: string }
+): Promise<void> {
+  try {
+    // Fetch current metadata first
+    const { data, error: fetchErr } = await supabase
+      .from('proposal_chunks')
+      .select('metadata')
+      .eq('service_id', serviceId)
+      .single();
+
+    if (fetchErr || !data) {
+      console.warn(`⚠️ [saveReviewToCloud] Could not fetch service "${serviceId}":`, fetchErr?.message);
+      return;
+    }
+
+    const updatedMetadata = { ...(data.metadata || {}), review: reviewData };
+
+    const { error: updateErr } = await supabase
+      .from('proposal_chunks')
+      .update({ metadata: updatedMetadata })
+      .eq('service_id', serviceId);
+
+    if (updateErr) {
+      console.warn(`⚠️ [saveReviewToCloud] Update failed for "${serviceId}":`, updateErr.message);
+    } else {
+      console.log(`✅ [saveReviewToCloud] Saved review for "${serviceId}": ${reviewData.reviewerName}`);
+    }
+  } catch (err) {
+    console.warn(`⚠️ [saveReviewToCloud] Exception:`, err);
+  }
+}
+
+/**
+ * Load all services from proposal_chunks table (PRIMARY DATA SOURCE)
+ * This is the cloud-first approach for fetching service data with images
+ */
+export async function loadAllServicesFromCloud(): Promise<any[]> {
+  try {
+    console.log('☁️ Querying proposal_chunks table...');
+    
+    const { data, error } = await supabase
+      .from('proposal_chunks')
+      .select('*')
+      .order('created_at', { ascending: false });
+    
+    if (error) {
+      console.error('❌ Error loading services from proposal_chunks:', error);
+      throw error;
+    }
+    
+    console.log(`✅ Loaded ${data?.length || 0} services from proposal_chunks`);
+    return data || [];
+  } catch (error) {
+    console.error('❌ Exception loading services:', error);
+    throw error;
+  }
+}
+
+/**
+ * Transform proposal_chunks data to ExtractedPage format
+ * Converts cloud service records into preview-ready page objects
+ */
+export function transformServicesToPages(services: any[]): any[] {
+  console.log(`🔄 Transforming ${services.length} services to page format...`);
+
+  // Map DB image type enum → exact heading keyword that ReferenceImages component expects.
+  // getRefImagePages()  checks for 'reference image'
+  // REVIEW_HEADING_PATTERN checks for 'customer review feedback'
+  // extractSpecSectionImage checks for 'design specification'
+  const headingMap: Record<string, string> = {
+    'reference':     'REFERENCE IMAGE',
+    'review':        'CUSTOMER REVIEW FEEDBACK FOR OUR SERVICE',
+    'specification': 'DESIGN SPECIFICATION',
+  };
+  
+  const pages: any[] = [];
+  
+  services.forEach((service) => {
+    // metadata.images is Array<{ url, type, pageNumber }>
+    const images: Array<{ url: string; type: string; pageNumber?: number }> = service.metadata?.images || [];
+    const locations = service.metadata?.locations || ['General'];
+    const city = (locations[0] || 'General').toLowerCase();
+
+    if (images.length > 0) {
+      images.forEach((img) => {
+        const imageType = img.type || 'reference';
+        // Prefix text with correct section heading so ReferenceImages keyword checks work.
+        // Format: "<HEADING>\n<SERVICE NAME>\n<DESCRIPTION>"
+        // For review pages: if metadata.review exists (saved after first OCR), use real reviewer
+        // text so extractCustomerReview() gets the right data without any Gemini call.
+        const headingPrefix = headingMap[imageType] || 'REFERENCE IMAGE';
+        let pageText: string;
+        if (imageType === 'review' && service.metadata?.review) {
+          const r = service.metadata.review;
+          // Format matches what extractCustomerReview() expects:
+          // "CUSTOMER REVIEW FEEDBACK FOR OUR SERVICE\n<reviewerName>\n<reviewText>"
+          pageText = `${headingPrefix}\n${r.reviewerName}\n${'★'.repeat(Math.min(5, r.starCount || 5))}\n${r.reviewText}`;
+          console.log(`☁️ [REVIEW-FROM-DB] "${service.service_name}": ${r.reviewerName}`);
+        } else if (imageType === 'specification') {
+          // Spec pages: inject size + material from metadata so extractDesignSpecFields can parse them
+          const m2 = service.metadata || {};
+          const sizeLines = m2.size
+            ? typeof m2.size === 'object'
+              ? Object.entries(m2.size).map(([k, v]) => `${k.replace(/_/g, ' ')}: ${v}`).join('\n')
+              : `Size: ${m2.size}`
+            : '';
+          const materialLine = m2.material ? `Material: ${m2.material}` : '';
+          pageText = [headingPrefix, service.service_name, sizeLines, materialLine]
+            .filter(Boolean).join('\n');
+        } else {
+          pageText = `${headingPrefix}\n${service.service_name}\n${service.content || ''}`;
+        }
+
+        pages.push({
+          pageNumber: img.pageNumber || pages.length + 1,
+          text: pageText,
+          imageDataUrl: img.url,
+          croppedImages: [img.url],
+          croppedImagesWithTypes: [{ dataUrl: img.url, imageType }],
+          imageType,
+          sourceId: service.id,
+          sourceName: service.document_name || 'Cloud Rate Card',
+          serviceName: service.service_name,
+          serviceId: service.service_id,
+          city,
+          metadata: service.metadata,
+        });
+      });
+
+      // Fallback: if no specification-type image exists but metadata has size/material data,
+      // inject a synthetic text-only spec page so the Display Specification section renders.
+      // This covers services like Auto Semi Branding that only have reference + review images.
+      const hasSpecImage = images.some(img => img.type === 'specification');
+      if (!hasSpecImage) {
+        const m = service.metadata || {};
+        const sizeLines = m.size
+          ? typeof m.size === 'object'
+            ? Object.entries(m.size).map(([k, v]) => `${k.replace(/_/g, ' ')}: ${v}`).join('\n')
+            : `Size: ${m.size}`
+          : '';
+        const materialLine = m.material ? `Material: ${m.material}` : '';
+        const specBody = [sizeLines, materialLine].filter(Boolean).join('\n');
+        if (specBody.trim()) {
+          const syntheticText = ['DESIGN SPECIFICATION', service.service_name, specBody].join('\n');
+          pages.push({
+            pageNumber: pages.length + 1,
+            text: syntheticText,
+            imageDataUrl: '',       // no image — text-only spec page
+            croppedImages: [],
+            croppedImagesWithTypes: [],
+            imageType: 'specification',
+            sourceId: service.id,
+            sourceName: service.document_name || 'Cloud Rate Card',
+            serviceName: service.service_name,
+            serviceId: service.service_id,
+            city,
+            metadata: service.metadata,
+          });
+          console.log(`📐 [SPEC-FALLBACK] Created synthetic spec page for "${service.service_name}" (size/material from metadata)`);
+        }
+      }
+    } else {
+      console.warn(`⚠️ Service "${service.service_name}" has no images in metadata`);
+    }
+  });
+  
+  // ── CLOUD DATA SOURCE CONFIRMATION ──────────────────────────────────────
+  const refCount  = pages.filter(p => p.imageType === 'reference').length;
+  const specCount = pages.filter(p => p.imageType === 'specification').length;
+  const revCount  = pages.filter(p => p.imageType === 'review').length;
+  console.log('☁️ ═══════════════════════════════════════════════════');
+  console.log('☁️  DATA SOURCE: CLOUD (Supabase proposal_chunks)');
+  console.log(`☁️  Services loaded : ${services.length}`);
+  console.log(`☁️  Total pages     : ${pages.length}`);
+  console.log(`☁️    Reference     : ${refCount}`);
+  console.log(`☁️    Specification : ${specCount}`);
+  console.log(`☁️    Review        : ${revCount}`);
+  console.log('☁️  All images are Supabase URLs — no IndexedDB used');
+  console.log('☁️ ═══════════════════════════════════════════════════');
+  
+  return pages;
+}

@@ -30,6 +30,14 @@ import {
   KNOWN_CITY_LIST,
   type ServiceQuantity,
 } from '../../hooks/useCityServiceRegistry';
+import { searchServices } from '../../services/pdfEmbeddingService';
+
+// ═══════════════════════════════════════════════════════════════════════
+// 🔀 DATA SOURCE TOGGLE
+// false = OLD: Full PDF text sent to Gemini (local IndexedDB flow)
+// true  = NEW: DB service chunks sent to Gemini (RAG cloud flow, faster + cheaper)
+// ═══════════════════════════════════════════════════════════════════════
+const USE_CLOUD_DATA = true;
 
 const SUGGESTION_PROMPTS = [
   'Generate quote for 100 auto full branding',
@@ -644,6 +652,48 @@ const ChatInterface: React.FC = () => {
       timestamp: new Date(),
     };
 
+    // ─── RAG SEARCH GATE ──────────────────────────────────────────────────────
+    // If query looks like a simple search (not quote generation), check RAG database first
+    const isQuoteRequest = /\b(generate|create|quote|price|cost|for)\b/i.test(cleanedText)
+      || /\b\d+\b/.test(cleanedText); // Any number = quantity → quote intent, not search
+    const isSimpleSearch = !isQuoteRequest && !isQtyOverride && !isCheckboxConfirmedFlag;
+    
+    if (isSimpleSearch && cleanedText.split(' ').length >= 2) {
+      try {
+        console.log('🔍 Searching RAG database for:', cleanedText);
+        const ragResults = await searchServices(cleanedText, 5);
+        
+        if (ragResults && ragResults.length > 0) {
+          console.log(`✅ Found ${ragResults.length} RAG results`);
+          
+          // Format results as assistant message
+          let ragContent = `📚 **Found ${ragResults.length} matching services:**\n\n`;
+          ragResults.forEach((result: any, idx: number) => {
+            const similarity = (result.similarity * 100).toFixed(1);
+            ragContent += `**${idx + 1}. ${result.service_name}** (${similarity}% match)\n`;
+            ragContent += `${result.content.substring(0, 200)}...\n\n`;
+            ragContent += `_Click below to generate a quote for this service_\n\n`;
+          });
+          
+          const assistantMsg: Message = {
+            id: (Date.now() + 1).toString(),
+            role: 'assistant',
+            content: ragContent,
+            timestamp: new Date(),
+            isRagSearchResult: true,
+            ragResults: ragResults,
+          };
+          
+          setMessages(prev => [...prev, userMessage, assistantMsg]);
+          return;
+        }
+      } catch (error) {
+        console.warn('RAG search failed, falling back to Gemini:', error);
+        // Continue to normal Gemini flow
+      }
+    }
+    // ──────────────────────────────────────────────────────────────────────────
+
     // ─── CITY-ONLY QUERY GATE ────────────────────────────────────────────────
     // If the user types just a city name (or a few cities) with no service / qty,
     // surface every service available in that city as clickable chips so they can
@@ -1042,6 +1092,69 @@ const ChatInterface: React.FC = () => {
       // Prepare proposal contexts for AI
       let proposalContexts: Array<{fileName: string, content: string}> | undefined;
 
+      if (USE_CLOUD_DATA) {
+        // ── NEW: RAG / DB path — send only matched service chunks (500 tokens vs 50,000) ──
+        try {
+          const { loadAllServicesFromCloud } = await import('../../services/supabaseProposalService');
+          const dbServices = await loadAllServicesFromCloud();
+          if (dbServices && dbServices.length > 0) {
+            // Build compact service context from DB — pricing + terms only (no full PDF text)
+            proposalContexts = dbServices.map((svc: any) => {
+              const m = svc.metadata || {};
+              const pricing = m.pricing || {};
+              const lines = [
+                `SERVICE: ${svc.service_name}`,
+                `CITY: ${(m.locations || []).join(', ')}`,
+                `PRICING STRUCTURE: ${pricing.structure || 'combined'}`,
+              ];
+
+              // Structure-aware pricing — ensures Gemini generates correct rows
+              if (pricing.structure === 'separate') {
+                // Two separate prices: display + production/printing
+                if (pricing.display_price)    lines.push(`DISPLAY PRICE: ₹${pricing.display_price} ${pricing.display_period || 'per month'}`);
+                if (pricing.production_price) lines.push(`PRINTING & FIXING PRICE: ₹${pricing.production_price} ${pricing.production_unit || 'per unit'}`);
+                if (pricing.min_quantity)     lines.push(`MINIMUM: ${pricing.min_quantity}`);
+              } else if (pricing.structure === 'campaign') {
+                // Campaign: unit × quantity
+                if (pricing.unit_price)   lines.push(`UNIT PRICE: ₹${pricing.unit_price} ${pricing.unit || ''}`);
+                if (pricing.min_quantity) lines.push(`MINIMUM QUANTITY: ${pricing.min_quantity}`);
+                if (pricing.total_price)  lines.push(`TOTAL PRICE: ₹${pricing.total_price}`);
+              } else {
+                // Combined / all-inclusive single price
+                const price = pricing.price || pricing.unit_price;
+                if (price) lines.push(`PRICE: ₹${price} ${pricing.period || pricing.display_period || pricing.unit || 'per month'} (includes display, printing & mounting)`);
+                if (pricing.min_quantity) lines.push(`MINIMUM: ${pricing.min_quantity}`);
+                if (pricing.total_price)  lines.push(`TOTAL PRICE: ₹${pricing.total_price}`);
+              }
+
+              if (m.size)     lines.push(`SIZE: ${typeof m.size === 'object' ? JSON.stringify(m.size) : m.size}`);
+              if (m.material) lines.push(`MATERIAL: ${m.material}`);
+              if (m.terms)    lines.push(`TERMS: ${m.terms}`);
+              if (svc.content) lines.push(`DESCRIPTION: ${svc.content.substring(0, 300)}`);
+
+              return { fileName: svc.document_name || 'Rate Card', content: lines.filter(Boolean).join('\n') };
+            });
+            console.log(`☁️ [USE_CLOUD_DATA] Using ${proposalContexts.length} DB services as context (~${proposalContexts.reduce((s, p) => s + p.content.length, 0)} chars)`);
+            // DEBUG: Show exact context for first 3 services so we can verify pricing format
+            console.log('📋 [DB-CONTEXT-DEBUG] Sample service contexts sent to Gemini:');
+            proposalContexts.slice(0, 3).forEach((ctx, i) => {
+              console.log(`\n  Service ${i + 1} (${ctx.fileName}):\n${ctx.content}\n  ---`);
+            });
+            // Also show context for auto full branding specifically if present
+            const autoCtx = proposalContexts.find(ctx => ctx.content.toLowerCase().includes('auto full branding'));
+            if (autoCtx) {
+              console.log('\n🚗 [DB-CONTEXT-DEBUG] Auto Full Branding context:\n' + autoCtx.content);
+            }
+          } else {
+            console.warn('⚠️ [USE_CLOUD_DATA] No DB services found, falling back to PDF text');
+          }
+        } catch (cloudErr) {
+          console.warn('⚠️ [USE_CLOUD_DATA] DB load failed, falling back to PDF text:', cloudErr);
+        }
+      }
+
+      // ── OLD / FALLBACK: Full PDF text path ────────────────────────────────
+      if (!proposalContexts) {
       if (activeProposals.length > 0) {
         // Multi-location mode: use only user-selected active proposals
         proposalContexts = activeProposals
@@ -1068,6 +1181,8 @@ const ChatInterface: React.FC = () => {
           console.log(`📚 Multi-document search enabled: ${proposalContexts.length} documents available`);
         }
       }
+      }
+      // ── END FALLBACK ──────────────────────────────────────────────────────
 
       // 🔧 CLIENT-SIDE VALIDATION: Check if request is fully specified (prevents checkbox loops)
       let enhancedUserMessage = userMessage.content;
@@ -2523,6 +2638,117 @@ const ChatInterface: React.FC = () => {
                                   </VStack>
                                 </Box>
                               ))}
+                            </VStack>
+                          </Box>
+                        )}
+
+                        {/* 📚 RAG SEARCH RESULTS — show matching services from vector database */}
+                        {message.isRagSearchResult && message.ragResults && message.ragResults.length > 0 && (
+                          <Box mt={3}>
+                            <Text fontSize="13px" fontWeight="600" color="purple.600" mb={3}>
+                              📚 Found {message.ragResults.length} matching services:
+                            </Text>
+                            <VStack align="stretch" spacing={3}>
+                              {message.ragResults.map((result, idx) => {
+                                const similarity = (result.similarity * 100).toFixed(1);
+                                const images = result.metadata?.images || [];
+                                
+                                return (
+                                  <Box
+                                    key={idx}
+                                    p={4}
+                                    bg="purple.50"
+                                    borderRadius="12px"
+                                    border="1px solid"
+                                    borderColor="purple.200"
+                                    _hover={{
+                                      bg: 'purple.100',
+                                      borderColor: 'purple.300',
+                                      transform: 'translateX(4px)',
+                                      boxShadow: '0 4px 12px rgba(139, 92, 246, 0.2)',
+                                    }}
+                                    transition="all 0.2s ease"
+                                  >
+                                    <HStack justify="space-between" mb={2}>
+                                      <Text fontSize="15px" fontWeight="600" color="purple.700">
+                                        {idx + 1}. {result.service_name}
+                                      </Text>
+                                      <Text fontSize="12px" fontWeight="600" color="purple.600" bg="purple.100" px={2} py={1} borderRadius="full">
+                                        {similarity}% match
+                                      </Text>
+                                    </HStack>
+                                    
+                                    {/* Image Gallery - show if images exist */}
+                                    {images.length > 0 && (
+                                      <Box mb={3} overflowX="auto" css={{ '&::-webkit-scrollbar': { height: '6px' }, '&::-webkit-scrollbar-thumb': { background: '#9333ea', borderRadius: '3px' } }}>
+                                        <HStack spacing={2} pb={2}>
+                                          {images.map((imgUrl: string, imgIdx: number) => (
+                                            <Box
+                                              key={imgIdx}
+                                              position="relative"
+                                              flexShrink={0}
+                                              w="120px"
+                                              h="120px"
+                                              borderRadius="8px"
+                                              overflow="hidden"
+                                              border="2px solid"
+                                              borderColor="purple.300"
+                                              bg="white"
+                                              cursor="pointer"
+                                              _hover={{
+                                                borderColor: 'purple.500',
+                                                transform: 'scale(1.05)',
+                                              }}
+                                              transition="all 0.2s ease"
+                                              onClick={() => window.open(imgUrl, '_blank')}
+                                            >
+                                              <img
+                                                src={imgUrl}
+                                                alt={`${result.service_name} - Image ${imgIdx + 1}`}
+                                                style={{
+                                                  width: '100%',
+                                                  height: '100%',
+                                                  objectFit: 'cover',
+                                                }}
+                                                onError={(e) => {
+                                                  (e.target as HTMLImageElement).style.display = 'none';
+                                                }}
+                                              />
+                                            </Box>
+                                          ))}
+                                        </HStack>
+                                      </Box>
+                                    )}
+                                    
+                                    <Text fontSize="13px" color="gray.700" mb={3}>
+                                      {result.content.substring(0, 250)}
+                                      {result.content.length > 250 ? '...' : ''}
+                                    </Text>
+                                    <Button
+                                      size="sm"
+                                      colorScheme="purple"
+                                      onClick={() => {
+                                        // Include the full service content (with pricing) in the prompt
+                                        const promptWithPricing = `Generate quote for ${result.service_name}
+
+Use EXACTLY these pricing details from our rate card:
+${result.content}
+
+Generate a detailed quote based on the above information.`;
+                                        
+                                        setInputValue(promptWithPricing);
+                                        setTimeout(() => {
+                                          const sendBtn = document.querySelector('[data-send-btn]') as HTMLButtonElement;
+                                          sendBtn?.click();
+                                        }, 100);
+                                      }}
+                                      isDisabled={isLoading}
+                                    >
+                                      Generate Quote
+                                    </Button>
+                                  </Box>
+                                );
+                              })}
                             </VStack>
                           </Box>
                         )}

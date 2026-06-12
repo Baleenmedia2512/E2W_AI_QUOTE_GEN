@@ -22,7 +22,20 @@ export interface ExtractedPage {
   pageNumber: number;
   text: string;
   imageDataUrl: string;
-  croppedImages?: string[];
+  croppedImages?: string[]; // DEPRECATED - use croppedImagesWithTypes instead
+  croppedImagesWithTypes?: Array<{
+    dataUrl: string;
+    imageType: 'reference' | 'specification' | 'review';
+  }>;
+  imageType?: 'reference' | 'specification' | 'review'; // DEPRECATED - kept for backward compatibility
+}
+
+// --- PDF Coordinate-Based Heading Detection ---
+
+interface HeadingPosition {
+  type: 'reference' | 'specification' | 'review';
+  yPosition: number; // Y-coordinate in PDF units (bottom-up: 0 = bottom of page)
+  text: string; // Original heading text
 }
 
 // --- Gemini Vision Auto-Crop Helpers ---
@@ -31,6 +44,242 @@ interface ImageBoundingBox {
   box: [number, number, number, number]; // [y_min, x_min, y_max, x_max] in 0-1000 scale
   label: string;
   noPad?: boolean; // true for grid-split boxes that share exact boundaries — skip crop padding to prevent bleed
+  imageType?: 'reference' | 'specification' | 'review'; // Detected type for this specific box
+}
+
+/**
+ * Extract heading positions from PDF text content with Y-coordinates.
+ * PDF.js textContent.items contain position data in transform array.
+ * Returns headings sorted by Y position (top to bottom in visual space).
+ */
+function extractHeadingPositions(textContent: any): HeadingPosition[] {
+  const headings: HeadingPosition[] = [];
+  
+  if (!textContent || !textContent.items || !Array.isArray(textContent.items)) {
+    return headings;
+  }
+  
+  // Heading patterns to detect.
+  // Fix 2: Added partial patterns so split PDF text items like
+  // "DESIGN SPECIFI" + "CATION" still match via standalone word checks.
+  const patterns = [
+    { regex: /REFERENCE\s*(IMAGES?|PHOTOS?)/i,    type: 'reference' as const },
+    { regex: /DESIGN\s*SPECIFI/i,                 type: 'specification' as const }, // partial — catches split "SPECIFI CATION"
+    { regex: /\bSPECIFICATION\b/i,               type: 'specification' as const }, // standalone word fallback
+    { regex: /\bDISPLAY\s*AREA\b/i,              type: 'specification' as const },
+    { regex: /\bAD\s*SPEC(IFICATION)?\b/i,       type: 'specification' as const },
+    { regex: /CUSTOMER\s*REVIEW/i,               type: 'review' as const },
+    { regex: /CLIENT\s*REVIEW/i,                 type: 'review' as const },
+    { regex: /GOOGLE\s*REVIEW/i,                 type: 'review' as const },
+  ];
+  
+  // 🆕 STRATEGY: Combine adjacent text items to handle split headings
+  // Many PDFs split "REFERENCE IMAGE" into separate text items
+  const items = textContent.items;
+  
+  console.log(`   🔍 [DEBUG] Scanning ${items.length} text items for headings...`);
+  
+  for (let i = 0; i < items.length; i++) {
+    const currentItem = items[i];
+    const currentText = (currentItem.str || '').trim();
+    
+    if (currentText.length < 3) continue; // Skip very short text
+    
+    // Build a combined text from current + next few items (window of 5 items)
+    let combinedText = currentText;
+    let combinedYPos = currentItem.transform?.[5] || 0;
+    
+    for (let j = i + 1; j < Math.min(i + 5, items.length); j++) {
+      const nextText = (items[j].str || '').trim();
+      if (nextText.length > 0) {
+        combinedText += ' ' + nextText;
+      }
+    }
+    
+    // Debug: Show what we're checking
+    if (i % 50 === 0 || combinedText.toLowerCase().includes('reference') || 
+        combinedText.toLowerCase().includes('specification') || 
+        combinedText.toLowerCase().includes('review')) {
+      console.log(`   🔎 [DEBUG] Item ${i}: Y=${combinedYPos.toFixed(0)} Text="${combinedText.substring(0, 60)}"`);
+    }
+    
+    // Check if combined text matches any heading pattern
+    for (const pattern of patterns) {
+      // Check combined window first, then current item alone (catches split headings)
+      const textToCheck = pattern.regex.test(combinedText) ? combinedText : currentText;
+      if (pattern.regex.test(textToCheck)) {
+        // Avoid duplicates: check if we already added this heading at similar Y position
+        const isDuplicate = headings.some(h => 
+          h.type === pattern.type && 
+          Math.abs(h.yPosition - combinedYPos) < 10
+        );
+        
+        if (isDuplicate) {
+          console.log(`   ⚠️  [DEBUG] DUPLICATE SKIPPED: "${combinedText.substring(0, 50)}" at Y=${combinedYPos.toFixed(0)} (type=${pattern.type})`);
+        } else {
+          headings.push({
+            type: pattern.type,
+            yPosition: combinedYPos,
+            text: combinedText.substring(0, 50) // Truncate for display
+          });
+          
+          console.log(`   ✅ [DEBUG] HEADING FOUND: "${combinedText.substring(0, 50)}" at Y=${combinedYPos.toFixed(0)} → type=${pattern.type}`);
+        }
+        break;
+      }
+    }
+  }
+  
+  // Sort by Y position (descending = top to bottom in visual space)
+  // Note: PDF coordinates are bottom-up, so higher Y = higher on page
+  headings.sort((a, b) => b.yPosition - a.yPosition);
+  
+  console.log(`   📋 [DEBUG] ========================================`);
+  console.log(`   📋 [DEBUG] FINAL HEADINGS (sorted top→bottom):`);
+  console.log(`   📋 [DEBUG] ========================================`);
+  if (headings.length === 0) {
+    console.log(`   📋 [DEBUG] ❌ NO HEADINGS DETECTED!`);
+  } else {
+    headings.forEach((h, idx) => {
+      console.log(`   📋 [DEBUG] ${idx + 1}. [${h.type.toUpperCase()}] "${h.text}" at Y=${h.yPosition.toFixed(0)}`);
+    });
+  }
+  console.log(`   📋 [DEBUG] ========================================`);
+  
+  return headings;
+}
+
+/**
+ * Find image type based on which heading is positioned above the image.
+ * Uses Y-coordinate comparison to determine spatial relationship.
+ * 
+ * @param imageYPos - Y-coordinate of image (from bounding box or page rendering)
+ * @param headings - Array of detected headings with positions (sorted top to bottom)
+ * @param pageHeight - Total page height for coordinate normalization
+ * @returns Image type based on nearest heading above it
+ */
+function findImageTypeAtPosition(
+  imageYPos: number,
+  headings: HeadingPosition[],
+  pageHeight: number
+): 'reference' | 'specification' | 'review' {
+  if (headings.length === 0) {
+    console.log(`   ⚠️  [TYPE-DETECT] No headings found on page → defaulting to type=reference`);
+    return 'reference'; // Default when no headings found
+  }
+  
+  console.log(`   🎯 [DEBUG] ========================================`);
+  console.log(`   🎯 [DEBUG] MATCHING IMAGE TO HEADING`);
+  console.log(`   🎯 [DEBUG] Image Y-position: ${imageYPos.toFixed(0)}`);
+  console.log(`   🎯 [DEBUG] Available headings: ${headings.length}`);
+  console.log(`   🎯 [DEBUG] ========================================`);
+  
+  // Find the closest heading ABOVE this image
+  // (heading Y > image Y in PDF bottom-up coordinates)
+  let closestHeading: HeadingPosition | null = null;
+  let smallestDistance = Infinity;
+  
+  for (const heading of headings) {
+    // Check if heading is above the image (higher Y value)
+    if (heading.yPosition >= imageYPos) {
+      const distance = heading.yPosition - imageYPos;
+      console.log(`   🎯 [DEBUG]   ✓ [${heading.type.toUpperCase()}] "${heading.text.substring(0, 30)}" at Y=${heading.yPosition.toFixed(0)} → ABOVE image (distance=${distance.toFixed(0)}px)`);
+      if (distance < smallestDistance) {
+        smallestDistance = distance;
+        closestHeading = heading;
+        console.log(`   🎯 [DEBUG]      ★ NEW CLOSEST MATCH! (distance=${distance.toFixed(0)}px)`);
+      }
+    } else {
+      console.log(`   🎯 [DEBUG]   ✗ [${heading.type.toUpperCase()}] "${heading.text.substring(0, 30)}" at Y=${heading.yPosition.toFixed(0)} → BELOW image (skipped)`);
+    }
+  }
+  
+  console.log(`   🎯 [DEBUG] ========================================`);
+  
+  if (closestHeading) {
+    console.log(`   ✅ [FINAL] Image at Y=${imageYPos.toFixed(0)} → MATCHED: [${closestHeading.type.toUpperCase()}] "${closestHeading.text}" (distance=${smallestDistance.toFixed(0)}px)`);
+    return closestHeading.type;
+  }
+  
+  // If no heading is above the image, check if there's one below
+  // (image might be at very top of page)
+  if (headings.length > 0) {
+    const topHeading = headings[0]; // First in sorted array = highest on page
+    console.log(`   ⚠️  [FALLBACK] Image at Y=${imageYPos.toFixed(0)} is above all headings → using topmost heading: [${topHeading.type.toUpperCase()}] "${topHeading.text}"`);
+    return topHeading.type;
+  }
+  
+  console.log(`   ⚠️  [DEFAULT] No headings found on page → defaulting to type=reference`);
+  return 'reference'; // Final fallback
+}
+
+/**
+ * Canvas-space version: find image type using TOP-DOWN pixel coordinates.
+ * Both imageYPos and headings.yPosition must already be in canvas pixels from top.
+ * Heading ABOVE image means heading.yPosition < imageYPos (smaller = higher up).
+ */
+function findImageTypeAtPositionCanvas(
+  imageYPos: number,
+  headings: HeadingPosition[], // yPosition is already converted to canvas pixels (top-down)
+): 'reference' | 'specification' | 'review' {
+  if (headings.length === 0) return 'reference';
+
+  console.log(`   🎯 [CANVAS-MATCH] Image at canvasY=${imageYPos.toFixed(0)} — checking ${headings.length} heading(s)`);
+
+  // In canvas space: top-down, so heading ABOVE image has SMALLER Y value
+  // Find the closest heading whose canvasY is LESS THAN imageYPos (above the image)
+  let closestHeading: HeadingPosition | null = null;
+  let smallestDistance = Infinity;
+
+  for (const heading of headings) {
+    if (heading.yPosition <= imageYPos) {
+      const distance = imageYPos - heading.yPosition;
+      console.log(`   🎯 [CANVAS-MATCH]   ✓ [${heading.type.toUpperCase()}] "${heading.text.substring(0,30)}" canvasY=${heading.yPosition.toFixed(0)} → ABOVE (distance=${distance.toFixed(0)}px)`);
+      if (distance < smallestDistance) {
+        smallestDistance = distance;
+        closestHeading = heading;
+        console.log(`   🎯 [CANVAS-MATCH]      ★ NEW CLOSEST!`);
+      }
+    } else {
+      console.log(`   🎯 [CANVAS-MATCH]   ✗ [${heading.type.toUpperCase()}] "${heading.text.substring(0,30)}" canvasY=${heading.yPosition.toFixed(0)} → BELOW image (skipped)`);
+    }
+  }
+
+  if (closestHeading) {
+    console.log(`   ✅ [CANVAS-MATCH] RESULT: [${closestHeading.type.toUpperCase()}] "${closestHeading.text}" (distance=${smallestDistance.toFixed(0)}px)`);
+    return closestHeading.type;
+  }
+
+  // Image is above all headings — use the topmost heading (smallest canvasY)
+  const topHeading = [...headings].sort((a, b) => a.yPosition - b.yPosition)[0];
+  console.log(`   ⚠️  [CANVAS-MATCH] Image above all headings → using topmost: [${topHeading.type.toUpperCase()}]`);
+  return topHeading.type;
+}
+
+/**
+ * Detect image type based on page text keywords (LEGACY - kept for fallback).
+ * This is now only used when coordinate-based detection is not available.
+ */
+function detectImageType(pageText: string): 'reference' | 'specification' | 'review' {
+  const text = pageText.toLowerCase().replace(/\s*\|\s*/g, '').replace(/\s+/g, ' ');
+  
+  // Review detection (highest priority - most specific)
+  if (text.includes('customer review') || text.includes('client review') ||
+      text.includes('google review') || text.includes('testimonial') ||
+      text.includes('customer feedback') || text.includes('client feedback')) {
+    return 'review';
+  }
+  
+  // Specification detection (second priority)
+  if (text.includes('design specification') || text.includes('design specifications') ||
+      text.includes('design specs') || text.includes('specification') ||
+      text.includes('display area') || text.includes('dimensions') ||
+      text.includes('technical drawing') || text.includes('layout diagram')) {
+    return 'specification';
+  }
+  
+  // Default to reference (outdoor photos, mockups, examples)
+  return 'reference';
 }
 
 function shouldAttemptCropping(pageText: string): boolean {
@@ -161,8 +410,9 @@ async function extractNativeImages(
   renderedCanvas: HTMLCanvasElement,
   pageNumber: number,
   templateObjIds: Set<string> = new Set(),
-): Promise<string[]> {
-  const results: string[] = [];
+  pageText: string = '',
+): Promise<{ dataUrl: string; canvasY: number }[]> {
+  const results: { dataUrl: string; canvasY: number }[] = [];
 
   try {
     const opList = await pdfPage.getOperatorList();
@@ -240,7 +490,7 @@ async function extractNativeImages(
 
           // Draw from the already-rendered page canvas — pixel-perfect
           cropCtx.drawImage(renderedCanvas, sx, sy, sw, sh, 0, 0, sw, sh);
-          results.push(cropCanvas.toDataURL('image/jpeg', 0.88));
+          results.push({ dataUrl: cropCanvas.toDataURL('image/jpeg', 0.88), canvasY: sy });
         } catch {
           // skip malformed inline image
         }
@@ -449,8 +699,13 @@ async function extractNativeImages(
           fTotal++;
         }
         const blankRatio = fTotal > 0 ? fWhite / fTotal : 0;
-        console.log(`      blank filter: ${(blankRatio*100).toFixed(1)}% white (>90% = skip)`);
-        if (blankRatio > 0.90) {
+        // Fix 3: Review card images have white background (~98% white).
+        // Raised threshold to 0.99 so review cards pass (were filtered at 0.97).
+        // Pure blank pages = 100% white → still filtered.
+        const isReviewPage = /customer\s*review|google\s*review|client\s*review|customer\s*feedback/i.test(pageText);
+        const blankThreshold = isReviewPage ? 0.99 : 0.90;
+        console.log(`      blank filter: ${(blankRatio*100).toFixed(1)}% white (>${(blankThreshold*100).toFixed(0)}% = skip${isReviewPage ? ', review page' : ''})`);
+        if (blankRatio > blankThreshold) {
           console.log(`   🚫 [P3] SKIPPED near-blank${didSubCrop ? ' sub-crop' : ''} (${finalCanvas.width}×${finalCanvas.height})`);
           continue;
         }
@@ -460,8 +715,8 @@ async function extractNativeImages(
       if (didSubCrop) subCropDone = true;
 
       const areaRatio = (clampedSw * clampedSh) / (pw * ph);
-      results.push(finalCanvas.toDataURL('image/jpeg', 0.88));
-      console.log(`   📷 [P3] OUTPUT #${results.length} — pos(${sx},${sy}) size(${clampedSw}×${clampedSh}) area=${(areaRatio * 100).toFixed(1)}% didSubCrop=${didSubCrop} wasMerged=${sw_wasMerged}`);
+      results.push({ dataUrl: finalCanvas.toDataURL('image/jpeg', 0.88), canvasY: clampedSy });
+      console.log(`   📷 [P3] OUTPUT #${results.length} — pos(${sx},${sy}) size(${clampedSw}×${clampedSh}) area=${(areaRatio * 100).toFixed(1)}% didSubCrop=${didSubCrop} wasMerged=${sw_wasMerged} canvasY=${clampedSy}`);
     }
   } catch (opErr) {
     console.warn(`   ⚠️ Page ${pageNumber}: getOperatorList failed:`, opErr);
@@ -1192,6 +1447,8 @@ export const extractPDFContent = async (file: File, maxImagePages?: number): Pro
 
         // ── Image extraction (mode controlled by USE_GEMINI_VISION_ONLY flag) ──
         let croppedImages: string[] | undefined;
+        // 🆕 Y-positions from native extraction (canvas top-down pixels)
+        let nativeBoxesWithPositions: Array<{ box: ImageBoundingBox; imageYPos: number }> = [];
         
         console.log(`\n🔍 [IMAGE-DEBUG] Page ${pageNumber}/${pageCount} ════════════════════════`);
         console.log(`   Mode: ${USE_GEMINI_VISION_ONLY ? 'GEMINI ONLY (testing)' : 'Native + Gemini fallback'}`);
@@ -1202,9 +1459,19 @@ export const extractPDFContent = async (file: File, maxImagePages?: number): Pro
         if (!USE_GEMINI_VISION_ONLY) {
           console.log(`   🔧 [NATIVE] Starting native PDF.js extraction...`);
           try {
-            const nativeImgs = await extractNativeImages(pdfPage, canvas, pageNumber, templateObjIds);
+            const nativeImgs = await extractNativeImages(pdfPage, canvas, pageNumber, templateObjIds, text);
             if (nativeImgs.length > 0) {
-              croppedImages = nativeImgs;
+              // Fix 1: Sort by canvasY (top→bottom) so visual order matches heading order.
+              // PDF binary operator order ≠ visual order — without sort, spec diagram and
+              // reference photo can be swapped, causing wrong imageType assignment.
+              const sortedNativeImgs = [...nativeImgs].sort((a, b) => a.canvasY - b.canvasY);
+              croppedImages = sortedNativeImgs.map(n => n.dataUrl);
+              // 🆕 Populate boxesWithPositions from native extraction Y coords
+              // canvasY is already in top-down canvas pixels — store as imageYPos directly
+              nativeBoxesWithPositions = sortedNativeImgs.map(n => ({
+                box: { box: [0,0,0,0] as [number,number,number,number], label: '' } as ImageBoundingBox,
+                imageYPos: n.canvasY
+              }));
               nativeSuccessCount++;
               console.log(`   ✅ [NATIVE] SUCCESS: ${nativeImgs.length} native image(s) extracted`);
               console.log(`   ⏭️  [GEMINI] SKIPPED (native extraction succeeded)`);
@@ -1220,7 +1487,43 @@ export const extractPDFContent = async (file: File, maxImagePages?: number): Pro
           console.log(`   ⏭️  [NATIVE] SKIPPED (USE_GEMINI_VISION_ONLY = true)`);
         }
         
+        // 🆕 COORDINATE-BASED TYPE DETECTION: Extract heading positions from PDF text
+        console.log(`\n   ═══════════════════════════════════════════════════════`);
+        console.log(`   📄 PAGE ${pageNumber}: HEADING DETECTION & IMAGE TYPE MATCHING`);
+        console.log(`   ═══════════════════════════════════════════════════════`);
+        console.log(`   🏷️  [HEADINGS] Extracting heading positions from text content...`);
+        const textContentData = await pdfPage.getTextContent();
+        const headingPositions = extractHeadingPositions(textContentData);
+        const pageHeight = viewport.height;
+        console.log(`   📐 [HEADINGS] Page height: ${pageHeight.toFixed(0)}px`);
+        // 🆕 Convert heading PDF-space Y (bottom-up points) to canvas-space Y (top-down pixels)
+        // PDF Y is measured from the bottom; canvas Y from the top.
+        // viewport.scale converts PDF points to canvas pixels.
+        const pdfH_points = viewport.viewBox ? viewport.viewBox[3] : (pageHeight / viewport.scale);
+        const convertedHeadingPositions = headingPositions.map(h => ({
+          ...h,
+          // Flip: canvasY_from_top = pageHeight - (pdfY * scale)
+          yPosition: pageHeight - (h.yPosition * viewport.scale)
+        }));
+        console.log(`   🔄 [HEADINGS] Converted ${headingPositions.length} heading(s) to canvas coords:`);
+        convertedHeadingPositions.forEach(h =>
+          console.log(`      [${h.type.toUpperCase()}] "${h.text.substring(0,30)}" PDF-Y=${headingPositions.find(x=>x.text===h.text)?.yPosition.toFixed(0)} → canvasY=${h.yPosition.toFixed(0)}`)
+        );
+        
+        if (headingPositions.length > 0) {
+          console.log(`   ✅ [HEADINGS] Found ${headingPositions.length} heading(s) on this page`);
+        } else {
+          console.log(`   ⚠️  [HEADINGS] No headings detected - will use fallback keyword detection`);
+        }
+        
         // Gemini Vision API (fallback OR primary based on flag)
+        let boxesWithPositions: Array<{ box: ImageBoundingBox; imageYPos: number }> = [];
+        // 🆕 Use native positions if available (populated during native extraction above)
+        if (typeof nativeBoxesWithPositions !== 'undefined' && nativeBoxesWithPositions.length > 0) {
+          boxesWithPositions = nativeBoxesWithPositions;
+          console.log(`   📌 [NATIVE-POS] Using ${boxesWithPositions.length} native Y-position(s) for coordinate matching`);
+        }
+        
         if (!croppedImages && shouldAttemptCropping(text)) {
           const reason = USE_GEMINI_VISION_ONLY ? 'PRIMARY (testing mode)' : 'FALLBACK (native returned empty)';
           console.log(`   🔄 [GEMINI] Starting Gemini Vision API - ${reason}`);
@@ -1232,6 +1535,17 @@ export const extractPDFContent = async (file: File, maxImagePages?: number): Pro
               console.log(`   ✂️  [GEMINI] Cropped ${cropped.length} image(s) from boxes`);
               if (cropped.length > 0) {
                 croppedImages = cropped;
+                
+                // Store boxes with Y-positions for type detection
+                // Convert normalized 0-1000 scale to actual page coordinates
+                boxesWithPositions = boxes.map((box, idx) => {
+                  // box[0] = y_min in 0-1000 scale (top-left = 0)
+                  // Convert to PDF coordinates (bottom-left = 0)
+                  const normalizedYTop = box.box[0] / 1000; // 0.0 to 1.0 from top
+                  const imageYPos = pageHeight * (1 - normalizedYTop); // Flip: bottom = 0
+                  return { box, imageYPos };
+                });
+                
                 console.log(`   ✅ [GEMINI] SUCCESS: ${cropped.length} image(s) extracted`);
               } else {
                 console.log(`   ○  [GEMINI] EMPTY: cropping returned no images`);
@@ -1245,11 +1559,92 @@ export const extractPDFContent = async (file: File, maxImagePages?: number): Pro
         } else if (!croppedImages) {
           console.log(`   ⏭️  [GEMINI] SKIPPED (shouldAttemptCropping=false)`);
         }
+
+        // ── REVIEW PAGE FALLBACK ─────────────────────────────────────────────
+        // If native + Gemini both returned nothing AND this is a review page,
+        // use the full-page render + strip header/footer as guaranteed fallback.
+        // Review cards are often rendered as rasterized content (not XObjects)
+        // so native extraction misses them. Gemini may also skip if no photo detected.
+        const isReviewPageFallback = /customer\s*review|google\s*review|client\s*review|customer\s*feedback/i.test(text);
+        if ((!croppedImages || croppedImages.length === 0) && isReviewPageFallback) {
+          console.log(`   📋 [REVIEW-FALLBACK] Review page with no extracted images — using imageDataUrl + header/footer strip`);
+          try {
+            const stripped = await cropPageStrippingHeaderFooter(imageDataUrl);
+            croppedImages = [stripped];
+            // Tag as review type — no coordinate detection needed
+            // boxesWithPositions stays empty → falls through to keyword detection below
+            // which will return 'review' since page text has review heading
+            console.log(`   ✅ [REVIEW-FALLBACK] Stripped page image ready for storage`);
+          } catch (fallbackErr) {
+            console.warn(`   ⚠️ [REVIEW-FALLBACK] Strip failed:`, fallbackErr);
+          }
+        }
+        // ── END REVIEW PAGE FALLBACK ─────────────────────────────────────────
+        let croppedImagesWithTypes: Array<{ dataUrl: string; imageType: 'reference' | 'specification' | 'review' }> | undefined;
+        let defaultImageType: 'reference' | 'specification' | 'review' = 'reference';
         
-        console.log(`   📊 [RESULT] Page ${pageNumber}: ${croppedImages?.length || 0} image(s) total`);
+        if (croppedImages && croppedImages.length > 0) {
+          if (convertedHeadingPositions.length > 0 && boxesWithPositions.length === croppedImages.length) {
+            // Use coordinate-based detection (works for BOTH native and Gemini paths)
+            console.log(`   🎯 [TYPE-DETECT] Using coordinate-based heading detection for ${croppedImages.length} image(s)`);
+            console.log(`   🎯 [TYPE-DETECT] Processing ${croppedImages.length} images...`);
+            croppedImagesWithTypes = croppedImages.map((dataUrl, idx) => {
+              console.log(`\n   🖼️  [IMAGE ${idx + 1}/${croppedImages.length}]`);
+              const imageYPos = boxesWithPositions[idx].imageYPos;
+              // Use canvas-space converted headings (top-down pixels, same space as imageYPos)
+              const imageType = findImageTypeAtPositionCanvas(imageYPos, convertedHeadingPositions);
+              console.log(`   🖼️  [IMAGE ${idx + 1}] → Final type: ${imageType.toUpperCase()}`);
+              return { dataUrl, imageType };
+            });
+            
+            console.log(`\n   📊 [TYPE-SUMMARY] Image types assigned:`);
+            const typeCounts = croppedImagesWithTypes.reduce((acc, img, idx) => {
+              acc[img.imageType] = (acc[img.imageType] || 0) + 1;
+              console.log(`      Image ${idx + 1}: ${img.imageType}`);
+              return acc;
+            }, {} as Record<string, number>);
+            console.log(`   📊 [TYPE-SUMMARY] Totals: ${JSON.stringify(typeCounts)}`);
+            
+            defaultImageType = Object.entries(typeCounts).sort(([,a], [,b]) => b - a)[0][0] as any;
+            
+          } else {
+            // Fallback: Use keyword-based detection for all images
+            console.log(`   ⚠️  [TYPE-DETECT] Using fallback keyword detection (headings=${headingPositions.length}, boxes=${boxesWithPositions.length}, images=${croppedImages.length})`);
+            defaultImageType = detectImageType(text);
+            croppedImagesWithTypes = croppedImages.map(dataUrl => ({
+              dataUrl,
+              imageType: defaultImageType
+            }));
+            console.log(`   ⚠️  [TYPE-DETECT] All ${croppedImages.length} images assigned type: ${defaultImageType}`);
+          }
+        } else if (croppedImages && croppedImages.length > 0) {
+          // Native extraction - no bounding boxes, use keyword detection
+          console.log(`   ℹ️  [TYPE-DETECT] Native extraction - using keyword detection`);
+          defaultImageType = detectImageType(text);
+          croppedImagesWithTypes = croppedImages.map(dataUrl => ({
+            dataUrl,
+            imageType: defaultImageType
+          }));
+        }
+        
+        console.log(`   📊 [RESULT] Page ${pageNumber}: ${croppedImages?.length || 0} image(s) total, default type: ${defaultImageType}`);
+        if (croppedImagesWithTypes) {
+          const typeBreakdown = croppedImagesWithTypes.reduce((acc, img) => {
+            acc[img.imageType] = (acc[img.imageType] || 0) + 1;
+            return acc;
+          }, {} as Record<string, number>);
+          console.log(`   📊 [BREAKDOWN] ${JSON.stringify(typeBreakdown)}`);
+        }
         console.log(`════════════════════════════════════════════════════════\n`);
 
-        pageImages.push({ pageNumber, text, imageDataUrl, croppedImages });
+        pageImages.push({ 
+          pageNumber, 
+          text, 
+          imageDataUrl, 
+          croppedImages, // Keep for backward compatibility
+          croppedImagesWithTypes,
+          imageType: defaultImageType // Keep for backward compatibility
+        });
         console.log(`Page ${pageNumber}/${pageCount} rendered`);
       } catch (imgErr) {
         console.warn(`Failed to render page ${pageNumber} as image:`, imgErr);

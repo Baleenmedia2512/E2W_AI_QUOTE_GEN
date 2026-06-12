@@ -9,6 +9,7 @@ interface ExtractedPage {
   text: string;
   imageDataUrl: string;
   croppedImages?: string[];
+  imageType?: 'reference' | 'specification' | 'review'; // Image classification
   sourceId?: string;
   sourceName?: string;
 }
