@@ -19,6 +19,7 @@ export interface ExtractedPage {
   text: string;
   imageDataUrl: string;
   croppedImages?: string[];
+  imageType?: 'reference' | 'specification' | 'review'; // Image classification
   // Source tracking for multi-PDF isolation
   sourceId?: string;   // proposalId this page came from
   sourceName?: string; // fileName this page came from
@@ -111,6 +112,10 @@ export interface AppState {
   addActiveProposal: (id: string) => Promise<void>;
   removeActiveProposal: (id: string) => void;
   restoreActiveProposals: () => Promise<void>;
+
+  // Cloud Service Pages (PRIMARY DATA SOURCE from proposal_chunks)
+  cloudServicePages: ExtractedPage[];
+  loadCloudServices: () => Promise<ExtractedPage[]>;
 }
 
 export type { Message, Quote, QuoteItem, LineItem, CompanyInfo, ClientInfo, TemplateData, TemplateProps, TemplateType, Template, TemplateMetadata, Lead, LeadSearchResult, TokenUsageRecord, TokenUsageMetrics, SessionSummary, OperationType, DeltaComparison, GeminiModel };

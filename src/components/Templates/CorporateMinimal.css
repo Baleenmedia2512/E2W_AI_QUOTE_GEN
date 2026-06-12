@@ -282,8 +282,8 @@
 }
 
 .template-corporate-minimal .items-table .col-duration {
-  width: 8%;
-  text-align: right;
+  width: 11%;
+  text-align: center;
 }
 
 .template-corporate-minimal .items-table .col-gst-pct {
@@ -365,8 +365,8 @@
   max-width: 12%;
 }
 .template-corporate-minimal .items-table--gst .col-duration {
-  width: 5%;
-  max-width: 5%;
+  width: 8%;
+  max-width: 8%;
 }
 .template-corporate-minimal .items-table--gst .col-total {
   width: 11%;
@@ -1130,6 +1130,7 @@
 
   .template-corporate-minimal .item-duration {
     white-space: nowrap;
+    text-align: center;
   }
 
   .template-corporate-minimal .item-total {

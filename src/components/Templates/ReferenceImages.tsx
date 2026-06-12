@@ -2016,14 +2016,18 @@ function extractSpecSectionImage(pages: ExtractedPage[]): string[] {
            (t.includes('content type') && t.includes('content format') && !t.includes('wxh') && !t.includes('x ') && !/\d+\s*x\s*\d+/i.test(t));
   };
 
-  // First pass: return ALL cropped images from pure spec pages so multi-diagram
-  // services (e.g. Mobile Van LED with 4 panel diagrams) show every diagram.
-  // Skip text-only pages.
+  // First pass: collect ALL cropped images from ALL pure spec pages so multi-diagram
+  // services (e.g. Mobile Van LED with 4 panel diagrams on page 31) show every diagram,
+  // even when an earlier spec page (e.g. page 24 pricing overview) also passes the filter.
+  const allSpecCrops: string[] = [];
   for (const page of specPages) {
     if (pageHasRefHeading(page)) continue; // skip shared pages — their cropped image is a reference photo
     if (isTextOnlySpecPage(page)) continue; // skip text-only pages — data already in table
-    if (page.croppedImages && page.croppedImages.length > 0) return [...page.croppedImages];
+    if (page.croppedImages && page.croppedImages.length > 0) {
+      allSpecCrops.push(...page.croppedImages); // accumulate, don't return early
+    }
   }
+  if (allSpecCrops.length > 0) return allSpecCrops;
 
   // Second pass: fallback to full page image only when page is diagram-heavy
   // (very little text AND no reference image heading — means it's a layout/measurement slide).
@@ -2044,6 +2048,7 @@ function extractSpecSectionImage(pages: ExtractedPage[]): string[] {
     if (pageHasRefHeading(page)) continue; // skip shared pages
     if (isTextOnlySpecPage(page)) continue; // skip text-only pages
     if (isMixedPricingPage(page)) continue; // skip pricing+spec pages
+    if (!page.imageDataUrl) continue;       // skip synthetic text-only spec pages (no diagram)
     const textLen = page.text.replace(/[^a-z]/gi, '').length;
     if (textLen < 300) return [page.imageDataUrl];
   }
@@ -2141,14 +2146,42 @@ function getPagesForCity(proposalPageMap: Record<string, ExtractedPage[]>, city:
 
 export const ReferenceImages: React.FC<ReferenceImagesProps> = ({ proposalPages, proposalPageMap, items, terms = [], specOnly = false, noSpec = false }) => {
   // DEBUG: Log incoming props
-  console.log('🎬 DEBUG: ReferenceImages component mounted/updated with props:', {
-    proposalPagesCount: proposalPages?.length || 0,
-    proposalPageMapKeys: proposalPageMap ? Object.keys(proposalPageMap) : [],
-    itemsCount: items?.length || 0,
-    termsCount: terms.length,
-    specOnly,
-    noSpec
-  });
+  console.log('═══════════════════════════════════════════════════════════');
+  console.log('🎬 DEBUG [ReferenceImages]: Component mounted/updated');
+  console.log('═══════════════════════════════════════════════════════════');
+  console.log('📊 Props received:');
+  console.log('   proposalPages:', proposalPages ? `Array(${proposalPages.length})` : 'undefined');
+  console.log('   proposalPageMap:', proposalPageMap ? `Object with ${Object.keys(proposalPageMap).length} keys` : 'undefined');
+  console.log('   items:', items ? `Array(${items.length})` : 'undefined');
+  console.log('   terms:', `Array(${terms.length})`);
+  console.log('   specOnly:', specOnly, '| noSpec:', noSpec);
+  
+  if (proposalPages && proposalPages.length > 0) {
+    console.log('\n📄 proposalPages data (first 3):');
+    proposalPages.slice(0, 3).forEach((page, idx) => {
+      console.log(`   ${idx + 1}. Page Number: ${page.pageNumber}, Source: ${page.sourceName || 'Unknown'}`);
+      console.log(`      Image URL: ${page.imageDataUrl?.substring(0, 60)}...`);
+    });
+  } else {
+    console.log('\n❌ proposalPages is EMPTY or undefined!');
+    console.log('   This is why no images appear in the preview.');
+    console.log('   Check where proposalPages data comes from (activeProposals)');
+  }
+  
+  if (proposalPageMap) {
+    console.log('\n🗺️ proposalPageMap keys:', Object.keys(proposalPageMap));
+    Object.entries(proposalPageMap).forEach(([key, pages]) => {
+      console.log(`   "${key}": ${pages.length} pages`);
+    });
+  }
+  
+  if (items && items.length > 0) {
+    console.log('\n📋 Quote items:');
+    items.forEach((item, idx) => {
+      console.log(`   ${idx + 1}. "${item.description}" - City: "${item.city || 'N/A'}"`);
+    });
+  }
+  console.log('═══════════════════════════════════════════════════════════\n');
   
   // Determine which pages to use: city-isolated from map, or all flat pages
   const resolvedPages = useMemo(() => {
@@ -2283,6 +2316,27 @@ export const ReferenceImages: React.FC<ReferenceImagesProps> = ({ proposalPages,
     g.fields.some(f => (f.value || '').trim().length > 0) ||
     (g.tableRows !== undefined && g.tableRows.length > 0)
   );
+
+  // ── SPEC SECTION DIAGNOSTIC ──────────────────────────────────────────────
+  console.log('\n🔬 ===== SPEC SECTION DIAGNOSTIC =====');
+  console.log(`   filteredPages        : ${filteredPages.length} page(s) → [${filteredPages.map(p => p.pageNumber).join(', ')}]`);
+  console.log(`   specSourcePages      : ${specSourcePages.length} page(s) → [${specSourcePages.map(p => p.pageNumber).join(', ')}]`);
+  console.log(`   specGroups extracted : ${specGroups.length} group(s)`);
+  specGroups.forEach((g, i) => {
+    console.log(`     Group ${i}: heading="${g.heading}", fields=${g.fields.length}, tableRows=${g.tableRows?.length ?? 0}`);
+    g.fields.slice(0, 4).forEach(f => console.log(`       field: "${f.label}" = "${f.value}"`));
+  });
+  console.log(`   hasSpecContent       : ${hasSpecContent}`);
+  console.log(`   noSpec prop          : ${noSpec}`);
+  // Log whether spec headings were found on any page
+  specSourcePages.forEach(p => {
+    const t = p.text.toLowerCase();
+    const hasSpecHeading = t.includes('design specification') || t.includes('design specifications') ||
+                           t.includes('specification') || t.includes('display area');
+    console.log(`   Page ${p.pageNumber}: hasSpecHeading=${hasSpecHeading}, croppedImages=${p.croppedImages?.length ?? 0}, text[0..60]="${p.text.substring(0,60).replace(/\n/g,' ')}"`);
+  });
+  console.log('======================================\n');
+  // ─────────────────────────────────────────────────────────────────────────
   // hasMeaningfulSpec: true only when spec table has dimension/measurement data (not just material name)
   const hasMeaningfulSpec = useMemo(() => {
     if (!hasSpecContent) return false;
@@ -2296,7 +2350,12 @@ export const ReferenceImages: React.FC<ReferenceImagesProps> = ({ proposalPages,
     ));
   }, [specGroups, hasSpecContent]);
   // Spec image: only from Design Specification pages
-  const specImageUrl = useMemo(() => extractSpecSectionImage(specSourcePages), [specSourcePages]);
+  const specImageUrl = useMemo(() => {
+    const result = extractSpecSectionImage(specSourcePages);
+    console.log(`🖼️  [SPEC-IMG] extractSpecSectionImage returned ${result.length} image(s) from ${specSourcePages.length} specSourcePages`);
+    result.forEach((url, i) => console.log(`     [${i}]: ${url.substring(0, 80)}...`));
+    return result;
+  }, [specSourcePages]);
   // Reference images: ALL images from Reference Image pages — never falls back to spec pages
   const refImageUrls = useMemo(() => extractRefSectionImages(filteredPages), [filteredPages]);
   // Customer review uses reviewPages (filteredPages + any customer review pages from full proposal)
@@ -2319,11 +2378,17 @@ export const ReferenceImages: React.FC<ReferenceImagesProps> = ({ proposalPages,
   // Does NOT affect filteredPages, specGroups, specImageUrl, or refImageUrl.
   const [geminiReview, setGeminiReview] = useState<{ reviewerName: string; starCount: number; reviewText: string } | null>(null);
   useEffect(() => {
-    // Only run if review card data is incomplete (name fell back to "Customer" or text is empty)
+    // Fire OCR when:
+    //  1. reviewerName fell back to "Customer" (local PDF fallback)
+    //  2. reviewText is empty
+    //  3. reviewText has navigation/click text
+    //  4. reviewerName is "FEEDBACK FOR OUR SERVICE" (cloud page — service description used as text)
     const needsOCR = customerReview && (
-      customerReview.reviewerName === 'Customer' || 
+      customerReview.reviewerName === 'Customer' ||
       customerReview.reviewText === '' ||
-      customerReview.reviewText.toLowerCase().includes('click') // Navigation text detected
+      customerReview.reviewText.toLowerCase().includes('click') ||
+      customerReview.reviewerName === 'FEEDBACK FOR OUR SERVICE' ||
+      customerReview.reviewerName.startsWith('FEEDBACK')
     );
     console.log('🔍 DEBUG: Gemini OCR check - needsOCR:', needsOCR, 'customerReview:', customerReview);
     if (!needsOCR) { setGeminiReview(null); return; }
@@ -2337,10 +2402,21 @@ export const ReferenceImages: React.FC<ReferenceImagesProps> = ({ proposalPages,
 
     let cancelled = false;
     console.log('🔍 Triggering Gemini OCR for review page', reviewPage.pageNumber);
-    extractReviewViaGemini(reviewPage.imageDataUrl).then(data => {
+    extractReviewViaGemini(reviewPage.imageDataUrl).then(async data => {
       if (!cancelled && data) {
         console.log('✅ Gemini review OCR result:', data);
         setGeminiReview(data);
+
+        // Save to DB so future renders skip OCR (free from DB)
+        const serviceId = reviewPage.serviceId as string | undefined;
+        if (serviceId) {
+          try {
+            const { saveReviewToCloud } = await import('../../services/supabaseProposalService');
+            await saveReviewToCloud(serviceId, data);
+          } catch (saveErr) {
+            console.warn('⚠️ Could not save review to DB:', saveErr);
+          }
+        }
       }
     });
     return () => { cancelled = true; };
@@ -2414,11 +2490,10 @@ export const ReferenceImages: React.FC<ReferenceImagesProps> = ({ proposalPages,
 
   // Lazy spec section image crop.
   // Case A (shared page): spec + ref headings on same page → geometric top-half crop.
-  // Case B (spec-only page with photos): spec heading only, no cropped images yet,
-  //         full-page fallback is being used → Gemini Vision crop to extract vehicle photos.
-  const [lazyCroppedSpecImage, setLazyCroppedSpecImage] = useState<string | null>(null);
+  // Case B (pure spec pages): ALL matching pages processed, results collected as array.
+  const [lazyCroppedSpecImage, setLazyCroppedSpecImage] = useState<string[]>([]);
   useEffect(() => {
-    // Case A: shared page (both spec AND ref headings present)
+    // Case A: shared page (both spec AND ref headings present) — only first shared page
     const sharedPage = filteredPages.find(p => {
       const t = p.text.toLowerCase().replace(/\s*\|\s*/g, ' ');
       const hasSpec = t.includes('design specification') || t.includes('design specifications') ||
@@ -2434,89 +2509,91 @@ export const ReferenceImages: React.FC<ReferenceImagesProps> = ({ proposalPages,
       cropPageSlice(sharedPage.imageDataUrl, 0.25, 0.60).then(cropped => {
         if (!cancelled) {
           console.log('✅ Lazy spec slice crop done for page', sharedPage.pageNumber);
-          setLazyCroppedSpecImage(cropped);
+          setLazyCroppedSpecImage([cropped]);
         }
       });
       return () => { cancelled = true; };
     }
 
-    // Case B: pure spec page with no cropped images — full-page fallback is active.
-    // Use geometric header/footer strip ONLY — preserves the full SIZE CHART diagram
-    // (title + vehicle + numbered arrows + measurements) intact.
-    // Gemini Vision is intentionally NOT used here: it isolates photos, which destroys
-    // the annotated diagram structure that is the actual spec content.
-    const pureSpecPage = filteredPages.find(p => {
+    // Case B: ALL pure spec pages (not shared, not text-only, with a real image) — collect crops
+    // so multi-diagram services (e.g. Mobile Van LED) show all 4 diagrams, not just the first.
+    // Skip synthetic text-only spec pages (imageDataUrl === '') — nothing to crop there.
+    const pureSpecPages = filteredPages.filter(p => {
+      if (!p.imageDataUrl) return false; // skip synthetic text-only spec pages
       const t = p.text.toLowerCase().replace(/\s*\|\s*/g, ' ');
       const hasSpec = t.includes('design specification') || t.includes('design specifications') ||
                       t.includes('design specs') || t.includes('specification') || t.includes('display area');
       const hasRef  = t.includes('reference image') || t.includes('reference images') ||
                       t.includes('reference photo') || t.includes('reference photos') ||
                       t.includes('example image') || t.includes('sample photo');
-      // Skip text-only spec pages (data already shown in table) - only crop if there's a diagram
       const isTextOnly = t.includes('monthly average passenger') || t.includes('viewership data') ||
                         (t.includes('content type') && t.includes('content format') && !t.includes('wxh') && !t.includes('x ') && !/\d+\s*x\s*\d+/i.test(t));
-      // Pure spec page only (not shared). Always strip — even if upload-time Gemini Vision
-      // already produced croppedImages, those were photo-only crops that destroy the
-      // annotated SIZE CHART diagram. cropPageStrippingHeaderFooter is always correct here.
       return hasSpec && !hasRef && !isTextOnly;
     });
-    if (!pureSpecPage) {
-      setLazyCroppedSpecImage(null);
+    if (pureSpecPages.length === 0) {
+      setLazyCroppedSpecImage([]);
       return;
     }
-    // Cut at 30% from top: removes nav bar (~8%) + spec text heading + fields (~22%)
-    // leaving the SIZE CHART diagram (title + van + annotations) intact.
     let cancelled = false;
-    console.log('🔍 30% top-cut crop for pure spec page', pureSpecPage.pageNumber);
-    cropPageFromPercent(pureSpecPage.imageDataUrl, 0.13002).then(cropped => {
-      if (!cancelled) {
-        console.log('✅ 30% top-cut crop done for pure spec page', pureSpecPage.pageNumber);
-        setLazyCroppedSpecImage(cropped);
+    const cropAll = async () => {
+      const results: string[] = [];
+      for (const page of pureSpecPages) {
+        if (cancelled) return;
+        console.log('🔍 30% top-cut crop for pure spec page', page.pageNumber);
+        const cropped = await cropPageFromPercent(page.imageDataUrl, 0.13002);
+        if (!cancelled) {
+          console.log('✅ 30% top-cut crop done for pure spec page', page.pageNumber);
+          results.push(cropped);
+        }
       }
-    });
+      if (!cancelled) setLazyCroppedSpecImage(results);
+    };
+    cropAll();
     return () => { cancelled = true; };
   }, [filteredPages]);
 
   // Lazy crop for PURE spec pages (spec heading only, no reference image heading on same page).
-  // Fires when the spec page has no croppedImages — strips header/footer so only the diagram shows.
-  // Does NOT affect shared pages (handled by lazyCroppedSpecImage above) or pages with croppedImages.
-  const [lazyCroppedPureSpecImage, setLazyCroppedPureSpecImage] = useState<string | null>(null);
+  // Fires when spec pages have no croppedImages — strips header/footer so only the diagrams show.
+  // Processes ALL matching pages and returns results as an array.
+  const [lazyCroppedPureSpecImages, setLazyCroppedPureSpecImages] = useState<string[]>([]);
   useEffect(() => {
-    const pureSpecPage = filteredPages.find(p => {
+    const pureSpecPages = filteredPages.filter(p => {
+      if (!p.imageDataUrl) return false; // skip synthetic text-only spec pages
       const t = p.text.toLowerCase().replace(/\s*\|\s*/g, ' ');
       const hasSpec = t.includes('design specification') || t.includes('design specifications') ||
                       t.includes('design specs') || t.includes('specification') || t.includes('display area');
       const hasRef  = t.includes('reference image') || t.includes('reference images') ||
                       t.includes('reference photo') || t.includes('reference photos') ||
                       t.includes('example image') || t.includes('sample photo');
-      // Skip text-only spec pages (data already shown in table) - only crop if there's a diagram
       const isTextOnly = t.includes('monthly average passenger') || t.includes('viewership data') ||
                         (t.includes('content type') && t.includes('content format') && !t.includes('wxh') && !t.includes('x ') && !/\d+\s*x\s*\d+/i.test(t));
-      // Pure spec pages (no reference image heading) — always run the full-page
-      // header/footer strip, because pre-cropped images may capture only the
-      // first diagram strip (driver side) and miss conductor side / bus back.
       return hasSpec && !hasRef && !isTextOnly;
     });
-    if (!pureSpecPage) {
-      setLazyCroppedPureSpecImage(null);
+    if (pureSpecPages.length === 0) {
+      setLazyCroppedPureSpecImages([]);
       return;
     }
-    // Skip lazy crop when upload-time produced any stored crop (≥1).
-    // Upload-time Gemini Vision already found the correct content boundaries.
-    // Lazy geometric crop (13% cut) overrides those and clips headings like
-    // "Cab Branding Layout Size". Only run lazy crop for legacy PDFs with 0 crops.
-    if ((pureSpecPage.croppedImages?.length ?? 0) >= 1) {
-      setLazyCroppedPureSpecImage(null);
+    // Only lazy-crop pages that have no upload-time stored crops AND have a real image.
+    const pagesNeedingCrop = pureSpecPages.filter(p => (p.croppedImages?.length ?? 0) === 0 && !!p.imageDataUrl);
+    if (pagesNeedingCrop.length === 0) {
+      setLazyCroppedPureSpecImages([]);
       return;
     }
     let cancelled = false;
-    console.log('🔍 Triggering header/footer strip for pure spec page', pureSpecPage.pageNumber);
-    cropSpecDiagram(pureSpecPage.imageDataUrl).then(cropped => {
-      if (!cancelled) {
-        console.log('✅ Pure spec page strip done for page', pureSpecPage.pageNumber);
-        setLazyCroppedPureSpecImage(cropped);
+    const cropAll = async () => {
+      const results: string[] = [];
+      for (const page of pagesNeedingCrop) {
+        if (cancelled) return;
+        console.log('🔍 Triggering header/footer strip for pure spec page', page.pageNumber);
+        const cropped = await cropSpecDiagram(page.imageDataUrl);
+        if (!cancelled) {
+          console.log('✅ Pure spec page strip done for page', page.pageNumber);
+          results.push(cropped);
+        }
       }
-    });
+      if (!cancelled) setLazyCroppedPureSpecImages(results);
+    };
+    cropAll();
     return () => { cancelled = true; };
   }, [filteredPages]);
 
@@ -2563,7 +2640,7 @@ export const ReferenceImages: React.FC<ReferenceImagesProps> = ({ proposalPages,
       }
     }, 500);
     return () => clearTimeout(tid);
-  }, [geminiReview, lazyCroppedRefImages, lazyCroppedSpecImage, lazyCroppedPureSpecImage, filteredPages, specGroups, refImageUrls, hasSpecContent, specImageUrl]);
+  }, [geminiReview, lazyCroppedRefImages, lazyCroppedSpecImage, lazyCroppedPureSpecImages, filteredPages, specGroups, refImageUrls, hasSpecContent, specImageUrl]);
   // ─────────────────────────────────────────────────────────────────────────
 
   if (!resolvedPages || resolvedPages.length === 0) {
@@ -2591,10 +2668,25 @@ export const ReferenceImages: React.FC<ReferenceImagesProps> = ({ proposalPages,
   //    cuts that clip headings (e.g. "Cab Branding Layout Size").
   // 2. Only use lazy crops for legacy PDFs with 0 stored crops.
   const specImgSrcs: string[] =
-    specImageUrl.length >= 1 ? specImageUrl :
-    lazyCroppedPureSpecImage ? [lazyCroppedPureSpecImage] :
-    lazyCroppedSpecImage ? [lazyCroppedSpecImage] :
+    specImageUrl.length >= 1         ? specImageUrl :
+    lazyCroppedPureSpecImages.length > 0 ? lazyCroppedPureSpecImages :
+    lazyCroppedSpecImage.length > 0  ? lazyCroppedSpecImage :
     specImageUrl;
+
+  // ── SPEC RENDER GATE DIAGNOSTIC ─────────────────────────────────────────
+  console.log('\n🚦 ===== SPEC RENDER GATE =====');
+  console.log(`   specImageUrl (upload-time)     : ${specImageUrl.length} image(s)`);
+  console.log(`   lazyCroppedPureSpecImages      : ${lazyCroppedPureSpecImages.length} image(s)`);
+  console.log(`   lazyCroppedSpecImage           : ${lazyCroppedSpecImage.length} image(s)`);
+  console.log(`   specImgSrcs (final)            : ${specImgSrcs.length} image(s)`);
+  console.log(`   hasSpecContent                 : ${hasSpecContent}`);
+  console.log(`   noSpec                         : ${noSpec}`);
+  console.log(`   SPEC SECTION WILL SHOW?        : ${!noSpec && (hasSpecContent || specImgSrcs.length > 0) ? '✅ YES' : '❌ NO — hidden!'}`);
+  if (!noSpec && !(hasSpecContent || specImgSrcs.length > 0)) {
+    console.log(`   ⚠️  REASON: hasSpecContent=${hasSpecContent} AND specImgSrcs.length=${specImgSrcs.length} → both false/empty`);
+  }
+  console.log('==============================\n');
+  // ─────────────────────────────────────────────────────────────────────────
 
   // ── RENDER-TIME IMAGE COUNT DEBUG ────────────────────────────────────────
   console.log(`\n🖼️  ===== IMAGES LOADED FOR QUOTE =====`);

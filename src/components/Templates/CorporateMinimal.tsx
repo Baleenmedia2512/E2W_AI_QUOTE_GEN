@@ -78,7 +78,7 @@ export const CorporateMinimal: React.FC<TemplateProps> = ({ data, editable: _edi
 
   // Reusable items table with per-item GST breakdown columns
   const renderItemsTable = (items: typeof quote.items) => {
-    const hasDuration = items.some(i => i.duration && i.duration > 1);
+    const hasDuration = true; // Always show duration column for campaign flexibility
     const hasRemark = items.some(i => i.remark);
     const formatDuration = (item: typeof quote.items[0]) => {
       const dur = item.duration || 1;
@@ -96,7 +96,7 @@ export const CorporateMinimal: React.FC<TemplateProps> = ({ data, editable: _edi
             <th className="col-description">Description</th>
             <th className="col-quantity">QTY</th>
             <th className="col-rate">UNIT RATE</th>
-            {hasDuration && <th className="col-duration">Duration</th>}
+            <th className="col-duration" title="Campaign duration: 1 = 30 days, 2 = 60 days">Duration</th>
             {!quote.gstEnabled && <th className="col-total"><span className="th-main">AMOUNT</span></th>}
             {quote.gstEnabled && <th className="col-gst-pct">GST %</th>}
             {quote.gstEnabled && <th className="col-final"><span className="th-main">AMOUNT</span><span className="th-sub">(incl.GST)</span></th>}
@@ -115,7 +115,7 @@ export const CorporateMinimal: React.FC<TemplateProps> = ({ data, editable: _edi
                 </td>
                 <td className="item-quantity">{item.quantity}</td>
                 <td className="item-rate">{formatRate(item.rate)}</td>
-                {hasDuration && <td className="item-duration">{formatDuration(item)}</td>}
+                <td className="item-duration">{formatDuration(item)}</td>
                 {!quote.gstEnabled && <td className="item-total">{formatCurrency(item.total)}</td>}
                 {quote.gstEnabled && <td className="item-gst-pct">{gstPct}%</td>}
                 {quote.gstEnabled && <td className="item-final">{formatCurrency(itemFinal)}</td>}

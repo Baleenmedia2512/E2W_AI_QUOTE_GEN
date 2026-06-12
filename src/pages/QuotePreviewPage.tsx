@@ -6,6 +6,13 @@ import { exportToPDF } from '../services/pdfExportService';
 import { ExtractedPage } from '../types';
 import './QuotePreviewPage.css';
 
+// ═══════════════════════════════════════════════════════════════════════
+// 🔀 DATA SOURCE TOGGLE — matches ChatInterface.tsx
+// false = OLD: IndexedDB local images only
+// true  = NEW: Supabase cloud image URLs (any device)
+// ═══════════════════════════════════════════════════════════════════════
+const USE_CLOUD_DATA = true;
+
 export const QuotePreviewPage: React.FC = () => {
   const history = useHistory();
   const {
@@ -19,14 +26,23 @@ export const QuotePreviewPage: React.FC = () => {
     activeProposals,
     restoreActiveProposals,
     loadRecentProposals,
+    cloudServicePages,      // NEW: Cloud service pages from proposal_chunks
+    loadCloudServices,      // NEW: Load cloud services function
   } = useAppStore();
 
   // Build flat merged pages — reactive to activeProposals (populated after async restore)
-  const mergedActiveImages = useMemo<ExtractedPage[]>(() =>
-    activeProposals.length > 0
+  const mergedActiveImages = useMemo<ExtractedPage[]>(() => {
+    console.log('🔍 DEBUG [mergedActiveImages]: Building merged images from activeProposals');
+    console.log('   activeProposals count:', activeProposals.length);
+    activeProposals.forEach((p, idx) => {
+      console.log(`   Proposal ${idx + 1}: "${p.fileName}" - ${p.pageImages?.length || 0} pages`);
+    });
+    const merged = activeProposals.length > 0
       ? activeProposals.flatMap(p => p.pageImages || [])
-      : [],
-  [activeProposals]);
+      : [];
+    console.log('   ✅ Total merged images:', merged.length);
+    return merged;
+  }, [activeProposals]);
 
   // Build city→pages map for per-PDF isolation in ReferenceImages
   // Key = lowercased fileName (e.g. "coimbatore rate card.pdf") → pages from that PDF
@@ -41,62 +57,110 @@ export const QuotePreviewPage: React.FC = () => {
   }, [activeProposals]);
 
   const [isExporting, setIsExporting] = useState(false);
-  const [isRestoring, setIsRestoring] = useState(true);
-  const [isContentReady, setIsContentReady] = useState(false);
+  const [isRestoring, setIsRestoring] = useState(false); // Set to false to avoid blocking
+  const [isContentReady, setIsContentReady] = useState(true); // Set to true for immediate display
   const [zoom, setZoom] = useState(100);
-  const [pageImages, setPageImages] = useState<ExtractedPage[]>(
-    mergedActiveImages.length > 0 ? mergedActiveImages : (proposal.pageImages || [])
-  );
   const previewRef = useRef<HTMLDivElement>(null);
+  
+  // Merge cloud pages and local pages
+  // USE_CLOUD_DATA=true  → cloud first (Supabase URLs, any device)
+  // USE_CLOUD_DATA=false → local first (IndexedDB base64, upload device only)
+  const mergedAllImages = useMemo<ExtractedPage[]>(() => {
+    const cloud = cloudServicePages || [];
+    const local = mergedActiveImages || [];
+    
+    console.log('🔀 DEBUG [mergedAllImages]: USE_CLOUD_DATA =', USE_CLOUD_DATA);
+    console.log('   Cloud pages:', cloud.length);
+    console.log('   Local pages:', local.length);
+    
+    if (USE_CLOUD_DATA) {
+      // Cloud first — local as fallback when cloud has no data
+      const result = cloud.length > 0 ? cloud : local;
+      console.log(`   ✅ Using ${USE_CLOUD_DATA ? 'CLOUD' : 'LOCAL'} → ${result.length} pages`);
+      return result;
+    } else {
+      // Local first — cloud appended as supplement
+      const result = [...local, ...cloud];
+      console.log(`   ✅ Using LOCAL first → ${result.length} pages`);
+      return result;
+    }
+  }, [cloudServicePages, mergedActiveImages]);
+  
+  const [pageImages, setPageImages] = useState<ExtractedPage[]>(mergedAllImages);
 
-  // On mount: restore active proposals from IndexedDB/localStorage if memory is empty
+  // Early validation and redirect - prevent errors from missing data
+  useEffect(() => {
+    if (!currentQuote || !companyInfo || !clientInfo) {
+      console.warn('⚠️ Missing required data for preview, redirecting to quote page...');
+      console.warn('Missing Quote:', !currentQuote);
+      console.warn('Missing Company:', !companyInfo);
+      console.warn('Missing Client:', !clientInfo);
+      
+      // Redirect to quote page to complete missing steps
+      history.push('/quote');
+    }
+  }, [currentQuote, companyInfo, clientInfo, history]);
+
+  // On mount: Load data in background (non-blocking)
   useEffect(() => {
     const init = async () => {
-      if (activeProposals.length === 0) {
-        console.log('🔄 QuotePreviewPage: restoring active proposals...');
-        await loadRecentProposals(); // need metadata for restore
-        await restoreActiveProposals();
+      console.log('🚀 DEBUG [QuotePreviewPage MOUNT]: Loading data in background...');
+      console.log('   Current cloudServicePages:', cloudServicePages?.length || 0);
+      console.log('   Current activeProposals:', activeProposals.length);
+      
+      // Load cloud services in background (non-blocking)
+      if (!cloudServicePages || cloudServicePages.length === 0) {
+        console.log('   [Background] Loading cloud services...');
+        loadCloudServices().catch(error => {
+          console.error('   ❌ Cloud loading failed:', error);
+        });
       }
-      setIsRestoring(false);
+      
+      // Load local proposals in background (non-blocking)
+      if (activeProposals.length === 0) {
+        console.log('   [Background] Loading local proposals...');
+        loadRecentProposals()
+          .then(() => restoreActiveProposals())
+          .catch(error => {
+            console.error('   ❌ Local loading failed:', error);
+          });
+      }
+      
+      console.log('   ✅ Quote displayed, proposals loading in background');
     };
     init();
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
-  // Poll data-pdf-ready on preview content after data restore is done.
-  // ReferenceImages sets data-pdf-ready="true" 500 ms after all Gemini/lazy-crop
-  // async ops settle — the same signal the PDF export service already uses.
+  // Set content ready immediately for fast initial render
+  // Reference images will load progressively in background
   useEffect(() => {
-    if (isRestoring || !previewRef.current) return;
-    const check = () => {
-      const elements = previewRef.current?.querySelectorAll('[data-pdf-ready]');
-      if (!elements || elements.length === 0) {
-        setIsContentReady(true);
-        return true;
+    //nsole.log('   cloudServicePages:', cloudServicePages?.length || 0);
+    console.log('   activeProposals:', activeProposals.length);
+    
+    const allImages = mergedAllImages;
+    console.log('   Total merged images:', allImages.length);
+    
+    if (allImages.length > 0) {
+      setPageImages(allImages);
+      console.log(`✅ Updated pageImages: ${allImages.length} total pages`);
+      
+      // DEBUG: Show sample pages from both sources
+      if (cloudServicePages && cloudServicePages.length > 0) {
+        console.log('   📊 Cloud sample pages:');
+        cloudServicePages.slice(0, 2).forEach((page, idx) => {
+          console.log(`      ${idx + 1}. Page ${page.pageNumber} - ${page.imageDataUrl ? 'Has image' : 'No image'}`);
+        });
       }
-      const allReady = Array.from(elements).every(
-        el => el.getAttribute('data-pdf-ready') === 'true'
-      );
-      if (allReady) {
-        setIsContentReady(true);
-        return true;
+      if (mergedActiveImages.length > 0) {
+        console.log('   📊 Local sample pages:');
+        mergedActiveImages.slice(0, 2).forEach((page, idx) => {
+          console.log(`      ${idx + 1}. Page ${page.pageNumber} - ${page.imageDataUrl?.substring(0, 50)}...`);
+        });
       }
-      return false;
-    };
-    if (check()) return;
-    const id = setInterval(() => { if (check()) clearInterval(id); }, 200);
-    return () => clearInterval(id);
-  }, [isRestoring]); // eslint-disable-line react-hooks/exhaustive-deps
-
-  // Sync pageImages state when activeProposals change (after restore)
-  useEffect(() => {
-    if (activeProposals.length > 0) {
-      const merged = activeProposals.flatMap(p => p.pageImages || []);
-      if (merged.length > 0) {
-        setPageImages(merged);
-        console.log(`✅ QuotePreviewPage: ${merged.length} pages from ${activeProposals.length} active PDFs`);
-      }
+    } else {
+      console.log('⚠️ DEBUG: No images available from either source!');
     }
-  }, [activeProposals]);
+  }, [cloudServicePages, activeProposals, mergedAllImages]);
 
   // Add sample item if quote has no items
   React.useEffect(() => {
@@ -170,13 +234,22 @@ export const QuotePreviewPage: React.FC = () => {
     proposalPageMap,
   };
   
-  console.log('🎨 Template Data:', {
-    hasCompany: !!templateData.company,
-    hasClient: !!templateData.client,
-    hasQuote: !!templateData.quote,
-    proposalPagesCount: templateData.proposalPages?.length || 0,
-    quoteItemsCount: templateData.quote?.items?.length || 0,
-  });
+  console.log('🎨 DEBUG [Template Data Assembly]: Final data passed to template');
+  console.log('   hasCompany:', !!templateData.company);
+  console.log('   hasClient:', !!templateData.client);
+  console.log('   hasQuote:', !!templateData.quote);
+  console.log('   📄 proposalPages count:', templateData.proposalPages?.length || 0);
+  console.log('   🗺️ proposalPageMap keys:', Object.keys(templateData.proposalPageMap || {}));
+  console.log('   📋 quote.items count:', templateData.quote?.items?.length || 0);
+  
+  if (templateData.proposalPages && templateData.proposalPages.length > 0) {
+    console.log('   ✅ proposalPages DATA AVAILABLE:');
+    templateData.proposalPages.slice(0, 3).forEach((page, idx) => {
+      console.log(`      ${idx + 1}. Page Number: ${page.pageNumber}, Source: ${page.sourceName || 'Unknown'}`);
+    });
+  } else {
+    console.log('   ❌ proposalPages is EMPTY - No images will be shown in preview!');
+  }
 
   const renderTemplate = () => {
     return <CorporateMinimal data={templateData} />;
