@@ -3,8 +3,10 @@ export interface LineItem {
   description: string;
   quantity: number;
   unitPrice: number;
-  duration?: number; // Duration value (months or days)
-  durationUnit?: 'months' | 'days'; // Unit for duration field
+  duration?: number; // Campaign duration (only when user requested months/days)
+  durationUnit?: 'months' | 'days';
+  /** True when duration came from DB metadata default (display only; total uses ×1). */
+  durationIsAuto?: boolean;
   total: number;
   remark?: string; // Optional per-row remark/note
 }
@@ -15,8 +17,10 @@ export interface QuoteItem {
   details?: string;
   quantity: number;
   rate: number;
-  duration?: number; // Duration value (months or days)
-  durationUnit?: 'months' | 'days'; // Unit for duration field
+  duration?: number; // Campaign duration (only when user requested months/days)
+  durationUnit?: 'months' | 'days';
+  /** True when duration came from DB metadata default (display only; total uses ×1). */
+  durationIsAuto?: boolean;
   total: number;
   minimumQuantity?: number; // Minimum order quantity from proposal
   remark?: string; // Optional per-row remark/note

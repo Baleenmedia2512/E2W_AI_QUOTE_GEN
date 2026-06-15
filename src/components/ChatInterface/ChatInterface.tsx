@@ -31,7 +31,8 @@ import {
   type ServiceQuantity,
 } from '../../hooks/useCityServiceRegistry';
 import { searchServices } from '../../services/pdfEmbeddingService';
-import { resolveServiceIdFromCatalog, extractCityHint } from '../../utils/serviceResolver';
+import { extractCityHint, resolveServiceIdFromCatalog } from '../../utils/serviceResolver';
+import { durationMultiplier, enrichQuoteItemsDurationFromDb, resolveQuoteLineDuration } from '../../utils/durationUtils';
 import {
   buildGroupedServicesFromDb,
   getCitiesForServiceQuery,
@@ -1540,8 +1541,15 @@ const ChatInterface: React.FC = () => {
               .replace(/\s*-\s*(Display|Rental|Printing|Fixing|Price).*$/i, '') // Remove price type suffixes
               .trim();
             
-            const duration = item.duration && item.duration > 1 ? item.duration : undefined;
-            const durationUnit: 'months' | 'days' | undefined = item.durationUnit || (duration ? 'months' : undefined);
+            const svcMeta = sectionServiceId
+              ? dbServicesForResolution.find((s: { service_id: string }) => s.service_id === sectionServiceId)?.metadata
+              : undefined;
+
+            const resolved = resolveQuoteLineDuration(
+              { duration: item.duration, durationUnit: item.durationUnit, description },
+              cleanedText,
+              svcMeta,
+            );
             return {
               id: `${sectionIndex}-${lineIndex}`,
               title: specificTitle, // Store specific service title for T&C display
@@ -1550,9 +1558,10 @@ const ChatInterface: React.FC = () => {
               serviceName: sectionServiceName || sectionTitle || undefined,
               quantity: item.quantity || 1,
               rate: item.unitPrice || 0,
-              duration: duration,
-              durationUnit: durationUnit,
-              total: (item.quantity || 1) * (item.unitPrice || 0) * (duration || 1),
+              duration: resolved.duration,
+              durationUnit: resolved.durationUnit,
+              durationIsAuto: resolved.isAutoFromDb,
+              total: (item.quantity || 1) * (item.unitPrice || 0) * resolved.multiplier,
               minimumQuantity: item.minimumQuantity || undefined,
               // Only store terms on the first line item of each section to avoid duplicate textareas
               // For rate card images, clear per-item terms; for proposals, keep them
@@ -1601,6 +1610,13 @@ const ChatInterface: React.FC = () => {
           );
           quoteItems.length = 0;
           quoteItems.push(...resolvedItems);
+          const enriched = enrichQuoteItemsDurationFromDb(
+            quoteItems,
+            cleanedText,
+            dbServicesForResolution,
+          );
+          quoteItems.length = 0;
+          quoteItems.push(...enriched);
         }
 
         // Populate minimum-quantity cache from AI response so that future requests in the
@@ -2128,7 +2144,7 @@ const ChatInterface: React.FC = () => {
         qItem.description.toLowerCase().includes(w.description.toLowerCase().split(' - ')[0]),
       );
       if (warningItem) {
-        const duration = qItem.duration || 1;
+        const duration = durationMultiplier(qItem);
         return { ...qItem, quantity: warningItem.requested, total: warningItem.requested * qItem.rate * duration };
       }
       return qItem;
@@ -2195,7 +2211,7 @@ const ChatInterface: React.FC = () => {
         const useQty = warningItem.requested !== warningItem.originalRequested
           ? warningItem.requested
           : (warningItem.minimum);
-        const duration = qItem.duration || 1;
+        const duration = durationMultiplier(qItem);
         return { ...qItem, quantity: useQty, total: useQty * qItem.rate * duration };
       }
       return qItem;

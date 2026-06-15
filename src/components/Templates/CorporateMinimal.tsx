@@ -2,6 +2,7 @@ import React from 'react';
 import { TemplateProps } from '../../types';
 import { ReferenceImages } from './ReferenceImages';
 import { isMultiServiceQuote, groupItemsByServiceType, DEFAULT_GENERAL_TERMS, getServiceGroupHeading, normalizeTermsList, resolveGeneralTermsList, extractServiceType } from '../../utils/quoteGrouping';
+import { formatDurationLabel, quoteHasAnyDuration } from '../../utils/durationUtils';
 import './CorporateMinimal.css';
 
 export const CorporateMinimal: React.FC<TemplateProps> = ({ data, editable: _editable = false, onDataChange: _onDataChange }) => {
@@ -77,13 +78,9 @@ export const CorporateMinimal: React.FC<TemplateProps> = ({ data, editable: _edi
 
   // Reusable items table with per-item GST breakdown columns
   const renderItemsTable = (items: typeof quote.items) => {
-    const hasDuration = true; // Always show duration column for campaign flexibility
+    const hasDuration = quoteHasAnyDuration(items);
     const hasRemark = items.some(i => i.remark);
-    const formatDuration = (item: typeof quote.items[0]) => {
-      const dur = item.duration || 1;
-      const unit = item.durationUnit === 'days' ? 'Da' : 'Mo';
-      return `${dur} ${unit}`;
-    };
+    const formatDuration = (item: typeof quote.items[0]) => formatDurationLabel(item);
     const subtotal = items.reduce((sum, i) => sum + i.total, 0);
     const gstAmt = quote.gstEnabled ? subtotal * gstPct / 100 : 0;
     const inclGST = subtotal + gstAmt;
@@ -95,7 +92,9 @@ export const CorporateMinimal: React.FC<TemplateProps> = ({ data, editable: _edi
             <th className="col-description">Description</th>
             <th className="col-quantity">QTY</th>
             <th className="col-rate">UNIT RATE</th>
-            <th className="col-duration" title="Campaign duration: 1 = 30 days, 2 = 60 days">Duration</th>
+            {hasDuration && (
+            <th className="col-duration" title="Campaign duration when requested">Duration</th>
+            )}
             {!quote.gstEnabled && <th className="col-total"><span className="th-main">AMOUNT</span></th>}
             {quote.gstEnabled && <th className="col-gst-pct">GST %</th>}
             {quote.gstEnabled && <th className="col-final"><span className="th-main">AMOUNT</span><span className="th-sub">(incl.GST)</span></th>}
@@ -114,7 +113,9 @@ export const CorporateMinimal: React.FC<TemplateProps> = ({ data, editable: _edi
                 </td>
                 <td className="item-quantity">{item.quantity}</td>
                 <td className="item-rate">{formatRate(item.rate)}</td>
+                {hasDuration && (
                 <td className="item-duration">{formatDuration(item)}</td>
+                )}
                 {!quote.gstEnabled && <td className="item-total">{formatCurrency(item.total)}</td>}
                 {quote.gstEnabled && <td className="item-gst-pct">{gstPct}%</td>}
                 {quote.gstEnabled && <td className="item-final">{formatCurrency(itemFinal)}</td>}

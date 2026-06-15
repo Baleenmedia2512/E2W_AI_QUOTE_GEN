@@ -1056,7 +1056,8 @@ RULES:
   * The "duration" field represents the count. The total for each line item will be calculated as: quantity × unitPrice × duration.
   * Example (months): User asks for "100 apartment lift branding 3 months". Proposal says ₹2,500 per frame month. Output: {"description": "Apartment Lift Branding - Display Price (per frame month)", "quantity": 100, "unitPrice": 2500, "duration": 3, "durationUnit": "months"}. Total = 100 × 2500 × 3 = ₹750,000.
   * Example (days): User asks for "5 mobile van led 12 days". Proposal says ₹10,850 per day. Output: {"description": "Mobile Van LED Branding - Display Price (per day)", "quantity": 5, "unitPrice": 10850, "duration": 12, "durationUnit": "days"}. Total = 5 × 10,850 × 12 = ₹6,51,000.
-  * If the user does NOT specify a duration or says "1 month"/"1 day", omit the "duration" field or set it to 1.
+  * If the user does NOT specify a campaign duration (no "X months" or "X days" in their message), OMIT the "duration" and "durationUnit" fields entirely — do NOT default to duration: 1.
+  * If the user explicitly says "1 month" or "1 day", include duration: 1 with the matching durationUnit.
   * NEVER multiply the duration into the quantity or the unitPrice. Keep them separate: quantity = number of units, unitPrice = per-unit rate from proposal, duration = count of months or days.
   * The description should reflect the actual rate unit ("per month" or "per day"). The duration multiplier is handled separately.
   * DAYS vs MONTHS detection: If user says "days", "day" → durationUnit="days". If user says "months", "month" → durationUnit="months".
@@ -1088,8 +1089,8 @@ RULES:
     per month        | X days     | Divide monthly rate by 30, use as daily rate × X
     per month        | X months   | Use per-month rate directly × X (no conversion)
 - 🔴 ONE-TIME vs RECURRING — CRITICAL RULE:
-  * Some cost components are ONE-TIME charges regardless of campaign duration. They must ALWAYS have "duration": 1.
-  * ONE-TIME items (duration ALWAYS = 1, no matter how many months the campaign is):
+  * Some cost components are ONE-TIME charges regardless of campaign duration. OMIT "duration" and "durationUnit" on these lines (pricing uses multiplier 1).
+  * ONE-TIME items (never include duration fields):
     - Printing / Print (physical material printing — done once at campaign start)
     - Fixing / Installation / Mounting / Pasting (physical installation — done once)
     - Design / Artwork / Creative charges (designed once)
@@ -1100,17 +1101,17 @@ RULES:
   * EXAMPLES:
     - User: "100 Bus Semi Branding 3 months"
       ✅ CORRECT:
-        {"description": "Bus Semi Branding - Rental Price (per bus month)", "quantity": 100, "unitPrice": 14000, "duration": 3}   → 100 × 14000 × 3 = ₹42,00,000
-        {"description": "Bus Semi Branding - Printing & Fixing Price (per bus)", "quantity": 100, "unitPrice": 5000, "duration": 1}  → 100 × 5000 × 1 = ₹5,00,000
+        {"description": "Bus Semi Branding - Rental Price (per bus month)", "quantity": 100, "unitPrice": 14000, "duration": 3, "durationUnit": "months"}   → 100 × 14000 × 3 = ₹42,00,000
+        {"description": "Bus Semi Branding - Printing & Fixing Price (per bus)", "quantity": 100, "unitPrice": 5000}  → 100 × 5000 × 1 = ₹5,00,000 (no duration field)
       ❌ WRONG:
         {"description": "Bus Semi Branding - Printing & Fixing Price (per bus month)", "quantity": 100, "unitPrice": 5000, "duration": 3}  → 100 × 5000 × 3 = ₹15,00,000 (INCORRECT — you don't print 3 times!)
     - User: "50 Bus Full Branding 6 months"
       ✅ CORRECT:
         Rental: quantity=50, unitPrice=25000, duration=6  → ₹75,00,000
-        Printing & Fixing: quantity=50, unitPrice=13000, duration=1  → ₹6,50,000
+        Printing & Fixing: quantity=50, unitPrice=13000 (omit duration)  → ₹6,50,000
       ❌ WRONG:
         Printing & Fixing: duration=6  → ₹39,00,000 (INCORRECT)
-  * RULE: If the description contains "Printing", "Fixing", "Installation", "Mounting", "Pasting", "Design", or "Artwork" → ALWAYS set duration=1.
+  * RULE: If the description contains "Printing", "Fixing", "Installation", "Mounting", "Pasting", "Design", or "Artwork" → OMIT duration fields (one-time charge).
 - 🔴 FINAL VALIDATION BEFORE GENERATING QUOTE:
   * STEP 1: Check EVERY line item description
   * STEP 2: Ask yourself: "Does this description start with the FULL service type name?"
