@@ -1,7 +1,7 @@
 import React from 'react';
 import { TemplateProps } from '../../types';
 import { ReferenceImages } from './ReferenceImages';
-import { isMultiServiceQuote, groupItemsByServiceType, filterTermsByServiceType, DEFAULT_GENERAL_TERMS, getServiceGroupHeading, extractServiceType } from '../../utils/quoteGrouping';
+import { isMultiServiceQuote, groupItemsByServiceType, DEFAULT_GENERAL_TERMS, getServiceGroupHeading, normalizeTermsList, resolveGeneralTermsList, extractServiceType } from '../../utils/quoteGrouping';
 import './CorporateMinimal.css';
 
 export const CorporateMinimal: React.FC<TemplateProps> = ({ data, editable: _editable = false, onDataChange: _onDataChange }) => {
@@ -73,8 +73,7 @@ export const CorporateMinimal: React.FC<TemplateProps> = ({ data, editable: _edi
   // Filter out GST-related terms since GST is already shown in the table columns
   const filterGSTTerms = (terms: string[]) =>
     terms.filter(t => !/gst|tax\s*%|inclusive\s*of\s*(gst|tax)|exclusive\s*of\s*(gst|tax)|\+\s*gst|\d+\s*%\s*(gst|tax)/i.test(t));
-  const normalizeTerms = (rawTerms: string) =>
-    rawTerms.split('\n').map(t => t.trim().replace(/^[\u2022\u2023\u25aa\u25cf\-\–\*•]\s*/, '').replace(/\s*\|\s*/g, ' ').trim()).filter(Boolean);
+  const normalizeTerms = normalizeTermsList;
 
   // Reusable items table with per-item GST breakdown columns
   const renderItemsTable = (items: typeof quote.items) => {
@@ -214,15 +213,23 @@ export const CorporateMinimal: React.FC<TemplateProps> = ({ data, editable: _edi
 
   // Single service quote (original behavior)
   if (!isMultiService) {
-    const hasSpecificTerms = quote.items.some(item => item.termsAndConditions) || !!quote.termsAndConditions;
+    const hasItemTerms = quote.items.some(item => item.termsAndConditions?.trim());
+    const allServiceTerms = quote.items[0]?.termsAndConditions || quote.termsAndConditions || '';
+    const hasSpecificTerms = !!(hasItemTerms || quote.termsAndConditions?.trim());
     const singleTotal = 3;
-    const singleTerms = hasSpecificTerms
-      ? filterGSTTerms(
-          quote.items[0]?.termsAndConditions
-            ? normalizeTerms(quote.items[0].termsAndConditions)
-            : filterTermsByServiceType(quote.termsAndConditions, extractServiceType(quote.items[0]?.description || ''))
-        )
+    // Service-specific terms: show what's in the DB proposal (filtered for GST which is in table)
+    const rawSingleTerms = hasSpecificTerms && allServiceTerms
+      ? filterGSTTerms(normalizeTerms(allServiceTerms))
       : [];
+    // Only show Service Terms if we have non-default content (avoids duplicating General Terms)
+    const defaultFiltered = filterGSTTerms(DEFAULT_GENERAL_TERMS);
+    const isDefaultContent = rawSingleTerms.length > 0
+      && rawSingleTerms.length === defaultFiltered.length
+      && rawSingleTerms.every((t, i) => t === defaultFiltered[i]);
+    const singleTerms = isDefaultContent ? [] : rawSingleTerms;
+    // General section always uses DEFAULT_GENERAL_TERMS — quote.termsAndConditions IS the service terms
+    const generalTermsList = filterGSTTerms(DEFAULT_GENERAL_TERMS);
+    const showGeneralSection = generalTermsList.length > 0;
     return (
       <>
         <div id="pdf-page-1" className="template-corporate-minimal">
@@ -265,14 +272,16 @@ export const CorporateMinimal: React.FC<TemplateProps> = ({ data, editable: _edi
               </ul>
             </div>
           )}
-          <div className="terms-section" data-pdf-block="list">
-            <h3 style={{ textAlign: 'center', fontSize: '20px', fontWeight: '700', textTransform: 'uppercase', letterSpacing: '0.08em', color: '#3b0a14', margin: '0 0 18px 0', paddingBottom: '10px', borderBottom: '2px solid #2980b9' }}>
-              General Terms &amp; Conditions
-            </h3>
-            <ul>
-              {DEFAULT_GENERAL_TERMS.map((term, i) => <li key={i}><span className="bullet-dot"></span>{term}</li>)}
-            </ul>
-          </div>
+          {showGeneralSection && (
+            <div className="terms-section" data-pdf-block="list">
+              <h3 style={{ textAlign: 'center', fontSize: '20px', fontWeight: '700', textTransform: 'uppercase', letterSpacing: '0.08em', color: '#3b0a14', margin: '0 0 18px 0', paddingBottom: '10px', borderBottom: '2px solid #2980b9' }}>
+                General Terms &amp; Conditions
+              </h3>
+              <ul>
+                {generalTermsList.map((term, i) => <li key={i}><span className="bullet-dot"></span>{term}</li>)}
+              </ul>
+            </div>
+          )}
 
           {/* Bank Details */}
           <div className="terms-section bank-details-section" data-pdf-block="atomic" style={{ marginTop: '24px' }}>
@@ -337,11 +346,11 @@ export const CorporateMinimal: React.FC<TemplateProps> = ({ data, editable: _edi
       {serviceGroups.map((group, groupIndex) => {
         const servicePage = ++pageCounter;
         const refPage = ++pageCounter;
-        const hasGroupTerms = !!(group.termsAndConditions || quote.termsAndConditions);
-        const groupTerms = hasGroupTerms
-          ? filterGSTTerms(group.termsAndConditions
-              ? normalizeTerms(group.termsAndConditions)
-              : filterTermsByServiceType(quote.termsAndConditions, group.serviceType))
+        // Fallback to quote top-level terms when item-level is empty (same-service multi-city case
+        // where hydration used the single-service path and put terms on quote.termsAndConditions)
+        const groupTermsRaw = group.termsAndConditions || quote.termsAndConditions || '';
+        const groupTerms = groupTermsRaw.trim()
+          ? filterGSTTerms(normalizeTerms(groupTermsRaw))
           : [];
         return (
           <React.Fragment key={groupIndex}>
@@ -379,14 +388,23 @@ export const CorporateMinimal: React.FC<TemplateProps> = ({ data, editable: _edi
       {/* Last Page: Terms & Conditions */}
       <div id="pdf-page-terms" className="template-corporate-minimal">
         {/* General Terms */}
+        {(() => {
+          // Always use DEFAULT_GENERAL_TERMS for the general section — same fix as single-service.
+          // quote.termsAndConditions IS the service-specific DB terms so feeding it into
+          // resolveGeneralTermsList caused service terms to appear as "general" terms.
+          const multiGeneralTerms = filterGSTTerms(DEFAULT_GENERAL_TERMS);
+          if (multiGeneralTerms.length === 0) return null;
+          return (
         <div className="terms-section" data-pdf-block="list">
           <h3 style={{ textAlign: 'center', fontSize: '20px', fontWeight: '700', textTransform: 'uppercase', letterSpacing: '0.08em', color: '#3b0a14', margin: '0 0 18px 0', paddingBottom: '10px', borderBottom: '2px solid #2980b9' }}>
             General Terms &amp; Conditions
           </h3>
           <ul>
-            {DEFAULT_GENERAL_TERMS.map((term, i) => <li key={i}><span className="bullet-dot"></span>{term}</li>)}
+            {multiGeneralTerms.map((term, i) => <li key={i}><span className="bullet-dot"></span>{term}</li>)}
           </ul>
         </div>
+          );
+        })()}
 
         {/* Bank Details */}
         <div className="terms-section bank-details-section" data-pdf-block="atomic" style={{ marginTop: '24px' }}>

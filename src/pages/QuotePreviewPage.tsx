@@ -4,6 +4,7 @@ import { useAppStore } from '../store';
 import { CorporateMinimal } from '../components/Templates/CorporateMinimal';
 import { exportToPDF } from '../services/pdfExportService';
 import { ExtractedPage } from '../types';
+import { resolveServiceIdsForItems } from '../utils/serviceResolver';
 import './QuotePreviewPage.css';
 
 // ═══════════════════════════════════════════════════════════════════════
@@ -161,6 +162,27 @@ export const QuotePreviewPage: React.FC = () => {
       console.log('⚠️ DEBUG: No images available from either source!');
     }
   }, [cloudServicePages, activeProposals, mergedAllImages]);
+
+  // Stamp serviceId on quote items at preview time (covers old quotes saved before this field existed)
+  useEffect(() => {
+    if (!currentQuote?.items?.length || !cloudServicePages?.length) return;
+    const needsEnrich = currentQuote.items.some((i) => !i.serviceId);
+    if (!needsEnrich) return;
+
+    const enrichedItems = currentQuote.items.map((item) => {
+      if (item.serviceId) return item;
+      const ids = resolveServiceIdsForItems([item], cloudServicePages);
+      if (ids.size === 0) return item;
+      const serviceId = [...ids][0];
+      const page = cloudServicePages.find((p) => p.serviceId === serviceId);
+      return { ...item, serviceId, serviceName: page?.serviceName || item.serviceName };
+    });
+
+    if (enrichedItems.some((item, i) => item.serviceId !== currentQuote.items[i].serviceId)) {
+      console.log('🔗 [QuotePreview] Enriched quote items with serviceId');
+      setCurrentQuote({ ...currentQuote, items: enrichedItems });
+    }
+  }, [currentQuote, cloudServicePages, setCurrentQuote]);
 
   // Add sample item if quote has no items
   React.useEffect(() => {

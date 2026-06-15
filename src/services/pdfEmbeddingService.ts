@@ -1235,6 +1235,29 @@ export async function processProposalForRAG(params: {
       }
     }
     
+    // Step 3.75: OCR review images → metadata.review (persisted with chunk on store)
+    console.log('\n⭐ [PROCESS-RAG] Step 3.75: OCR review images...');
+    onProgress?.(62, 'Extracting customer reviews...');
+    const { extractReviewViaGemini } = await import('../utils/pdfUtils');
+    for (const service of services) {
+      if (service.metadata.review?.reviewText) continue;
+      const images = service.metadata.images as Array<{ url: string; type: string }> | undefined;
+      const reviewImg = images?.find((img) => img.type === 'review');
+      if (!reviewImg?.url) continue;
+      try {
+        console.log(`   ⭐ OCR review for "${service.serviceName}"...`);
+        const ocr = await extractReviewViaGemini(reviewImg.url);
+        if (ocr?.reviewText) {
+          service.metadata.review = ocr;
+          console.log(`   ✅ Review OCR: ${ocr.reviewerName} — "${ocr.reviewText.substring(0, 60)}..."`);
+        } else {
+          console.warn(`   ⚠️ No review text extracted for "${service.serviceName}"`);
+        }
+      } catch (ocrErr) {
+        console.warn(`   ⚠️ Review OCR failed for "${service.serviceName}":`, ocrErr);
+      }
+    }
+
     // Step 4: Generate embeddings and store each service
     const total = services.length;
     console.log(`\n🔄 [PROCESS-RAG] Step 4: Generating embeddings and storing ${total} services...`);

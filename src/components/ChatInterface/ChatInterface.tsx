@@ -31,6 +31,7 @@ import {
   type ServiceQuantity,
 } from '../../hooks/useCityServiceRegistry';
 import { searchServices } from '../../services/pdfEmbeddingService';
+import { resolveServiceIdFromCatalog, extractCityHint } from '../../utils/serviceResolver';
 
 // ═══════════════════════════════════════════════════════════════════════
 // 🔀 DATA SOURCE TOGGLE
@@ -89,7 +90,7 @@ interface CityPickerSegment {
 
 const ChatInterface: React.FC = () => {
   const history = useHistory();
-  const { proposal, setCurrentQuote, activeProposals } = useAppStore();
+  const { proposal, setCurrentQuote, activeProposals, loadCloudServices } = useAppStore();
   const [messages, setMessages] = useState<Message[]>([]);
   const [inputValue, setInputValue] = useState('');
   const [isLoading, setIsLoading] = useState(false);
@@ -180,6 +181,7 @@ const ChatInterface: React.FC = () => {
       /bus semi branding/i,
       /bus back panel/i,
       /auto full branding/i,
+      /auto semi branding/i,
       /auto back stickers/i,
       /metro interior/i,
       /cab\s+(?:full|back|interior)/i,
@@ -218,6 +220,57 @@ const ChatInterface: React.FC = () => {
       });
     }
     return cities;
+  };
+
+  /**
+   * Detect a KNOWN_CITY_LIST city keyword in free text (case-insensitive whole-word match).
+   * Returns the lowercase city key, or null if none found.
+   */
+  const detectKnownCityInText = (text: string): string | null => {
+    const lower = text.toLowerCase();
+    return KNOWN_CITY_LIST.find(c => new RegExp(`\\b${c}\\b`).test(lower)) || null;
+  };
+
+  /**
+   * Given a user query and all DB services, find how many distinct cities carry the
+   * exact same service (all query words match the service_name).
+   * Returns de-duped title-case city names.
+   * Returns [] when the query is too vague (< 2 meaningful words) or when the matching
+   * services span too many different service names (ambiguous → let Gemini handle).
+   */
+  const getCloudCitiesForQuery = (query: string, services: any[]): string[] => {
+    const words = query
+      .replace(/\d+/g, '')
+      .replace(/\b(need|for|the|a|an|in|at|of|and|i|want|please|generate|quote|services?|ads?|advertising)\b/gi, '')
+      .toLowerCase().trim()
+      .split(/\s+/).filter(w => w.length >= 2);
+
+    if (words.length < 2) return [];
+
+    const matched = services.filter(svc => {
+      const name = (svc.service_name || '').toLowerCase();
+      return words.every(w => name.includes(w));
+    });
+
+    if (matched.length === 0) return [];
+
+    // If matched services span more than 2 distinct names, query is ambiguous — skip picker
+    const uniqueNames = new Set(matched.map(s => (s.service_name || '').toLowerCase().trim()));
+    if (uniqueNames.size > 2) return [];
+
+    const citySet = new Set<string>();
+    for (const svc of matched) {
+      const locs: string[] = svc.metadata?.locations || [];
+      for (const loc of locs) {
+        const key = KNOWN_CITY_LIST.find(c => loc.toLowerCase().includes(c));
+        if (key) citySet.add(key.charAt(0).toUpperCase() + key.slice(1));
+      }
+      const docName = (svc.document_name || '').toLowerCase();
+      KNOWN_CITY_LIST.forEach(c => {
+        if (docName.includes(c)) citySet.add(c.charAt(0).toUpperCase() + c.slice(1));
+      });
+    }
+    return [...citySet];
   };
 
   // Return first city from the list that appears in the text segment (case-insensitive)
@@ -655,7 +708,8 @@ const ChatInterface: React.FC = () => {
     // ─── RAG SEARCH GATE ──────────────────────────────────────────────────────
     // If query looks like a simple search (not quote generation), check RAG database first
     const isQuoteRequest = /\b(generate|create|quote|price|cost|for)\b/i.test(cleanedText)
-      || /\b\d+\b/.test(cleanedText); // Any number = quantity → quote intent, not search
+      || /\b\d+\b/.test(cleanedText) // Any number = quantity → quote intent, not search
+      || /\b(branding|advertising|signage|hoarding|banner|sticker|shelter|panel|board|printing|display|wrapping)\b/i.test(cleanedText); // Full service names → quote intent
     const isSimpleSearch = !isQuoteRequest && !isQtyOverride && !isCheckboxConfirmedFlag;
     
     if (isSimpleSearch && cleanedText.split(' ').length >= 2) {
@@ -1091,15 +1145,55 @@ const ChatInterface: React.FC = () => {
     try {
       // Prepare proposal contexts for AI
       let proposalContexts: Array<{fileName: string, content: string}> | undefined;
+      let dbServicesForResolution: any[] = [];
 
       if (USE_CLOUD_DATA) {
         // ── NEW: RAG / DB path — send only matched service chunks (500 tokens vs 50,000) ──
         try {
           const { loadAllServicesFromCloud } = await import('../../services/supabaseProposalService');
           const dbServices = await loadAllServicesFromCloud();
-          if (dbServices && dbServices.length > 0) {
-            // Build compact service context from DB — pricing + terms only (no full PDF text)
-            proposalContexts = dbServices.map((svc: any) => {
+          dbServicesForResolution = dbServices || [];
+
+          // ── CLOUD CITY GATE ────────────────────────────────────────────────────
+          // If the user didn't mention a city and the service exists in 2+ cities in DB,
+          // show city picker instead of silently picking one. Works regardless of
+          // how many PDFs are manually loaded (activeProposals).
+          if (!isQtyOverride && !isCheckboxConfirmedFlag && dbServices && dbServices.length > 0) {
+            const cityAlreadyInMsg = detectKnownCityInText(cleanedText);
+            if (!cityAlreadyInMsg) {
+              const cloudCities = getCloudCitiesForQuery(cleanedText, dbServices);
+              if (cloudCities.length >= 2) {
+                const segments: CityPickerSegment[] = [{
+                  raw: cleanedText,
+                  cityNeeded: true,
+                  detectedCity: null,
+                  selectedCities: [],
+                  matchedCities: cloudCities,
+                }];
+                const pickerMsgId = (Date.now() + 1).toString();
+                const pickerMsg: Message = {
+                  id: pickerMsgId,
+                  role: 'assistant',
+                  content: '🏙️ This service is available in multiple cities. Please select your city:',
+                  timestamp: new Date(),
+                  isCityPicker: true,
+                };
+                setMessages(prev => [...prev, userMessage, pickerMsg]);
+                setInputValue('');
+                setCityPickerState({
+                  messageId: pickerMsgId,
+                  originalMessage: cleanedText,
+                  segments,
+                  availableCities: cloudCities,
+                });
+                return; // finally block resets isLoading
+              }
+            }
+          }
+          // ── END CLOUD CITY GATE ────────────────────────────────────────────────
+
+          // Build compact service context from DB — pricing + terms only (no full PDF text)
+          const buildSvcContext = (svc: any): { fileName: string; content: string } => {
               const m = svc.metadata || {};
               const pricing = m.pricing || {};
               const lines = [
@@ -1108,19 +1202,15 @@ const ChatInterface: React.FC = () => {
                 `PRICING STRUCTURE: ${pricing.structure || 'combined'}`,
               ];
 
-              // Structure-aware pricing — ensures Gemini generates correct rows
               if (pricing.structure === 'separate') {
-                // Two separate prices: display + production/printing
                 if (pricing.display_price)    lines.push(`DISPLAY PRICE: ₹${pricing.display_price} ${pricing.display_period || 'per month'}`);
                 if (pricing.production_price) lines.push(`PRINTING & FIXING PRICE: ₹${pricing.production_price} ${pricing.production_unit || 'per unit'}`);
                 if (pricing.min_quantity)     lines.push(`MINIMUM: ${pricing.min_quantity}`);
               } else if (pricing.structure === 'campaign') {
-                // Campaign: unit × quantity
                 if (pricing.unit_price)   lines.push(`UNIT PRICE: ₹${pricing.unit_price} ${pricing.unit || ''}`);
                 if (pricing.min_quantity) lines.push(`MINIMUM QUANTITY: ${pricing.min_quantity}`);
                 if (pricing.total_price)  lines.push(`TOTAL PRICE: ₹${pricing.total_price}`);
               } else {
-                // Combined / all-inclusive single price
                 const price = pricing.price || pricing.unit_price;
                 if (price) lines.push(`PRICE: ₹${price} ${pricing.period || pricing.display_period || pricing.unit || 'per month'} (includes display, printing & mounting)`);
                 if (pricing.min_quantity) lines.push(`MINIMUM: ${pricing.min_quantity}`);
@@ -1133,7 +1223,26 @@ const ChatInterface: React.FC = () => {
               if (svc.content) lines.push(`DESCRIPTION: ${svc.content.substring(0, 300)}`);
 
               return { fileName: svc.document_name || 'Rate Card', content: lines.filter(Boolean).join('\n') };
-            });
+          };
+
+          if (dbServices && dbServices.length > 0) {
+            // If user mentioned a specific city, only send that city's services to Gemini
+            const detectedCity = detectKnownCityInText(cleanedText);
+            let servicesToSend = dbServices;
+            if (detectedCity) {
+              const cityFiltered = dbServices.filter((svc: any) => {
+                const locs: string[] = svc.metadata?.locations || [];
+                const docName = (svc.document_name || '').toLowerCase();
+                return locs.some((l: string) => l.toLowerCase().includes(detectedCity))
+                    || docName.includes(detectedCity);
+              });
+              if (cityFiltered.length > 0) {
+                servicesToSend = cityFiltered;
+                console.log(`🏙️ [CityFilter] Filtered to "${detectedCity}": ${cityFiltered.length} services`);
+              }
+            }
+
+            proposalContexts = servicesToSend.map(buildSvcContext);
             console.log(`☁️ [USE_CLOUD_DATA] Using ${proposalContexts.length} DB services as context (~${proposalContexts.reduce((s, p) => s + p.content.length, 0)} chars)`);
             // DEBUG: Show exact context for first 3 services so we can verify pricing format
             console.log('📋 [DB-CONTEXT-DEBUG] Sample service contexts sent to Gemini:');
@@ -1304,6 +1413,18 @@ const ChatInterface: React.FC = () => {
         // Flatten lineItems into individual QuoteItems
         const quoteItems: QuoteItem[] = response.quoteData.items.flatMap((section: any, sectionIndex: number) => {
           const sectionTitle = section.title || '';
+          // Resolve service_id once per section from Gemini's title (e.g. "Bus Semi Branding")
+          let sectionServiceId: string | undefined;
+          let sectionServiceName: string | undefined;
+          if (sectionTitle && dbServicesForResolution.length > 0) {
+            const cityHintEarly = extractCityHint(cleanedText);
+            const resolved = resolveServiceIdFromCatalog(sectionTitle, dbServicesForResolution, cityHintEarly);
+            if (resolved) {
+              sectionServiceId = resolved.serviceId;
+              sectionServiceName = resolved.serviceName;
+              console.log(`🔗 [ServiceId] Section "${sectionTitle}" → ${sectionServiceId}`);
+            }
+          }
           return section.lineItems.map((item: any, lineIndex: number) => {
             // Use original description from AI - don't prepend generic section title
             // The AI already provides specific service names (e.g., "BUS SEMI BRANDING - Rental Price")
@@ -1343,6 +1464,8 @@ const ChatInterface: React.FC = () => {
               id: `${sectionIndex}-${lineIndex}`,
               title: specificTitle, // Store specific service title for T&C display
               description: description,
+              serviceId: sectionServiceId,
+              serviceName: sectionServiceName || sectionTitle || undefined,
               quantity: item.quantity || 1,
               rate: item.unitPrice || 0,
               duration: duration,
@@ -1376,6 +1499,28 @@ const ChatInterface: React.FC = () => {
           quoteItems.push(...uniqueQuoteItems);
         }
 
+        // Resolve proposal_chunks.service_id for each item (direct image lookup in preview)
+        if (dbServicesForResolution.length === 0) {
+          try {
+            const { loadAllServicesFromCloud } = await import('../../services/supabaseProposalService');
+            dbServicesForResolution = await loadAllServicesFromCloud();
+          } catch (err) {
+            console.warn('⚠️ Could not load services for serviceId resolution:', err);
+          }
+        }
+        if (dbServicesForResolution.length > 0) {
+          const { attachServiceIdsToQuoteItems, extractCityHint } = await import('../../utils/serviceResolver');
+          const cityHint = extractCityHint(cleanedText)
+            || extractCityHint(quoteItems.map(i => i.description).join(' '));
+          const resolvedItems = attachServiceIdsToQuoteItems(
+            quoteItems,
+            dbServicesForResolution,
+            cityHint,
+          );
+          quoteItems.length = 0;
+          quoteItems.push(...resolvedItems);
+        }
+
         // Populate minimum-quantity cache from AI response so that future requests in the
         // same session can validate against known minimums even if the AI omits minimumQuantity.
         quoteItems.forEach(item => {
@@ -1390,35 +1535,54 @@ const ChatInterface: React.FC = () => {
         const gstPercentage = 18;
         const gstAmount = subtotal * (gstPercentage / 100);
         
-        // Use standard business terms for rate card images, extracted terms for Excel/PDF proposals
+        // Hydrate T&C from proposal_chunks.metadata.terms (DB source of truth)
+        let topLevelTerms = response.quoteData.termsAndConditions || '';
+        let hydratedFromDb = false;
+
+        if (!isRateCardImage && dbServicesForResolution.length > 0) {
+          const { hydrateQuoteTermsFromCatalog } = await import('../../utils/termsHydration');
+          console.log('🔍 [T&C-Debug] quoteItems serviceIds:', quoteItems.map(i => ({ desc: i.description, sid: i.serviceId })));
+          const hydrated = hydrateQuoteTermsFromCatalog(
+            quoteItems,
+            topLevelTerms,
+            dbServicesForResolution,
+          );
+          quoteItems.length = 0;
+          quoteItems.push(...hydrated.items);
+          topLevelTerms = hydrated.termsAndConditions;
+          hydratedFromDb = hydrated.hydratedFromDb;
+          console.log('🔍 [T&C-Debug] hydratedFromDb:', hydratedFromDb, '| topLevelTerms preview:', topLevelTerms.slice(0, 120));
+        }
+
+        const hasItemTerms = quoteItems.some((i) => i.termsAndConditions?.trim());
+        const hasAnyTerms = !!(topLevelTerms.trim() || hasItemTerms);
+
+        // Use standard business terms for rate card images; DB terms for proposals
         let finalTermsAndConditions: string;
-        
+
         if (isRateCardImage) {
-          // Detected JPEG/image rate card - use standard terms
           finalTermsAndConditions = DEFAULT_GENERAL_TERMS.join('\n');
           console.log('✅ Using DEFAULT_GENERAL_TERMS for image rate card');
+        } else if (hydratedFromDb) {
+          finalTermsAndConditions = topLevelTerms;
+          console.log(
+            hasItemTerms
+              ? '📋 Using DB metadata terms (per-service on items + general on quote)'
+              : `📋 Using DB metadata terms (${topLevelTerms.split('\n').length} lines on quote)`,
+          );
         } else {
-          // For Excel/PDF proposals, use extracted terms but filter out rate card artifacts
-          const geminiTerms = response.quoteData.termsAndConditions || '';
-          
-          // Additional safety check: detect if Gemini extracted rate card footnotes instead of real T&C
-          const isRateCardFootnote = 
-            geminiTerms.includes('மூக்க்கம்கககம்க்') || // Tamil text
-            geminiTerms.includes('சர்வீஸ்') || // Tamil text
-            geminiTerms.toLowerCase().includes('no explicit general terms') ||
-            geminiTerms.toLowerCase().includes('no classified display ad') ||
-            geminiTerms.toLowerCase().includes('srilanka edition') ||
-            geminiTerms.toLowerCase().includes('rate card');
-          
-          if (isRateCardFootnote) {
-            // Gemini extracted rate card notes, not real T&C - use defaults
+          const { isRateCardFootnoteText } = await import('../../utils/termsHydration');
+          if (isRateCardFootnoteText(topLevelTerms)) {
             finalTermsAndConditions = DEFAULT_GENERAL_TERMS.join('\n');
             console.log('⚠️ Detected rate card footnotes in T&C, using DEFAULT_GENERAL_TERMS instead');
+          } else if (topLevelTerms.trim()) {
+            finalTermsAndConditions = topLevelTerms;
+            console.log('✅ Using Gemini-extracted T&C (no DB metadata match)');
+          } else if (hasAnyTerms) {
+            finalTermsAndConditions = '';
           } else {
-            // Looks like legitimate T&C from a proposal
-            // If empty (common in multi-city responses), fall back to defaults
-            finalTermsAndConditions = geminiTerms || DEFAULT_GENERAL_TERMS.join('\n');
-            console.log(geminiTerms ? '✅ Using extracted T&C from proposal document' : '✅ Using DEFAULT_GENERAL_TERMS (AI returned empty T&C)');
+            finalTermsAndConditions = DEFAULT_GENERAL_TERMS.join('\n');
+            console.log('✅ Using DEFAULT_GENERAL_TERMS (no T&C from DB or AI)');
           }
         }
         
@@ -1441,6 +1605,11 @@ const ChatInterface: React.FC = () => {
         };
         
         setCurrentQuote(quote);
+
+        // Refresh cloud page cache so preview direct-lookup has latest images + review metadata
+        loadCloudServices().catch((err) => {
+          console.warn('⚠️ Could not refresh cloud services after quote:', err);
+        });
         
         // Show success message before navigating
         const quoteReadyMessage: Message = {

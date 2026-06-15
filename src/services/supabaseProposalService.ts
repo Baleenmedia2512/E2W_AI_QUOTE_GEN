@@ -375,6 +375,252 @@ export async function loadAllServicesFromCloud(): Promise<any[]> {
 }
 
 /**
+ * Build spec page text for Metro-style services (Metro Train Inside Branding, etc.)
+ * that store rich coach-by-coach data in metadata.specifications.
+ *
+ * Output format understood by extractMetroMultiTableSpec in ReferenceImages.tsx:
+ *   DESIGN SPECIFICATION
+ *   INTERIOR TRAIN DIMENSIONS ( WX H )
+ *   Type of Media | Size (Inches) | Qty
+ *   Card | 12.75 x18.75 inches | 68
+ *   ...
+ *    | Total Media | 79
+ *   Card Material Area | Card Display Area
+ *   18.75 x 12.75 | 17.75 x 11.75
+ *   Coach-1 - Ladies Coach
+ *   Type of Media | Size (Inches) | Qty
+ *   Cards | 12.75 x 18.75 | 14
+ *   ...
+ *
+ * Returns null when specs has no coach-entry keys → non-metro services are unaffected.
+ */
+function buildMetroSpecText(specs: Record<string, unknown>): string | null {
+  // Detect coach-style: at least one "coach_N..." key that holds an entry object
+  const COACH_RE = /^coach_(\d+)/;
+  const hasCoachEntries = Object.entries(specs).some(
+    ([k, v]) =>
+      COACH_RE.test(k) &&
+      v && typeof v === 'object' && !Array.isArray(v) &&
+      'type_of_media' in (v as object),
+  );
+  if (!hasCoachEntries) return null;
+
+  type Item = {
+    key: string;
+    coachNum: string;
+    type_of_media: string;
+    size_in_inches: string;
+    qty: number;
+  };
+
+  const items: Item[] = [];
+  for (const [key, val] of Object.entries(specs)) {
+    if (!val || typeof val !== 'object' || Array.isArray(val)) continue;
+    const e = val as Record<string, unknown>;
+    if (!e.type_of_media || !e.size_in_inches) continue;
+
+    const coachMatch = key.match(/^coach_(\d+)/);
+    // driver_door_sticker is physically in Coach-4 per standard metro layout
+    const coachNum = coachMatch ? coachMatch[1]
+      : key === 'driver_door_sticker' ? '4'
+      : null;
+    if (!coachNum) continue;
+
+    items.push({
+      key,
+      coachNum,
+      type_of_media: String(e.type_of_media),
+      size_in_inches: String(e.size_in_inches),
+      qty: Number(e.qty) || 0,
+    });
+  }
+  if (items.length === 0) return null;
+
+  // ── Summary: INTERIOR TRAIN DIMENSIONS ──────────────────────────────────
+  // Aggregate by normalised size; display as "Card" / "Sticker" generic labels
+  // (matching the screenshot where connector stickers also show as "Sticker")
+  const normalizeSize = (s: string) =>
+    s.replace(/\s/g, '').replace(/\*/g, 'x').toLowerCase();
+
+  const aggMap = new Map<string, { label: string; size: string; qty: number }>();
+  for (const item of items) {
+    const aggLabel = /^cards?$/i.test(item.type_of_media) ? 'Card' : 'Sticker';
+    const normSize = normalizeSize(item.size_in_inches);
+    const aggKey = `${aggLabel}||${normSize}`;
+    const existing = aggMap.get(aggKey);
+    if (existing) {
+      existing.qty += item.qty;
+    } else {
+      const dispSize = item.size_in_inches.replace(/\s*inches\s*/i, '').trim() + ' inches';
+      aggMap.set(aggKey, { label: aggLabel, size: dispSize, qty: item.qty });
+    }
+  }
+
+  // Sort: Card first; within Sticker sort by qty descending
+  const summaryRows = [...aggMap.values()].sort((a, b) => {
+    if (a.label === 'Card' && b.label !== 'Card') return -1;
+    if (a.label !== 'Card' && b.label === 'Card') return 1;
+    return b.qty - a.qty;
+  });
+  const totalQty = summaryRows.reduce((s, r) => s + r.qty, 0);
+
+  const lines: string[] = [
+    'DESIGN SPECIFICATION',
+    'INTERIOR TRAIN DIMENSIONS ( WX H )',
+    'Type of Media | Size (Inches) | Qty',
+    ...summaryRows.map(r => `${r.label} | ${r.size} | ${r.qty}`),
+    ` | Total Media | ${totalQty}`,
+  ];
+
+  // ── Card Material Area / Card Display Area ───────────────────────────────
+  const cardMaterial = specs['card_material_area'];
+  const cardDisplay  = specs['card_display_area'];
+  if (cardMaterial && cardDisplay) {
+    lines.push(`Card Material Area | Card Display Area`);
+    lines.push(`${cardMaterial} | ${cardDisplay}`);
+  }
+
+  // ── Per-coach tables ─────────────────────────────────────────────────────
+  const coachNums = [...new Set(items.map(i => i.coachNum))].sort(
+    (a, b) => Number(a) - Number(b),
+  );
+
+  for (const num of coachNums) {
+    const coachItems = items.filter(i => i.coachNum === num);
+
+    // Base key: starts with coach_N, does NOT end with _stickers / _connector_stickers
+    const baseKey = coachItems
+      .map(i => i.key)
+      .filter(
+        k =>
+          k.startsWith(`coach_${num}`) &&
+          !k.endsWith('_stickers') &&
+          !k.endsWith('_connector_stickers'),
+      )
+      .sort((a, b) => a.length - b.length)[0]; // shortest = most generic
+
+    let heading: string;
+    if (baseKey) {
+      const sub = baseKey
+        .replace(new RegExp(`^coach_${num}`), '')
+        .replace(/^_/, '')
+        .replace(/_/g, ' ')
+        .replace(/\b\w/g, c => c.toUpperCase());
+      heading = sub ? `Coach-${num} - ${sub}` : `Coach-${num}`;
+    } else {
+      heading = `Coach-${num}`;
+    }
+
+    lines.push(heading);
+    lines.push('Type of Media | Size (Inches) | Qty');
+    for (const item of coachItems) {
+      const type =
+        item.key === 'driver_door_sticker' ? 'Driver Door - Sticker' : item.type_of_media;
+      lines.push(`${type} | ${item.size_in_inches} | ${item.qty}`);
+    }
+  }
+
+  return lines.join('\n');
+}
+
+/**
+ * Build spec page text for Metro Elevator / Elevated Metro Station services only.
+ * Detected by metadata.specifications.monthly_average_passenger_footfall being a
+ * nested object (blue_line_stations, green_line_stations, etc.).
+ *
+ * Footfall + operational fields are placed BEFORE "DESIGN SPECIFICATION" so
+ * extractDesignSpecFields treats them as a context group (MONTHLY AVERAGE PASSENGER FOOTFALL).
+ *
+ * Returns null for all other services — no impact on coach metro, auto, LED, etc.
+ */
+function formatSpecKeyLabel(key: string): string {
+  return key.replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase());
+}
+
+function buildElevatedMetroSpecText(specs: Record<string, unknown>): string | null {
+  const footfall = specs['monthly_average_passenger_footfall'];
+  if (!footfall || typeof footfall !== 'object' || Array.isArray(footfall)) {
+    return null;
+  }
+
+  const lines: string[] = ['MONTHLY AVERAGE PASSENGER FOOTFALL'];
+
+  for (const [k, v] of Object.entries(footfall as Record<string, unknown>)) {
+    if (v === null || v === undefined || String(v).trim() === '') continue;
+    lines.push(`${formatSpecKeyLabel(k)}: ${v}`);
+  }
+
+  const SKIP_KEYS = new Set(['monthly_average_passenger_footfall', 'interior_dimensions']);
+  for (const [k, v] of Object.entries(specs)) {
+    if (SKIP_KEYS.has(k)) continue;
+    if (v === null || v === undefined || String(v).trim() === '') continue;
+    if (typeof v === 'object') continue;
+    lines.push(`${formatSpecKeyLabel(k)}: ${v}`);
+  }
+
+  lines.push('DESIGN SPECIFICATION');
+  return lines.join('\n');
+}
+
+/**
+ * Convert a raw size/material string into one or more "Label: value" lines that
+ * extractDesignSpecFields can parse.
+ *
+ * Three input formats are handled:
+ *  A) "Left side: 18"x18, Right side: 18x18, Back side: 44x20"  ← comma + label-colon
+ *     → split on ", <Label>:" → each part becomes its own line
+ *  B) "Left side\n18"x18\nRight side\n18x18"  ← newline-separated (raw PDF text)
+ *     → rejoin pairs of (label, value) lines using ":" separator
+ *  C) "18x18 (wxh) inches"  ← flat value with no labels at all
+ *     → prefix with the provided fallbackLabel so the parser always sees a colon entry
+ *
+ * Without this function the parser receives lines like "18x18 inches" with no colon and
+ * silently drops them, causing the entire Display Specification section to vanish.
+ */
+function splitSpecString(raw: string, fallbackLabel = 'Size'): string {
+  if (!raw.trim()) return '';
+
+  // ── Format A: comma-separated "Label: value, Label: value" ──────────────────
+  if (/,\s*[A-Za-z][A-Za-z0-9 ]*:/.test(raw)) {
+    const parts = raw.split(/,\s*(?=[A-Za-z][A-Za-z0-9 ]*:)/);
+    return parts.map(p => p.trim()).filter(Boolean).join('\n');
+  }
+
+  // ── Format B: newline-separated, alternating label/value lines ───────────────
+  if (/\n/.test(raw)) {
+    const lines = raw.split('\n').map(l => l.trim()).filter(Boolean);
+    const result: string[] = [];
+    for (let i = 0; i < lines.length; i++) {
+      const cur = lines[i];
+      const next = lines[i + 1];
+      // Already has "Label: value" on one line → keep as-is
+      if (/^[^:]{1,50}:\s*.+/.test(cur)) {
+        result.push(cur);
+        continue;
+      }
+      // Tab-separated "Label\tValue" on one line
+      if (cur.includes('\t')) {
+        const [lbl, ...rest] = cur.split('\t');
+        result.push(`${lbl.trim()}: ${rest.join(' ').trim()}`);
+        continue;
+      }
+      // Standalone label (no colon, no digit) + next line is the value (has digits or is short)
+      if (!/\d/.test(cur) && cur.length <= 30 && next && !/^[^:]{1,50}:/.test(next)) {
+        result.push(`${cur}: ${next}`);
+        i++; // consume the value line
+        continue;
+      }
+      result.push(cur);
+    }
+    return result.filter(Boolean).join('\n');
+  }
+
+  // ── Format C: flat string with no labels ─────────────────────────────────────
+  // Ensure the parser always finds at least one "Label: value" entry.
+  return raw.includes(':') ? raw : `${fallbackLabel}: ${raw}`;
+}
+
+/**
  * Transform proposal_chunks data to ExtractedPage format
  * Converts cloud service records into preview-ready page objects
  */
@@ -415,16 +661,50 @@ export function transformServicesToPages(services: any[]): any[] {
           pageText = `${headingPrefix}\n${r.reviewerName}\n${'★'.repeat(Math.min(5, r.starCount || 5))}\n${r.reviewText}`;
           console.log(`☁️ [REVIEW-FROM-DB] "${service.service_name}": ${r.reviewerName}`);
         } else if (imageType === 'specification') {
-          // Spec pages: inject size + material from metadata so extractDesignSpecFields can parse them
           const m2 = service.metadata || {};
-          const sizeLines = m2.size
-            ? typeof m2.size === 'object'
-              ? Object.entries(m2.size).map(([k, v]) => `${k.replace(/_/g, ' ')}: ${v}`).join('\n')
-              : `Size: ${m2.size}`
-            : '';
-          const materialLine = m2.material ? `Material: ${m2.material}` : '';
-          pageText = [headingPrefix, service.service_name, sizeLines, materialLine]
-            .filter(Boolean).join('\n');
+          const specsObj = m2.specifications && typeof m2.specifications === 'object'
+            ? (m2.specifications as Record<string, unknown>)
+            : null;
+          const metroPageText = specsObj ? buildMetroSpecText(specsObj) : null;
+          const elevatedPageText = !metroPageText && specsObj
+            ? buildElevatedMetroSpecText(specsObj)
+            : null;
+
+          if (metroPageText) {
+            pageText = metroPageText;
+            console.log(`🚇 [METRO-SPEC] Using metro spec text for "${service.service_name}" (spec image path)`);
+          } else if (elevatedPageText) {
+            pageText = elevatedPageText;
+            console.log(`🛗 [ELEVATED-METRO-SPEC] Using elevated metro spec for "${service.service_name}"`);
+          } else {
+            // Flat size / material (all other services)
+            const sizeLines = m2.size
+              ? typeof m2.size === 'object'
+                ? Object.entries(m2.size).map(([k, v]) => `${k.replace(/_/g, ' ')}: ${v}`).join('\n')
+                : splitSpecString(String(m2.size), 'Size')
+              : '';
+            const materialLines = m2.material
+              ? splitSpecString(String(m2.material), 'Material')
+              : '';
+            // Flat specifications fallback when size+material are both absent
+            const flatSpecLines = (!sizeLines && !materialLines &&
+              m2.specifications && typeof m2.specifications === 'object' &&
+              !Array.isArray(m2.specifications))
+              ? Object.entries(m2.specifications as Record<string, unknown>)
+                  .filter(([, v]) => v !== null && v !== undefined && String(v).trim() !== '' && typeof v !== 'object')
+                  .map(([k, v]) => {
+                    const label = k
+                      .replace(/_/g, ' ')
+                      .replace(/\b\w/g, c => c.toUpperCase());
+                    return `${label}: ${v}`;
+                  })
+                  .join('\n')
+              : '';
+            // Do NOT include service.service_name in the spec body — short word-only
+            // lines are orphan-merged into the first dimension label by the parser.
+            pageText = [headingPrefix, sizeLines, materialLines, flatSpecLines]
+              .filter(Boolean).join('\n');
+          }
         } else {
           pageText = `${headingPrefix}\n${service.service_name}\n${service.content || ''}`;
         }
@@ -445,25 +725,54 @@ export function transformServicesToPages(services: any[]): any[] {
         });
       });
 
+      // Fallback: if no review-type image but metadata.review exists, inject a synthetic review page.
+      const hasReviewImage = images.some((img) => img.type === 'review');
+      if (!hasReviewImage && service.metadata?.review) {
+        const r = service.metadata.review;
+        const reviewText = [
+          'CUSTOMER REVIEW FEEDBACK FOR OUR SERVICE',
+          r.reviewerName || 'Customer',
+          '★'.repeat(Math.min(5, r.starCount || 5)),
+          r.reviewText || '',
+        ].join('\n');
+        const reviewImgUrl = images.find((img) => img.type === 'reference')?.url || '';
+        pages.push({
+          pageNumber: pages.length + 1,
+          text: reviewText,
+          imageDataUrl: reviewImgUrl,
+          croppedImages: reviewImgUrl ? [reviewImgUrl] : [],
+          croppedImagesWithTypes: reviewImgUrl ? [{ dataUrl: reviewImgUrl, imageType: 'review' }] : [],
+          imageType: 'review',
+          sourceId: service.id,
+          sourceName: service.document_name || 'Cloud Rate Card',
+          serviceName: service.service_name,
+          serviceId: service.service_id,
+          city,
+          metadata: service.metadata,
+        });
+        console.log(`⭐ [REVIEW-FALLBACK] Synthetic review page for "${service.service_name}": ${r.reviewerName}`);
+      }
+
       // Fallback: if no specification-type image exists but metadata has size/material data,
       // inject a synthetic text-only spec page so the Display Specification section renders.
       // This covers services like Auto Semi Branding that only have reference + review images.
       const hasSpecImage = images.some(img => img.type === 'specification');
       if (!hasSpecImage) {
         const m = service.metadata || {};
-        const sizeLines = m.size
-          ? typeof m.size === 'object'
-            ? Object.entries(m.size).map(([k, v]) => `${k.replace(/_/g, ' ')}: ${v}`).join('\n')
-            : `Size: ${m.size}`
-          : '';
-        const materialLine = m.material ? `Material: ${m.material}` : '';
-        const specBody = [sizeLines, materialLine].filter(Boolean).join('\n');
-        if (specBody.trim()) {
-          const syntheticText = ['DESIGN SPECIFICATION', service.service_name, specBody].join('\n');
+
+        const specsObj = m.specifications && typeof m.specifications === 'object'
+          ? (m.specifications as Record<string, unknown>)
+          : null;
+        const metroText = specsObj ? buildMetroSpecText(specsObj) : null;
+        const elevatedText = !metroText && specsObj
+          ? buildElevatedMetroSpecText(specsObj)
+          : null;
+
+        if (metroText) {
           pages.push({
             pageNumber: pages.length + 1,
-            text: syntheticText,
-            imageDataUrl: '',       // no image — text-only spec page
+            text: metroText,
+            imageDataUrl: '',
             croppedImages: [],
             croppedImagesWithTypes: [],
             imageType: 'specification',
@@ -474,7 +783,72 @@ export function transformServicesToPages(services: any[]): any[] {
             city,
             metadata: service.metadata,
           });
-          console.log(`📐 [SPEC-FALLBACK] Created synthetic spec page for "${service.service_name}" (size/material from metadata)`);
+          console.log(`🚇 [METRO-SPEC] Created metro spec page for "${service.service_name}"`);
+        } else if (elevatedText) {
+          pages.push({
+            pageNumber: pages.length + 1,
+            text: elevatedText,
+            imageDataUrl: '',
+            croppedImages: [],
+            croppedImagesWithTypes: [],
+            imageType: 'specification',
+            sourceId: service.id,
+            sourceName: service.document_name || 'Cloud Rate Card',
+            serviceName: service.service_name,
+            serviceId: service.service_id,
+            city,
+            metadata: service.metadata,
+          });
+          console.log(`🛗 [ELEVATED-METRO-SPEC] Created elevated metro spec page for "${service.service_name}"`);
+        } else {
+          // ── Flat size / material fallback (all other services) ──────────────
+          const sizeLines = m.size
+            ? typeof m.size === 'object'
+              ? Object.entries(m.size).map(([k, v]) => `${k.replace(/_/g, ' ')}: ${v}`).join('\n')
+              : splitSpecString(String(m.size), 'Size')
+            : '';
+          const materialLines = m.material
+            ? splitSpecString(String(m.material), 'Material')
+            : '';
+
+          // ── Flat specifications object fallback (e.g. LED Hoardings) ─────────
+          // When size AND material are both absent, convert metadata.specifications
+          // (a plain key→value map) into "Label: value" lines so the spec section
+          // still renders for services like LED Hoardings that store operational
+          // data (creative_duration, operations_timing, etc.) only in specifications.
+          const flatSpecLines = (!sizeLines && !materialLines &&
+            m.specifications && typeof m.specifications === 'object' &&
+            !Array.isArray(m.specifications))
+            ? Object.entries(m.specifications as Record<string, unknown>)
+                .filter(([, v]) => v !== null && v !== undefined && String(v).trim() !== '' && typeof v !== 'object')
+                .map(([k, v]) => {
+                  const label = k
+                    .replace(/_/g, ' ')
+                    .replace(/\b\w/g, c => c.toUpperCase());
+                  return `${label}: ${v}`;
+                })
+                .join('\n')
+            : '';
+
+          const specBody = [sizeLines, materialLines, flatSpecLines].filter(Boolean).join('\n');
+          if (specBody.trim()) {
+            const syntheticText = ['DESIGN SPECIFICATION', specBody].join('\n');
+            pages.push({
+              pageNumber: pages.length + 1,
+              text: syntheticText,
+              imageDataUrl: '',
+              croppedImages: [],
+              croppedImagesWithTypes: [],
+              imageType: 'specification',
+              sourceId: service.id,
+              sourceName: service.document_name || 'Cloud Rate Card',
+              serviceName: service.service_name,
+              serviceId: service.service_id,
+              city,
+              metadata: service.metadata,
+            });
+            console.log(`📐 [SPEC-FALLBACK] Created synthetic spec page for "${service.service_name}" (size/material from metadata)`);
+          }
         }
       }
     } else {

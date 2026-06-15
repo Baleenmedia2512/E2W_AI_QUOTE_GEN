@@ -188,6 +188,39 @@ export function filterTermsByServiceType(termsAndConditions: string, serviceType
  * Get only general terms (non-service-specific) for summary page
  * Returns ONLY terms that don't mention any service type keywords
  */
+/** Split raw T&C text into display-ready lines (strips bullet prefixes). */
+export function normalizeTermsList(rawTerms: string): string[] {
+  if (!rawTerms?.trim()) return [];
+  return rawTerms
+    .split('\n')
+    .map((t) =>
+      t
+        .trim()
+        .replace(/^[\u2022\u2023\u25aa\u25cf\-\–\*•]\s*/, '')
+        .replace(/\s*\|\s*/g, ' ')
+        .trim(),
+    )
+    .filter(Boolean);
+}
+
+/**
+ * General terms for PDF summary — prefers extracted general lines, falls back to defaults
+ * only when no quote terms exist at all.
+ */
+export function resolveGeneralTermsList(
+  quoteTerms: string,
+  hasServiceSpecificTerms: boolean,
+): string[] {
+  const general = getGeneralTerms(quoteTerms);
+  if (general.length > 0) return general;
+
+  if (quoteTerms.trim()) {
+    return hasServiceSpecificTerms ? [] : normalizeTermsList(quoteTerms);
+  }
+
+  return [...DEFAULT_GENERAL_TERMS];
+}
+
 export function getGeneralTerms(termsAndConditions: string): string[] {
   if (!termsAndConditions) return [];
   

@@ -26,6 +26,10 @@ export interface QuoteItem {
   subtotal?: number;
   // Per-item terms for multi-service quotes
   termsAndConditions?: string;
+  /** Links to proposal_chunks.service_id for direct image lookup in preview */
+  serviceId?: string;
+  /** Canonical service name from proposal_chunks */
+  serviceName?: string;
 }
 
 export interface Quote {

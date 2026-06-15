@@ -2,6 +2,7 @@ import React, { useMemo, useState, useEffect, useRef } from 'react';
 import './ReferenceImages.css';
 import { extractReviewViaGemini, cropReferencePageImage, cropPageStrippingHeaderFooter, cropSpecAboveReference, cropSpecDiagram, cropPageHalf, cropPageFromPercent, cropPageSlice } from '../../utils/pdfUtils';
 import { getCityServiceRegistry, canonicalizeServiceName, getPageIndexForCity } from '../../hooks/useCityServiceRegistry';
+import { resolveServiceIdsForItems } from '../../utils/serviceResolver';
 
 interface ExtractedPage {
   pageNumber: number;
@@ -10,11 +11,17 @@ interface ExtractedPage {
   croppedImages?: string[];
   sourceId?: string;
   sourceName?: string;
+  serviceId?: string;
+  serviceName?: string;
+  imageType?: 'reference' | 'specification' | 'review';
+  metadata?: Record<string, unknown>;
 }
 
 interface QuoteItem {
   id: string;
   description: string;
+  serviceId?: string;
+  serviceName?: string;
   [key: string]: any;
 }
 
@@ -1639,7 +1646,11 @@ function extractDesignSpecFields(pages: ExtractedPage[]): SpecGroup[] {
               const rLabel = rightColon[1].trim();
               const rValue = rightColon[2].trim();
               if (rValue && !/^materials?$/i.test(rLabel)) {
-                const rIsDim = /\d["'x×(]/i.test(rValue) || /\d\s+[x×]\s+\d/i.test(rValue) || /side|front|back|top|bottom|left|right|dimension|size/i.test(rLabel);
+                // Label-word match (side/top/etc.) only counts as a dimension when
+                // the value also contains a digit — otherwise "3 sides: Rexine" or
+                // "Top: Vinyl sticker" would be misclassified as dimension rows.
+                const rIsDim = /\d["'x×(]/i.test(rValue) || /\d\s*[x×]\s*\d/i.test(rValue)
+                  || (/side|front|back|top|bottom|left|right|dimension|size/i.test(rLabel) && /\d/.test(rValue));
                 if (rIsDim) dimensionFields.push({ label: rLabel, value: rValue });
                 else materialFields.push({ label: rLabel, value: rValue });
               }
@@ -1652,7 +1663,11 @@ function extractDesignSpecFields(pages: ExtractedPage[]): SpecGroup[] {
         if (colonMatch) {
           const label = colonMatch[1].trim();
           const value = colonMatch[2].trim();
-          const isDim = /\d["'x×(]/i.test(value) || /\d\s+[x×]\s+\d/i.test(value) || /side|front|back|top|bottom|left|right|dimension|size/i.test(label);
+          // Label-word match (side/top/etc.) only counts as a dimension when
+          // the value also contains a digit — otherwise "3 sides: Rexine" or
+          // "Top: Vinyl sticker" would be misclassified as dimension rows.
+          const isDim = /\d["'x×(]/i.test(value) || /\d\s*[x×]\s*\d/i.test(value)
+            || (/side|front|back|top|bottom|left|right|dimension|size/i.test(label) && /\d/.test(value));
           if (isDim) dimensionFields.push({ label, value });
           else materialFields.push({ label, value });
         }
@@ -1691,7 +1706,8 @@ function extractDesignSpecFields(pages: ExtractedPage[]): SpecGroup[] {
         const label = parts[0].replace(/:\s*$/, '').trim();
         const value = parts.slice(1).join(' ').trim();
         if (label && value) {
-          const isDim = /\d["'x×(]/i.test(value) || /\d\s+[x×]\s+\d/i.test(value) || /side|front|back|top|bottom|left|right|dimension|size/i.test(label);
+          const isDim = /\d["'x×(]/i.test(value) || /\d\s*[x×]\s*\d/i.test(value)
+            || (/side|front|back|top|bottom|left|right|dimension|size/i.test(label) && /\d/.test(value));
           if (isDim) dimensionFields.push({ label, value });
           else materialFields.push({ label, value });
         }
@@ -1782,8 +1798,7 @@ function extractDesignSpecFields(pages: ExtractedPage[]): SpecGroup[] {
     }
     // Prepend context fields if they exist as SEPARATE group
     if (contextFields.length > 0) {
-      const allGroups = [{ heading: contextHeading, fields: contextFields }, ...groups];
-      if (allGroups.length > 1) return allGroups; // Has context + spec data
+      return [{ heading: contextHeading, fields: contextFields }, ...groups];
     }
     if (groups.length > 0) return groups;
   }
@@ -1793,6 +1808,34 @@ function extractDesignSpecFields(pages: ExtractedPage[]): SpecGroup[] {
 // Matches any heading that indicates a customer/google review section
 // Uses flexible whitespace matching (\s*) to handle tabs, pipes, and formatting from PDF extraction
 const REVIEW_HEADING_PATTERN = /customer[\s|]*review|client[\s|]*review|google[\s|]*review[\s|]*feedback|google[\s|]*review|review[\s|]*feedback[\s|]*for|testimonials?|client[\s|]*feedback|customer[\s|]*feedback/i;
+
+/** Heading fragments that must never be treated as a reviewer name. */
+const REVIEW_HEADING_NAME_BLOCKLIST = /^(feedback\s+for\s+our\s+service|for\s+our\s+service|customer\s+review|client\s+review|google\s+review|review\s+feedback|our\s+service)$/i;
+
+function isReviewHeadingFragment(line: string): boolean {
+  const normalized = line.replace(/[|\s]+/g, ' ').trim();
+  if (!normalized) return true;
+  if (REVIEW_HEADING_NAME_BLOCKLIST.test(normalized)) return true;
+  if (/^feedback\s+for\s+our\s+service$/i.test(normalized)) return true;
+  if (/^customer\s+review\s+feedback/i.test(normalized)) return true;
+  return false;
+}
+
+/** Prefer structured metadata.review saved at upload or after first preview OCR. */
+function reviewFromPageMetadata(pages: ExtractedPage[]): CustomerReviewData | null {
+  for (const page of pages) {
+    const r = (page.metadata as { review?: { reviewerName?: string; starCount?: number; reviewText?: string } })?.review;
+    if (!r?.reviewText && !r?.reviewerName) continue;
+    console.log(`⭐ [REVIEW-META] Using metadata.review for "${page.serviceName || page.pageNumber}"`);
+    return {
+      reviewerName: r.reviewerName || 'Customer',
+      starCount: Math.min(5, Math.max(1, r.starCount || 5)),
+      reviewText: r.reviewText || '',
+      reviewUrl: null,
+    };
+  }
+  return null;
+}
 
 function extractCustomerReview(pages: ExtractedPage[]): CustomerReviewData | null {
   for (const page of pages) {
@@ -1830,6 +1873,7 @@ function extractCustomerReview(pages: ExtractedPage[]): CustomerReviewData | nul
       if (line.length <= 1) return true;
       // Skip heading continuation lines like "| FOR OUR | SERVICE"
       if (/^[|\s]*for\s*[|\s]*our\s*[|\s]*service/i.test(line)) return true;
+      if (isReviewHeadingFragment(line)) return true;
       return false;
     };
 
@@ -1871,7 +1915,14 @@ function extractCustomerReview(pages: ExtractedPage[]): CustomerReviewData | nul
       }
 
       // 4. Extract reviewer name — first short capitalised line that looks like a person name
-      if (!reviewerName && line.length <= 50 && line.split(' ').length <= 5 && !/^\d/.test(line) && /[A-Z]/.test(line)) {
+      if (
+        !reviewerName &&
+        line.length <= 50 &&
+        line.split(' ').length <= 5 &&
+        !/^\d/.test(line) &&
+        /[A-Z]/.test(line) &&
+        !isReviewHeadingFragment(line)
+      ) {
         reviewerName = line;
         console.log(`         ✅ Set as reviewer name: "${reviewerName}"`);
         continue;
@@ -2144,6 +2195,51 @@ function getPagesForCity(proposalPageMap: Record<string, ExtractedPage[]>, city:
   return null;
 }
 
+/** Deduplicate cloud pages — same serviceId+imageType+url can appear twice from DB. */
+function dedupeServicePages(pages: ExtractedPage[]): ExtractedPage[] {
+  const seen = new Set<string>();
+  return pages.filter((p) => {
+    const key = `${p.serviceId || ''}|${p.imageType || ''}|${p.imageDataUrl || p.text.slice(0, 60)}`;
+    if (seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
+}
+
+/** Build review page list from direct-lookup pages, including metadata.review fallback. */
+function getDirectLookupReviewPages(pages: ExtractedPage[]): ExtractedPage[] {
+  const reviewOnly = pages.filter(
+    (p) => p.imageType === 'review' || REVIEW_HEADING_PATTERN.test(p.text),
+  );
+  if (reviewOnly.length > 0) return reviewOnly;
+
+  const withMeta = pages.find((p) => {
+    const r = (p.metadata as { review?: { reviewerName?: string; reviewText?: string } })?.review;
+    return r && (r.reviewerName || r.reviewText);
+  });
+  if (!withMeta) return [];
+
+  const r = (withMeta.metadata as { review: { reviewerName?: string; starCount?: number; reviewText?: string } }).review;
+  const reviewText = [
+    'CUSTOMER REVIEW FEEDBACK FOR OUR SERVICE',
+    r.reviewerName || 'Customer',
+    '★'.repeat(Math.min(5, r.starCount || 5)),
+    r.reviewText || '',
+  ].join('\n');
+  const reviewImg = pages.find((p) => p.imageType === 'review')?.imageDataUrl
+    || pages.find((p) => p.imageType === 'reference')?.imageDataUrl
+    || '';
+
+  console.log(`⭐ [DirectLookup] Review from metadata.review for "${withMeta.serviceName}"`);
+  return [{
+    ...withMeta,
+    imageType: 'review' as const,
+    text: reviewText,
+    imageDataUrl: reviewImg,
+    croppedImages: reviewImg ? [reviewImg] : withMeta.croppedImages,
+  }];
+}
+
 export const ReferenceImages: React.FC<ReferenceImagesProps> = ({ proposalPages, proposalPageMap, items, terms = [], specOnly = false, noSpec = false }) => {
   // DEBUG: Log incoming props
   console.log('═══════════════════════════════════════════════════════════');
@@ -2182,9 +2278,64 @@ export const ReferenceImages: React.FC<ReferenceImagesProps> = ({ proposalPages,
     });
   }
   console.log('═══════════════════════════════════════════════════════════\n');
-  
+
+  // Direct lookup: resolve service_ids from quote items + cloud pages (works even for
+  // old quotes that lack serviceId — matches description → cloud page serviceName).
+  const resolvedServiceIds = useMemo(
+    () => resolveServiceIdsForItems(items || [], proposalPages || []),
+    [items, proposalPages],
+  );
+
+  const useDirectLookup = useMemo(() => {
+    const hasPageIds = !!(proposalPages?.some(p => p.serviceId));
+    const enabled = resolvedServiceIds.size > 0 && hasPageIds;
+    if (enabled) {
+      console.log('🔗 [DirectLookup] Enabled — using service_id instead of keyword matching');
+      console.log(`🔗 [DirectLookup] Resolved serviceIds: [${[...resolvedServiceIds].join(', ')}]`);
+    }
+    return enabled;
+  }, [resolvedServiceIds, proposalPages]);
+
+  const directLookupPages = useMemo(() => {
+    if (!useDirectLookup || !proposalPages) return null;
+
+    // Base filter: pages whose serviceId is in the resolved set
+    const baseFiltered = proposalPages.filter(
+      p => p.serviceId && resolvedServiceIds.has(p.serviceId),
+    );
+
+    // City-scope guard: when item descriptions carry a city prefix (e.g. "Madurai - Auto Semi
+    // Branding - Display Price"), restrict pages to that city's source document only.
+    // This prevents a city that has a customer review from bleeding its review into other
+    // cities that share the same service_id (due to upsert-conflict at upload time).
+    // Non-city quotes (cityHint = null) skip this filter — no behaviour change for them.
+    const cityHint = extractCityFromItems(items || []);
+    const cityScoped = cityHint
+      ? baseFiltered.filter(
+          p => (p.sourceName || '').toLowerCase().includes(cityHint),
+        )
+      : baseFiltered;
+
+    // Fall back to unscoped results if city filter removes everything
+    // (e.g. sourceName not set or city not in filename) so we never regress.
+    const finalPages = cityScoped.length > 0 ? cityScoped : baseFiltered;
+
+    const matched = dedupeServicePages(finalPages);
+    console.log(
+      `🔗 [DirectLookup] ${matched.length} page(s) for serviceIds: [${[...resolvedServiceIds].join(', ')}]`
+      + (cityHint ? ` | city-scoped to "${cityHint}"` : ''),
+    );
+    return matched.length > 0 ? matched : null;
+  }, [useDirectLookup, proposalPages, resolvedServiceIds, items]);
+
   // Determine which pages to use: city-isolated from map, or all flat pages
   const resolvedPages = useMemo(() => {
+    // Direct lookup always uses cloud proposalPages — never local IndexedDB pages
+    if (useDirectLookup && proposalPages && proposalPages.length > 0) {
+      console.log(`🔗 [DirectLookup] Using ${proposalPages.length} cloud pages (skipping proposalPageMap)`);
+      return proposalPages;
+    }
+
     if (proposalPageMap && items && items.length > 0) {
       const city = extractCityFromItems(items);
       if (city) {
@@ -2207,10 +2358,15 @@ export const ReferenceImages: React.FC<ReferenceImagesProps> = ({ proposalPages,
     }
     
     return proposalPages;
-  }, [proposalPages, proposalPageMap, items]);
+  }, [proposalPages, proposalPageMap, items, useDirectLookup]);
 
   // Automatically filter pages by quote items
   const filteredPages = useMemo(() => {
+    if (directLookupPages) {
+      console.log('✅ ReferenceImages: Direct lookup →', directLookupPages.length, 'pages');
+      return directLookupPages;
+    }
+
     if (!resolvedPages || resolvedPages.length === 0) {
       console.log('❌ ReferenceImages: No proposal pages available');
       return [];
@@ -2229,9 +2385,35 @@ export const ReferenceImages: React.FC<ReferenceImagesProps> = ({ proposalPages,
     console.log('✅ ReferenceImages: Filtered to', filtered.length, 'pages');
     
     return filtered;
-  }, [resolvedPages, items]);
+  }, [directLookupPages, resolvedPages, items]);
   // This is separate from filteredPages so spec/ref image logic is completely unaffected.
   const reviewPages = useMemo(() => {
+    if (directLookupPages) {
+      // Strict city-scope for review lookup only.
+      // Reference images / specs come from directLookupPages unchanged (separate path).
+      // When a city hint is present we MUST restrict to that city's pages — no fallback —
+      // otherwise a city with a saved review (e.g. Chennai) bleeds into cities that have
+      // no review (e.g. Coimbatore / Madurai) when they share the same service_id.
+      const cityHint = extractCityFromItems(items || []);
+      let reviewPool = directLookupPages;
+      if (cityHint) {
+        const cityPages = directLookupPages.filter(
+          p =>
+            (p.sourceName || '').toLowerCase().includes(cityHint) ||
+            (p.city || '').toLowerCase() === cityHint,
+        );
+        // Strict: do NOT fall back when city filter finds nothing.
+        // An empty pool means this city has no review → correct, show nothing.
+        reviewPool = cityPages;
+        console.log(
+          `🔗 [DirectLookup-Review] city="${cityHint}" → ${cityPages.length}/${directLookupPages.length} page(s) in review pool`,
+        );
+      }
+      const reviewOnly = getDirectLookupReviewPages(reviewPool);
+      console.log(`🔗 [DirectLookup] ${reviewOnly.length} review page(s)`);
+      return reviewOnly;
+    }
+
     if (!resolvedPages) {
       console.log('❌ DEBUG: No resolvedPages available for review extraction');
       return [];
@@ -2270,13 +2452,21 @@ export const ReferenceImages: React.FC<ReferenceImagesProps> = ({ proposalPages,
     console.log('   - Additional review pages:', pagesWithReviews.length);
     
     return result;
-  }, [resolvedPages, filteredPages]);
+  }, [directLookupPages, resolvedPages, filteredPages, items]);
 
   // Augment filteredPages with sibling (1/N) pages from the same service that contain
   // SPECIFICATION text. Some proposals (e.g. BaleenMedia LED Hoardings) place
   // DISPLAY PRICE + SPECIFICATION + Terms together on the 1/N page — that page is
   // (correctly) excluded from reference-image picks but still holds the spec we need.
   const specSourcePages = useMemo(() => {
+    if (directLookupPages) {
+      const specPages = directLookupPages.filter(
+        p => p.imageType === 'specification'
+          || /design specification/i.test(p.text),
+      );
+      return specPages.length > 0 ? specPages : directLookupPages;
+    }
+
     if (!resolvedPages || filteredPages.length === 0) return filteredPages;
     const SPEC_RE = /(design\s*spec|specification|display\s*area|ad\s*spec|creative\s*spec|size\s*spec|col\.?\s*cm|column\s*size|ad\s*size|creative\s*size)/i;
     const HEADING_RE = /^([A-Z][A-Z0-9 &\-\/]{2,})\s*\(\d+\/\d+\)/m;
@@ -2306,7 +2496,7 @@ export const ReferenceImages: React.FC<ReferenceImagesProps> = ({ proposalPages,
     }
 
     return extras.length > 0 ? [...filteredPages, ...extras] : filteredPages;
-  }, [resolvedPages, filteredPages]);
+  }, [directLookupPages, resolvedPages, filteredPages]);
 
   // Smart content extraction from parsed text — section-aware
   // specGroups and image extraction use specSourcePages (filteredPages + sibling 1/N spec pages)
@@ -2360,10 +2550,17 @@ export const ReferenceImages: React.FC<ReferenceImagesProps> = ({ proposalPages,
   const refImageUrls = useMemo(() => extractRefSectionImages(filteredPages), [filteredPages]);
   // Customer review uses reviewPages (filteredPages + any customer review pages from full proposal)
   const customerReview = useMemo(() => {
+    const fromMetadata = reviewFromPageMetadata(reviewPages);
+    if (fromMetadata?.reviewText) {
+      console.log('🎯 DEBUG: Customer review from metadata.review:', fromMetadata);
+      return fromMetadata;
+    }
+
     console.log('🔍 DEBUG: Extracting customer review from', reviewPages.length, 'pages');
     reviewPages.forEach((page, idx) => {
       console.log(`📄 DEBUG: Review page ${idx + 1} (page ${page.pageNumber}):`, {
         hasReviewHeading: REVIEW_HEADING_PATTERN.test(page.text),
+        imageType: page.imageType,
         textPreview: page.text.substring(0, 300),
         sourceId: page.sourceId,
         sourceName: page.sourceName
@@ -2387,16 +2584,16 @@ export const ReferenceImages: React.FC<ReferenceImagesProps> = ({ proposalPages,
       customerReview.reviewerName === 'Customer' ||
       customerReview.reviewText === '' ||
       customerReview.reviewText.toLowerCase().includes('click') ||
-      customerReview.reviewerName === 'FEEDBACK FOR OUR SERVICE' ||
-      customerReview.reviewerName.startsWith('FEEDBACK')
+      isReviewHeadingFragment(customerReview.reviewerName)
     );
     console.log('🔍 DEBUG: Gemini OCR check - needsOCR:', needsOCR, 'customerReview:', customerReview);
     if (!needsOCR) { setGeminiReview(null); return; }
 
-    // Find the review page image to send to Gemini
-    const reviewPage = reviewPages.find(p => REVIEW_HEADING_PATTERN.test(p.text));
-    if (!reviewPage) {
-      console.log('❌ DEBUG: No review page found in reviewPages for Gemini OCR');
+    // Prefer review-type image URL (cloud storage) over text-layer parsing
+    const reviewPage = reviewPages.find(p => p.imageType === 'review')
+      || reviewPages.find(p => REVIEW_HEADING_PATTERN.test(p.text));
+    if (!reviewPage?.imageDataUrl) {
+      console.log('❌ DEBUG: No review page image found for Gemini OCR');
       return;
     }
 
@@ -2531,6 +2728,11 @@ export const ReferenceImages: React.FC<ReferenceImagesProps> = ({ proposalPages,
       return hasSpec && !hasRef && !isTextOnly;
     });
     if (pureSpecPages.length === 0) {
+      setLazyCroppedSpecImage([]);
+      return;
+    }
+    // Cloud pages already have pre-cropped Supabase URLs — skip client-side re-crop (CORS-safe).
+    if (pureSpecPages.every((p) => (p.croppedImages?.length ?? 0) > 0)) {
       setLazyCroppedSpecImage([]);
       return;
     }
@@ -2732,19 +2934,31 @@ export const ReferenceImages: React.FC<ReferenceImagesProps> = ({ proposalPages,
       );
     }
     const headingLower = group.heading?.trim().toLowerCase() || '';
-    const inlineValues = group.heading
+    // Full-width section-header band for MATERIAL and reach/context headings (e.g. footfall)
+    const isMaterialGroup = /^materials?$/i.test(group.heading?.trim() || '');
+    const isContextHeadingGroup = /^(monthly\s+average\s+passenger\s+footfall|viewership\s+data|reach\s+data|passenger\s+data)$/i.test(
+      group.heading?.trim() || '',
+    );
+    const isSectionHeaderGroup = isMaterialGroup || isContextHeadingGroup;
+    const inlineValues = (!isSectionHeaderGroup && group.heading)
       ? group.fields.filter(f => f.label.trim().toLowerCase() === headingLower).map(f => f.value)
       : [];
-    const remainingFields = group.heading
+    const remainingFields = (!isSectionHeaderGroup && group.heading)
       ? group.fields.filter(f => f.label.trim().toLowerCase() !== headingLower)
       : group.fields;
     return (
       <React.Fragment key={gi}>
         {group.heading && (
-          <div className="spec-row">
-            <span className="spec-label spec-label--group">{group.heading}</span>
-            <span className="spec-value">{inlineValues.join(', ')}</span>
-          </div>
+          isSectionHeaderGroup ? (
+            <div className="spec-section-header">
+              <span className="spec-section-header-text">{group.heading.toUpperCase()}</span>
+            </div>
+          ) : (
+            <div className="spec-row">
+              <span className="spec-label spec-label--group">{group.heading}</span>
+              <span className="spec-value">{inlineValues.join(', ')}</span>
+            </div>
+          )
         )}
         {remainingFields.map((f, fi) => (
           <div key={fi} className="spec-row">
@@ -2818,6 +3032,14 @@ export const ReferenceImages: React.FC<ReferenceImagesProps> = ({ proposalPages,
     );
   }
 
+  // Dynamic section numbering — only count sections that will actually render.
+  // "1. Pricing Summary" is always rendered by the parent; we start after it.
+  let _sn = 1;
+  const specSectionNum   = (!noSpec && (hasSpecContent || specImgSrcs.length > 0)) ? ++_sn : 0;
+  const refSectionNum    = refImageUrls.length > 0                                 ? ++_sn : 0;
+  const reviewSectionNum = !!finalReview                                           ? ++_sn : 0;
+  const termsSectionNum  = terms.length > 0                                        ? ++_sn : 0;
+
   return (
     <div className="smart-reference-page" ref={containerRef}>
       {/* pdf-top-spacer must be a tracked block so the engine removes it from continuation pages */}
@@ -2832,7 +3054,7 @@ export const ReferenceImages: React.FC<ReferenceImagesProps> = ({ proposalPages,
                 {gi === 0 && (
                   <h3 className="smart-section-heading">
                     <span className="smart-heading-bar" />
-                    2. Display Specification
+                    {specSectionNum}. Display Specification
                   </h3>
                 )}
                 {renderSingleSpecGroup(group, gi)}
@@ -2857,7 +3079,7 @@ export const ReferenceImages: React.FC<ReferenceImagesProps> = ({ proposalPages,
           <div className="smart-section" data-pdf-block="atomic">
             <h3 className="smart-section-heading">
               <span className="smart-heading-bar" />
-              2. Display Specification
+              {specSectionNum}. Display Specification
             </h3>
             {hasSpecContent && (
               <div className="spec-table">
@@ -2888,7 +3110,7 @@ export const ReferenceImages: React.FC<ReferenceImagesProps> = ({ proposalPages,
           {idx === 0 && (
             <h3 className="smart-section-heading">
               <span className="smart-heading-bar" />
-              3. Reference Image(s)
+              {refSectionNum}. Reference Image(s)
             </h3>
           )}
           <div className="ref-img-container ref-img-single-center">
@@ -2906,7 +3128,7 @@ export const ReferenceImages: React.FC<ReferenceImagesProps> = ({ proposalPages,
         <div className="smart-section" data-pdf-block="atomic">
           <h3 className="smart-section-heading">
             <span className="smart-heading-bar" />
-            4. Customer Review
+            {reviewSectionNum}. Customer Review
           </h3>
           <div className="review-card">
             <div className="review-header">
@@ -2934,23 +3156,12 @@ export const ReferenceImages: React.FC<ReferenceImagesProps> = ({ proposalPages,
           </div>
         </div>
       )}
-      {!finalReview && (
-        <div style={{ padding: '16px', backgroundColor: '#e3f2fd', border: '1px solid #2196f3', borderRadius: '4px', margin: '20px 0' }}>
-          <h4 style={{ margin: '0 0 10px 0', color: '#1565c0' }}>ℹ️ Review Card Status</h4>
-          <p style={{ margin: '5px 0', fontSize: '14px' }}><strong>Status:</strong> No review found in PDF</p>
-          <p style={{ margin: '5px 0', fontSize: '14px' }}><strong>Pages Scanned:</strong> {resolvedPages?.length || 0}</p>
-          <p style={{ margin: '5px 0', fontSize: '14px' }}><strong>Review Pages Found:</strong> {reviewPages.length}</p>
-          <p style={{ margin: '5px 0', fontSize: '12px', color: '#666', marginTop: '10px' }}>
-            The system scanned all pages in your PDF for review content. Check the browser console (F12) for detailed scanning logs.
-          </p>
-        </div>
-      )}
 
       {terms.length > 0 && (
         <div className="smart-section" data-pdf-block="atomic">
           <h3 className="smart-section-heading">
             <span className="smart-heading-bar" />
-            5. Terms &amp; Conditions
+            {termsSectionNum}. Terms &amp; Conditions
           </h3>
           <div className="review-card">
             <ul className="ref-terms-list">

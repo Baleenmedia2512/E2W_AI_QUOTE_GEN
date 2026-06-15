@@ -23,6 +23,11 @@ export interface ExtractedPage {
   // Source tracking for multi-PDF isolation
   sourceId?: string;   // proposalId this page came from
   sourceName?: string; // fileName this page came from
+  /** proposal_chunks.service_id — used for direct image lookup in preview */
+  serviceId?: string;
+  serviceName?: string;
+  city?: string;
+  metadata?: Record<string, unknown>;
 }
 
 // Active proposal loaded by user for multi-location quote generation
