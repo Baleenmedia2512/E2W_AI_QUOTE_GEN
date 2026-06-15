@@ -34,9 +34,17 @@ import { searchServices } from '../../services/pdfEmbeddingService';
 import { extractCityHint, resolveServiceIdFromCatalog } from '../../utils/serviceResolver';
 import { durationMultiplier, enrichQuoteItemsDurationFromDb, resolveQuoteLineDuration } from '../../utils/durationUtils';
 import {
+  buildCityServiceListFromDb,
+  buildCloudSegmentCityPlan,
   buildGroupedServicesFromDb,
+  collectCitiesFromDbServices,
+  dedupeConfirmationRows,
+  detectCityInTextList,
+  detectCityOnlyInList,
   getCitiesForServiceQuery,
   isVagueCategoryQuery,
+  mergeCityLists,
+  runCloudPreGeminiValidation,
   validateConfirmationRowsMinQty,
   validateQuoteItemsAgainstDbMinQty,
   VEHICLE_CATEGORY_PATTERN,
@@ -241,20 +249,24 @@ const ChatInterface: React.FC = () => {
     return cities;
   };
 
+  const getMergedDynamicCities = (dbServices: DbService[] = []): string[] =>
+    mergeCityLists(getAvailableCities(), collectCitiesFromDbServices(dbServices));
+
   /**
-   * Detect a KNOWN_CITY_LIST city keyword in free text (case-insensitive whole-word match).
-   * Returns the lowercase city key, or null if none found.
+   * Detect a city keyword in free text (PDF + DB cities when available).
+   * Returns lowercase city key, or null.
    */
-  const detectKnownCityInText = (text: string): string | null => {
+  const detectKnownCityInText = (text: string, dbServices?: DbService[]): string | null => {
+    const dynamic = dbServices?.length ? getMergedDynamicCities(dbServices) : mergeCityLists(getAvailableCities(), []);
+    const fromDynamic = detectCityInTextList(text, dynamic);
+    if (fromDynamic) return fromDynamic.toLowerCase();
     const lower = text.toLowerCase();
     return KNOWN_CITY_LIST.find(c => new RegExp(`\\b${c}\\b`).test(lower)) || null;
   };
 
-  // Return first city from the list that appears in the text segment (case-insensitive)
-  const detectCityInText = (text: string, cities: string[]): string | null => {
-    const lower = text.toLowerCase();
-    return cities.find(c => lower.includes(c.toLowerCase())) || null;
-  };
+  // Return first city from the list that appears in the text segment (whole-word match)
+  const detectCityInText = (text: string, cities: string[]): string | null =>
+    detectCityInTextList(text, cities);
 
   // Detect "city-only" queries — the user typed one or more known city names
   // with no service / quantity. Returns lowercase city keys (matches registry keys),
@@ -262,27 +274,12 @@ const ChatInterface: React.FC = () => {
   // Examples that match: "madurai" · "coimbatore" · "show services in chennai"
   //                      "madurai, trichy" · "what's available in chennai"
   // Examples that DO NOT match: "50 auto chennai" · "bus in madurai" · "chennai vs madurai"
-  const detectCityOnlyQuery = (text: string): string[] => {
-    const availCities = getAvailableCities().map(c => c.toLowerCase());
-    if (availCities.length === 0) return [];
-    if (/\d/.test(text)) return []; // any digit → not a city-only query
-
-    const cleaned = text
-      .toLowerCase()
-      .replace(/[?!.,;:]/g, ' ')
-      .replace(/\b(show|me|all|list|services?|in|for|of|the|a|an|please|what|whats|which|available|need|want|want|i|about|tell|give)\b/g, ' ')
-      .replace(/\s+/g, ' ')
-      .trim();
-    if (!cleaned) return [];
-
-    const tokens = cleaned.split(/\s+/).filter(Boolean);
-    const cities: string[] = [];
-    for (const t of tokens) {
-      const match = availCities.find(c => c === t);
-      if (!match) return []; // any non-city token disqualifies the query
-      if (!cities.includes(match)) cities.push(match);
-    }
-    return cities;
+  const detectCityOnlyQuery = (text: string, dbServices?: DbService[]): string[] => {
+    const merged = dbServices?.length
+      ? getMergedDynamicCities(dbServices)
+      : getAvailableCities();
+    const availCities = merged.map(c => c.toLowerCase());
+    return detectCityOnlyInList(text, availCities);
   };
 
   // Split message by "and" or ",", then check each segment for a city keyword.
@@ -728,14 +725,19 @@ const ChatInterface: React.FC = () => {
     // ──────────────────────────────────────────────────────────────────────────
 
     // ─── CITY-ONLY QUERY GATE ────────────────────────────────────────────────
-    // If the user types just a city name (or a few cities) with no service / qty,
-    // surface every service available in that city as clickable chips so they can
-    // pick one without having to remember the catalogue. Examples that trigger:
-    //   "madurai"  · "coimbatore"  · "show services in chennai"  · "madurai, trichy"
     if (!isQtyOverride && !isCheckboxConfirmedFlag) {
-      const cityOnlyMatches = detectCityOnlyQuery(cleanedText);
+      let cityOnlyDbServices: DbService[] = [];
+      if (USE_CLOUD_DATA) {
+        try {
+          const { loadAllServicesFromCloud } = await import('../../services/supabaseProposalService');
+          cityOnlyDbServices = (await loadAllServicesFromCloud()) || [];
+        } catch {
+          // Registry path still available
+        }
+      }
+      const cityOnlyMatches = detectCityOnlyQuery(cleanedText, cityOnlyDbServices);
       if (cityOnlyMatches.length > 0) {
-        const lists = cityOnlyMatches
+        let lists = cityOnlyMatches
           .map(cityKey => {
             const entry = cityServiceRegistry.current.get(cityKey);
             if (!entry || entry.status !== 'ready' || entry.services.length === 0) return null;
@@ -749,6 +751,12 @@ const ChatInterface: React.FC = () => {
             };
           })
           .filter((x): x is { city: string; services: Array<{ name: string; minQty: number }> } => !!x);
+
+        if (lists.length === 0 && USE_CLOUD_DATA && cityOnlyDbServices.length > 0) {
+          lists = cityOnlyMatches
+            .map(cityKey => buildCityServiceListFromDb(cityKey, cityOnlyDbServices))
+            .filter((x): x is { city: string; services: Array<{ name: string; minQty: number }> } => !!x);
+        }
 
         if (lists.length > 0) {
           const assistantMsg: Message = {
@@ -771,70 +779,185 @@ const ChatInterface: React.FC = () => {
 
     let prefetchedDbServices: any[] | null = null;
 
-    // ─── CLOUD CITY GATE (works without local PDFs / registry) ───────────────
+    // ─── CLOUD CITY GATE (DB-backed — works without local PDFs) ─────────────
     if (
       USE_CLOUD_DATA &&
       !isQtyOverride &&
       !isCheckboxConfirmedFlag &&
-      (isQuoteRequest || isVagueCategoryQuery(cleanedText)) &&
-      !detectKnownCityInText(cleanedText)
+      isQuoteRequest &&
+      !isFullySpecifiedRequest(cleanedText)
     ) {
       try {
         const { loadAllServicesFromCloud } = await import('../../services/supabaseProposalService');
         prefetchedDbServices = await loadAllServicesFromCloud();
         const dbList = (prefetchedDbServices || []) as DbService[];
-        const cloudCities = getCitiesForServiceQuery(cleanedText, dbList);
-        const isVague = isVagueCategoryQuery(cleanedText);
 
-        if (isVague && cloudCities.length >= 2) {
-          const segments: CityPickerSegment[] = [{
-            raw: cleanedText,
-            cityNeeded: true,
-            detectedCity: null,
-            selectedCities: [],
-            matchedCities: cloudCities,
-          }];
-          const pickerMsgId = (Date.now() + 1).toString();
-          const pickerMsg: Message = {
-            id: pickerMsgId,
-            role: 'assistant',
-            content: '🏙️ This service is available in multiple cities. Please select your city:',
-            timestamp: new Date(),
-            isCityPicker: true,
-          };
-          setMessages(prev => [...prev, userMessage, pickerMsg]);
-          setInputValue('');
-          setCityPickerState({
-            messageId: pickerMsgId,
-            originalMessage: cleanedText,
-            segments,
-            availableCities: cloudCities,
-            dbServices: dbList,
-            requireServiceSelection: true,
-          });
-          return;
-        }
+        if (dbList.length > 0) {
+          const dynamicCities = getMergedDynamicCities(dbList);
+          const isMultiSegment = /,|\band\b/i.test(cleanedText);
+          const isVagueWhole = isVagueCategoryQuery(cleanedText);
+          const knownCityWhole = detectKnownCityInText(cleanedText, dbList);
 
-        // Single city in DB — skip picker, go straight to city-scoped service checkboxes
-        if (isVague && cloudCities.length === 1 && dbList.length > 0) {
-          const qtyMatch = cleanedText.match(/(\d+)/);
-          const qty = qtyMatch ? parseInt(qtyMatch[1], 10) : 1;
-          const group = buildGroupedServicesFromDb(cleanedText, cloudCities[0], qty, dbList);
-          if (group && group.services.length > 0) {
-            const msgId = (Date.now() + 1).toString();
-            const cityLabel = cloudCities[0];
-            const assistantMsg: Message = {
-              id: msgId,
+          // ── Single-segment vague with no city (e.g. "bus") ──
+          if (!isMultiSegment && isVagueWhole && !knownCityWhole) {
+            const cloudCities = getCitiesForServiceQuery(cleanedText, dbList);
+
+            if (cloudCities.length >= 2) {
+              const segments: CityPickerSegment[] = [{
+                raw: cleanedText,
+                cityNeeded: true,
+                detectedCity: null,
+                selectedCities: [],
+                matchedCities: cloudCities,
+              }];
+              const pickerMsgId = (Date.now() + 1).toString();
+              const pickerMsg: Message = {
+                id: pickerMsgId,
+                role: 'assistant',
+                content: '🏙️ This service is available in multiple cities. Please select your city:',
+                timestamp: new Date(),
+                isCityPicker: true,
+              };
+              setMessages(prev => [...prev, userMessage, pickerMsg]);
+              setInputValue('');
+              setCityPickerState({
+                messageId: pickerMsgId,
+                originalMessage: cleanedText,
+                segments,
+                availableCities: cloudCities,
+                dbServices: dbList,
+                requireServiceSelection: true,
+              });
+              return;
+            }
+
+            if (cloudCities.length === 1) {
+              const qtyMatch = cleanedText.match(/(\d+)/);
+              const qty = qtyMatch ? parseInt(qtyMatch[1], 10) : 1;
+              const group = buildGroupedServicesFromDb(cleanedText, cloudCities[0], qty, dbList);
+              if (group && group.services.length > 0) {
+                const msgId = (Date.now() + 1).toString();
+                const assistantMsg: Message = {
+                  id: msgId,
+                  role: 'assistant',
+                  content: `🔀 Multiple services found in ${cloudCities[0]}. Select all you need:`,
+                  timestamp: new Date(),
+                  isMultipleMatch: true,
+                  groupedServices: [group],
+                  originalUserInput: cleanedText,
+                };
+                setMessages(prev => [...prev, userMessage, assistantMsg]);
+                setInputValue('');
+                return;
+              }
+            }
+          }
+
+          // ── Multi-segment OR single segment with city in text ──
+          const rawSegments = parseSegmentsForCity(cleanedText, dynamicCities);
+          const forceCityPickerForSingleCityless =
+            rawSegments.length === 1 &&
+            rawSegments[0].cityNeeded &&
+            !rawSegments[0].detectedCity;
+
+          const segments = buildCloudSegmentCityPlan(
+            rawSegments,
+            dbList,
+            forceCityPickerForSingleCityless,
+          ) as CityPickerSegment[];
+
+          const hasServiceRequest = segments.some(
+            (s) => s.cityNeeded && (s.matchedCities?.length ?? 0) >= 2,
+          ) || forceCityPickerForSingleCityless;
+
+          if (hasServiceRequest) {
+            const pickerMsgId = (Date.now() + 1).toString();
+            const pickerMsg: Message = {
+              id: pickerMsgId,
               role: 'assistant',
-              content: `🔀 Multiple services found in ${cityLabel}. Select all you need:`,
+              content: '🏙️ Please select the city for each service below:',
               timestamp: new Date(),
-              isMultipleMatch: true,
-              groupedServices: [group],
-              originalUserInput: cleanedText,
+              isCityPicker: true,
             };
-            setMessages(prev => [...prev, userMessage, assistantMsg]);
+            setMessages(prev => [...prev, userMessage, pickerMsg]);
             setInputValue('');
+            setCityPickerState({
+              messageId: pickerMsgId,
+              originalMessage: cleanedText,
+              segments,
+              availableCities: dynamicCities,
+              dbServices: dbList,
+              requireServiceSelection:
+                forceCityPickerForSingleCityless || isVagueWhole || isMultiSegment,
+            });
             return;
+          }
+
+          // All segments have cities — DB pre-Gemini validation
+          const resolvedRows = segments
+            .filter((seg) => seg.detectedCity)
+            .map((seg) => {
+              const qtyMatch = seg.raw.match(/(\d+)/);
+              const qty = qtyMatch ? parseInt(qtyMatch[1], 10) : 1;
+              return { raw: seg.raw, city: seg.detectedCity!, qty };
+            });
+
+          if (resolvedRows.length > 0) {
+            const cloudResult = runCloudPreGeminiValidation(resolvedRows, dbList);
+
+            if (cloudResult.belowMinSegments.length > 0 && !isQtyOverride) {
+              setMessages(prev => [...prev, userMessage]);
+              const fullMessage = cloudResult.validSegmentRaws.join(' and ');
+              let rewritten = resolvedRows.map(r => r.raw).join(' and ');
+              for (const bm of cloudResult.belowMinSegments) {
+                rewritten = rewritten.replace(bm.rawSegment, bm.rawSegment.replace(/\b\d+\b/, String(bm.minQty)));
+              }
+              setMinQtyWarning({
+                items: cloudResult.belowMinSegments.map(bm => ({
+                  description: `${bm.svcLabel} - ${bm.cityLabel}`,
+                  requested: bm.requestedQty,
+                  originalRequested: bm.requestedQty,
+                  minimum: bm.minQty,
+                })),
+                pendingQuote: null as any,
+              });
+              setPendingValidMessage(fullMessage || resolvedRows.map(r => r.raw).join(' and '));
+              setPendingMinReplacedMessage(rewritten);
+              if (cloudResult.preAlerts.length > 0) setUnavailableServices(cloudResult.preAlerts);
+              return;
+            }
+
+            if (cloudResult.vagueGroups.length > 0) {
+              if (cloudResult.preAlerts.length > 0) setUnavailableServices(cloudResult.preAlerts);
+              const assistantId = Date.now().toString();
+              const assistantMsg: Message = {
+                id: assistantId,
+                role: 'assistant',
+                content: '🔀 Multiple services found. Select all you need:',
+                timestamp: new Date(),
+                isMultipleMatch: true,
+                groupedServices: cloudResult.vagueGroups,
+                originalUserInput: cleanedText,
+                directParts: cloudResult.validSegmentLabels.length > 0 ? cloudResult.validSegmentLabels : undefined,
+              };
+              setMessages(prev => [...prev, userMessage, assistantMsg]);
+              setInputValue('');
+              if (cloudResult.validSegmentRaws.length > 0) {
+                setPendingValidMessage(cloudResult.validSegmentRaws.join(' and '));
+              }
+              return;
+            }
+
+            if (cloudResult.preAlerts.length > 0) {
+              setUnavailableServices(cloudResult.preAlerts);
+              if (cloudResult.validSegmentRaws.length === 0) {
+                setMessages(prev => [...prev, userMessage]);
+                return;
+              }
+              setMessages(prev => [...prev, userMessage]);
+              setPendingValidMessage(cloudResult.validSegmentRaws.join(' and '));
+              return;
+            }
           }
         }
       } catch (cloudGateErr) {
@@ -843,13 +966,8 @@ const ChatInterface: React.FC = () => {
     }
     // ─────────────────────────────────────────────────────────────────────────
 
-    // ─── CITY GATE ────────────────────────────────────────────────────────────
-    // When multiple city PDFs are loaded, every "and"-segment must have a city.
-    // If any segment is missing a city, intercept and show a city picker UI
-    // instead of sending to Gemini with an ambiguous city context.
-    // Skip the gate entirely for fully-specified requests (e.g. "50 auto full branding")
-    // — those go straight to Gemini as EXACT_MATCH.
-    if (activeProposals.length > 1) {
+    // ─── CITY GATE (local PDF registry — skipped when cloud DB handles routing) ─
+    if (activeProposals.length > 1 && !(USE_CLOUD_DATA && prefetchedDbServices && prefetchedDbServices.length > 0)) {
       const availCities = getAvailableCities();
       if (availCities.length > 1) {
         const rawSegments = parseSegmentsForCity(userMessage.content, availCities);
@@ -931,11 +1049,7 @@ const ChatInterface: React.FC = () => {
     // ─────────────────────────────────────────────────────────────────────────
 
     // ─── PRE-GEMINI CITY-SERVICE AVAILABILITY CHECK (Registry-based) ────────
-    // Replaces the old strict-parser check. Uses cityServiceRegistry built from
-    // Gemini's one-time PDF read to verify service availability + quantity constraints.
-    // NOTE: Do not skip checkbox-confirmed messages here; they still need
-    // min/max quantity validation for consistent warning behavior.
-    if (activeProposals.length > 1) {
+    if (activeProposals.length > 1 && !(USE_CLOUD_DATA && prefetchedDbServices && prefetchedDbServices.length > 0)) {
       const availCitiesPre = getAvailableCities();
       if (availCitiesPre.length > 1) {
         const preSegments = parseSegmentsForCity(userMessage.content, availCitiesPre);
@@ -1253,7 +1367,7 @@ const ChatInterface: React.FC = () => {
 
           if (dbServices && dbServices.length > 0) {
             // If user mentioned a specific city, only send that city's services to Gemini
-            const detectedCity = detectKnownCityInText(cleanedText);
+            const detectedCity = detectKnownCityInText(cleanedText, dbServicesForResolution);
             let servicesToSend = dbServices;
             if (detectedCity) {
               const cityFiltered = dbServices.filter((svc: any) => {
@@ -1321,13 +1435,17 @@ const ChatInterface: React.FC = () => {
 
       // 🔧 CLIENT-SIDE VALIDATION: Check if request is fully specified (prevents checkbox loops)
       let enhancedUserMessage = userMessage.content;
-      const isFullySpecified = isFullySpecifiedRequest(userMessage.content);
 
-      if (isFullySpecified) {
-        // Add instruction to AI to treat this as EXACT_MATCH
+      if (isCheckboxConfirmedFlag) {
+        enhancedUserMessage =
+          `[EXACT_MATCH_HINT: User already confirmed exact service names via checkboxes — generate quote immediately, DO NOT return multipleMatch] ${enhancedUserMessage}`;
+        console.log('🔧 Added post-checkbox EXACT_MATCH hint');
+      } else if (isFullySpecifiedRequest(userMessage.content)) {
         enhancedUserMessage = `[EXACT_MATCH_HINT: This request contains full service names] ${enhancedUserMessage}`;
         console.log('🔧 Added EXACT_MATCH hint to prevent re-analysis');
       }
+
+      const isFullySpecified = isCheckboxConfirmedFlag || isFullySpecifiedRequest(userMessage.content);
 
       // Add city→PDF mapping hint when multiple PDFs are loaded so AI knows which
       // document to draw prices from for each city section
@@ -1342,12 +1460,41 @@ const ChatInterface: React.FC = () => {
         console.log('🗺️ Added city→PDF mapping hint:', cityMappingHint);
       }
 
-      const response = await sendMessageToGemini({
+      let response = await sendMessageToGemini({
         userMessage: enhancedUserMessage,
         proposalText: proposal.textContent, // Backward compatibility fallback
         proposalTexts: proposalContexts, // NEW: Multi-document support
         chatHistory: messages,
       });
+
+      // Post-checkbox: Gemini must not re-open service pickers — retry once as EXACT_MATCH
+      if (
+        isCheckboxConfirmedFlag &&
+        response.isMultipleMatch &&
+        response.groupedServices &&
+        !response.isQuoteGeneration
+      ) {
+        console.log('🔁 [Post-Confirm] MULTIPLE_MATCH after checkbox confirm — retrying as EXACT_MATCH');
+        const stripped = cleanedText.replace(/^generate\s+quote\s+for\s+/i, '').trim();
+        const retryMessage =
+          `[EXACT_MATCH_HINT: User ALREADY confirmed these exact services via checkboxes. ` +
+          `Return quoteGenerated JSON only — never multipleMatch.] Generate quote for ${stripped}`;
+        try {
+          const retryResponse = await sendMessageToGemini({
+            userMessage: retryMessage,
+            proposalText: proposal.textContent,
+            proposalTexts: proposalContexts,
+            chatHistory: [],
+          });
+          if (retryResponse.isQuoteGeneration && retryResponse.quoteData) {
+            response = retryResponse;
+          } else {
+            console.warn('⚠️ [Post-Confirm] Retry did not produce quote:', retryResponse.matchType);
+          }
+        } catch (retryErr) {
+          console.warn('⚠️ [Post-Confirm] EXACT_MATCH retry failed:', retryErr);
+        }
+      }
 
       const assistantMessage: Message = {
         id: (Date.now() + 1).toString(),
@@ -1383,16 +1530,34 @@ const ChatInterface: React.FC = () => {
       
       // MULTIPLE_MATCH - Ask user to clarify (or redirect vague queries to city-first flow)
       if (response.isMultipleMatch && response.groupedServices) {
+        const quoteReadyAfterConfirm =
+          isCheckboxConfirmedFlag && response.isQuoteGeneration && response.quoteData;
+
+        if (isCheckboxConfirmedFlag && !quoteReadyAfterConfirm) {
+          console.log('🚫 [Post-Confirm] Blocking duplicate checkbox UI after user confirmation');
+          const failMsg: Message = {
+            id: (Date.now() + 1).toString(),
+            role: 'assistant',
+            content:
+              'Your services were confirmed, but quote generation did not complete. Please tap Generate again or simplify to one service per message.',
+            timestamp: new Date(),
+          };
+          setMessages(prev => [...prev, failMsg]);
+          setIsLoading(false);
+          return;
+        }
+
+        if (!quoteReadyAfterConfirm) {
         if (
           USE_CLOUD_DATA &&
           !isCheckboxConfirmedFlag &&
-          !detectKnownCityInText(cleanedText) &&
           isVagueCategoryQuery(cleanedText)
         ) {
           try {
             const dbList = (dbServicesForResolution.length > 0
               ? dbServicesForResolution
               : (await (await import('../../services/supabaseProposalService')).loadAllServicesFromCloud())) as DbService[];
+            if (!detectKnownCityInText(cleanedText, dbList)) {
             const cloudCities = getCitiesForServiceQuery(cleanedText, dbList);
 
             if (cloudCities.length >= 2) {
@@ -1437,6 +1602,7 @@ const ChatInterface: React.FC = () => {
                 return;
               }
             }
+            }
           } catch (redirectErr) {
             console.warn('⚠️ [MULTIPLE_MATCH] City-first redirect failed:', redirectErr);
           }
@@ -1449,6 +1615,7 @@ const ChatInterface: React.FC = () => {
         setMessages(prev => [...prev, assistantMessage]);
         setIsLoading(false);
         return;
+        }
       }
       
       // PARTIAL_MATCH - Suggest alternatives
@@ -1856,26 +2023,32 @@ const ChatInterface: React.FC = () => {
       const cityKey = KNOWN_CITY_LIST.find(c => pair.city.toLowerCase().includes(c)) || pair.city.toLowerCase();
       const cityLabel = pair.city.charAt(0).toUpperCase() + pair.city.slice(1);
 
-      // DB-first path for vague / cloud flows — one checkbox group per selected city
-      if ((isVagueFlow || USE_CLOUD_DATA) && dbServices.length > 0) {
+      // Cloud / DB-first path — validate service exists in selected city
+      if (USE_CLOUD_DATA && dbServices.length > 0) {
         const group = buildGroupedServicesFromDb(pair.raw, pair.city, pair.qty, dbServices);
         if (group) {
           if (isVagueFlow || group.services.length > 1) {
             groupedServices.push(group);
             continue;
           }
-          if (!pickerSnapshot.requireServiceSelection) {
-            directParts.push(`${pair.qty} ${group.services[0].name} ${cityLabel}`);
-            continue;
-          }
+          directParts.push(`${pair.qty} ${group.services[0].name} ${cityLabel}`);
+          continue;
+        }
+        const svcWord = pair.raw.replace(/\d+/g, '').trim() || pair.raw;
+        missingServiceAlerts.push({ city: cityLabel, service: svcWord });
+        continue;
+      }
+
+      // DB path for vague flows without USE_CLOUD_DATA flag
+      if (isVagueFlow && dbServices.length > 0) {
+        const group = buildGroupedServicesFromDb(pair.raw, pair.city, pair.qty, dbServices);
+        if (group) {
           groupedServices.push(group);
           continue;
         }
-        if (isVagueFlow) {
-          const svcWord = pair.raw.replace(/\d+/g, '').trim() || pair.raw;
-          missingServiceAlerts.push({ city: cityLabel, service: svcWord });
-          continue;
-        }
+        const svcWord = pair.raw.replace(/\d+/g, '').trim() || pair.raw;
+        missingServiceAlerts.push({ city: cityLabel, service: svcWord });
+        continue;
       }
 
       const regCheck = checkServiceInRegistry(cityKey, pair.raw);
@@ -1952,6 +2125,16 @@ const ChatInterface: React.FC = () => {
 
     if (missingServiceAlerts.length > 0) {
       setUnavailableServices(missingServiceAlerts);
+      if (directParts.length === 0 && groupedServices.length === 0) {
+        setCityPickerState(null);
+        setInputValue('');
+        return;
+      }
+      if (directParts.length > 0) {
+        const durationMatch = pickerSnapshot.originalMessage.match(/(\d+)\s*(days?|months?)/i);
+        const durationSuffix = durationMatch ? ` for ${durationMatch[0]}` : '';
+        setPendingValidMessage(`Generate quote for ${directParts.join(' and ')}${durationSuffix} [User has already specified complete service names from checkboxes]`);
+      }
     }
 
     setCityPickerState(null);
@@ -2343,7 +2526,11 @@ const ChatInterface: React.FC = () => {
     }
 
     if (rows.length === 0) return;
-    setConfirmationTable({ messageId, rows, originalUserInput: originalUserMsg });
+    setConfirmationTable({
+      messageId,
+      rows: dedupeConfirmationRows(rows),
+      originalUserInput: originalUserMsg,
+    });
   };
 
   const executeConfirmedGeneration = (
@@ -2351,10 +2538,11 @@ const ChatInterface: React.FC = () => {
     originalUserInput: string,
     messageId: string,
   ) => {
+    const uniqueRows = dedupeConfirmationRows(rows);
     const durationMatch = originalUserInput.match(/(\d+)\s*(days?|months?)/i);
     const durationSuffix = durationMatch ? ` for ${durationMatch[0]}` : '';
 
-    const parts = rows.map(r =>
+    const parts = uniqueRows.map(r =>
       r.city && r.city !== '—'
         ? `${r.qty} ${r.service} ${r.city}`
         : `${r.qty} ${r.service}`

@@ -89,7 +89,7 @@ export const getPageIndexForCity = (cityKey: string): Record<string, number[]> |
 // ── City list (single source of truth) ───────────────────────────────────────
 export const KNOWN_CITY_LIST = [
   'chennai', 'madurai', 'coimbatore', 'salem', 'trichy', 'tirupur',
-  'erode', 'vellore', 'tirunelveli', 'bangalore', 'hyderabad', 'mumbai', 'delhi', 'kochi',
+  'erode', 'vellore', 'tirunelveli', 'tenkasi', 'bangalore', 'hyderabad', 'mumbai', 'delhi', 'kochi',
 ];
 
 // ── Layer 1: normalize a service name ────────────────────────────────────────
