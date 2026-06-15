@@ -29,6 +29,13 @@ import {
 } from '@chakra-ui/react';
 import { FiTrash2, FiEdit3 } from 'react-icons/fi';
 import { Quote, QuoteItem, LineItem } from '../../types/quote';
+import {
+  durationMultiplier,
+  formatDurationLabel,
+  lineItemPricingMultiplier,
+  quoteHasAnyDuration,
+  shouldShowDuration,
+} from '../../utils/durationUtils';
 import './QuotePreview.css';
 
 interface QuotePreviewProps {
@@ -67,8 +74,10 @@ const QuotePreview: React.FC<QuotePreviewProps> = ({ quote, onUpdate, onSave }) 
     );
   }
 
-  const calculateLineItemTotal = (item: LineItem): number => {
-    return item.quantity * item.unitPrice * (item.duration || 1);
+  const showDurationColumn = quoteHasAnyDuration(localQuote.items);
+
+  const calculateLineItemTotal = (item: LineItem & { durationIsAuto?: boolean }): number => {
+    return item.quantity * item.unitPrice * lineItemPricingMultiplier(item);
   };
 
   const calculateItemSubtotal = (item: QuoteItem): number => {
@@ -93,6 +102,8 @@ const QuotePreview: React.FC<QuotePreviewProps> = ({ quote, onUpdate, onSave }) 
       quantity: item.quantity,
       unitPrice: item.rate,
       duration: item.duration,
+      durationUnit: item.durationUnit,
+      durationIsAuto: item.durationIsAuto,
       total: item.total,
       remark: item.remark
     }];
@@ -119,6 +130,10 @@ const QuotePreview: React.FC<QuotePreviewProps> = ({ quote, onUpdate, onSave }) 
     // Handle old structure with lineItems array
     if (item.lineItems && item.lineItems.length > 0) {
       const lineItem = item.lineItems[lineItemIndex];
+      if (field === 'duration') {
+        (lineItem as LineItem & { durationIsAuto?: boolean }).durationIsAuto =
+          value && value > 0 ? false : undefined;
+      }
       (lineItem as any)[field] = value;
       if (field !== 'remark') {
         lineItem.total = calculateLineItemTotal(lineItem);
@@ -136,13 +151,21 @@ const QuotePreview: React.FC<QuotePreviewProps> = ({ quote, onUpdate, onSave }) 
         item.description = value;
       } else if (field === 'quantity') {
         item.quantity = value;
-        item.total = value * item.rate * (item.duration || 1);
+        item.total = value * item.rate * lineItemPricingMultiplier(item);
       } else if (field === 'unitPrice') {
         item.rate = value;
-        item.total = item.quantity * value * (item.duration || 1);
+        item.total = item.quantity * value * lineItemPricingMultiplier(item);
       } else if (field === 'duration') {
-        item.duration = value;
-        item.total = item.quantity * item.rate * (value || 1);
+        if (value && value > 0) {
+          item.duration = value;
+          if (!item.durationUnit) item.durationUnit = 'months';
+          item.durationIsAuto = false;
+        } else {
+          item.duration = undefined;
+          item.durationUnit = undefined;
+          item.durationIsAuto = undefined;
+        }
+        item.total = item.quantity * item.rate * lineItemPricingMultiplier(item);
       } else if (field === 'remark') {
         item.remark = value;
       }
@@ -513,12 +536,14 @@ const QuotePreview: React.FC<QuotePreviewProps> = ({ quote, onUpdate, onSave }) 
                               />
                             </NumberInput>
                           </Box>
+                          {showDurationColumn && (
                           <Box flex={1}>
-                            <Text fontSize="11px" fontWeight="600" color="gray.500" textTransform="uppercase" letterSpacing="0.5px" mb={1} title="Campaign duration: 1 = 30 days, 2 = 60 days. Multiply rate by duration.">
+                            <Text fontSize="11px" fontWeight="600" color="gray.500" textTransform="uppercase" letterSpacing="0.5px" mb={1} title="Campaign duration in months or days">
                               Duration
                             </Text>
+                            {shouldShowDuration(lineItem) ? (
                             <NumberInput
-                              value={lineItem.duration || 1}
+                              value={lineItem.duration}
                               onChange={(_, value) =>
                                 updateLineItem(itemIndex, lineItemIndex, 'duration' as keyof LineItem, value)
                               }
@@ -536,8 +561,11 @@ const QuotePreview: React.FC<QuotePreviewProps> = ({ quote, onUpdate, onSave }) 
                                   _focus={{ borderColor: '#750926', boxShadow: '0 0 0 1px #750926' }}
                                 />
                               </NumberInput>
+                            ) : (
+                              <Text fontSize="sm" color="gray.400" textAlign="right" pt={2}>—</Text>
+                            )}
                             </Box>
-
+                          )}
                         </Flex>
 
                         {/* Remark */}
@@ -584,7 +612,7 @@ const QuotePreview: React.FC<QuotePreviewProps> = ({ quote, onUpdate, onSave }) 
                     <Table variant="simple" size="sm">
                       <Thead>
                         <Tr bg="gray.50">
-                          <Th color="gray.600" fontWeight="600" fontSize="xs" textTransform="uppercase" width={getLineItemsForDisplay(item).some(li => li.duration && li.duration > 1) ? "35%" : "40%"}>
+                          <Th color="gray.600" fontWeight="600" fontSize="xs" textTransform="uppercase" width={showDurationColumn ? "35%" : "40%"}>
                             Item Description
                           </Th>
                           <Th color="gray.600" fontWeight="600" fontSize="xs" textTransform="uppercase" isNumeric width="12%">
@@ -593,9 +621,11 @@ const QuotePreview: React.FC<QuotePreviewProps> = ({ quote, onUpdate, onSave }) 
                           <Th color="gray.600" fontWeight="600" fontSize="xs" textTransform="uppercase" isNumeric width="15%">
                             Rate
                           </Th>
-                          <Th color="gray.600" fontWeight="600" fontSize="xs" textTransform="uppercase" isNumeric width="12%" title="Campaign duration: 1 = 30 days, 2 = 60 days, etc.">
+                          {showDurationColumn && (
+                          <Th color="gray.600" fontWeight="600" fontSize="xs" textTransform="uppercase" isNumeric width="12%" title="Campaign duration when user requested months/days">
                             Duration
                           </Th>
+                          )}
                           <Th color="gray.600" fontWeight="600" fontSize="xs" textTransform="uppercase" isNumeric width="18%">
                             Amount
                           </Th>
@@ -678,9 +708,11 @@ const QuotePreview: React.FC<QuotePreviewProps> = ({ quote, onUpdate, onSave }) 
                                 />
                               </NumberInput>
                             </Td>
+                            {showDurationColumn && (
                             <Td isNumeric>
+                              {shouldShowDuration(lineItem) ? (
                               <NumberInput
-                                value={lineItem.duration || 1}
+                                value={lineItem.duration}
                                 onChange={(_, value) =>
                                   updateLineItem(itemIndex, lineItemIndex, 'duration' as keyof LineItem, value)
                                 }
@@ -694,10 +726,14 @@ const QuotePreview: React.FC<QuotePreviewProps> = ({ quote, onUpdate, onSave }) 
                                   onFocus={(e) => { const t = e.target; setTimeout(() => t.select(), 300); }}
                                   _focus={{ bg: 'white', border: '1px solid', borderColor: '#750926' }}
                                   px={2}
-                                  title="For 60-day campaigns, set to 2 months"
+                                  title="Campaign months or days"
                                   />
                                 </NumberInput>
+                              ) : (
+                                <Text fontSize="sm" color="gray.400">—</Text>
+                              )}
                               </Td>
+                            )}
                             <Td isNumeric fontWeight="500">
                               {formatCurrency(calculateLineItemTotal(lineItem))}
                             </Td>

@@ -13,7 +13,14 @@ export interface DbService {
   service_name: string;
   metadata?: {
     locations?: string[];
-    pricing?: { min_quantity?: number };
+    duration?: string;
+    pricing?: {
+      min_quantity?: number;
+      period?: string;
+      display_period?: string;
+      unit?: string;
+      structure?: string;
+    };
     min_quantity?: number;
   };
   document_name?: string;
