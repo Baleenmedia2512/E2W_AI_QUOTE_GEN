@@ -692,8 +692,25 @@ export async function storeServiceChunk(
   embedding: number[], 
   documentMetadata?: { documentId: string; documentName: string; userId?: string }
 ) {
+  // Scope service_id per city/document so the same service in Chennai vs Madurai
+  // does not overwrite via upsert onConflict: 'service_id'.
+  const citySlug = documentMetadata?.documentName
+    ? detectCityFromFileName(documentMetadata.documentName)
+    : chunk.metadata?.city || null;
+  const scopedServiceId = citySlug
+    ? `${citySlug}-${chunk.serviceId}`
+    : chunk.serviceId;
+
+  if (citySlug) {
+    const cityLabel = citySlug.charAt(0).toUpperCase() + citySlug.slice(1);
+    const locs: string[] = chunk.metadata?.locations || [];
+    if (!locs.some((l) => l.toLowerCase().includes(citySlug))) {
+      chunk.metadata = { ...chunk.metadata, locations: [...locs, cityLabel] };
+    }
+  }
+
   console.log(`\n💾 [STORE-CHUNK] Storing service: ${chunk.serviceName}`);
-  console.log(`   [STORE-CHUNK] service_id: ${chunk.serviceId}`);
+  console.log(`   [STORE-CHUNK] service_id: ${scopedServiceId}${citySlug ? ` (city-scoped from ${chunk.serviceId})` : ''}`);
   console.log(`   [STORE-CHUNK] embedding dimensions: ${embedding.length}`);
   console.log(`   [STORE-CHUNK] document_id: ${documentMetadata?.documentId}`);
   console.log(`   [STORE-CHUNK] document_name: ${documentMetadata?.documentName}`);
@@ -701,7 +718,7 @@ export async function storeServiceChunk(
   
   const dataToInsert = {
     service_name: chunk.serviceName,
-    service_id: chunk.serviceId,
+    service_id: scopedServiceId,
     content: chunk.content,
     embedding: embedding,
     metadata: chunk.metadata,
