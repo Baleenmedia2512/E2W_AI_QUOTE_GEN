@@ -11,7 +11,11 @@ const CITY_NAMES = [
 export interface DbService {
   service_id: string;
   service_name: string;
-  metadata?: { locations?: string[] };
+  metadata?: {
+    locations?: string[];
+    pricing?: { min_quantity?: number };
+    min_quantity?: number;
+  };
   document_name?: string;
 }
 
@@ -111,7 +115,11 @@ export function resolveServiceIdFromCatalog(
     if (cityFiltered.length > 0) pool = cityFiltered;
   }
 
-  const byId = pool.find((s) => s.service_id === kebab || normalizeServiceId(s.service_id) === normalizeServiceId(kebab));
+  const byId = pool.find((s) => {
+    const sid = normalizeServiceId(s.service_id);
+    const k = normalizeServiceId(kebab);
+    return sid === k || sid.endsWith(`-${k}`);
+  });
   if (byId) return { serviceId: byId.service_id, serviceName: byId.service_name };
 
   const byCanonical = pool.find(

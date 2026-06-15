@@ -7,8 +7,9 @@ const RATE_LIMIT_DELAY = 1000; // 1 second between requests
 let lastRequestTime = 0;
 
 // ============================================================
-// 🚧 TEMPORARY HARDCODE — REMOVE WHEN RADIO PDF IS UPLOADED
+// 🚧 TEMPORARY HARDCODE — DISABLED (comment block to re-enable when RADIO PDF is uploaded)
 // ============================================================
+/*
 const HARDCODED_RADIO_RATE_CARD = {
   fileName: 'Radio_Rate_Card_Hardcoded.txt',
   content: `
@@ -24,6 +25,7 @@ Non-prime time: 10am - 6pm only
 Terms: Ad slots must be booked in advance. Lead time 2 working days after payment and jingle confirmation. Rate varies for prime time.
   `
 };
+*/
 // ============================================================
 // END TEMPORARY HARDCODE
 // ============================================================
@@ -265,10 +267,11 @@ export const sendMessageToGemini = async ({
     // Build context
     let contextPrompt = CHAT_SYSTEM_PROMPT + '\n\n';
 
-    // 🚧 TEMPORARY: Inject hardcoded radio rate card — REMOVE WHEN RADIO PDF IS UPLOADED
-    const allProposalTexts = proposalTexts
-      ? [...proposalTexts, HARDCODED_RADIO_RATE_CARD]
-      : [HARDCODED_RADIO_RATE_CARD];
+    // 🚧 TEMPORARY: Inject hardcoded radio rate card — DISABLED (uncomment block below to re-enable)
+    // const allProposalTexts = proposalTexts
+    //   ? [...proposalTexts, HARDCODED_RADIO_RATE_CARD]
+    //   : [HARDCODED_RADIO_RATE_CARD];
+    const allProposalTexts = proposalTexts;
     // END TEMPORARY
 
     // Multi-document support (NEW - takes priority if provided)

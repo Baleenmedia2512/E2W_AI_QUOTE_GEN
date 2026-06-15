@@ -242,6 +242,8 @@ STRICT MATCHING RULES:
   * "500 mobile van led 7 days" → EXACT_MATCH for "MOBILE VAN - LED" ✅
   * "1000 mobile van" (no led/non led) → MULTIPLE_MATCH (ambiguous) 🔀
 
+` +
+/*
 - ⚠️ SPECIAL CASE — RADIO ADVERTISEMENT: Station names ("Chennai Radio City", "Chennai Big FM", "Chennai Hello FM") ARE the complete service identifier. There is NO separate branding type required. The station name alone = EXACT_MATCH. Also accept shorthand: "Radio City" = "Chennai Radio City", "Big FM" = "Chennai Big FM", "Hello FM" = "Chennai Hello FM".
   * "Radio City 10 spots 5 days" → EXACT_MATCH for "Chennai Radio City" ✅
   * "Big FM 10 spots 5 days" → EXACT_MATCH for "Chennai Big FM" ✅
@@ -251,7 +253,8 @@ STRICT MATCHING RULES:
   * "radio" alone (no station name specified) → MULTIPLE_MATCH 🔀 (show all 3 stations as options)
   PRICING FORMULA for radio: Rate per 10sec × (ad_duration_sec ÷ 10) × spots_per_day × number_of_days = base cost. Default ad duration = 10 sec. Default spots/day and days = minimums from rate card.
   IMPORTANT: When multiple stations are requested together, do NOT show checkboxes. Generate the quote immediately with one section per station.
-
+*/
+`
 TIER DETECTION ALGORITHM:
 ⚠️ IMPORTANT: Analyze the CURRENT user request ONLY. Ignore all previous conversation context when determining tier.
 
