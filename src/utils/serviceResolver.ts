@@ -3,7 +3,7 @@ import { canonicalizeServiceName } from '../hooks/useCityServiceRegistry';
 
 const CITY_NAMES = [
   'chennai', 'madurai', 'coimbatore', 'salem', 'trichy', 'tiruchirappalli',
-  'erode', 'tirunelveli', 'vellore', 'thanjavur', 'tiruppur', 'hosur', 'bangalore', 'mumbai',
+  'erode', 'tirunelveli', 'tenkasi', 'vellore', 'thanjavur', 'tiruppur', 'hosur', 'bangalore', 'mumbai',
   'delhi', 'hyderabad', 'pune', 'kolkata', 'ahmedabad', 'surat', 'jaipur', 'lucknow',
   'kochi', 'vizag', 'visakhapatnam', 'nagpur', 'nashik', 'mysore', 'mysuru',
 ];
