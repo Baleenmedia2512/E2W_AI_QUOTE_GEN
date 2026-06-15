@@ -1169,24 +1169,40 @@ export function cropPageHalf(imageDataUrl: string, half: 'top' | 'bottom'): Prom
  * dimension diagram live — discarding the reference photo at the bottom.
  * Pure canvas math — no API call.
  */
-export function cropSpecAboveReference(imageDataUrl: string): Promise<string> {
+function loadImageForCrop(imageDataUrl: string): Promise<HTMLImageElement | null> {
   return new Promise((resolve) => {
     const img = new Image();
-    img.onload = () => {
-      const w = img.naturalWidth;
-      const h = img.naturalHeight;
-      const cropH = Math.round(h * 0.55);
-      if (cropH < 50) { resolve(imageDataUrl); return; }
-      const canvas = document.createElement('canvas');
-      canvas.width = w;
-      canvas.height = cropH;
-      const ctx = canvas.getContext('2d');
-      if (!ctx) { resolve(imageDataUrl); return; }
-      ctx.drawImage(img, 0, 0, w, cropH, 0, 0, w, cropH);
-      resolve(canvas.toDataURL('image/jpeg', 0.85));
-    };
-    img.onerror = () => resolve(imageDataUrl);
+    if (/^https?:\/\//i.test(imageDataUrl)) {
+      img.crossOrigin = 'anonymous';
+    }
+    img.onload = () => resolve(img);
+    img.onerror = () => resolve(null);
     img.src = imageDataUrl;
+  });
+}
+
+function safeCanvasToDataUrl(canvas: HTMLCanvasElement, fallback: string): string {
+  try {
+    return canvas.toDataURL('image/jpeg', 0.85);
+  } catch {
+    return fallback;
+  }
+}
+
+export function cropSpecAboveReference(imageDataUrl: string): Promise<string> {
+  return loadImageForCrop(imageDataUrl).then((img) => {
+    if (!img) return imageDataUrl;
+    const w = img.naturalWidth;
+    const h = img.naturalHeight;
+    const cropH = Math.round(h * 0.55);
+    if (cropH < 50) return imageDataUrl;
+    const canvas = document.createElement('canvas');
+    canvas.width = w;
+    canvas.height = cropH;
+    const ctx = canvas.getContext('2d');
+    if (!ctx) return imageDataUrl;
+    ctx.drawImage(img, 0, 0, w, cropH, 0, 0, w, cropH);
+    return safeCanvasToDataUrl(canvas, imageDataUrl);
   });
 }
 
@@ -1196,24 +1212,20 @@ export function cropSpecAboveReference(imageDataUrl: string): Promise<string> {
  * Used when header + spec text block occupies a known fraction of the page.
  */
 export function cropPageFromPercent(imageDataUrl: string, fromTopPercent: number): Promise<string> {
-  return new Promise((resolve) => {
-    const img = new Image();
-    img.onload = () => {
-      const w = img.naturalWidth;
-      const h = img.naturalHeight;
-      const sy = Math.round(h * fromTopPercent);
-      const newH = h - sy;
-      if (newH < 50) { resolve(imageDataUrl); return; }
-      const canvas = document.createElement('canvas');
-      canvas.width = w;
-      canvas.height = newH;
-      const ctx = canvas.getContext('2d');
-      if (!ctx) { resolve(imageDataUrl); return; }
-      ctx.drawImage(img, 0, sy, w, newH, 0, 0, w, newH);
-      resolve(canvas.toDataURL('image/jpeg', 0.85));
-    };
-    img.onerror = () => resolve(imageDataUrl);
-    img.src = imageDataUrl;
+  return loadImageForCrop(imageDataUrl).then((img) => {
+    if (!img) return imageDataUrl;
+    const w = img.naturalWidth;
+    const h = img.naturalHeight;
+    const sy = Math.round(h * fromTopPercent);
+    const newH = h - sy;
+    if (newH < 50) return imageDataUrl;
+    const canvas = document.createElement('canvas');
+    canvas.width = w;
+    canvas.height = newH;
+    const ctx = canvas.getContext('2d');
+    if (!ctx) return imageDataUrl;
+    ctx.drawImage(img, 0, sy, w, newH, 0, 0, w, newH);
+    return safeCanvasToDataUrl(canvas, imageDataUrl);
   });
 }
 
@@ -1223,25 +1235,21 @@ export function cropPageFromPercent(imageDataUrl: string, fromTopPercent: number
  * Used for shared spec+ref pages where spec diagrams sit in the middle between header and ref photo.
  */
 export function cropPageSlice(imageDataUrl: string, fromPercent: number, toPercent: number): Promise<string> {
-  return new Promise((resolve) => {
-    const img = new Image();
-    img.onload = () => {
-      const w = img.naturalWidth;
-      const h = img.naturalHeight;
-      const sy = Math.round(h * fromPercent);
-      const ey = Math.round(h * toPercent);
-      const newH = ey - sy;
-      if (newH < 50) { resolve(imageDataUrl); return; }
-      const canvas = document.createElement('canvas');
-      canvas.width = w;
-      canvas.height = newH;
-      const ctx = canvas.getContext('2d');
-      if (!ctx) { resolve(imageDataUrl); return; }
-      ctx.drawImage(img, 0, sy, w, newH, 0, 0, w, newH);
-      resolve(canvas.toDataURL('image/jpeg', 0.85));
-    };
-    img.onerror = () => resolve(imageDataUrl);
-    img.src = imageDataUrl;
+  return loadImageForCrop(imageDataUrl).then((img) => {
+    if (!img) return imageDataUrl;
+    const w = img.naturalWidth;
+    const h = img.naturalHeight;
+    const sy = Math.round(h * fromPercent);
+    const ey = Math.round(h * toPercent);
+    const newH = ey - sy;
+    if (newH < 50) return imageDataUrl;
+    const canvas = document.createElement('canvas');
+    canvas.width = w;
+    canvas.height = newH;
+    const ctx = canvas.getContext('2d');
+    if (!ctx) return imageDataUrl;
+    ctx.drawImage(img, 0, sy, w, newH, 0, 0, w, newH);
+    return safeCanvasToDataUrl(canvas, imageDataUrl);
   });
 }
 
@@ -1255,9 +1263,46 @@ export interface GeminiReviewData {
   reviewText: string;
 }
 
+/** Convert data URL or HTTP(S) image URL to base64 for Gemini Vision inlineData. */
+async function imageSourceToBase64(
+  imageSource: string,
+): Promise<{ mimeType: string; data: string } | null> {
+  if (!imageSource?.trim()) return null;
+
+  if (imageSource.startsWith('data:')) {
+    const match = imageSource.match(/^data:([^;]+);base64,(.+)$/);
+    if (!match) return null;
+    return { mimeType: match[1], data: match[2] };
+  }
+
+  if (!/^https?:\/\//i.test(imageSource)) return null;
+
+  try {
+    const response = await fetch(imageSource);
+    if (!response.ok) {
+      console.warn(`⚠️ Review OCR fetch failed: HTTP ${response.status}`);
+      return null;
+    }
+    const blob = await response.blob();
+    const mimeType = blob.type || 'image/jpeg';
+    const dataUrl = await new Promise<string>((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onload = () => resolve(reader.result as string);
+      reader.onerror = reject;
+      reader.readAsDataURL(blob);
+    });
+    const base64 = dataUrl.split(',')[1];
+    if (!base64) return null;
+    return { mimeType, data: base64 };
+  } catch (err) {
+    console.warn('⚠️ Review OCR image fetch failed:', err);
+    return null;
+  }
+}
+
 /**
  * Uses Gemini Vision to OCR the customer review card embedded as an image inside a PDF page.
- * Only called when pdfjs text extraction could not find reviewer name / review body.
+ * Accepts data URLs and public HTTP(S) URLs (e.g. Supabase storage).
  */
 export async function extractReviewViaGemini(imageDataUrl: string): Promise<GeminiReviewData | null> {
   const startTime = performance.now();
@@ -1268,7 +1313,8 @@ export async function extractReviewViaGemini(imageDataUrl: string): Promise<Gemi
     const genAI = new GoogleGenerativeAI(apiKey.trim());
     const model = genAI.getGenerativeModel({ model: 'gemini-2.5-flash-lite' });
 
-    const base64Data = imageDataUrl.split(',')[1];
+    const imagePayload = await imageSourceToBase64(imageDataUrl);
+    if (!imagePayload) return null;
 
     const prompt = `This is a page from an advertising proposal PDF. It contains a Google Review / customer review card embedded as an image.
 
@@ -1284,7 +1330,7 @@ If you cannot find any review content, return exactly: null`;
 
     const result = await model.generateContent([
       prompt,
-      { inlineData: { mimeType: 'image/jpeg', data: base64Data } }
+      { inlineData: { mimeType: imagePayload.mimeType, data: imagePayload.data } }
     ]);
 
     const response = await result.response;

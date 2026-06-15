@@ -442,6 +442,23 @@
   font-size: 11px;
 }
 
+/* Full-width section-header band inside the spec table (e.g. "MATERIAL") */
+.spec-section-header {
+  display: flex;
+  align-items: center;
+  background: linear-gradient(90deg, #1a3a5c 0%, #1e4d78 100%);
+  padding: 7px 16px;
+  border-bottom: 1px solid #dce8f5;
+}
+
+.spec-section-header-text {
+  font-size: 11px;
+  font-weight: 700;
+  color: #ffffff;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
 .spec-value {
   font-size: 13px;
   color: #1a202c;
