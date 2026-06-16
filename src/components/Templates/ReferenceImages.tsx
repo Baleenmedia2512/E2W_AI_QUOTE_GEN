@@ -13,6 +13,7 @@ interface ExtractedPage {
   sourceName?: string;
   serviceId?: string;
   serviceName?: string;
+  city?: string;
   imageType?: 'reference' | 'specification' | 'review';
   metadata?: Record<string, unknown>;
 }
