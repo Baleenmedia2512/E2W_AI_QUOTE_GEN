@@ -4,6 +4,7 @@
  */
 
 import { StoredProposal } from '../types';
+import { logger } from './logger';
 
 const DB_NAME = 'e2w_quote_gen';
 const DB_VERSION = 3; // Increment version for new object store
@@ -13,24 +14,24 @@ const MAX_PROPOSALS = 10; // Keep last 10 proposals
 function openDB(): Promise<IDBDatabase> {
   return new Promise((resolve, reject) => {
     const request = indexedDB.open(DB_NAME, DB_VERSION);
-    
+
     request.onupgradeneeded = () => {
       const db = request.result;
-      
+
       // Create proposal_library store if it doesn't exist
       if (!db.objectStoreNames.contains(PROPOSALS_STORE)) {
         const store = db.createObjectStore(PROPOSALS_STORE, { keyPath: 'id' });
         store.createIndex('uploadedAt', 'uploadedAt', { unique: false });
         store.createIndex('fileName', 'fileName', { unique: false });
-        console.log('✅ Created proposal_library object store');
+        logger.info('✅ Created proposal_library object store');
       }
-      
+
       // Keep existing proposal_images store (don't break it)
       if (!db.objectStoreNames.contains('proposal_images')) {
         db.createObjectStore('proposal_images');
       }
     };
-    
+
     request.onsuccess = () => resolve(request.result);
     request.onerror = () => reject(request.error);
   });
@@ -43,33 +44,33 @@ export async function saveProposalToLibrary(proposal: Omit<StoredProposal, 'id'>
   try {
     const db = await openDB();
     const id = `proposal_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
-    
+
     const storedProposal: StoredProposal = {
       id,
       ...proposal,
       uploadedAt: new Date(proposal.uploadedAt), // Ensure it's a Date object
     };
-    
+
     const tx = db.transaction(PROPOSALS_STORE, 'readwrite');
     const store = tx.objectStore(PROPOSALS_STORE);
-    
+
     // Add the new proposal
     store.put(storedProposal);
-    
+
     await new Promise<void>((resolve, reject) => {
       tx.oncomplete = () => resolve();
       tx.onerror = () => reject(tx.error);
     });
-    
+
     db.close();
-    
+
     // Cleanup old proposals (keep only MAX_PROPOSALS)
     await cleanupOldProposals();
-    
-    console.log('✅ Saved proposal to library:', storedProposal.fileName);
+
+    logger.info('✅ Saved proposal to library:', storedProposal.fileName);
     return id;
   } catch (error) {
-    console.error('❌ Failed to save proposal to library:', error);
+    logger.error('❌ Failed to save proposal to library:', error);
     throw error;
   }
 }
@@ -83,11 +84,11 @@ export async function loadRecentProposals(): Promise<StoredProposal[]> {
     const tx = db.transaction(PROPOSALS_STORE, 'readonly');
     const store = tx.objectStore(PROPOSALS_STORE);
     const index = store.index('uploadedAt');
-    
+
     // Get all proposals, newest first
     const request = index.openCursor(null, 'prev');
     const proposals: StoredProposal[] = [];
-    
+
     await new Promise<void>((resolve, reject) => {
       request.onsuccess = (event) => {
         const cursor = (event.target as IDBRequest).result;
@@ -100,13 +101,13 @@ export async function loadRecentProposals(): Promise<StoredProposal[]> {
       };
       request.onerror = () => reject(request.error);
     });
-    
+
     db.close();
-    
-    console.log(`✅ Loaded ${proposals.length} proposals from library`);
+
+    logger.info(`✅ Loaded ${proposals.length} proposals from library`);
     return proposals;
   } catch (error) {
-    console.warn('⚠️ Failed to load proposals from library:', error);
+    logger.warn('⚠️ Failed to load proposals from library:', error);
     return [];
   }
 }
@@ -120,20 +121,20 @@ export async function loadProposalById(id: string): Promise<StoredProposal | nul
     const tx = db.transaction(PROPOSALS_STORE, 'readonly');
     const store = tx.objectStore(PROPOSALS_STORE);
     const request = store.get(id);
-    
+
     const result = await new Promise<StoredProposal | null>((resolve, reject) => {
       request.onsuccess = () => resolve(request.result || null);
       request.onerror = () => reject(request.error);
     });
-    
+
     db.close();
-    
+
     if (result) {
-      console.log('✅ Loaded proposal from library:', result.fileName);
+      logger.info('✅ Loaded proposal from library:', result.fileName);
     }
     return result;
   } catch (error) {
-    console.error('❌ Failed to load proposal by ID:', error);
+    logger.error('❌ Failed to load proposal by ID:', error);
     return null;
   }
 }
@@ -145,39 +146,39 @@ export async function loadProposalById(id: string): Promise<StoredProposal | nul
 export async function findDuplicateProposal(
   fileName: string,
   fileType: string,
-  fileSize: number
+  fileSize: number,
 ): Promise<StoredProposal | null> {
   try {
     const db = await openDB();
     const tx = db.transaction(PROPOSALS_STORE, 'readonly');
     const store = tx.objectStore(PROPOSALS_STORE);
     const index = store.index('fileName');
-    
+
     // Get all proposals with the same file name
     const request = index.getAll(fileName);
-    
+
     const results = await new Promise<StoredProposal[]>((resolve, reject) => {
       request.onsuccess = () => resolve(request.result || []);
       request.onerror = () => reject(request.error);
     });
-    
+
     db.close();
-    
+
     // Find exact match by name, type, and size
     const duplicate = results.find(
       (proposal) =>
         proposal.fileName === fileName &&
         proposal.fileType === fileType &&
-        proposal.fileSize === fileSize
+        proposal.fileSize === fileSize,
     );
-    
+
     if (duplicate) {
-      console.log('🔍 Found duplicate proposal:', duplicate.fileName);
+      logger.info('🔍 Found duplicate proposal:', duplicate.fileName);
     }
-    
+
     return duplicate || null;
   } catch (error) {
-    console.warn('⚠️ Failed to check for duplicates:', error);
+    logger.warn('⚠️ Failed to check for duplicates:', error);
     return null;
   }
 }
@@ -191,17 +192,17 @@ export async function deleteProposalFromLibrary(id: string): Promise<void> {
     const tx = db.transaction(PROPOSALS_STORE, 'readwrite');
     const store = tx.objectStore(PROPOSALS_STORE);
     store.delete(id);
-    
+
     await new Promise<void>((resolve, reject) => {
       tx.oncomplete = () => resolve();
       tx.onerror = () => reject(tx.error);
     });
-    
+
     db.close();
-    
-    console.log('✅ Deleted proposal from library:', id);
+
+    logger.info('✅ Deleted proposal from library:', id);
   } catch (error) {
-    console.error('❌ Failed to delete proposal:', error);
+    logger.error('❌ Failed to delete proposal:', error);
     throw error;
   }
 }
@@ -215,11 +216,11 @@ async function cleanupOldProposals(): Promise<void> {
     const tx = db.transaction(PROPOSALS_STORE, 'readwrite');
     const store = tx.objectStore(PROPOSALS_STORE);
     const index = store.index('uploadedAt');
-    
+
     // Get all proposals
     const request = index.openCursor(null, 'prev');
     const proposals: { id: string; uploadedAt: Date }[] = [];
-    
+
     await new Promise<void>((resolve, reject) => {
       request.onsuccess = (event) => {
         const cursor = (event.target as IDBRequest).result;
@@ -232,24 +233,24 @@ async function cleanupOldProposals(): Promise<void> {
       };
       request.onerror = () => reject(request.error);
     });
-    
+
     // Delete oldest proposals if we exceed MAX_PROPOSALS
     if (proposals.length > MAX_PROPOSALS) {
       const toDelete = proposals.slice(MAX_PROPOSALS);
       for (const proposal of toDelete) {
         store.delete(proposal.id);
-        console.log('🗑️ Cleaned up old proposal:', proposal.id);
+        logger.info('🗑️ Cleaned up old proposal:', proposal.id);
       }
     }
-    
+
     await new Promise<void>((resolve, reject) => {
       tx.oncomplete = () => resolve();
       tx.onerror = () => reject(tx.error);
     });
-    
+
     db.close();
   } catch (error) {
-    console.warn('⚠️ Failed to cleanup old proposals:', error);
+    logger.warn('⚠️ Failed to cleanup old proposals:', error);
   }
 }
 
@@ -262,17 +263,17 @@ export async function clearProposalLibrary(): Promise<void> {
     const tx = db.transaction(PROPOSALS_STORE, 'readwrite');
     const store = tx.objectStore(PROPOSALS_STORE);
     store.clear();
-    
+
     await new Promise<void>((resolve, reject) => {
       tx.oncomplete = () => resolve();
       tx.onerror = () => reject(tx.error);
     });
-    
+
     db.close();
-    
-    console.log('✅ Cleared proposal library');
+
+    logger.info('✅ Cleared proposal library');
   } catch (error) {
-    console.error('❌ Failed to clear proposal library:', error);
+    logger.error('❌ Failed to clear proposal library:', error);
     throw error;
   }
 }

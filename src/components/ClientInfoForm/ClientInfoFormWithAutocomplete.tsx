@@ -1,4 +1,3 @@
-import React, { useState, useEffect } from 'react';
 import {
   Box,
   Button,
@@ -14,10 +13,12 @@ import {
   GridItem,
   Text,
 } from '@chakra-ui/react';
-import { ClientInfo } from '../../types/client';
-import { AutocompleteInput } from '../AutocompleteInput';
+import React, { useState, useEffect } from 'react';
+
 import { searchLeads } from '../../services/leadService';
+import { ClientInfo } from '../../types/client';
 import { LeadSearchResult } from '../../types/lead';
+import { AutocompleteInput } from '../AutocompleteInput';
 import './ClientInfoForm.css';
 
 interface ClientInfoFormWithAutocompleteProps {
@@ -26,10 +27,10 @@ interface ClientInfoFormWithAutocompleteProps {
   initialData?: ClientInfo | null;
 }
 
-const ClientInfoFormWithAutocomplete: React.FC<ClientInfoFormWithAutocompleteProps> = ({ 
-  onSubmit, 
-  onBack, 
-  initialData 
+const ClientInfoFormWithAutocomplete: React.FC<ClientInfoFormWithAutocompleteProps> = ({
+  onSubmit,
+  onBack,
+  initialData,
 }) => {
   const [formData, setFormData] = useState<ClientInfo>({
     name: '',
@@ -50,10 +51,10 @@ const ClientInfoFormWithAutocomplete: React.FC<ClientInfoFormWithAutocompletePro
   }, [initialData]);
 
   const handleInputChange = (field: keyof ClientInfo, value: string) => {
-    setFormData(prev => ({ ...prev, [field]: value }));
+    setFormData((prev) => ({ ...prev, [field]: value }));
     // Clear error when user starts typing
     if (errors[field]) {
-      setErrors(prev => ({ ...prev, [field]: '' }));
+      setErrors((prev) => ({ ...prev, [field]: '' }));
     }
   };
 
@@ -108,7 +109,7 @@ const ClientInfoFormWithAutocomplete: React.FC<ClientInfoFormWithAutocompletePro
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-    
+
     if (validateForm()) {
       onSubmit(formData);
     }
@@ -129,14 +130,7 @@ const ClientInfoFormWithAutocomplete: React.FC<ClientInfoFormWithAutocompletePro
   return (
     <Box className="client-info-form" py={8}>
       {/* Dedicated Search Section */}
-      <Box 
-        mb={8} 
-        p={6} 
-        bg="gray.50" 
-        borderRadius="16px" 
-        borderWidth="2px" 
-        borderColor="gray.200"
-      >
+      <Box mb={8} p={6} bg="gray.50" borderRadius="16px" borderWidth="2px" borderColor="gray.200">
         <FormControl>
           <FormLabel fontSize="sm" fontWeight="700" color="gray.700" mb={3}>
             🔍 Search Existing Leads
@@ -157,10 +151,10 @@ const ClientInfoFormWithAutocomplete: React.FC<ClientInfoFormWithAutocompletePro
 
       {/* Section Title */}
       <Box mb={8}>
-        <Heading 
-          size="xl" 
-          fontWeight="800" 
-          bgGradient="linear(135deg, #C91F3D, #B31B3E, #7A1030)" 
+        <Heading
+          size="xl"
+          fontWeight="800"
+          bgGradient="linear(135deg, #C91F3D, #B31B3E, #7A1030)"
           bgClip="text"
           letterSpacing="tight"
           mb={1}
@@ -179,12 +173,18 @@ const ClientInfoFormWithAutocomplete: React.FC<ClientInfoFormWithAutocompletePro
             <GridItem>
               <FormControl isRequired isInvalid={!!errors.name}>
                 <FormLabel fontSize="sm" fontWeight="700" color="gray.800">
-                  Client Name <Text as="span" color="red.500">*</Text>
+                  Client Name{' '}
+                  <Text as="span" color="red.500">
+                    *
+                  </Text>
                 </FormLabel>
                 <Input
                   value={formData.name}
                   onChange={(e) => handleInputChange('name', e.target.value)}
-                  onFocus={(e) => { const t = e.target; setTimeout(() => t.select(), 300); }}
+                  onFocus={(e) => {
+                    const t = e.target;
+                    setTimeout(() => t.select(), 300);
+                  }}
                   placeholder="Enter client name"
                   size="lg"
                   bg="white"
@@ -192,10 +192,10 @@ const ClientInfoFormWithAutocomplete: React.FC<ClientInfoFormWithAutocompletePro
                   borderColor="gray.300"
                   fontWeight="500"
                   _hover={{ borderColor: 'red.300', boxShadow: '0 0 0 1px rgba(201, 31, 61, 0.1)' }}
-                  _focus={{ 
-                    borderColor: 'red.500', 
+                  _focus={{
+                    borderColor: 'red.500',
                     boxShadow: '0 0 0 3px rgba(201, 31, 61, 0.15)',
-                    bg: 'white'
+                    bg: 'white',
                   }}
                   borderRadius="12px"
                 />
@@ -206,12 +206,18 @@ const ClientInfoFormWithAutocomplete: React.FC<ClientInfoFormWithAutocompletePro
             <GridItem>
               <FormControl isInvalid={!!errors.company}>
                 <FormLabel fontSize="sm" fontWeight="700" color="gray.800">
-                  Company Name <Text as="span" color="gray.500" fontWeight="400" fontSize="xs">(Optional)</Text>
+                  Company Name{' '}
+                  <Text as="span" color="gray.500" fontWeight="400" fontSize="xs">
+                    (Optional)
+                  </Text>
                 </FormLabel>
                 <Input
                   value={formData.company}
                   onChange={(e) => handleInputChange('company', e.target.value)}
-                  onFocus={(e) => { const t = e.target; setTimeout(() => t.select(), 300); }}
+                  onFocus={(e) => {
+                    const t = e.target;
+                    setTimeout(() => t.select(), 300);
+                  }}
                   placeholder="Enter company name"
                   size="lg"
                   bg="white"
@@ -219,10 +225,10 @@ const ClientInfoFormWithAutocomplete: React.FC<ClientInfoFormWithAutocompletePro
                   borderColor="gray.300"
                   fontWeight="500"
                   _hover={{ borderColor: 'red.300', boxShadow: '0 0 0 1px rgba(201, 31, 61, 0.1)' }}
-                  _focus={{ 
-                    borderColor: 'red.500', 
+                  _focus={{
+                    borderColor: 'red.500',
                     boxShadow: '0 0 0 3px rgba(201, 31, 61, 0.15)',
-                    bg: 'white'
+                    bg: 'white',
                   }}
                   borderRadius="12px"
                 />
@@ -235,12 +241,18 @@ const ClientInfoFormWithAutocomplete: React.FC<ClientInfoFormWithAutocompletePro
           <Box maxW={{ base: '100%', md: '50%' }}>
             <FormControl isInvalid={!!errors.address}>
               <FormLabel fontSize="sm" fontWeight="700" color="gray.800">
-                Address <Text as="span" color="gray.500" fontWeight="400" fontSize="xs">(Optional)</Text>
+                Address{' '}
+                <Text as="span" color="gray.500" fontWeight="400" fontSize="xs">
+                  (Optional)
+                </Text>
               </FormLabel>
               <Textarea
                 value={formData.address}
                 onChange={(e) => handleInputChange('address', e.target.value)}
-                onFocus={(e) => { const t = e.target; setTimeout(() => t.select(), 300); }}
+                onFocus={(e) => {
+                  const t = e.target;
+                  setTimeout(() => t.select(), 300);
+                }}
                 placeholder="Enter client address"
                 rows={3}
                 size="lg"
@@ -249,10 +261,10 @@ const ClientInfoFormWithAutocomplete: React.FC<ClientInfoFormWithAutocompletePro
                 borderColor="gray.300"
                 fontWeight="500"
                 _hover={{ borderColor: 'red.300', boxShadow: '0 0 0 1px rgba(201, 31, 61, 0.1)' }}
-                _focus={{ 
-                  borderColor: 'red.500', 
+                _focus={{
+                  borderColor: 'red.500',
                   boxShadow: '0 0 0 3px rgba(201, 31, 61, 0.15)',
-                  bg: 'white'
+                  bg: 'white',
                 }}
                 borderRadius="12px"
               />
@@ -265,12 +277,18 @@ const ClientInfoFormWithAutocomplete: React.FC<ClientInfoFormWithAutocompletePro
             <GridItem>
               <FormControl isInvalid={!!errors.gst}>
                 <FormLabel fontSize="sm" fontWeight="700" color="gray.800">
-                  GST Number <Text as="span" color="gray.500" fontWeight="400" fontSize="xs">(Optional)</Text>
+                  GST Number{' '}
+                  <Text as="span" color="gray.500" fontWeight="400" fontSize="xs">
+                    (Optional)
+                  </Text>
                 </FormLabel>
                 <Input
                   value={formData.gst}
                   onChange={(e) => handleInputChange('gst', e.target.value)}
-                  onFocus={(e) => { const t = e.target; setTimeout(() => t.select(), 300); }}
+                  onFocus={(e) => {
+                    const t = e.target;
+                    setTimeout(() => t.select(), 300);
+                  }}
                   placeholder="Enter GST number"
                   size="lg"
                   bg="white"
@@ -278,10 +296,10 @@ const ClientInfoFormWithAutocomplete: React.FC<ClientInfoFormWithAutocompletePro
                   borderColor="gray.300"
                   fontWeight="500"
                   _hover={{ borderColor: 'red.300', boxShadow: '0 0 0 1px rgba(201, 31, 61, 0.1)' }}
-                  _focus={{ 
-                    borderColor: 'red.500', 
+                  _focus={{
+                    borderColor: 'red.500',
                     boxShadow: '0 0 0 3px rgba(201, 31, 61, 0.15)',
-                    bg: 'white'
+                    bg: 'white',
                   }}
                   borderRadius="12px"
                 />
@@ -292,12 +310,18 @@ const ClientInfoFormWithAutocomplete: React.FC<ClientInfoFormWithAutocompletePro
             <GridItem>
               <FormControl isRequired isInvalid={!!errors.phone}>
                 <FormLabel fontSize="sm" fontWeight="700" color="gray.800">
-                  Phone <Text as="span" color="red.500">*</Text>
+                  Phone{' '}
+                  <Text as="span" color="red.500">
+                    *
+                  </Text>
                 </FormLabel>
                 <Input
                   value={formData.phone}
                   onChange={(e) => handleInputChange('phone', e.target.value)}
-                  onFocus={(e) => { const t = e.target; setTimeout(() => t.select(), 300); }}
+                  onFocus={(e) => {
+                    const t = e.target;
+                    setTimeout(() => t.select(), 300);
+                  }}
                   placeholder="+1 (555) 000-0000"
                   type="tel"
                   size="lg"
@@ -306,10 +330,10 @@ const ClientInfoFormWithAutocomplete: React.FC<ClientInfoFormWithAutocompletePro
                   borderColor="gray.300"
                   fontWeight="500"
                   _hover={{ borderColor: 'red.300', boxShadow: '0 0 0 1px rgba(201, 31, 61, 0.1)' }}
-                  _focus={{ 
-                    borderColor: 'red.500', 
+                  _focus={{
+                    borderColor: 'red.500',
                     boxShadow: '0 0 0 3px rgba(201, 31, 61, 0.15)',
-                    bg: 'white'
+                    bg: 'white',
                   }}
                   borderRadius="12px"
                 />
@@ -322,12 +346,18 @@ const ClientInfoFormWithAutocomplete: React.FC<ClientInfoFormWithAutocompletePro
           <Box maxW={{ base: '100%', md: '50%' }}>
             <FormControl isInvalid={!!errors.email}>
               <FormLabel fontSize="sm" fontWeight="700" color="gray.800">
-                Email <Text as="span" color="gray.500" fontWeight="400" fontSize="xs">(Optional)</Text>
+                Email{' '}
+                <Text as="span" color="gray.500" fontWeight="400" fontSize="xs">
+                  (Optional)
+                </Text>
               </FormLabel>
               <Input
                 value={formData.email}
                 onChange={(e) => handleInputChange('email', e.target.value)}
-                onFocus={(e) => { const t = e.target; setTimeout(() => t.select(), 300); }}
+                onFocus={(e) => {
+                  const t = e.target;
+                  setTimeout(() => t.select(), 300);
+                }}
                 placeholder="client@example.com"
                 type="email"
                 size="lg"
@@ -336,10 +366,10 @@ const ClientInfoFormWithAutocomplete: React.FC<ClientInfoFormWithAutocompletePro
                 borderColor="gray.300"
                 fontWeight="500"
                 _hover={{ borderColor: 'red.300', boxShadow: '0 0 0 1px rgba(201, 31, 61, 0.1)' }}
-                _focus={{ 
-                  borderColor: 'red.500', 
+                _focus={{
+                  borderColor: 'red.500',
                   boxShadow: '0 0 0 3px rgba(201, 31, 61, 0.15)',
-                  bg: 'white'
+                  bg: 'white',
                 }}
                 borderRadius="12px"
               />
@@ -360,11 +390,11 @@ const ClientInfoFormWithAutocomplete: React.FC<ClientInfoFormWithAutocompletePro
                 fontWeight="600"
                 px={8}
                 borderRadius="12px"
-                _hover={{ 
-                  bg: 'gray.50', 
+                _hover={{
+                  bg: 'gray.50',
                   borderColor: 'gray.400',
                   transform: 'translateY(-2px)',
-                  boxShadow: '0 4px 12px rgba(0, 0, 0, 0.1)'
+                  boxShadow: '0 4px 12px rgba(0, 0, 0, 0.1)',
                 }}
                 _active={{ transform: 'scale(0.98)' }}
               >
@@ -381,11 +411,11 @@ const ClientInfoFormWithAutocomplete: React.FC<ClientInfoFormWithAutocompletePro
               fontWeight="600"
               px={8}
               borderRadius="12px"
-              _hover={{ 
-                bg: 'gray.50', 
+              _hover={{
+                bg: 'gray.50',
                 borderColor: 'gray.400',
                 transform: 'translateY(-2px)',
-                boxShadow: '0 4px 12px rgba(0, 0, 0, 0.1)'
+                boxShadow: '0 4px 12px rgba(0, 0, 0, 0.1)',
               }}
               _active={{ transform: 'scale(0.98)' }}
             >
@@ -400,10 +430,10 @@ const ClientInfoFormWithAutocomplete: React.FC<ClientInfoFormWithAutocompletePro
               px={10}
               borderRadius="12px"
               boxShadow="0 4px 16px rgba(201, 31, 61, 0.3)"
-              _hover={{ 
+              _hover={{
                 bgGradient: 'linear(to-r, #B31B3E, #9f1239)',
                 transform: 'translateY(-2px)',
-                boxShadow: '0 6px 20px rgba(201, 31, 61, 0.4)'
+                boxShadow: '0 6px 20px rgba(201, 31, 61, 0.4)',
               }}
               _active={{ transform: 'scale(0.98)' }}
             >

@@ -12,10 +12,15 @@
  */
 
 import { useEffect } from 'react';
+
 import { useAppStore } from '../store';
+import { logger } from '../utils/logger';
 
 // ── Shared types ─────────────────────────────────────────────────────────────
-export interface ServiceQuantity { min: number; max: number | null; }
+export interface ServiceQuantity {
+  min: number;
+  max: number | null;
+}
 export interface CityRegistry {
   services: string[];
   quantities: Record<string, ServiceQuantity>;
@@ -30,22 +35,44 @@ export const getCityServiceRegistry = () => _registry;
 
 // ── City list (single source of truth) ───────────────────────────────────────
 export const KNOWN_CITY_LIST = [
-  'chennai', 'madurai', 'coimbatore', 'salem', 'trichy', 'tirupur',
-  'erode', 'vellore', 'tirunelveli', 'bangalore', 'hyderabad', 'mumbai', 'delhi', 'kochi',
+  'chennai',
+  'madurai',
+  'coimbatore',
+  'salem',
+  'trichy',
+  'tirupur',
+  'erode',
+  'vellore',
+  'tirunelveli',
+  'bangalore',
+  'hyderabad',
+  'mumbai',
+  'delhi',
+  'kochi',
 ];
 
 // ── Helper: normalize a service name (strip dashes, parens, extra spaces) ────
 function normalizeSvc(s: string): string {
-  return s.toLowerCase().trim().replace(/[-–—]/g, ' ').replace(/[()[\]{}]/g, '').replace(/\s+/g, ' ').trim();
+  return s
+    .toLowerCase()
+    .trim()
+    .replace(/[-–—]/g, ' ')
+    .replace(/[()[\]{}]/g, '')
+    .replace(/\s+/g, ' ')
+    .trim();
 }
 
 // ── Helper to save current map snapshot to sessionStorage ────────────────────
 function persistToSession() {
   try {
     const snapshot: Record<string, CityRegistry> = {};
-    _registry.forEach((val, key) => { snapshot[key] = val; });
+    _registry.forEach((val, key) => {
+      snapshot[key] = val;
+    });
     sessionStorage.setItem(SESSION_KEY, JSON.stringify(snapshot));
-  } catch { /* quota exceeded — silently skip */ }
+  } catch {
+    /* quota exceeded — silently skip */
+  }
 }
 
 // ── Restore from sessionStorage on first import ──────────────────────────────
@@ -60,28 +87,38 @@ try {
         const normalizedServices = val.services.map(normalizeSvc);
         const normalizedQuantities: Record<string, ServiceQuantity> = {};
         val.services.forEach((raw, i) => {
-          normalizedQuantities[normalizedServices[i]] = val.quantities[raw] || val.quantities[normalizeSvc(raw)];
+          normalizedQuantities[normalizedServices[i]] =
+            val.quantities[raw] || val.quantities[normalizeSvc(raw)];
         });
-        _registry.set(key, { ...val, services: normalizedServices, quantities: normalizedQuantities });
+        _registry.set(key, {
+          ...val,
+          services: normalizedServices,
+          quantities: normalizedQuantities,
+        });
       }
     });
     if (_registry.size > 0) {
-      console.log('♻️ [Registry] Restored from sessionStorage:', [..._registry.keys()].join(', '));
-      console.log('📋 FULL CITY SERVICE REGISTRY (restored):', JSON.stringify(parsed, null, 2));
+      logger.info('♻️ [Registry] Restored from sessionStorage:', [..._registry.keys()].join(', '));
+      logger.info('📋 FULL CITY SERVICE REGISTRY (restored):', JSON.stringify(parsed, null, 2));
     }
   }
-} catch { /* ignore corrupt storage */ }
+} catch {
+  /* ignore corrupt storage */
+}
 
 // ── Hook ─────────────────────────────────────────────────────────────────────
 export const useCityServiceRegistry = () => {
-  const activeProposals = useAppStore(state => state.activeProposals);
+  const activeProposals = useAppStore((state) => state.activeProposals);
 
   useEffect(() => {
-    console.log(`🔍 [Registry] useEffect fired — ${activeProposals.length} active proposals`);
-    activeProposals.forEach(proposal => {
-      const cityKey = KNOWN_CITY_LIST.find(c =>
-        proposal.fileName.toLowerCase().includes(c)
-      ) || proposal.fileName.replace(/\.(pdf|xlsx?)$/i, '').toLowerCase().replace(/[^a-z]/g, '');
+    logger.info(`🔍 [Registry] useEffect fired — ${activeProposals.length} active proposals`);
+    activeProposals.forEach((proposal) => {
+      const cityKey =
+        KNOWN_CITY_LIST.find((c) => proposal.fileName.toLowerCase().includes(c)) ||
+        proposal.fileName
+          .replace(/\.(pdf|xlsx?)$/i, '')
+          .toLowerCase()
+          .replace(/[^a-z]/g, '');
 
       if (!cityKey) return;
 
@@ -89,13 +126,15 @@ export const useCityServiceRegistry = () => {
       if (existing && (existing.status === 'ready' || existing.status === 'building')) return;
 
       if (!proposal.textContent || proposal.textContent.trim().length < 50) {
-        console.warn(`⚠️ [Registry] Skipping "${cityKey}" — textContent too short (${proposal.textContent?.trim().length ?? 0} chars)`);
+        logger.warn(
+          `⚠️ [Registry] Skipping "${cityKey}" — textContent too short (${proposal.textContent?.trim().length ?? 0} chars)`,
+        );
         _registry.set(cityKey, { services: [], quantities: {}, status: 'failed' });
         return;
       }
 
       _registry.set(cityKey, { services: [], quantities: {}, status: 'building' });
-      console.log(`🏗️ [Registry] Building for "${cityKey}"...`);
+      logger.info(`🏗️ [Registry] Building for "${cityKey}"...`);
 
       (async () => {
         try {
@@ -148,14 +187,18 @@ ${proposal.textContent.slice(0, 12000)}`;
 
           const result = await model.generateContent(prompt);
           const raw = result.response.text().trim();
-          const jsonStr = raw.replace(/^```(?:json)?\s*/i, '').replace(/\s*```$/i, '').trim();
+          const jsonStr = raw
+            .replace(/^```(?:json)?\s*/i, '')
+            .replace(/\s*```$/i, '')
+            .trim();
           const parsed = JSON.parse(jsonStr);
 
           const services: string[] = (parsed.services || []).map((s: string) => normalizeSvc(s));
           const quantities: Record<string, ServiceQuantity> = {};
 
-          services.forEach(svc => {
-            const rawKey = Object.keys(parsed.quantities || {}).find(k => normalizeSvc(k) === svc) || svc;
+          services.forEach((svc) => {
+            const rawKey =
+              Object.keys(parsed.quantities || {}).find((k) => normalizeSvc(k) === svc) || svc;
             const q = parsed.quantities?.[rawKey];
             quantities[svc] = {
               min: typeof q?.min === 'number' ? q.min : 1,
@@ -166,12 +209,14 @@ ${proposal.textContent.slice(0, 12000)}`;
           _registry.set(cityKey, { services, quantities, status: 'ready' });
           persistToSession();
 
-          console.log(`✅ [Registry] Ready for "${cityKey}": ${services.length} services`);
+          logger.info(`✅ [Registry] Ready for "${cityKey}": ${services.length} services`);
           const snapshot: Record<string, object> = {};
-          _registry.forEach((val, key) => { snapshot[key] = val; });
-          console.log('📋 FULL CITY SERVICE REGISTRY:', JSON.stringify(snapshot, null, 2));
+          _registry.forEach((val, key) => {
+            snapshot[key] = val;
+          });
+          logger.info('📋 FULL CITY SERVICE REGISTRY:', JSON.stringify(snapshot, null, 2));
         } catch (err) {
-          console.warn(`⚠️ [Registry] Build failed for "${cityKey}":`, err);
+          logger.warn(`⚠️ [Registry] Build failed for "${cityKey}":`, err);
           _registry.set(cityKey, { services: [], quantities: {}, status: 'failed' });
         }
       })();

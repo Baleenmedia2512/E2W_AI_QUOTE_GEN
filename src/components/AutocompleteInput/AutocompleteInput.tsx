@@ -1,4 +1,3 @@
-import React, { useState, useEffect, useRef } from 'react';
 import {
   Box,
   Input,
@@ -10,7 +9,10 @@ import {
   InputRightElement,
   useOutsideClick,
 } from '@chakra-ui/react';
+import React, { useState, useEffect, useRef } from 'react';
+
 import { LeadSearchResult } from '../../types/lead';
+import { logger } from '../../utils/logger';
 
 interface AutocompleteInputProps {
   value: string;
@@ -53,11 +55,11 @@ export const AutocompleteInput: React.FC<AutocompleteInputProps> = ({
   useEffect(() => {
     const timer = setTimeout(async () => {
       if (value.length >= 2) {
-        console.log('🔍 Autocomplete: Searching for:', value);
+        logger.info('🔍 Autocomplete: Searching for:', value);
         setIsLoading(true);
         setHasSearched(false);
         const results = await onSearch(value);
-        console.log('✅ Autocomplete: Got results:', results.length, results);
+        logger.info('✅ Autocomplete: Got results:', results.length, results);
         setSuggestions(results);
         setIsOpen(true); // Always open to show results or "no results" message
         setHasSearched(true);
@@ -90,9 +92,7 @@ export const AutocompleteInput: React.FC<AutocompleteInputProps> = ({
     switch (e.key) {
       case 'ArrowDown':
         e.preventDefault();
-        setSelectedIndex((prev) => 
-          prev < suggestions.length - 1 ? prev + 1 : prev
-        );
+        setSelectedIndex((prev) => (prev < suggestions.length - 1 ? prev + 1 : prev));
         break;
       case 'ArrowUp':
         e.preventDefault();
@@ -135,14 +135,14 @@ export const AutocompleteInput: React.FC<AutocompleteInputProps> = ({
           borderWidth="2px"
           borderColor={isInvalid ? 'red.500' : 'gray.300'}
           fontWeight="500"
-          _hover={{ 
-            borderColor: 'red.300', 
-            boxShadow: '0 0 0 1px rgba(201, 31, 61, 0.1)' 
+          _hover={{
+            borderColor: 'red.300',
+            boxShadow: '0 0 0 1px rgba(201, 31, 61, 0.1)',
           }}
-          _focus={{ 
-            borderColor: 'red.500', 
+          _focus={{
+            borderColor: 'red.500',
             boxShadow: '0 0 0 3px rgba(201, 31, 61, 0.15)',
-            bg: 'white'
+            bg: 'white',
           }}
           borderRadius="12px"
           autoComplete="off"
@@ -181,19 +181,14 @@ export const AutocompleteInput: React.FC<AutocompleteInputProps> = ({
                 borderBottomWidth={index < suggestions.length - 1 ? '1px' : '0'}
                 borderBottomColor="gray.100"
                 onClick={() => handleSelect(lead)}
-                _hover={{ 
+                _hover={{
                   bg: 'red.50',
                   borderLeftWidth: '3px',
                   borderLeftColor: 'red.500',
                 }}
                 transition="all 0.15s"
               >
-                <Text 
-                  fontSize="sm" 
-                  fontWeight="600" 
-                  color="gray.800"
-                  mb={1}
-                >
+                <Text fontSize="sm" fontWeight="600" color="gray.800" mb={1}>
                   {formatDisplay(lead)}
                 </Text>
                 <Text fontSize="xs" color="gray.600" lineHeight="1.4">
@@ -205,8 +200,10 @@ export const AutocompleteInput: React.FC<AutocompleteInputProps> = ({
                     lead.state,
                     lead.pincode,
                     lead.campaign,
-                    lead.source
-                  ].filter(Boolean).join(' | ')}
+                    lead.source,
+                  ]
+                    .filter(Boolean)
+                    .join(' | ')}
                 </Text>
               </ListItem>
             ))}

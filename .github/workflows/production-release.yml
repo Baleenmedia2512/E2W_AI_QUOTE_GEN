@@ -1,0 +1,250 @@
+name: Production Release
+
+on:
+  push:
+    tags:
+      - 'v*'  # Only on version tags (v1.0.0, v1.0.1, etc.)
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Version to release (e.g., v1.0.0)'
+        required: true
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    
+    permissions:
+      contents: write
+      deployments: write
+      packages: write
+    
+    steps:
+      # 1. Checkout code
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      # 2. Setup Node.js
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20.x'
+          cache: 'npm'
+
+      # 3. Install dependencies
+      - name: Install Dependencies
+        run: npm ci
+        env:
+          CI: true
+
+      # 4. Run full test suite
+      - name: Full Test Suite
+        run: npm test
+        env:
+          NODE_ENV: test
+        continue-on-error: false
+
+      # 5. Type check
+      - name: Type Check (Strict Mode)
+        run: npx tsc --noEmit
+        continue-on-error: false
+
+      # 6. Lint check
+      - name: Lint Check
+        run: npm run lint
+        continue-on-error: false
+
+      # 7. Security audit
+      - name: Security Audit
+        run: npm audit --audit-level=moderate || true
+        continue-on-error: true
+
+      # 8. Production build
+      - name: Production Build
+        run: npm run build:prod
+        env:
+          VITE_APP_ENV: production
+          VITE_SUPABASE_URL: ${{ secrets.PROD_SUPABASE_URL }}
+          VITE_SUPABASE_ANON_KEY: ${{ secrets.PROD_SUPABASE_ANON_KEY }}
+          VITE_GEMINI_API_KEY: ${{ secrets.PROD_GEMINI_API_KEY }}
+        continue-on-error: false
+
+      # 9. Get version tag
+      - name: Get Version
+        id: version
+        run: |
+          if [[ "${{ github.ref }}" == refs/tags/* ]]; then
+            VERSION=${GITHUB_REF#refs/tags/}
+          else
+            VERSION=${{ github.event.inputs.version }}
+          fi
+          echo "version=$VERSION" >> $GITHUB_OUTPUT
+          echo "Version: $VERSION"
+
+      # 10. Create deployment
+      - name: Create Deployment
+        uses: chrnorm/deployment-action@v2
+        id: deployment
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+          environment: production
+          ref: ${{ github.ref }}
+          description: 'Production release ${{ steps.version.outputs.version }}'
+
+      # 11. Blue-Green Deployment
+      - name: Deploy to Production (Blue-Green)
+        env:
+          PROD_HOST: ${{ secrets.PROD_HOST }}
+          PROD_USER: ${{ secrets.PROD_USER }}
+          PROD_KEY: ${{ secrets.PROD_KEY }}
+          BLUE_GREEN_SCRIPT: |
+            #!/bin/bash
+            set -e
+            
+            echo "🔵 Starting blue-green deployment..."
+            
+            # Determine current environment (blue or green)
+            CURRENT=$(ssh -i /tmp/prod_key -o StrictHostKeyChecking=no \
+              $PROD_USER@$PROD_HOST "cat /app/current_env.txt 2>/dev/null || echo 'blue'")
+            
+            if [ "$CURRENT" = "blue" ]; then
+              TARGET="green"
+            else
+              TARGET="blue"
+            fi
+            
+            echo "Current: $CURRENT → Target: $TARGET"
+            
+            # Deploy to target environment
+            rsync -avz --delete \
+              -e "ssh -i /tmp/prod_key -o StrictHostKeyChecking=no" \
+              dist/ $PROD_USER@$PROD_HOST:/app/$TARGET/
+            
+            # Run health checks
+            echo "🏥 Running health checks on $TARGET..."
+            curl -f -s http://localhost:3000-$TARGET/health || exit 1
+            
+            # Switch traffic
+            echo "🚦 Switching traffic to $TARGET..."
+            ssh -i /tmp/prod_key -o StrictHostKeyChecking=no \
+              $PROD_USER@$PROD_HOST "echo $TARGET > /app/current_env.txt"
+            
+            # Verify switch
+            sleep 5
+            curl -f -s https://quote-buddy.com/health || exit 1
+            
+            echo "✅ Deployment complete: $TARGET is now live"
+        run: |
+          mkdir -p ~/.ssh
+          echo "${{ secrets.PROD_KEY }}" > ~/.ssh/prod_key
+          chmod 600 ~/.ssh/prod_key
+          ssh-keyscan -H $PROD_HOST >> ~/.ssh/known_hosts 2>/dev/null || true
+          
+          # Deploy to blue environment (not live yet)
+          rsync -avz --delete \
+            -e "ssh -i ~/.ssh/prod_key -o StrictHostKeyChecking=no" \
+            dist/ $PROD_USER@$PROD_HOST:/app/blue/
+          
+          # Cleanup
+          rm ~/.ssh/prod_key
+
+      # 12. Health Checks
+      - name: Health Checks
+        run: |
+          echo "🏥 Running health checks..."
+          MAX_ATTEMPTS=10
+          ATTEMPT=1
+          
+          while [ $ATTEMPT -le $MAX_ATTEMPTS ]; do
+            if curl -f -s ${{ secrets.PROD_URL }}/health > /dev/null 2>&1; then
+              echo "✅ Health check passed"
+              exit 0
+            fi
+            echo "Attempt $ATTEMPT/$MAX_ATTEMPTS..."
+            ATTEMPT=$((ATTEMPT + 1))
+            sleep 30
+          done
+          
+          echo "❌ Health check failed"
+          exit 1
+        continue-on-error: false
+
+      # 13. Create GitHub Release
+      - name: Create GitHub Release
+        uses: ncipollo/release-action@v1
+        with:
+          tag: ${{ steps.version.outputs.version }}
+          name: Release ${{ steps.version.outputs.version }}
+          bodyFile: CHANGELOG.md
+          draft: false
+          prerelease: false
+        continue-on-error: true
+
+      # 14. Update deployment status
+      - name: Update Deployment Status
+        if: always()
+        uses: chrnorm/deployment-status@v2
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+          deployment-id: ${{ steps.deployment.outputs.deployment_id }}
+          state: ${{ job.status }}
+          environment-url: ${{ secrets.PROD_URL }}
+          description: 'Production release ${{ steps.version.outputs.version }} ${{ job.status }}'
+
+      # 15. Notify Slack
+      - name: Notify Slack - Production Release
+        if: always()
+        uses: slackapi/slack-github-action@v1
+        with:
+          payload: |
+            {
+              "text": "🚀 Production Release",
+              "blocks": [
+                {
+                  "type": "section",
+                  "text": {
+                    "type": "mrkdwn",
+                    "text": "*Production Release Status*\n*Version:* ${{ steps.version.outputs.version }}\n*Status:* ${{ job.status }}\n*Commit:* ${{ github.sha }}"
+                  }
+                }
+              ]
+            }
+        env:
+          SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
+        continue-on-error: true
+
+      # 16. Summary
+      - name: Release Summary
+        if: always()
+        run: |
+          echo "## Production Release Summary" >> $GITHUB_STEP_SUMMARY
+          echo "- Version: ${{ steps.version.outputs.version }}" >> $GITHUB_STEP_SUMMARY
+          echo "- Status: ${{ job.status }}" >> $GITHUB_STEP_SUMMARY
+          echo "- Commit: ${{ github.sha }}" >> $GITHUB_STEP_SUMMARY
+          echo "- Environment: https://quote-buddy.com" >> $GITHUB_STEP_SUMMARY
+
+  # Rollback job (manual trigger)
+  rollback:
+    if: failure()
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: Rollback to Previous Version
+        env:
+          PROD_HOST: ${{ secrets.PROD_HOST }}
+          PROD_USER: ${{ secrets.PROD_USER }}
+          PROD_KEY: ${{ secrets.PROD_KEY }}
+        run: |
+          echo "⚠️  Initiating rollback..."
+          mkdir -p ~/.ssh
+          echo "${{ secrets.PROD_KEY }}" > ~/.ssh/prod_key
+          chmod 600 ~/.ssh/prod_key
+          ssh-keyscan -H $PROD_HOST >> ~/.ssh/known_hosts 2>/dev/null || true
+          
+          # Switch back to blue (or previous)
+          ssh -i ~/.ssh/prod_key -o StrictHostKeyChecking=no \
+            $PROD_USER@$PROD_HOST "echo blue > /app/current_env.txt"
+          
+          echo "✅ Rollback complete"
+          
+          rm ~/.ssh/prod_key

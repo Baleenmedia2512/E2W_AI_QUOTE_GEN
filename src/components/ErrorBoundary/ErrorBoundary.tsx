@@ -1,5 +1,6 @@
 import { Component, ErrorInfo, ReactNode } from 'react';
 import './ErrorBoundary.css';
+import { logger } from '../../utils/logger';
 
 interface ErrorBoundaryProps {
   children: ReactNode;
@@ -18,7 +19,7 @@ export class ErrorBoundary extends Component<ErrorBoundaryProps, ErrorBoundarySt
     this.state = {
       hasError: false,
       error: null,
-      errorInfo: null
+      errorInfo: null,
     };
   }
 
@@ -27,11 +28,11 @@ export class ErrorBoundary extends Component<ErrorBoundaryProps, ErrorBoundarySt
   }
 
   componentDidCatch(error: Error, errorInfo: ErrorInfo): void {
-    console.error('ErrorBoundary caught an error:', error, errorInfo);
-    
+    logger.error('ErrorBoundary caught an error:', error, errorInfo);
+
     this.setState({
       error,
-      errorInfo
+      errorInfo,
     });
 
     // Log error to monitoring service (e.g., Sentry)
@@ -42,9 +43,9 @@ export class ErrorBoundary extends Component<ErrorBoundaryProps, ErrorBoundarySt
     this.setState({
       hasError: false,
       error: null,
-      errorInfo: null
+      errorInfo: null,
     });
-    
+
     // Reload the page to reset the app state
     window.location.href = '/';
   };
@@ -79,8 +80,8 @@ export class ErrorBoundary extends Component<ErrorBoundaryProps, ErrorBoundarySt
 
             <h1 className="error-title">Oops! Something went wrong</h1>
             <p className="error-message">
-              We're sorry, but the application encountered an unexpected error.
-              Please try refreshing the page or return to the home page.
+              We're sorry, but the application encountered an unexpected error. Please try
+              refreshing the page or return to the home page.
             </p>
 
             {process.env.NODE_ENV === 'development' && this.state.error && (
@@ -89,7 +90,7 @@ export class ErrorBoundary extends Component<ErrorBoundaryProps, ErrorBoundarySt
                 <div className="error-stack">
                   <h3>Error Message:</h3>
                   <pre>{this.state.error.toString()}</pre>
-                  
+
                   {this.state.errorInfo && (
                     <>
                       <h3>Component Stack:</h3>

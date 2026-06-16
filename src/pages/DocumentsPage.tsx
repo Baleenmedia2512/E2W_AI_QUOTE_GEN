@@ -1,17 +1,10 @@
+import { Box, Flex, Heading, HStack, Text, Icon, Badge } from '@chakra-ui/react';
 import React from 'react';
-import {
-  Box,
-  Flex,
-  Heading,
-  HStack,
-  Text,
-  Icon,
-  Badge,
-} from '@chakra-ui/react';
 import { FiFolder, FiHome, FiFileText, FiEye } from 'react-icons/fi';
 import { useHistory } from 'react-router-dom';
-import ProposalUpload from '../components/ProposalUpload/ProposalUpload';
+
 import MultiProposalViewer from '../components/MultiProposalViewer/MultiProposalViewer';
+import ProposalUpload from '../components/ProposalUpload/ProposalUpload';
 import { UserProfile } from '../components/UserProfile';
 
 const DocumentsPage: React.FC = () => {
@@ -74,14 +67,7 @@ const DocumentsPage: React.FC = () => {
       >
         <Flex justify="space-between" align="center" maxW="1920px" mx="auto">
           <HStack spacing={3}>
-            <Box
-              bg="brand.500"
-              color="white"
-              px={3}
-              py={2}
-              borderRadius="8px"
-              fontWeight="800"
-            >
+            <Box bg="brand.500" color="white" px={3} py={2} borderRadius="8px" fontWeight="800">
               <Icon as={FiFolder} boxSize={5} />
             </Box>
             <Heading size="lg" color="brand.500" fontWeight="800" letterSpacing="-0.02em">
@@ -210,13 +196,14 @@ const DocumentsPage: React.FC = () => {
                 PDF
               </Box>
             </HStack>
-            
+
             <Heading size="lg" mb={3} fontWeight="800" lineHeight="1.2">
               Upload & View Proposals
             </Heading>
-            
+
             <Text fontSize="sm" opacity={0.95} lineHeight="1.6">
-              Upload BTL proposal PDFs and view them instantly. Documents are saved to cloud for easy access.
+              Upload BTL proposal PDFs and view them instantly. Documents are saved to cloud for
+              easy access.
             </Text>
           </Box>
 

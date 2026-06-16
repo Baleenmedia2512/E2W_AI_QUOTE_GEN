@@ -7,7 +7,7 @@
 #pdf-page-1 a[href],
 #pdf-page-2 a[href],
 #pdf-page-summary a[href],
-[id^="pdf-service-"] a[href] {
+[id^='pdf-service-'] a[href] {
   color: #0066cc !important;
   text-decoration: underline !important;
   cursor: pointer;
@@ -19,28 +19,28 @@
 #pdf-page-3,
 #pdf-page-terms,
 #pdf-page-summary,
-[id^="pdf-service-"] {
-  width: 794px !important;           /* A4 width at 96dpi */
+[id^='pdf-service-'] {
+  width: 794px !important; /* A4 width at 96dpi */
   min-width: 794px !important;
   max-width: 794px !important;
   box-sizing: border-box;
   background: #ffffff;
-  font-size: 13px;                   /* Fixed font size, not responsive */
+  font-size: 13px; /* Fixed font size, not responsive */
   line-height: 1.6;
   overflow: visible;
   margin: 0 !important;
-  padding: 0 !important;             /* No padding on container */
+  padding: 0 !important; /* No padding on container */
   position: relative !important;
 }
 
 /* Page 1 - Quotation Content - NO outer padding, template handles it */
 #pdf-page-1,
 #pdf-page-summary,
-[id^="pdf-service-"]:not([id^="pdf-service-ref-"]) {
-  padding: 0 !important;             /* Template inside handles padding */
+[id^='pdf-service-']:not([id^='pdf-service-ref-']) {
+  padding: 0 !important; /* Template inside handles padding */
   page-break-after: always !important;
   break-after: page !important;
-  -webkit-column-break-after: always !important;  /* Webkit support */
+  -webkit-column-break-after: always !important; /* Webkit support */
   overflow: visible !important;
   max-height: none !important;
 }
@@ -63,11 +63,11 @@ html body #pdf-page-summary.template-corporate-minimal,
 html body #pdf-page-summary.template-modern-sales,
 html body #pdf-page-summary.template-classic-business,
 html body #pdf-page-summary.template-premium-agency,
-html body [id^="pdf-service-"]:not([id^="pdf-service-ref-"]).template-corporate-minimal,
-html body [id^="pdf-service-"]:not([id^="pdf-service-ref-"]).template-modern-sales,
-html body [id^="pdf-service-"]:not([id^="pdf-service-ref-"]).template-classic-business,
-html body [id^="pdf-service-"]:not([id^="pdf-service-ref-"]).template-premium-agency {
-  padding: 50px 55px !important;     /* Large margins: 50px top/bottom, 55px left/right */
+html body [id^='pdf-service-']:not([id^='pdf-service-ref-']).template-corporate-minimal,
+html body [id^='pdf-service-']:not([id^='pdf-service-ref-']).template-modern-sales,
+html body [id^='pdf-service-']:not([id^='pdf-service-ref-']).template-classic-business,
+html body [id^='pdf-service-']:not([id^='pdf-service-ref-']).template-premium-agency {
+  padding: 50px 55px !important; /* Large margins: 50px top/bottom, 55px left/right */
   margin: 0 !important;
   max-width: 100% !important;
   box-sizing: border-box !important;
@@ -78,26 +78,24 @@ html body [id^="pdf-service-"]:not([id^="pdf-service-ref-"]).template-premium-ag
 /* Override .classic-container padding */
 html body #pdf-page-1 .classic-container,
 html body #pdf-page-summary .classic-container,
-html body [id^="pdf-service-"]:not([id^="pdf-service-ref-"]) .classic-container {
+html body [id^='pdf-service-']:not([id^='pdf-service-ref-']) .classic-container {
   padding: 0 !important;
   margin: 0 !important;
   width: 100% !important;
   max-width: 100% !important;
 }
 
-
-
 /* Page 2 - Reference Images Section - starts fresh */
 html body #pdf-page-2,
 html body #pdf-page-3,
 html body #pdf-page-terms,
-html body [id^="pdf-service-ref-"] {
+html body [id^='pdf-service-ref-'] {
   page-break-before: always !important;
   break-before: page !important;
-  -webkit-column-break-before: always !important;  /* Webkit support */
-  padding: 70px 55px 50px 55px !important;  /* Match page 1: 70px top, 55px sides, 50px bottom */
+  -webkit-column-break-before: always !important; /* Webkit support */
+  padding: 70px 55px 50px 55px !important; /* Match page 1: 70px top, 55px sides, 50px bottom */
   margin: 0 !important;
-  margin-top: 0 !important;  /* Explicitly zero top margin */
+  margin-top: 0 !important; /* Explicitly zero top margin */
   display: block !important;
   clear: both !important;
   position: relative !important;
@@ -111,9 +109,9 @@ html body [id^="pdf-service-ref-"] {
 #pdf-page-3 *,
 #pdf-page-terms *,
 #pdf-page-summary *,
-[id^="pdf-service-"] * {
+[id^='pdf-service-'] * {
   max-width: 100% !important;
-  flex-wrap: wrap !important;        /* Allow wrapping if needed */
+  flex-wrap: wrap !important; /* Allow wrapping if needed */
   word-wrap: break-word !important;
   overflow-wrap: break-word !important;
   box-sizing: border-box !important;
@@ -123,12 +121,12 @@ html body [id^="pdf-service-ref-"] {
 #pdf-page-1 table,
 #pdf-page-2 table,
 #pdf-page-summary table,
-[id^="pdf-service-"] table {
+[id^='pdf-service-'] table {
   width: 100% !important;
   max-width: 100% !important;
-  table-layout: auto;                 /* Allow auto layout for better fitting */
+  table-layout: auto; /* Allow auto layout for better fitting */
   border-collapse: collapse;
-  font-size: 13px !important;          /* Fixed font size for tables */
+  font-size: 13px !important; /* Fixed font size for tables */
 }
 
 #pdf-page-1 th,
@@ -137,9 +135,9 @@ html body [id^="pdf-service-ref-"] {
 #pdf-page-2 td,
 #pdf-page-summary th,
 #pdf-page-summary td,
-[id^="pdf-service-"] th,
-[id^="pdf-service-"] td {
-  padding: 4px 5px !important;        /* Minimal cell padding for large margins */
+[id^='pdf-service-'] th,
+[id^='pdf-service-'] td {
+  padding: 4px 5px !important; /* Minimal cell padding for large margins */
   font-size: 13px !important;
   word-break: break-word !important;
   line-height: 1.2 !important;
@@ -148,25 +146,25 @@ html body [id^="pdf-service-ref-"] {
 /* Make table column widths more compact */
 #pdf-page-1 .col-description,
 #pdf-page-summary .col-description,
-[id^="pdf-service-"]:not([id^="pdf-service-ref-"]) .col-description {
+[id^='pdf-service-']:not([id^='pdf-service-ref-']) .col-description {
   width: 45% !important;
 }
 
 #pdf-page-1 .col-quantity,
 #pdf-page-summary .col-quantity,
-[id^="pdf-service-"]:not([id^="pdf-service-ref-"]) .col-quantity {
+[id^='pdf-service-']:not([id^='pdf-service-ref-']) .col-quantity {
   width: 15% !important;
 }
 
 #pdf-page-1 .col-rate,
 #pdf-page-summary .col-rate,
-[id^="pdf-service-"]:not([id^="pdf-service-ref-"]) .col-rate {
+[id^='pdf-service-']:not([id^='pdf-service-ref-']) .col-rate {
   width: 20% !important;
 }
 
 #pdf-page-1 .col-total,
 #pdf-page-summary .col-total,
-[id^="pdf-service-"]:not([id^="pdf-service-ref-"]) .col-total {
+[id^='pdf-service-']:not([id^='pdf-service-ref-']) .col-total {
   width: 20% !important;
 }
 
@@ -183,12 +181,12 @@ html body [id^="pdf-service-ref-"] {
 #pdf-page-summary p,
 #pdf-page-summary div,
 #pdf-page-summary span,
-[id^="pdf-service-"]:not([id^="pdf-service-ref-"]) h1,
-[id^="pdf-service-"]:not([id^="pdf-service-ref-"]) h2,
-[id^="pdf-service-"]:not([id^="pdf-service-ref-"]) h3,
-[id^="pdf-service-"]:not([id^="pdf-service-ref-"]) p,
-[id^="pdf-service-"]:not([id^="pdf-service-ref-"]) div,
-[id^="pdf-service-"]:not([id^="pdf-service-ref-"]) span {
+[id^='pdf-service-']:not([id^='pdf-service-ref-']) h1,
+[id^='pdf-service-']:not([id^='pdf-service-ref-']) h2,
+[id^='pdf-service-']:not([id^='pdf-service-ref-']) h3,
+[id^='pdf-service-']:not([id^='pdf-service-ref-']) p,
+[id^='pdf-service-']:not([id^='pdf-service-ref-']) div,
+[id^='pdf-service-']:not([id^='pdf-service-ref-']) span {
   max-width: 100% !important;
   overflow-wrap: break-word !important;
   word-wrap: break-word !important;
@@ -201,9 +199,9 @@ html body [id^="pdf-service-ref-"] {
 #pdf-page-summary .company-info,
 #pdf-page-summary .client-details,
 #pdf-page-summary .template-header,
-[id^="pdf-service-"]:not([id^="pdf-service-ref-"]) .company-info,
-[id^="pdf-service-"]:not([id^="pdf-service-ref-"]) .client-details,
-[id^="pdf-service-"]:not([id^="pdf-service-ref-"]) .template-header {
+[id^='pdf-service-']:not([id^='pdf-service-ref-']) .company-info,
+[id^='pdf-service-']:not([id^='pdf-service-ref-']) .client-details,
+[id^='pdf-service-']:not([id^='pdf-service-ref-']) .template-header {
   max-width: 100% !important;
   width: 100% !important;
 }
@@ -215,13 +213,13 @@ html body [id^="pdf-service-ref-"] {
 #pdf-page-summary .quote-items-section,
 #pdf-page-summary .items-container,
 #pdf-page-summary .totals-section,
-[id^="pdf-service-"]:not([id^="pdf-service-ref-"]) .quote-items-section,
-[id^="pdf-service-"]:not([id^="pdf-service-ref-"]) .items-container,
-[id^="pdf-service-"]:not([id^="pdf-service-ref-"]) .totals-section {
+[id^='pdf-service-']:not([id^='pdf-service-ref-']) .quote-items-section,
+[id^='pdf-service-']:not([id^='pdf-service-ref-']) .items-container,
+[id^='pdf-service-']:not([id^='pdf-service-ref-']) .totals-section {
   max-width: 100% !important;
   width: 100% !important;
   overflow: hidden !important;
-  margin-bottom: 12px !important;     /* Reduced spacing between sections */
+  margin-bottom: 12px !important; /* Reduced spacing between sections */
 }
 
 /* Compact section spacing */
@@ -229,15 +227,15 @@ html body [id^="pdf-service-ref-"] {
 #pdf-page-1 .client-details,
 #pdf-page-summary .template-header,
 #pdf-page-summary .client-details,
-[id^="pdf-service-"]:not([id^="pdf-service-ref-"]) .template-header,
-[id^="pdf-service-"]:not([id^="pdf-service-ref-"]) .client-details {
+[id^='pdf-service-']:not([id^='pdf-service-ref-']) .template-header,
+[id^='pdf-service-']:not([id^='pdf-service-ref-']) .client-details {
   margin-bottom: 10px !important;
 }
 
 #pdf-page-1 .system-generated-notice,
 #pdf-page-summary .system-generated-notice,
-[id^="pdf-service-"]:not([id^="pdf-service-ref-"]) .system-generated-notice,
-[id^="pdf-service-ref-"] .system-generated-notice {
+[id^='pdf-service-']:not([id^='pdf-service-ref-']) .system-generated-notice,
+[id^='pdf-service-ref-'] .system-generated-notice {
   margin-top: 24px !important;
   padding: 16px 24px !important;
   border-radius: 8px !important;
@@ -297,8 +295,8 @@ html body [id^="pdf-service-ref-"] {
 }
 
 /* Footer elements inside reference sections */
-[id^="pdf-service-ref-"] .pa-notice,
-[id^="pdf-service-ref-"] .ms-notice {
+[id^='pdf-service-ref-'] .pa-notice,
+[id^='pdf-service-ref-'] .ms-notice {
   margin-top: 24px !important;
   padding: 16px 24px !important;
   border-radius: 8px !important;
@@ -307,13 +305,13 @@ html body [id^="pdf-service-ref-"] {
   position: relative !important;
 }
 
-[id^="pdf-service-ref-"] .pa-notice {
+[id^='pdf-service-ref-'] .pa-notice {
   background: linear-gradient(135deg, #faf8f5 0%, #f5f0e8 100%) !important;
   border: 1px solid #d4c4a8 !important;
   border-left: 4px solid #8b7355 !important;
 }
 
-[id^="pdf-service-ref-"] .pa-notice::before {
+[id^='pdf-service-ref-'] .pa-notice::before {
   content: '🛡️' !important;
   position: absolute !important;
   left: 12px !important;
@@ -323,7 +321,7 @@ html body [id^="pdf-service-ref-"] {
   opacity: 0.7 !important;
 }
 
-[id^="pdf-service-ref-"] .pa-notice p {
+[id^='pdf-service-ref-'] .pa-notice p {
   font-size: 12px !important;
   color: #5a4a3a !important;
   font-weight: 500 !important;
@@ -332,13 +330,13 @@ html body [id^="pdf-service-ref-"] {
   margin: 0 !important;
 }
 
-[id^="pdf-service-ref-"] .ms-notice {
+[id^='pdf-service-ref-'] .ms-notice {
   background: linear-gradient(135deg, #f0fdf4 0%, #dcfce7 100%) !important;
   border: 1px solid #86efac !important;
   border-left: 4px solid #059669 !important;
 }
 
-[id^="pdf-service-ref-"] .ms-notice::before {
+[id^='pdf-service-ref-'] .ms-notice::before {
   content: '✔️' !important;
   position: absolute !important;
   left: 12px !important;
@@ -348,7 +346,7 @@ html body [id^="pdf-service-ref-"] {
   opacity: 0.8 !important;
 }
 
-[id^="pdf-service-ref-"] .ms-notice p {
+[id^='pdf-service-ref-'] .ms-notice p {
   font-size: 12px !important;
   color: #047857 !important;
   font-weight: 600 !important;
@@ -357,9 +355,9 @@ html body [id^="pdf-service-ref-"] {
   margin: 0 !important;
 }
 
-[id^="pdf-service-ref-"] .pa-footer,
-[id^="pdf-service-ref-"] .ms-footer,
-[id^="pdf-service-ref-"] .classic-footer {
+[id^='pdf-service-ref-'] .pa-footer,
+[id^='pdf-service-ref-'] .ms-footer,
+[id^='pdf-service-ref-'] .classic-footer {
   margin-top: 10px !important;
 }
 
@@ -396,8 +394,8 @@ html body [id^="pdf-service-ref-"] {
 #pdf-page-1 .notes-section,
 #pdf-page-summary .terms-section,
 #pdf-page-summary .notes-section,
-[id^="pdf-service-"]:not([id^="pdf-service-ref-"]) .terms-section,
-[id^="pdf-service-"]:not([id^="pdf-service-ref-"]) .notes-section {
+[id^='pdf-service-']:not([id^='pdf-service-ref-']) .terms-section,
+[id^='pdf-service-']:not([id^='pdf-service-ref-']) .notes-section {
   max-width: 100% !important;
   width: 100% !important;
 }
@@ -406,9 +404,9 @@ html body [id^="pdf-service-ref-"] {
 #pdf-page-1 .notes-section p,
 #pdf-page-summary .terms-section ul,
 #pdf-page-summary .notes-section p,
-[id^="pdf-service-"]:not([id^="pdf-service-ref-"]) .terms-section ul,
-[id^="pdf-service-"]:not([id^="pdf-service-ref-"]) .notes-section p {
-  font-size: 9px !important;          /* Smaller font for terms to fit with margins */
+[id^='pdf-service-']:not([id^='pdf-service-ref-']) .terms-section ul,
+[id^='pdf-service-']:not([id^='pdf-service-ref-']) .notes-section p {
+  font-size: 9px !important; /* Smaller font for terms to fit with margins */
   line-height: 1.4 !important;
   padding-right: 0 !important;
   margin-right: 0 !important;
@@ -418,29 +416,29 @@ html body [id^="pdf-service-ref-"] {
 #pdf-page-1 .notes-section p,
 #pdf-page-summary .terms-section ul li,
 #pdf-page-summary .notes-section p,
-[id^="pdf-service-"]:not([id^="pdf-service-ref-"]) .terms-section ul li,
-[id^="pdf-service-"]:not([id^="pdf-service-ref-"]) .notes-section p {
+[id^='pdf-service-']:not([id^='pdf-service-ref-']) .terms-section ul li,
+[id^='pdf-service-']:not([id^='pdf-service-ref-']) .notes-section p {
   margin-bottom: 4px !important;
 }
 
 /* Adjust header/title sizes for better fit */
 #pdf-page-1 h1,
 #pdf-page-summary h1,
-[id^="pdf-service-"]:not([id^="pdf-service-ref-"]) h1 {
+[id^='pdf-service-']:not([id^='pdf-service-ref-']) h1 {
   font-size: 14px !important;
   margin-bottom: 8px !important;
 }
 
 #pdf-page-1 h2,
 #pdf-page-summary h2,
-[id^="pdf-service-"]:not([id^="pdf-service-ref-"]) h2 {
+[id^='pdf-service-']:not([id^='pdf-service-ref-']) h2 {
   font-size: 13px !important;
   margin-bottom: 6px !important;
 }
 
 #pdf-page-1 h3,
 #pdf-page-summary h3,
-[id^="pdf-service-"]:not([id^="pdf-service-ref-"]) h3 {
+[id^='pdf-service-']:not([id^='pdf-service-ref-']) h3 {
   font-size: 11px !important;
   margin-bottom: 6px !important;
 }
@@ -454,10 +452,10 @@ html body [id^="pdf-service-ref-"] {
 #pdf-page-summary .hero-logo,
 #pdf-page-summary .letterhead-logo,
 #pdf-page-summary .top-logo,
-[id^="pdf-service-"]:not([id^="pdf-service-ref-"]) .company-logo,
-[id^="pdf-service-"]:not([id^="pdf-service-ref-"]) .hero-logo,
-[id^="pdf-service-"]:not([id^="pdf-service-ref-"]) .letterhead-logo,
-[id^="pdf-service-"]:not([id^="pdf-service-ref-"]) .top-logo {
+[id^='pdf-service-']:not([id^='pdf-service-ref-']) .company-logo,
+[id^='pdf-service-']:not([id^='pdf-service-ref-']) .hero-logo,
+[id^='pdf-service-']:not([id^='pdf-service-ref-']) .letterhead-logo,
+[id^='pdf-service-']:not([id^='pdf-service-ref-']) .top-logo {
   max-width: 90px !important;
   max-height: 40px !important;
 }
@@ -469,9 +467,9 @@ html body [id^="pdf-service-ref-"] {
 #pdf-page-summary .company-name,
 #pdf-page-summary .company-title,
 #pdf-page-summary .letterhead-name,
-[id^="pdf-service-"]:not([id^="pdf-service-ref-"]) .company-name,
-[id^="pdf-service-"]:not([id^="pdf-service-ref-"]) .company-title,
-[id^="pdf-service-"]:not([id^="pdf-service-ref-"]) .letterhead-name {
+[id^='pdf-service-']:not([id^='pdf-service-ref-']) .company-name,
+[id^='pdf-service-']:not([id^='pdf-service-ref-']) .company-title,
+[id^='pdf-service-']:not([id^='pdf-service-ref-']) .letterhead-name {
   font-size: 16px !important;
   margin-bottom: 4px !important;
 }
@@ -484,10 +482,10 @@ html body [id^="pdf-service-ref-"] {
 #pdf-page-summary .client-details,
 #pdf-page-summary .letterhead-info,
 #pdf-page-summary .company-info p,
-[id^="pdf-service-"]:not([id^="pdf-service-ref-"]) .company-details,
-[id^="pdf-service-"]:not([id^="pdf-service-ref-"]) .client-details,
-[id^="pdf-service-"]:not([id^="pdf-service-ref-"]) .letterhead-info,
-[id^="pdf-service-"]:not([id^="pdf-service-ref-"]) .company-info p {
+[id^='pdf-service-']:not([id^='pdf-service-ref-']) .company-details,
+[id^='pdf-service-']:not([id^='pdf-service-ref-']) .client-details,
+[id^='pdf-service-']:not([id^='pdf-service-ref-']) .letterhead-info,
+[id^='pdf-service-']:not([id^='pdf-service-ref-']) .company-info p {
   font-size: 9px !important;
   line-height: 1.3 !important;
   margin: 2px 0 !important;
@@ -495,23 +493,23 @@ html body [id^="pdf-service-ref-"] {
 
 /* Reference Images Section Styling */
 #pdf-page-2 .reference-images-section,
-[id^="pdf-service-ref-"] .reference-images-section {
+[id^='pdf-service-ref-'] .reference-images-section {
   margin: 0 !important;
-  padding: 20px 0 0 0 !important;  /* Added top padding for better spacing */
+  padding: 20px 0 0 0 !important; /* Added top padding for better spacing */
   border: none !important;
   background: transparent !important;
   page-break-inside: avoid !important;
   break-inside: avoid !important;
-  -webkit-column-break-inside: avoid !important;  /* Webkit support */
+  -webkit-column-break-inside: avoid !important; /* Webkit support */
   display: block !important;
   position: relative !important;
 }
 
 /* Structural spacer for PDF top spacing - forces content down */
 #pdf-page-2 .pdf-top-spacer,
-[id^="pdf-service-ref-"] .pdf-top-spacer {
+[id^='pdf-service-ref-'] .pdf-top-spacer {
   display: block !important;
-  height: 20px !important;  /* Reduced since page already has 70px top padding */
+  height: 20px !important; /* Reduced since page already has 70px top padding */
   width: 100% !important;
   min-height: 20px !important;
   margin: 0 !important;
@@ -522,23 +520,23 @@ html body [id^="pdf-service-ref-"] {
 }
 
 #pdf-page-2 .reference-images-title,
-[id^="pdf-service-ref-"] .reference-images-title {
+[id^='pdf-service-ref-'] .reference-images-title {
   margin-top: 0 !important;
-  margin-bottom: 35px !important;  /* Increased from 20px to 35px */
-  padding-bottom: 12px !important;  /* Added padding */
-  font-size: 22px;  /* Increased from 18px to 22px */
-  font-weight: 700;  /* Increased from 600 to 700 */
-  color: #750926;  /* Changed from #333 to match branding */
+  margin-bottom: 35px !important; /* Increased from 20px to 35px */
+  padding-bottom: 12px !important; /* Added padding */
+  font-size: 22px; /* Increased from 18px to 22px */
+  font-weight: 700; /* Increased from 600 to 700 */
+  color: #750926; /* Changed from #333 to match branding */
   text-align: center;
-  border-bottom: 3px solid #750926;  /* Added border */
+  border-bottom: 3px solid #750926; /* Added border */
   page-break-after: avoid !important;
   break-after: avoid !important;
 }
 
 /* Individual reference image row container */
 #pdf-page-2 .reference-image-row,
-[id^="pdf-service-ref-"] .reference-image-row {
-  margin-bottom: 45px !important;  /* Increased from 30px */
+[id^='pdf-service-ref-'] .reference-image-row {
+  margin-bottom: 45px !important; /* Increased from 30px */
   width: 100%;
   display: block;
   page-break-inside: avoid !important;
@@ -547,25 +545,25 @@ html body [id^="pdf-service-ref-"] {
 
 /* Images in reference page fill width cleanly */
 #pdf-page-2 .reference-image-item img,
-[id^="pdf-service-ref-"] .reference-image-item img {
+[id^='pdf-service-ref-'] .reference-image-item img {
   width: 100% !important;
   max-width: 100% !important;
   height: auto !important;
-  max-height: 450px !important;  /* Added max-height to prevent overflow */
+  max-height: 450px !important; /* Added max-height to prevent overflow */
   display: block !important;
   margin: 10px 0 !important;
   page-break-inside: avoid !important;
   break-inside: avoid !important;
-  object-fit: contain !important;  /* Ensure images scale properly */
+  object-fit: contain !important; /* Ensure images scale properly */
 }
 
 /* Image captions */
 #pdf-page-2 .reference-image-caption,
-[id^="pdf-service-ref-"] .reference-image-caption {
+[id^='pdf-service-ref-'] .reference-image-caption {
   font-size: 12px;
   color: #666;
   text-align: center;
-  margin: 10px 0 25px 0;  /* Increased bottom margin from 20px to 25px */
+  margin: 10px 0 25px 0; /* Increased bottom margin from 20px to 25px */
   color: #666;
   text-align: center;
   margin: 5px 0 20px 0;
@@ -574,7 +572,7 @@ html body [id^="pdf-service-ref-"] {
 
 /* Prevent page breaks inside image containers */
 #pdf-page-2 .service-images-group,
-[id^="pdf-service-ref-"] .service-images-group {
+[id^='pdf-service-ref-'] .service-images-group {
   page-break-inside: avoid !important;
   break-inside: avoid !important;
   margin-bottom: 40px;
@@ -582,7 +580,7 @@ html body [id^="pdf-service-ref-"] {
 
 /* Service type headings in reference section */
 #pdf-page-2 .service-type-heading,
-[id^="pdf-service-ref-"] .service-type-heading {
+[id^='pdf-service-ref-'] .service-type-heading {
   font-size: 16px;
   font-weight: 600;
   color: #750926;
@@ -602,17 +600,17 @@ html body [id^="pdf-service-ref-"] {
   #pdf-page-1,
   #pdf-page-2,
   #pdf-page-summary,
-  [id^="pdf-service-"] {
+  [id^='pdf-service-'] {
     width: 794px !important;
     min-width: 794px !important;
     font-size: 13px !important;
   }
-  
+
   #pdf-page-1 *,
   #pdf-page-2 *,
   #pdf-page-summary *,
-  [id^="pdf-service-"] * {
-    flex-direction: row !important;  /* Override mobile stacking */
+  [id^='pdf-service-'] * {
+    flex-direction: row !important; /* Override mobile stacking */
   }
 }
 
@@ -621,11 +619,11 @@ html body [id^="pdf-service-ref-"] {
   #pdf-page-2 {
     page-break-before: always !important;
   }
-  
+
   #pdf-page-2 .reference-image-item {
     page-break-inside: avoid !important;
   }
-  
+
   #pdf-page-2 .reference-image-item img {
     page-break-inside: avoid !important;
     max-height: 400px !important;

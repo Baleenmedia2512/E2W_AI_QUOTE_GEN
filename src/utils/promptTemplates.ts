@@ -505,7 +505,7 @@ Your workflow:
           "minimumQuantity": <minimum order quantity from proposal if stated, e.g. 10, 50 — omit if not mentioned>
         }
       ],
-      "termsAndConditions": "MANDATORY: For SINGLE-SERVICE quotes (only 1 item in array), this MUST be empty string: \"\". For MULTI-SERVICE quotes: service-specific terms only."
+      "termsAndConditions": "MANDATORY: For SINGLE-SERVICE quotes (only 1 item in array), this MUST be empty string: "". For MULTI-SERVICE quotes: service-specific terms only."
     }
   ],
   "deliveryTimeline": "Timeline from proposal or standard: 7-15 working days",
@@ -1110,11 +1110,10 @@ RULES:
     - ❌ "Display Price (per auto)" → WRONG (missing "Auto Full Branding" prefix)
   * This validation ensures reference images will be correctly filtered to match the exact service type`;
 
-
 export const SAMPLE_PROMPTS = [
-  "Generate quote for 100 auto full branding",
-  "Create quote for banner printing 10x5 feet, qty 50",
-  "Quote for vehicle branding - 20 tempos",
-  "Generate quote for shop signage",
-  "Create quote for the services in proposal",
+  'Generate quote for 100 auto full branding',
+  'Create quote for banner printing 10x5 feet, qty 50',
+  'Quote for vehicle branding - 20 tempos',
+  'Generate quote for shop signage',
+  'Create quote for the services in proposal',
 ];

@@ -1,4 +1,4 @@
-import React from 'react';
+import { ChevronDownIcon } from '@chakra-ui/icons';
 import {
   Box,
   Button,
@@ -14,8 +14,9 @@ import {
   Badge,
   useToast,
 } from '@chakra-ui/react';
-import { ChevronDownIcon } from '@chakra-ui/icons';
+import React from 'react';
 import { useHistory } from 'react-router-dom';
+
 import { useAuthStore } from '../../store/authStore';
 
 export const UserProfile: React.FC = () => {
@@ -25,11 +26,7 @@ export const UserProfile: React.FC = () => {
 
   if (!isAuthenticated || !user) {
     return (
-      <Button
-        size="sm"
-        colorScheme="blue"
-        onClick={() => history.push('/login')}
-      >
+      <Button size="sm" colorScheme="blue" onClick={() => history.push('/login')}>
         Login
       </Button>
     );
@@ -68,21 +65,12 @@ export const UserProfile: React.FC = () => {
         px={{ base: 1, md: 3 }}
       >
         <HStack spacing={2}>
-          <Avatar
-            size="sm"
-            name={user.full_name}
-            bg="blue.500"
-            color="white"
-          />
+          <Avatar size="sm" name={user.full_name} bg="blue.500" color="white" />
           <VStack spacing={0} align="start" display={{ base: 'none', md: 'flex' }}>
             <Text fontSize="sm" fontWeight="medium" lineHeight="1.2">
               {user.full_name}
             </Text>
-            <Badge
-              fontSize="xs"
-              colorScheme={getRoleColor(user.role.role_name)}
-              variant="subtle"
-            >
+            <Badge fontSize="xs" colorScheme={getRoleColor(user.role.role_name)} variant="subtle">
               {user.role.role_name}
             </Badge>
           </VStack>
@@ -96,11 +84,7 @@ export const UserProfile: React.FC = () => {
           <Text fontSize="xs" color="gray.600">
             {user.email}
           </Text>
-          <Badge
-            mt={1}
-            fontSize="xs"
-            colorScheme={getRoleColor(user.role.role_name)}
-          >
+          <Badge mt={1} fontSize="xs" colorScheme={getRoleColor(user.role.role_name)}>
             {user.role.role_name}
           </Badge>
         </Box>

@@ -1,4 +1,3 @@
-import React, { useState } from 'react';
 import {
   Box,
   HStack,
@@ -11,7 +10,9 @@ import {
   Badge,
   useColorModeValue,
 } from '@chakra-ui/react';
+import React, { useState } from 'react';
 import { FiChevronLeft, FiChevronRight, FiX, FiFileText, FiLayers } from 'react-icons/fi';
+
 import { useAppStore } from '../../store';
 import { ActiveProposal } from '../../types';
 
@@ -59,7 +60,9 @@ const SingleViewer: React.FC<SingleViewerProps> = ({ proposal, onRemove }) => {
           </Text>
         </HStack>
         <HStack spacing={1}>
-          <Badge colorScheme="green" fontSize="xs" borderRadius="full">Active</Badge>
+          <Badge colorScheme="green" fontSize="xs" borderRadius="full">
+            Active
+          </Badge>
           <IconButton
             aria-label="Remove proposal"
             icon={<Icon as={FiX} boxSize={3} />}
@@ -98,7 +101,9 @@ const SingleViewer: React.FC<SingleViewerProps> = ({ proposal, onRemove }) => {
           <Center h="100%">
             <VStack spacing={2}>
               <Icon as={FiFileText} boxSize={8} color="gray.300" />
-              <Text fontSize="sm" color="gray.400">No preview available</Text>
+              <Text fontSize="sm" color="gray.400">
+                No preview available
+              </Text>
             </VStack>
           </Center>
         )}
@@ -121,7 +126,7 @@ const SingleViewer: React.FC<SingleViewerProps> = ({ proposal, onRemove }) => {
             size="xs"
             variant="ghost"
             isDisabled={currentPage === 0}
-            onClick={() => setCurrentPage(p => p - 1)}
+            onClick={() => setCurrentPage((p) => p - 1)}
           />
           <Text fontSize="xs" color="gray.500" fontWeight="500">
             {currentPage + 1} / {totalPages}
@@ -132,7 +137,7 @@ const SingleViewer: React.FC<SingleViewerProps> = ({ proposal, onRemove }) => {
             size="xs"
             variant="ghost"
             isDisabled={currentPage >= totalPages - 1}
-            onClick={() => setCurrentPage(p => p + 1)}
+            onClick={() => setCurrentPage((p) => p + 1)}
           />
         </HStack>
       )}
@@ -159,7 +164,9 @@ const MultiProposalViewer: React.FC = () => {
       >
         <VStack spacing={3}>
           <Icon as={FiLayers} boxSize={10} color="gray.300" />
-          <Text fontSize="sm" color="gray.400" fontWeight="500">No proposals loaded</Text>
+          <Text fontSize="sm" color="gray.400" fontWeight="500">
+            No proposals loaded
+          </Text>
           <Text fontSize="xs" color="gray.400" textAlign="center" maxW="200px">
             Click "Load" on proposals below to view them here
           </Text>
@@ -191,18 +198,9 @@ const MultiProposalViewer: React.FC = () => {
       </HStack>
 
       {/* Viewers side by side */}
-      <Flex
-        gap={3}
-        overflowX="auto"
-        pb={2}
-        flexWrap={{ base: 'nowrap', xl: 'wrap' }}
-      >
-        {activeProposals.map(ap => (
-          <SingleViewer
-            key={ap.id}
-            proposal={ap}
-            onRemove={() => removeActiveProposal(ap.id)}
-          />
+      <Flex gap={3} overflowX="auto" pb={2} flexWrap={{ base: 'nowrap', xl: 'wrap' }}>
+        {activeProposals.map((ap) => (
+          <SingleViewer key={ap.id} proposal={ap} onRemove={() => removeActiveProposal(ap.id)} />
         ))}
       </Flex>
     </VStack>

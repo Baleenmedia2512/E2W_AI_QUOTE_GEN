@@ -1,10 +1,12 @@
-﻿import React from 'react';
+import React from 'react';
+
 import { Template, TemplateType } from '../../types';
-import { CorporateMinimal } from '../Templates/CorporateMinimal';
-import { PremiumAgency } from '../Templates/PremiumAgency';
-import { ModernSales } from '../Templates/ModernSales';
 import { ClassicBusiness } from '../Templates/ClassicBusiness';
+import { CorporateMinimal } from '../Templates/CorporateMinimal';
+import { ModernSales } from '../Templates/ModernSales';
+import { PremiumAgency } from '../Templates/PremiumAgency';
 import './TemplateSelector.css';
+import { logger } from '../../utils/logger';
 
 interface TemplateSelectorProps {
   selectedTemplate: TemplateType;
@@ -13,11 +15,11 @@ interface TemplateSelectorProps {
 
 export const TemplateSelector: React.FC<TemplateSelectorProps> = ({
   selectedTemplate,
-  onSelectTemplate
+  onSelectTemplate,
 }) => {
-  console.log('ðŸŽ¨ TemplateSelector rendered');
-  console.log('Selected template:', selectedTemplate);
-  
+  logger.info('🎨 TemplateSelector rendered');
+  logger.info('Selected template:', selectedTemplate);
+
   // Template preview SVGs
   const createTemplatePreview = (id: string) => {
     const previews: Record<string, string> = {
@@ -83,79 +85,84 @@ export const TemplateSelector: React.FC<TemplateSelectorProps> = ({
           <rect x="35" y="170" width="230" height="8" fill="#666666" rx="2"/>
           <text x="150" y="330" font-family="Georgia" font-size="26" fill="#1a1a1a" text-anchor="middle" font-weight="bold">Classic Business</text>
         </svg>
-      `
+      `,
     };
     return previews[id] || previews['corporate-minimal'];
   };
-  
+
   const templates: Template[] = [
     {
       id: 'corporate-minimal',
       name: 'Corporate Minimal',
       description: 'Clean and professional design perfect for corporate businesses',
       thumbnail: '',
-      component: CorporateMinimal
+      component: CorporateMinimal,
     },
     {
       id: 'premium-agency',
       name: 'Premium Agency',
       description: 'Modern gradient design with premium styling for agencies',
       thumbnail: '',
-      component: PremiumAgency
+      component: PremiumAgency,
     },
     {
       id: 'modern-sales',
       name: 'Modern Sales',
       description: 'Contemporary layout with sidebar perfect for sales teams',
       thumbnail: '',
-      component: ModernSales
+      component: ModernSales,
     },
     {
       id: 'classic-business',
       name: 'Classic Business',
       description: 'Traditional formal design ideal for established businesses',
       thumbnail: '',
-      component: ClassicBusiness
-    }
+      component: ClassicBusiness,
+    },
   ];
 
-  console.log('ðŸ“‹ Total templates:', templates.length);
+  logger.info('📋 Total templates:', templates.length);
 
   return (
     <div className="template-selector">
       {/* Header Section */}
       <div className="template-selector-header">
-        <h2 className="template-heading">
-          Choose Your Template
-        </h2>
+        <h2 className="template-heading">Choose Your Template</h2>
         <p className="template-subtitle">
           Select a professional design that matches your business style
         </p>
       </div>
 
-      <div className="template-grid"
+      <div
+        className="template-grid"
         style={{
           display: 'grid',
           gridTemplateColumns: 'repeat(auto-fill, minmax(280px, 1fr))',
           gap: '30px',
-          marginTop: '30px'
+          marginTop: '30px',
         }}
       >
         {templates.map((template) => {
-          console.log('ðŸ–¼ï¸ Rendering template card:', template.name);
+          logger.info('🖼️ Rendering template card:', template.name);
           return (
             <div
               key={template.id}
               className={`template-card ${selectedTemplate === template.id ? 'selected' : ''}`}
               onClick={() => {
-                console.log('ðŸ–±ï¸ Template card clicked:', template.id);
+                logger.info('🖱️ Template card clicked:', template.id);
                 onSelectTemplate(template.id);
               }}
             >
               <div className="template-thumbnail">
-                <div 
+                <div
                   dangerouslySetInnerHTML={{ __html: createTemplatePreview(template.id) }}
-                  style={{ width: '100%', height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center' }}
+                  style={{
+                    width: '100%',
+                    height: '100%',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                  }}
                 />
                 {selectedTemplate === template.id && (
                   <div className="selected-badge">
@@ -180,7 +187,7 @@ export const TemplateSelector: React.FC<TemplateSelectorProps> = ({
                 className={`select-button ${selectedTemplate === template.id ? 'selected' : ''}`}
                 onClick={(e) => {
                   e.stopPropagation();
-                  console.log('ðŸ–±ï¸ Select button clicked:', template.id);
+                  logger.info('🖱️ Select button clicked:', template.id);
                   onSelectTemplate(template.id);
                 }}
               >

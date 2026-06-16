@@ -3,11 +3,17 @@
  * Shows user-friendly notifications for app updates, sync status, and cache management
  */
 
-import React, { useEffect, useState } from 'react';
 import { Box, Button, Text, useToast, VStack, HStack, Icon, Progress } from '@chakra-ui/react';
+import React, { useEffect, useState } from 'react';
 import { FiRefreshCw, FiDownload, FiAlertCircle } from 'react-icons/fi';
-import { checkForUpdates, clearCacheAndReload, formatVersion, AppVersion } from '../../utils/cacheVersion';
+
 import { getSyncStatus, syncPendingChanges } from '../../services/dataSyncService';
+import {
+  checkForUpdates,
+  clearCacheAndReload,
+  formatVersion,
+  AppVersion,
+} from '../../utils/cacheVersion';
 
 export const UpdateNotification: React.FC = () => {
   const [hasUpdate, setHasUpdate] = useState(false);
@@ -17,11 +23,11 @@ export const UpdateNotification: React.FC = () => {
 
   useEffect(() => {
     // Check for updates on mount
-    checkForUpdates().then(result => {
+    checkForUpdates().then((result) => {
       if (result.hasUpdate && result.currentVersion) {
         setHasUpdate(true);
         setCurrentVersion(result.currentVersion);
-        
+
         // Show toast notification
         toast({
           title: '🔄 Update Available',
@@ -62,11 +68,11 @@ export const UpdateNotification: React.FC = () => {
   };
 
   const handleSync = async () => {
-    setSyncStatus(prev => ({ ...prev, isSyncing: true }));
-    
+    setSyncStatus((prev) => ({ ...prev, isSyncing: true }));
+
     try {
       const result = await syncPendingChanges();
-      
+
       if (result.synced > 0) {
         toast({
           title: '✅ Synced',
@@ -76,7 +82,7 @@ export const UpdateNotification: React.FC = () => {
           position: 'bottom-right',
         });
       }
-      
+
       if (result.failed > 0) {
         toast({
           title: '⚠️ Partial Sync',
@@ -95,7 +101,7 @@ export const UpdateNotification: React.FC = () => {
         position: 'bottom-right',
       });
     } finally {
-      setSyncStatus(prev => ({ ...prev, isSyncing: false }));
+      setSyncStatus((prev) => ({ ...prev, isSyncing: false }));
     }
   };
 
@@ -132,7 +138,7 @@ export const UpdateNotification: React.FC = () => {
                 </Text>
               </VStack>
             </HStack>
-            
+
             <HStack spacing={2}>
               <Button
                 size="sm"
@@ -143,11 +149,7 @@ export const UpdateNotification: React.FC = () => {
               >
                 Update Now
               </Button>
-              <Button
-                size="sm"
-                variant="ghost"
-                onClick={() => setHasUpdate(false)}
-              >
+              <Button size="sm" variant="ghost" onClick={() => setHasUpdate(false)}>
                 Later
               </Button>
             </HStack>
@@ -170,8 +172,8 @@ export const UpdateNotification: React.FC = () => {
           maxW="300px"
         >
           <HStack>
-            <Icon 
-              as={syncStatus.isSyncing ? FiRefreshCw : FiAlertCircle} 
+            <Icon
+              as={syncStatus.isSyncing ? FiRefreshCw : FiAlertCircle}
               boxSize={5}
               className={syncStatus.isSyncing ? 'spin' : ''}
             />
@@ -188,11 +190,7 @@ export const UpdateNotification: React.FC = () => {
               )}
             </VStack>
             {!syncStatus.isSyncing && (
-              <Button
-                size="xs"
-                colorScheme="whiteAlpha"
-                onClick={handleSync}
-              >
+              <Button size="xs" colorScheme="whiteAlpha" onClick={handleSync}>
                 Sync
               </Button>
             )}

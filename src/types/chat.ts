@@ -22,20 +22,20 @@ export interface Message {
   timestamp: Date;
   isError?: boolean;
   matchType?: string; // "exact", "multiple", "partial", "none"
-  
+
   // MULTIPLE_MATCH
   isMultipleMatch?: boolean;
   groupedServices?: GroupedServices[];
-  directParts?: string[];       // Specific segments to send straight to Gemini alongside checkboxes
+  directParts?: string[]; // Specific segments to send straight to Gemini alongside checkboxes
   originalUserInput?: string; // Stores original user message to preserve duration/days info
-  
+
   // PARTIAL_MATCH
   isPartialMatch?: boolean;
   requestedService?: string;
   requestedQuantity?: number;
   closestServices?: ServiceSuggestion[];
   alternativeServices?: ServiceSuggestion[];
-  
+
   // NO_MATCH
   isNoMatch?: boolean;
   allServicesGrouped?: CategoryServices[];

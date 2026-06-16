@@ -1,4 +1,5 @@
 import { QuoteItem } from '../types/quote';
+import { stripBulletPrefix, stripListPrefix } from './bulletNormalization';
 
 export interface ServiceGroup {
   serviceType: string;
@@ -16,7 +17,7 @@ export const DEFAULT_GENERAL_TERMS = [
   '100% Upfront payment required for releasing the Ads',
   'Printed colors may look different from digital design',
   'Client must approved the final design before printing. Once approved, Baleen Media will not be responsible for any design errors.',
-  'If the client stops the campaign during campaign period, no refund will be provided'
+  'If the client stops the campaign during campaign period, no refund will be provided',
 ];
 
 /**
@@ -39,7 +40,8 @@ export function extractServiceType(description: string): string {
   //   "- Installation Price"             → strip
   //   "- Rate (per month)"               → strip
   // The broad fallback catches any "- <Word(s)> Price/Rate/Cost/Charge" pattern.
-  const priceSuffixPattern = /\s*[-–—]\s*(Display|Rental|Printing|Fixing|Installation|Mounting|Labour|Creative|Design|Distribution|Delivery|Insertion|Rate|Price|Cost|Charge|Extra)\b.*/i;
+  const priceSuffixPattern =
+    /\s*[-–—]\s*(Display|Rental|Printing|Fixing|Installation|Mounting|Labour|Creative|Design|Distribution|Delivery|Insertion|Rate|Price|Cost|Charge|Extra)\b.*/i;
   // Broad fallback: "- Anything Price/Rate/Cost/Charge..."
   const broadSuffixPattern = /\s*[-–—]\s*[\w\s&]+?\s+(Price|Rate|Cost|Charge|Pricing)\b.*/i;
 
@@ -88,21 +90,21 @@ export function extractServiceType(description: string): string {
  */
 export function groupItemsByServiceType(items: QuoteItem[]): ServiceGroup[] {
   const groups = new Map<string, QuoteItem[]>();
-  
-  items.forEach(item => {
+
+  items.forEach((item) => {
     const serviceType = extractServiceType(item.description);
     if (!groups.has(serviceType)) {
       groups.set(serviceType, []);
     }
     groups.get(serviceType)!.push(item);
   });
-  
+
   // Convert to array and calculate subtotals
   return Array.from(groups.entries()).map(([serviceType, groupItems]) => ({
     serviceType,
     items: groupItems,
     subtotal: groupItems.reduce((sum, item) => sum + item.total, 0),
-    termsAndConditions: groupItems[0]?.termsAndConditions
+    termsAndConditions: groupItems[0]?.termsAndConditions,
   }));
 }
 
@@ -111,7 +113,7 @@ export function groupItemsByServiceType(items: QuoteItem[]): ServiceGroup[] {
  */
 export function isMultiServiceQuote(items: QuoteItem[]): boolean {
   const serviceTypes = new Set<string>();
-  items.forEach(item => {
+  items.forEach((item) => {
     serviceTypes.add(extractServiceType(item.description));
   });
   return serviceTypes.size > 1;
@@ -121,7 +123,10 @@ export function isMultiServiceQuote(items: QuoteItem[]): boolean {
  * Filter terms and conditions for a specific service type
  * Returns array of filtered terms
  */
-export function filterTermsByServiceType(termsAndConditions: string, serviceType: string): string[] {
+export function filterTermsByServiceType(
+  termsAndConditions: string,
+  serviceType: string,
+): string[] {
   if (!termsAndConditions) return [];
 
   const serviceTypeLower = serviceType.toLowerCase();
@@ -130,12 +135,13 @@ export function filterTermsByServiceType(termsAndConditions: string, serviceType
   // Extract the base vehicle keyword for matching against T&C section headers which use
   // single vehicle keywords (bus, auto, etc.).
   const serviceKeywords = ['bus', 'auto', 'tempo', 'cab', 'truck', 'van', 'vehicle'];
-  const vehicleKeyword = serviceKeywords.find(k => serviceTypeLower.includes(k)) || serviceTypeLower;
+  const vehicleKeyword =
+    serviceKeywords.find((k) => serviceTypeLower.includes(k)) || serviceTypeLower;
 
   // Split by newlines and bullets to get individual lines
   const lines = termsAndConditions
     .split(/\n/)
-    .map(t => t.trim().replace(/^[•\-\*]\s*/, '').trim())
+    .map((t) => stripBulletPrefix(t.trim()).trim())
     .filter(Boolean);
 
   const filteredTerms: string[] = [];
@@ -145,8 +151,8 @@ export function filterTermsByServiceType(termsAndConditions: string, serviceType
     const lineLower = line.toLowerCase();
 
     // Check if this line is a service section header (e.g., "Bus Full Branding:")
-    const isServiceHeader = serviceKeywords.some(keyword =>
-      lineLower.includes(keyword) && lineLower.includes(':')
+    const isServiceHeader = serviceKeywords.some(
+      (keyword) => lineLower.includes(keyword) && lineLower.includes(':'),
     );
 
     if (isServiceHeader) {
@@ -185,86 +191,81 @@ export function filterTermsByServiceType(termsAndConditions: string, serviceType
  */
 export function getGeneralTerms(termsAndConditions: string): string[] {
   if (!termsAndConditions) return [];
-  
+
   // Split by newlines to get individual lines
   const lines = termsAndConditions
     .split(/\n/)
-    .map(t => t.trim())
+    .map((t) => t.trim())
     .filter(Boolean);
-  
+
   const generalTerms: string[] = [];
-  
+
   // List of all service type keywords
   const serviceKeywords = ['bus', 'auto', 'tempo', 'cab', 'truck', 'van', 'vehicle', 'branding'];
-  
+
   // Track terms we've seen - if we see very similar terms with different numbers,
   // they're likely service-specific (e.g., "10 working days" vs "7 working days")
   const termPatterns = new Map<string, number>();
-  
+
   for (const line of lines) {
     // Remove leading bullets/numbers for analysis
-    const cleanLine = line.replace(/^[•\-\*\d+\.\s]+/, '').trim();
+    const cleanLine = stripListPrefix(line).trim();
     const cleanLineLower = cleanLine.toLowerCase();
-    
+
     // Skip if this line is a service section header (has keyword + colon)
-    const isServiceHeader = serviceKeywords.some(keyword => 
-      cleanLineLower.includes(keyword) && cleanLineLower.includes(':')
+    const isServiceHeader = serviceKeywords.some(
+      (keyword) => cleanLineLower.includes(keyword) && cleanLineLower.includes(':'),
     );
-    
+
     if (isServiceHeader) {
       continue; // Skip service headers
     }
-    
+
     // Skip if line mentions ANY service keyword (it's service-specific)
-    const mentionsService = serviceKeywords.some(keyword => 
-      cleanLineLower.includes(keyword)
-    );
-    
+    const mentionsService = serviceKeywords.some((keyword) => cleanLineLower.includes(keyword));
+
     if (mentionsService) {
       continue; // Skip service-specific terms
     }
-    
+
     // Create a pattern by removing numbers - this helps detect service-specific terms
     // e.g., "10 working days" and "7 working days" both become "working days"
     const pattern = cleanLineLower.replace(/\d+/g, 'X');
-    
+
     // Count how many times we see this pattern
     termPatterns.set(pattern, (termPatterns.get(pattern) || 0) + 1);
   }
-  
+
   // Now filter: exclude terms whose pattern appears multiple times (service-specific variations)
   for (const line of lines) {
-    const cleanLine = line.replace(/^[•\-\*\d+\.\s]+/, '').trim();
+    const cleanLine = stripListPrefix(line).trim();
     const cleanLineLower = cleanLine.toLowerCase();
-    
+
     // Skip service headers
-    const isServiceHeader = serviceKeywords.some(keyword => 
-      cleanLineLower.includes(keyword) && cleanLineLower.includes(':')
+    const isServiceHeader = serviceKeywords.some(
+      (keyword) => cleanLineLower.includes(keyword) && cleanLineLower.includes(':'),
     );
     if (isServiceHeader) continue;
-    
+
     // Skip if mentions service
-    const mentionsService = serviceKeywords.some(keyword => 
-      cleanLineLower.includes(keyword)
-    );
+    const mentionsService = serviceKeywords.some((keyword) => cleanLineLower.includes(keyword));
     if (mentionsService) continue;
-    
+
     // Get pattern and check if it appears multiple times
     const pattern = cleanLineLower.replace(/\d+/g, 'X');
     const patternCount = termPatterns.get(pattern) || 0;
-    
+
     // If pattern appears multiple times, it's service-specific (skip it)
     if (patternCount > 1) {
       continue;
     }
-    
+
     // This is a general term - include it
     generalTerms.push(cleanLine);
   }
-  
+
   return generalTerms;
 }
-
 
 /**
  * Filter notes for a specific service type
@@ -276,10 +277,14 @@ export function filterNotesByServiceType(notes: string | undefined, serviceType:
 
   // serviceType may now be a full specific name like "Bus Semi Branding" — extract vehicle keyword.
   const serviceKeywords = ['bus', 'auto', 'tempo', 'cab', 'truck', 'van', 'vehicle'];
-  const vehicleKeyword = serviceKeywords.find(k => serviceTypeLower.includes(k)) || serviceTypeLower;
+  const vehicleKeyword =
+    serviceKeywords.find((k) => serviceTypeLower.includes(k)) || serviceTypeLower;
 
   // Split notes by newlines to handle structured notes
-  const lines = notes.split(/\n/).map(s => s.trim()).filter(Boolean);
+  const lines = notes
+    .split(/\n/)
+    .map((s) => s.trim())
+    .filter(Boolean);
 
   const filteredLines: string[] = [];
   let currentServiceSection = '';
@@ -288,8 +293,9 @@ export function filterNotesByServiceType(notes: string | undefined, serviceType:
     const lineLower = line.toLowerCase();
 
     // Check if this line is a service section header
-    const isServiceHeader = serviceKeywords.some(keyword =>
-      lineLower.includes(keyword) && (lineLower.includes(':') || lineLower.endsWith(keyword))
+    const isServiceHeader = serviceKeywords.some(
+      (keyword) =>
+        lineLower.includes(keyword) && (lineLower.includes(':') || lineLower.endsWith(keyword)),
     );
 
     if (isServiceHeader) {

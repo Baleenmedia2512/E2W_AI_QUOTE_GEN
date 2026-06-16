@@ -1,5 +1,7 @@
-import { supabase } from './supabaseClient';
 import { CompanyInfo } from '../types/company';
+
+import { supabase } from './supabaseClient';
+import { logger } from '../utils/logger';
 
 /**
  * Company Service - Manages company information with database sync
@@ -21,7 +23,7 @@ export const companyService = {
         .single();
 
       if (error) {
-        console.warn('⚠️ Database fetch failed, using localStorage fallback:', error.message);
+        logger.warn('⚠️ Database fetch failed, using localStorage fallback:', error.message);
         return null;
       }
 
@@ -43,7 +45,7 @@ export const companyService = {
         designation: data.designation || '',
       };
     } catch (error) {
-      console.error('❌ Error fetching company settings:', error);
+      logger.error('❌ Error fetching company settings:', error);
       return null;
     }
   },
@@ -82,40 +84,38 @@ export const companyService = {
           .eq('id', existing.id);
 
         if (error) {
-          console.warn('⚠️ Database update failed, using localStorage only:', error.message);
+          logger.warn('⚠️ Database update failed, using localStorage only:', error.message);
           return false;
         }
 
-        console.log('✅ Company settings updated in database');
+        logger.info('✅ Company settings updated in database');
         return true;
       } else {
         // Insert new record
-        const { error } = await supabase
-          .from('company_settings')
-          .insert({
-            name: companyInfo.name,
-            address: companyInfo.address,
-            gst: companyInfo.gst,
-            abn: companyInfo.abn,
-            phone: companyInfo.phone,
-            email: companyInfo.email,
-            logo: companyInfo.logo,
-            website: companyInfo.website,
-            signature: companyInfo.signature,
-            designation: companyInfo.designation,
-            is_active: true,
-          });
+        const { error } = await supabase.from('company_settings').insert({
+          name: companyInfo.name,
+          address: companyInfo.address,
+          gst: companyInfo.gst,
+          abn: companyInfo.abn,
+          phone: companyInfo.phone,
+          email: companyInfo.email,
+          logo: companyInfo.logo,
+          website: companyInfo.website,
+          signature: companyInfo.signature,
+          designation: companyInfo.designation,
+          is_active: true,
+        });
 
         if (error) {
-          console.warn('⚠️ Database insert failed, using localStorage only:', error.message);
+          logger.warn('⚠️ Database insert failed, using localStorage only:', error.message);
           return false;
         }
 
-        console.log('✅ Company settings created in database');
+        logger.info('✅ Company settings created in database');
         return true;
       }
     } catch (error) {
-      console.error('❌ Error saving company settings:', error);
+      logger.error('❌ Error saving company settings:', error);
       return false;
     }
   },
@@ -135,9 +135,9 @@ export const companyService = {
           table: 'company_settings',
         },
         (payload) => {
-          console.log('🔄 Company settings updated:', payload);
+          logger.info('🔄 Company settings updated:', payload);
           const data = payload.new as any;
-          
+
           if (data && data.is_active) {
             const companyInfo: CompanyInfo = {
               name: data.name || '',
@@ -153,7 +153,7 @@ export const companyService = {
             };
             callback(companyInfo);
           }
-        }
+        },
       )
       .subscribe();
 

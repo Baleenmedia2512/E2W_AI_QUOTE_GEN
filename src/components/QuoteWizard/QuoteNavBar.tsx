@@ -1,4 +1,3 @@
-import React from 'react';
 import {
   Box,
   Container,
@@ -14,6 +13,7 @@ import {
   DrawerCloseButton,
   useDisclosure,
 } from '@chakra-ui/react';
+import React from 'react';
 import { FiHome, FiFileText, FiEye } from 'react-icons/fi';
 import { useHistory } from 'react-router-dom';
 
@@ -33,10 +33,10 @@ const QuoteNavBar: React.FC = () => {
   };
 
   return (
-    <Box 
-      bg="white" 
-      borderBottom="1px solid" 
-      borderColor="gray.100" 
+    <Box
+      bg="white"
+      borderBottom="1px solid"
+      borderColor="gray.100"
       py={{ base: 3, md: 4 }}
       position="fixed"
       top={0}
@@ -47,58 +47,26 @@ const QuoteNavBar: React.FC = () => {
     >
       <Container maxW="1280px">
         {/* Mobile Layout */}
-        <Flex 
-          justify="flex-start" 
-          align="center"
-          display={{ base: 'flex', md: 'none' }}
-        >
+        <Flex justify="flex-start" align="center" display={{ base: 'flex', md: 'none' }}>
           {/* Quote Buddy Logo & Title - Left Aligned */}
           <HStack spacing={2}>
-            <Box
-              bg="brand.500"
-              color="white"
-              px={2}
-              py={1}
-              borderRadius="6px"
-              fontWeight="800"
-            >
+            <Box bg="brand.500" color="white" px={2} py={1} borderRadius="6px" fontWeight="800">
               <Icon as={FiFileText} boxSize={4} />
             </Box>
-            <Text 
-              fontSize="lg" 
-              fontWeight="800" 
-              color="brand.500"
-              letterSpacing="-0.02em"
-            >
+            <Text fontSize="lg" fontWeight="800" color="brand.500" letterSpacing="-0.02em">
               Quote Buddy
             </Text>
           </HStack>
         </Flex>
 
         {/* Desktop Layout */}
-        <Flex 
-          justify="space-between" 
-          align="center"
-          display={{ base: 'none', md: 'flex' }}
-        >
+        <Flex justify="space-between" align="center" display={{ base: 'none', md: 'flex' }}>
           {/* Quote Buddy Logo & Title */}
           <HStack spacing={3}>
-            <Box
-              bg="brand.500"
-              color="white"
-              px={3}
-              py={2}
-              borderRadius="8px"
-              fontWeight="800"
-            >
+            <Box bg="brand.500" color="white" px={3} py={2} borderRadius="8px" fontWeight="800">
               <Icon as={FiFileText} boxSize={5} />
             </Box>
-            <Text 
-              fontSize="xl" 
-              fontWeight="800" 
-              color="brand.500"
-              letterSpacing="-0.02em"
-            >
+            <Text fontSize="xl" fontWeight="800" color="brand.500" letterSpacing="-0.02em">
               Quote Buddy
             </Text>
           </HStack>

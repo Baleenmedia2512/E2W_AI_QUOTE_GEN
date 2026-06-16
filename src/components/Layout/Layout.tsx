@@ -1,4 +1,4 @@
-import React from 'react';
+import { HamburgerIcon, MoonIcon, SunIcon } from '@chakra-ui/icons';
 import {
   Box,
   Container,
@@ -18,7 +18,7 @@ import {
   useDisclosure,
   VStack,
 } from '@chakra-ui/react';
-import { HamburgerIcon, MoonIcon, SunIcon } from '@chakra-ui/icons';
+import React from 'react';
 import { FiHome, FiFileText, FiEye } from 'react-icons/fi';
 import { useHistory } from 'react-router-dom';
 
@@ -31,7 +31,7 @@ const Layout: React.FC<LayoutProps> = ({ title, children }) => {
   const { colorMode, toggleColorMode } = useColorMode();
   const { isOpen, onOpen, onClose } = useDisclosure();
   const history = useHistory();
-  
+
   const bgColor = useColorModeValue('white', 'gray.800');
   const borderColor = useColorModeValue('gray.200', 'gray.700');
 
@@ -130,11 +130,7 @@ const Layout: React.FC<LayoutProps> = ({ title, children }) => {
 
       {/* Main Content */}
       <Box pt="64px">
-        <Container 
-          maxW="container.xl" 
-          py={{ base: 4, md: 8 }}
-          pb={{ base: '80px', md: 8 }}
-        >
+        <Container maxW="container.xl" py={{ base: 4, md: 8 }} pb={{ base: '80px', md: 8 }}>
           {children}
         </Container>
       </Box>

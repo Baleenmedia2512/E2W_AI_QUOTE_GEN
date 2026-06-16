@@ -1,0 +1,145 @@
+name: Deploy to Staging
+
+on:
+  push:
+    branches: [staging]
+  workflow_dispatch:
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    
+    permissions:
+      contents: read
+      deployments: write
+    
+    steps:
+      # 1. Checkout code
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      # 2. Setup Node.js
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20.x'
+          cache: 'npm'
+
+      # 3. Install dependencies
+      - name: Install Dependencies
+        run: npm ci
+        env:
+          CI: true
+
+      # 4. Run full test suite
+      - name: Run Full Test Suite
+        run: npm test
+        env:
+          NODE_ENV: test
+        continue-on-error: false
+
+      # 5. Type check
+      - name: Type Check
+        run: npx tsc --noEmit
+        continue-on-error: false
+
+      # 6. Lint check
+      - name: Lint Check
+        run: npm run lint
+        continue-on-error: false
+
+      # 7. Production build
+      - name: Production Build
+        run: npm run build
+        env:
+          VITE_APP_ENV: staging
+          VITE_SUPABASE_URL: ${{ secrets.STAGING_SUPABASE_URL }}
+          VITE_SUPABASE_ANON_KEY: ${{ secrets.STAGING_SUPABASE_ANON_KEY }}
+          VITE_GEMINI_API_KEY: ${{ secrets.STAGING_GEMINI_API_KEY }}
+        continue-on-error: false
+
+      # 8. Create deployment record
+      - name: Create Deployment
+        uses: chrnorm/deployment-action@v2
+        id: deployment
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+          environment: staging
+          ref: ${{ github.ref }}
+
+      # 9. Deploy to Staging Server
+      - name: Deploy to Staging Server
+        env:
+          STAGING_HOST: ${{ secrets.STAGING_HOST }}
+          STAGING_USER: ${{ secrets.STAGING_USER }}
+          STAGING_KEY: ${{ secrets.STAGING_KEY }}
+        run: |
+          mkdir -p ~/.ssh
+          echo "${{ secrets.STAGING_KEY }}" > ~/.ssh/deploy_key
+          chmod 600 ~/.ssh/deploy_key
+          ssh-keyscan -H $STAGING_HOST >> ~/.ssh/known_hosts 2>/dev/null || true
+          
+          # Deploy via rsync
+          rsync -avz --delete \
+            -e "ssh -i ~/.ssh/deploy_key -o StrictHostKeyChecking=no" \
+            dist/ $STAGING_USER@$STAGING_HOST:/app/www/
+          
+          # Cleanup
+          rm ~/.ssh/deploy_key
+
+      # 10. Health Check
+      - name: Health Check
+        run: |
+          echo "Waiting for staging server to be ready..."
+          for i in {1..30}; do
+            if curl -f -s ${{ secrets.STAGING_URL }}/index.html > /dev/null; then
+              echo "✅ Staging server is healthy"
+              exit 0
+            fi
+            echo "Attempt $i/30..."
+            sleep 10
+          done
+          echo "❌ Staging server health check failed"
+          exit 1
+        continue-on-error: true
+
+      # 11. Update deployment status
+      - name: Update Deployment Status
+        if: always()
+        uses: chrnorm/deployment-status@v2
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+          deployment-id: ${{ steps.deployment.outputs.deployment_id }}
+          state: ${{ job.status }}
+          environment-url: ${{ secrets.STAGING_URL }}
+
+      # 12. Notify on Slack
+      - name: Notify Slack - Deployment
+        if: always()
+        uses: slackapi/slack-github-action@v1
+        with:
+          payload: |
+            {
+              "text": "Staging Deployment Status",
+              "blocks": [
+                {
+                  "type": "section",
+                  "text": {
+                    "type": "mrkdwn",
+                    "text": "*Staging Deployment Status*\nStatus: ${{ job.status }}\nCommit: ${{ github.sha }}\nBranch: staging"
+                  }
+                }
+              ]
+            }
+        env:
+          SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
+        continue-on-error: true
+
+      # 13. Summary
+      - name: Deployment Summary
+        if: always()
+        run: |
+          echo "## Staging Deployment Summary" >> $GITHUB_STEP_SUMMARY
+          echo "- Status: ${{ job.status }}" >> $GITHUB_STEP_SUMMARY
+          echo "- Commit: ${{ github.sha }}" >> $GITHUB_STEP_SUMMARY
+          echo "- Environment: https://staging.quote-buddy.com" >> $GITHUB_STEP_SUMMARY

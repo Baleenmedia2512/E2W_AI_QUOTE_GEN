@@ -1,0 +1,190 @@
+# CODEOWNERS — GitHub Code Ownership
+
+# Quote Buddy Engineering Governance
+#
+# This file defines ownership for all code areas.
+# Code ownership triggers:
+# - Automatic reviewer assignment
+# - Accountability for bugs
+# - Release approvals
+#
+# Syntax: path    @owner1    @owner2
+# * = catch-all
+
+# =====================
+# GOVERNANCE FILES (CRITICAL)
+# =====================
+
+claude.md                           @principal-engineer @architect
+.governance/                        @principal-engineer @architect
+.github/workflows/                  @devops-lead @architect
+
+# =====================
+# SERVICES (BUSINESS LOGIC)
+# =====================
+
+# Quotation Domain
+src/services/quoteService.ts        @alice @bob
+src/services/geminiService.ts       @alice @bob
+tests/services/quoteService.test.ts @alice @bob
+
+# Client Domain
+src/services/clientService.ts       @charlie
+src/services/companyService.ts      @charlie
+tests/services/clientService.test.ts @charlie
+
+# Authentication & Authorization
+src/services/authService.ts         @diana
+src/store/authStore.ts              @diana
+tests/services/authService.test.ts  @diana
+
+# Data & Persistence
+src/services/supabaseClient.ts      @eve
+src/services/dataSyncService.ts     @eve
+src/services/supabaseProposalService.ts @eve
+
+# Document Management
+src/services/leadService.ts         @frank
+src/services/pdfExportService.ts    @frank
+
+# =====================
+# STATE MANAGEMENT
+# =====================
+
+src/store/                          @alice
+src/store/index.ts                  @alice
+src/store/authStore.ts              @diana
+
+# =====================
+# PAGES (ROUTING & ORCHESTRATION)
+# =====================
+
+src/pages/HomePage.tsx              @alice
+src/pages/QuotePage.tsx             @alice
+src/pages/QuotePreviewPage.tsx       @alice
+src/pages/DocumentsPage.tsx         @frank
+src/pages/LoginPage.tsx             @diana
+src/pages/UnauthorizedPage.tsx      @diana
+
+# =====================
+# COMPONENTS (UI LAYER)
+# =====================
+
+# Quote-related
+src/components/QuoteWizard/         @alice @bob
+src/components/QuotePreview/        @alice
+src/components/MultiProposalViewer/ @frank
+
+# Client-related
+src/components/ClientInfoForm/      @charlie
+src/components/CompanyInfoForm/     @charlie
+
+# Chat & AI
+src/components/ChatInterface/       @alice
+
+# Authentication
+src/components/PrivateRoute/        @diana
+src/components/UserProfile/         @diana
+
+# PDF & Documents
+src/components/ProposalUpload/      @frank
+src/components/ProposalViewer/      @frank
+
+# UI Components
+src/components/Header/              @bob
+src/components/BottomNav/           @bob
+src/components/Layout/              @bob
+src/components/Loading*/            @bob
+src/components/ErrorBoundary/       @bob
+
+# Utilities
+src/components/AutocompleteInput/   @bob
+
+# =====================
+# HOOKS (BUSINESS LOGIC HOOKS)
+# =====================
+
+src/hooks/useCompanySync.ts         @charlie @eve
+src/hooks/useCityServiceRegistry.ts @alice @bob
+
+# =====================
+# TYPES (TYPE DEFINITIONS)
+# =====================
+
+src/types/                          @principal-engineer
+src/types/index.ts                  @principal-engineer
+src/types/quote.ts                  @alice
+src/types/client.ts                 @charlie
+src/types/auth.ts                   @diana
+src/types/chat.ts                   @alice
+
+# =====================
+# UTILITIES & HELPERS
+# =====================
+
+src/utils/                          @engineer-on-call
+
+# PDF-related
+src/utils/pdfUtils.ts              @frank
+src/utils/pdfExport.css            @frank
+
+# Data persistence
+src/utils/localStorage.ts          @eve
+src/utils/proposalStorage.ts       @eve
+
+# Cache management
+src/utils/cacheVersion.ts          @eve
+src/utils/imageStorage.ts          @eve
+
+# File handling
+src/utils/fileUtils.ts             @frank
+
+# Prompts & AI
+src/utils/promptTemplates.ts       @alice
+
+# Other utils
+src/utils/                         @engineer-on-call
+
+# =====================
+# STYLES & THEME
+# =====================
+
+src/styles/                        @bob
+src/theme/                         @bob
+
+# =====================
+# CONSTANTS & CONFIG
+# =====================
+
+src/constants/                     @principal-engineer
+vite.config.ts                     @devops-lead
+tsconfig.json                      @principal-engineer
+package.json                       @devops-lead
+
+# =====================
+# ROOT LEVEL
+# =====================
+
+App.tsx                            @alice @bob
+main.tsx                           @alice
+
+# =====================
+# CATCH-ALL (MUST ASSIGN)
+# =====================
+
+*                                  @alice @principal-engineer
+
+# =====================
+# NOTES
+# =====================
+
+# Approval Requirements:
+# - Service changes:   2 reviewers required
+# - Page changes:      1 reviewer required
+# - Component changes: 1 reviewer required
+# - Type changes:      1 architect review
+# - Config changes:    1 DevOps review
+# - Test changes:      1 code owner review
+
+# For PRs affecting multiple areas:
+# All code owners must approve before merge

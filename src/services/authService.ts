@@ -1,6 +1,9 @@
 import bcrypt from 'bcryptjs';
-import { supabase } from './supabaseClient';
+
 import { AuthUser, LoginCredentials } from '../types/auth';
+
+import { supabase } from './supabaseClient';
+import { logger } from '../utils/logger';
 
 class AuthService {
   /**
@@ -19,7 +22,7 @@ class AuthService {
       .single();
 
     if (error || !user) {
-      console.error('Login error:', error);
+      logger.error('Login error:', error);
       throw new Error('Invalid email or password');
     }
 
@@ -31,7 +34,7 @@ class AuthService {
       .single();
 
     if (roleError || !role) {
-      console.error('Role fetch error:', roleError);
+      logger.error('Role fetch error:', roleError);
       throw new Error('Unable to fetch user role');
     }
 
@@ -45,7 +48,7 @@ class AuthService {
 
     // Verify password with bcrypt
     const isValidPassword = await bcrypt.compare(password, user.password);
-    
+
     if (!isValidPassword) {
       throw new Error('Invalid email or password');
     }
@@ -58,19 +61,20 @@ class AuthService {
 
     // Return user data without password
     const roleData = Array.isArray(user.Role) ? user.Role[0] : user.Role;
-    
+
     // Parse permissions if it's a JSON string
     let permissions = {};
     if (roleData?.permissions) {
       try {
-        permissions = typeof roleData.permissions === 'string' 
-          ? JSON.parse(roleData.permissions) 
-          : roleData.permissions;
+        permissions =
+          typeof roleData.permissions === 'string'
+            ? JSON.parse(roleData.permissions)
+            : roleData.permissions;
       } catch (e) {
-        console.error('Failed to parse permissions:', e);
+        logger.error('Failed to parse permissions:', e);
       }
     }
-    
+
     const authUser: AuthUser = {
       id: user.id,
       email: user.email,
@@ -90,7 +94,7 @@ class AuthService {
   logout(): void {
     localStorage.removeItem('currentUser');
     localStorage.removeItem('authToken');
-    console.log('✅ User logged out successfully');
+    logger.info('✅ User logged out successfully');
   }
 
   /**
@@ -104,7 +108,7 @@ class AuthService {
       }
       return null;
     } catch (error) {
-      console.error('Error getting current user:', error);
+      logger.error('Error getting current user:', error);
       return null;
     }
   }

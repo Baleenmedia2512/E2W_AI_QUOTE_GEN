@@ -1,6 +1,7 @@
-import React from 'react';
 import { Box, Button, Container, Heading, Text, VStack } from '@chakra-ui/react';
+import React from 'react';
 import { useHistory } from 'react-router-dom';
+
 import { useAuthStore } from '../store/authStore';
 
 const UnauthorizedPage: React.FC = () => {
@@ -25,11 +26,11 @@ const UnauthorizedPage: React.FC = () => {
       <Container maxW="container.md">
         <VStack spacing={6} textAlign="center" bg="white" p={10} borderRadius="xl" boxShadow="lg">
           <Box fontSize="6xl">🔒</Box>
-          
+
           <Heading size="xl" color="red.600">
             Access Denied
           </Heading>
-          
+
           <Text fontSize="lg" color="gray.700">
             You don't have permission to access this page.
           </Text>
@@ -41,31 +42,15 @@ const UnauthorizedPage: React.FC = () => {
           )}
 
           <VStack spacing={3} w="full" maxW="sm">
-            <Button
-              colorScheme="blue"
-              size="lg"
-              w="full"
-              onClick={handleGoHome}
-            >
+            <Button colorScheme="blue" size="lg" w="full" onClick={handleGoHome}>
               Go to Home
             </Button>
-            
-            <Button
-              variant="outline"
-              size="lg"
-              w="full"
-              onClick={handleGoBack}
-            >
+
+            <Button variant="outline" size="lg" w="full" onClick={handleGoBack}>
               Go Back
             </Button>
 
-            <Button
-              variant="ghost"
-              size="md"
-              w="full"
-              onClick={handleLogout}
-              colorScheme="red"
-            >
+            <Button variant="ghost" size="md" w="full" onClick={handleLogout} colorScheme="red">
               Logout
             </Button>
           </VStack>

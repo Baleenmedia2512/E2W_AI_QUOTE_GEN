@@ -1,3 +1,5 @@
+import { logger } from '../utils/logger';
+
 /**
  * Data Sync Service - Unified storage layer with conflict resolution
  * Manages synchronization between localStorage, IndexedDB, and Supabase Cloud
@@ -34,11 +36,11 @@ export async function saveDataUnified<T>(
     localStorage?: boolean;
     indexedDB?: boolean;
     cloud?: boolean;
-  } = { localStorage: true, indexedDB: false, cloud: true }
+  } = { localStorage: true, indexedDB: false, cloud: true },
 ): Promise<{ success: boolean; source: string[] }> {
   const timestamp = Date.now();
   const sources: string[] = [];
-  
+
   const wrappedData: DataWithTimestamp<T> = {
     data,
     timestamp,
@@ -51,9 +53,9 @@ export async function saveDataUnified<T>(
     try {
       localStorage.setItem(key, JSON.stringify(wrappedData));
       sources.push('localStorage');
-      console.log(`💾 Saved to localStorage: ${key}`);
+      logger.info(`💾 Saved to localStorage: ${key}`);
     } catch (error) {
-      console.error('localStorage save failed:', error);
+      logger.error('localStorage save failed:', error);
     }
   }
 
@@ -62,7 +64,7 @@ export async function saveDataUnified<T>(
     try {
       // Add to sync queue
       syncQueue.push({ key, data: wrappedData, timestamp });
-      
+
       // Try to sync immediately
       const cloudSuccess = await syncToCloud(key, wrappedData);
       if (cloudSuccess) {
@@ -72,7 +74,7 @@ export async function saveDataUnified<T>(
         localStorage.setItem(key, JSON.stringify(wrappedData));
       }
     } catch (error) {
-      console.warn('Cloud save queued for later:', error);
+      logger.warn('Cloud save queued for later:', error);
     }
   }
 
@@ -87,7 +89,7 @@ export async function loadDataUnified<T>(
   options: {
     preferCloud?: boolean;
     maxAge?: number; // milliseconds
-  } = {}
+  } = {},
 ): Promise<T | null> {
   const sources: Array<{ data: DataWithTimestamp<T>; source: string }> = [];
 
@@ -99,7 +101,7 @@ export async function loadDataUnified<T>(
       sources.push({ data: parsed, source: 'localStorage' });
     }
   } catch (error) {
-    console.error('localStorage load failed:', error);
+    logger.error('localStorage load failed:', error);
   }
 
   // 2. Load from cloud if preferred
@@ -110,7 +112,7 @@ export async function loadDataUnified<T>(
         sources.push({ data: cloudData, source: 'cloud' });
       }
     } catch (error) {
-      console.warn('Cloud load failed, using local:', error);
+      logger.warn('Cloud load failed, using local:', error);
     }
   }
 
@@ -121,13 +123,13 @@ export async function loadDataUnified<T>(
 
   if (sources.length === 1) {
     const result = sources[0].data;
-    
+
     // Check if data is too old
     if (options.maxAge && Date.now() - result.timestamp > options.maxAge) {
-      console.warn(`Data expired (age: ${Date.now() - result.timestamp}ms)`);
+      logger.warn(`Data expired (age: ${Date.now() - result.timestamp}ms)`);
       return null;
     }
-    
+
     return result.data;
   }
 
@@ -140,24 +142,28 @@ export async function loadDataUnified<T>(
  */
 function resolveConflict<T>(
   sources: Array<{ data: DataWithTimestamp<T>; source: string }>,
-  maxAge?: number
+  maxAge?: number,
 ): T | null {
   // Sort by timestamp (newest first)
   const sorted = sources.sort((a, b) => b.data.timestamp - a.data.timestamp);
-  
+
   const newest = sorted[0];
-  
+
   // Check if too old
   if (maxAge && Date.now() - newest.data.timestamp > maxAge) {
-    console.warn('All data sources expired');
+    logger.warn('All data sources expired');
     return null;
   }
 
   // Log conflict resolution
   if (sorted.length > 1) {
-    console.log(`🔄 Conflict resolved: Using ${newest.source} (timestamp: ${new Date(newest.data.timestamp).toLocaleString()})`);
-    sorted.slice(1).forEach(s => {
-      console.log(`   Ignored ${s.source} (older by ${(newest.data.timestamp - s.data.timestamp) / 1000}s)`);
+    logger.info(
+      `🔄 Conflict resolved: Using ${newest.source} (timestamp: ${new Date(newest.data.timestamp).toLocaleString()})`,
+    );
+    sorted.slice(1).forEach((s) => {
+      logger.info(
+        `   Ignored ${s.source} (older by ${(newest.data.timestamp - s.data.timestamp) / 1000}s)`,
+      );
     });
   }
 
@@ -176,7 +182,7 @@ export async function syncPendingChanges(): Promise<{
   let failed = 0;
   const errors: string[] = [];
 
-  console.log(`🔄 Syncing ${syncQueue.length} pending changes...`);
+  logger.info(`🔄 Syncing ${syncQueue.length} pending changes...`);
 
   // Process sync queue
   while (syncQueue.length > 0) {
@@ -204,10 +210,10 @@ export async function syncPendingChanges(): Promise<{
   }
 
   if (synced > 0) {
-    console.log(`✅ Synced ${synced} changes to cloud`);
+    logger.info(`✅ Synced ${synced} changes to cloud`);
   }
   if (failed > 0) {
-    console.warn(`⚠️ Failed to sync ${failed} changes`);
+    logger.warn(`⚠️ Failed to sync ${failed} changes`);
   }
 
   return { synced, failed, errors };
@@ -218,7 +224,7 @@ export async function syncPendingChanges(): Promise<{
  */
 export function getSyncStatus(): SyncStatus {
   let lastSync: Date | null = null;
-  let conflictsDetected = 0;
+  const conflictsDetected = 0;
 
   // Check localStorage for last sync timestamp
   try {
@@ -227,7 +233,7 @@ export function getSyncStatus(): SyncStatus {
       lastSync = new Date(parseInt(lastSyncStr));
     }
   } catch (error) {
-    console.error('Failed to get sync status:', error);
+    logger.error('Failed to get sync status:', error);
   }
 
   return {
@@ -242,42 +248,42 @@ export function getSyncStatus(): SyncStatus {
  * Force sync all data
  */
 export async function forceSyncAll(): Promise<void> {
-  console.log('🔄 Starting full sync...');
-  
+  logger.info('🔄 Starting full sync...');
+
   // Sync pending changes
   await syncPendingChanges();
-  
+
   // Update last sync timestamp
   localStorage.setItem('__last_sync__', Date.now().toString());
-  
-  console.log('✅ Full sync completed');
+
+  logger.info('✅ Full sync completed');
 }
 
 /**
  * Clear all cached data (nuclear option)
  */
 export async function clearAllCache(): Promise<void> {
-  console.log('🗑️ Clearing all cached data...');
-  
+  logger.info('🗑️ Clearing all cached data...');
+
   // Clear localStorage
   const keysToKeep = ['auth-storage', 'supabase.auth.token'];
   const allKeys = Object.keys(localStorage);
-  allKeys.forEach(key => {
+  allKeys.forEach((key) => {
     if (!keysToKeep.includes(key)) {
       localStorage.removeItem(key);
     }
   });
-  
+
   // Clear service worker caches
   if ('caches' in window) {
     const cacheNames = await caches.keys();
-    await Promise.all(cacheNames.map(name => caches.delete(name)));
+    await Promise.all(cacheNames.map((name) => caches.delete(name)));
   }
-  
+
   // Clear sync queue
   syncQueue.length = 0;
-  
-  console.log('✅ All cache cleared');
+
+  logger.info('✅ All cache cleared');
 }
 
 // Placeholder functions for cloud operations (implement based on your backend)
@@ -300,11 +306,11 @@ async function loadFromCloud<T>(_key: string): Promise<DataWithTimestamp<T> | nu
 // Auto-sync on network reconnection
 if (typeof window !== 'undefined') {
   window.addEventListener('online', () => {
-    console.log('🌐 Network reconnected, syncing...');
+    logger.info('🌐 Network reconnected, syncing...');
     syncPendingChanges();
   });
-  
+
   window.addEventListener('offline', () => {
-    console.log('📴 Network disconnected, queuing changes');
+    logger.info('📴 Network disconnected, queuing changes');
   });
 }

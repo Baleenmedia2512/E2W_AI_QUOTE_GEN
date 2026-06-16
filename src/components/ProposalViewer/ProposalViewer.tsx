@@ -1,5 +1,4 @@
-﻿import React, { useState, useRef, useEffect, useCallback } from 'react';
-import {
+﻿import {
   Box,
   Card,
   CardHeader,
@@ -16,14 +15,10 @@ import {
   useBreakpointValue,
   Image,
 } from '@chakra-ui/react';
-import {
-  FiChevronLeft,
-  FiChevronRight,
-  FiZoomIn,
-  FiZoomOut,
-  FiFile,
-} from 'react-icons/fi';
+import React, { useState, useRef, useEffect, useCallback } from 'react';
+import { FiChevronLeft, FiChevronRight, FiZoomIn, FiZoomOut, FiFile } from 'react-icons/fi';
 import { Document, Page, pdfjs } from 'react-pdf';
+
 import { useAppStore } from '../../store';
 import { detectFileType } from '../../utils/fileUtils';
 import 'react-pdf/dist/Page/AnnotationLayer.css';
@@ -109,7 +104,12 @@ const ProposalViewer: React.FC = () => {
             >
               <Icon as={FiFile} boxSize={10} color="white" />
             </Box>
-            <Heading size="md" bgGradient="linear(135deg, #C91F3D, #B31B3E)" bgClip="text" fontWeight="800">
+            <Heading
+              size="md"
+              bgGradient="linear(135deg, #C91F3D, #B31B3E)"
+              bgClip="text"
+              fontWeight="800"
+            >
               No proposal uploaded
             </Heading>
             <Text color="gray.500" textAlign="center" fontSize="sm">
@@ -134,9 +134,9 @@ const ProposalViewer: React.FC = () => {
       overflow="hidden"
     >
       {/* PDF Viewer Header */}
-      <CardHeader 
+      <CardHeader
         bgGradient="linear(135deg, #C91F3D 0%, #B31B3E 50%, #7A1030 100%)"
-        pb={5} 
+        pb={5}
         pt={5}
         px={{ base: 4, md: 6 }}
         position="relative"
@@ -147,7 +147,7 @@ const ProposalViewer: React.FC = () => {
           left: 0,
           right: 0,
           bottom: 0,
-          bgGradient: "linear(90deg, transparent 0%, rgba(255,255,255,0.05) 50%, transparent 100%)",
+          bgGradient: 'linear(90deg, transparent 0%, rgba(255,255,255,0.05) 50%, transparent 100%)',
           animation: 'shimmer 3s infinite',
           '@keyframes shimmer': {
             '0%': { transform: 'translateX(-100%)' },
@@ -155,17 +155,37 @@ const ProposalViewer: React.FC = () => {
           },
         }}
       >
-        <Flex justify="space-between" align="center" flexWrap="wrap" gap={{ base: 2, md: 4 }} position="relative" zIndex={1}>
+        <Flex
+          justify="space-between"
+          align="center"
+          flexWrap="wrap"
+          gap={{ base: 2, md: 4 }}
+          position="relative"
+          zIndex={1}
+        >
           {/* Filename */}
-          <Heading size={{ base: 'sm', md: 'md' }} fontWeight="700" color="white" noOfLines={1} letterSpacing="tight">
+          <Heading
+            size={{ base: 'sm', md: 'md' }}
+            fontWeight="700"
+            color="white"
+            noOfLines={1}
+            letterSpacing="tight"
+          >
             {proposal.fileName}
           </Heading>
-          
+
           {/* Pagination and Zoom/Sheet Controls */}
           <HStack spacing={{ base: 3, md: 6 }} flexWrap="wrap">
             {/* Pagination - Show for PDF and multi-sheet Excel */}
             {(fileType === 'pdf' || (fileType === 'excel' && proposal.pageCount > 1)) && (
-              <HStack spacing={2} bg="whiteAlpha.200" px={3} py={1.5} borderRadius="full" backdropFilter="blur(10px)">
+              <HStack
+                spacing={2}
+                bg="whiteAlpha.200"
+                px={3}
+                py={1.5}
+                borderRadius="full"
+                backdropFilter="blur(10px)"
+              >
                 <IconButton
                   aria-label="Previous page"
                   icon={<Icon as={FiChevronLeft} />}
@@ -196,7 +216,14 @@ const ProposalViewer: React.FC = () => {
 
             {/* Zoom Controls - Show for PDF and Images only */}
             {(fileType === 'pdf' || fileType === 'image') && (
-              <HStack spacing={2} bg="whiteAlpha.200" px={3} py={1.5} borderRadius="full" backdropFilter="blur(10px)">
+              <HStack
+                spacing={2}
+                bg="whiteAlpha.200"
+                px={3}
+                py={1.5}
+                borderRadius="full"
+                backdropFilter="blur(10px)"
+              >
                 <IconButton
                   aria-label="Zoom out"
                   icon={<Icon as={FiZoomOut} />}
@@ -225,19 +252,8 @@ const ProposalViewer: React.FC = () => {
       </CardHeader>
 
       {/* File Display Area */}
-      <CardBody
-        flex={1}
-        overflow="auto"
-        p={0}
-        display="flex"
-        flexDirection="column"
-      >
-        <Box
-          flex={1}
-          overflow="auto"
-          bg={bgColor}
-          position="relative"
-        >
+      <CardBody flex={1} overflow="auto" p={0} display="flex" flexDirection="column">
+        <Box flex={1} overflow="auto" bg={bgColor} position="relative">
           {/* Render based on file type */}
           {fileType === 'pdf' && (
             /* PDF Document */
@@ -256,17 +272,27 @@ const ProposalViewer: React.FC = () => {
                   file={proposal.fileUrl}
                   onLoadSuccess={onDocumentLoadSuccess}
                   loading={
-                    <Center p={8} minW={{ base: '300px', md: '600px' }} minH={{ base: '400px', md: '800px' }}>
+                    <Center
+                      p={8}
+                      minW={{ base: '300px', md: '600px' }}
+                      minH={{ base: '400px', md: '800px' }}
+                    >
                       <VStack spacing={3}>
                         <Text color="gray.500">Loading PDF...</Text>
                       </VStack>
                     </Center>
                   }
                   error={
-                    <Center p={8} minW={{ base: '300px', md: '600px' }} minH={{ base: '400px', md: '800px' }}>
+                    <Center
+                      p={8}
+                      minW={{ base: '300px', md: '600px' }}
+                      minH={{ base: '400px', md: '800px' }}
+                    >
                       <VStack spacing={3}>
                         <Text color="red.500">Failed to load PDF</Text>
-                        <Text color="gray.500" fontSize="sm">Please try uploading again</Text>
+                        <Text color="gray.500" fontSize="sm">
+                          Please try uploading again
+                        </Text>
                       </VStack>
                     </Center>
                   }
@@ -354,7 +380,15 @@ const ProposalViewer: React.FC = () => {
             bgGradient="linear(180deg, #fff5f7 0%, #ffffff 100%)"
             p={{ base: 3, md: 4 }}
           >
-            <Text fontSize="sm" fontWeight="800" bgGradient="linear(135deg, #C91F3D, #B31B3E)" bgClip="text" mb={3} textTransform="uppercase" letterSpacing="wider">
+            <Text
+              fontSize="sm"
+              fontWeight="800"
+              bgGradient="linear(135deg, #C91F3D, #B31B3E)"
+              bgClip="text"
+              mb={3}
+              textTransform="uppercase"
+              letterSpacing="wider"
+            >
               Quick Navigation
             </Text>
             <HStack
@@ -378,7 +412,10 @@ const ProposalViewer: React.FC = () => {
                 },
               }}
             >
-              {Array.from({ length: showAllPages ? proposal.pageCount : Math.min(proposal.pageCount, 10) }, (_, i) => i + 1).map((pageNum) => (
+              {Array.from(
+                { length: showAllPages ? proposal.pageCount : Math.min(proposal.pageCount, 10) },
+                (_, i) => i + 1,
+              ).map((pageNum) => (
                 <Box
                   key={pageNum}
                   cursor="pointer"
@@ -389,7 +426,11 @@ const ProposalViewer: React.FC = () => {
                   overflow="hidden"
                   transition="all 0.3s cubic-bezier(0.4, 0, 0.2, 1)"
                   flexShrink={0}
-                  boxShadow={pageNum === proposal.currentPage ? '0 8px 20px rgba(201, 31, 61, 0.3)' : '0 2px 8px rgba(0, 0, 0, 0.06)'}
+                  boxShadow={
+                    pageNum === proposal.currentPage
+                      ? '0 8px 20px rgba(201, 31, 61, 0.3)'
+                      : '0 2px 8px rgba(0, 0, 0, 0.06)'
+                  }
                   bg={pageNum === proposal.currentPage ? 'red.50' : 'white'}
                   _hover={{
                     borderColor: '#C91F3D',
@@ -397,13 +438,18 @@ const ProposalViewer: React.FC = () => {
                     boxShadow: '0 12px 24px rgba(201, 31, 61, 0.25)',
                   }}
                 >
-                  <Box w={{ base: '60px', md: '80px' }} h={{ base: '80px', md: '106px' }} position="relative" bg="white">
+                  <Box
+                    w={{ base: '60px', md: '80px' }}
+                    h={{ base: '80px', md: '106px' }}
+                    position="relative"
+                    bg="white"
+                  >
                     <Document file={proposal.fileUrl}>
-                      <Page 
-                        pageNumber={pageNum} 
-                        width={isMobile ? 60 : 80} 
-                        renderTextLayer={false} 
-                        renderAnnotationLayer={false} 
+                      <Page
+                        pageNumber={pageNum}
+                        width={isMobile ? 60 : 80}
+                        renderTextLayer={false}
+                        renderAnnotationLayer={false}
                       />
                     </Document>
                     <Center
@@ -415,7 +461,9 @@ const ProposalViewer: React.FC = () => {
                       color="white"
                       py={1}
                     >
-                      <Text fontSize="xs" fontWeight="700">{pageNum}</Text>
+                      <Text fontSize="xs" fontWeight="700">
+                        {pageNum}
+                      </Text>
                     </Center>
                   </Box>
                 </Box>
@@ -438,7 +486,14 @@ const ProposalViewer: React.FC = () => {
                   }}
                   transition="all 0.3s cubic-bezier(0.4, 0, 0.2, 1)"
                 >
-                  <Text fontSize="sm" bgGradient="linear(135deg, #C91F3D, #B31B3E)" bgClip="text" fontWeight="700" textAlign="center" px={1}>
+                  <Text
+                    fontSize="sm"
+                    bgGradient="linear(135deg, #C91F3D, #B31B3E)"
+                    bgClip="text"
+                    fontWeight="700"
+                    textAlign="center"
+                    px={1}
+                  >
                     {showAllPages ? 'Show less' : `+${proposal.pageCount - 10} more`}
                   </Text>
                 </Center>

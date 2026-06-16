@@ -10,12 +10,12 @@ interface LoadingSpinnerProps {
 export const LoadingSpinner: React.FC<LoadingSpinnerProps> = ({
   size = 'medium',
   message,
-  fullScreen = false
+  fullScreen = false,
 }) => {
   const sizeMap = {
     small: 24,
     medium: 48,
-    large: 64
+    large: 64,
   };
 
   const spinnerSize = sizeMap[size];
@@ -26,7 +26,7 @@ export const LoadingSpinner: React.FC<LoadingSpinnerProps> = ({
         className="spinner"
         style={{
           width: `${spinnerSize}px`,
-          height: `${spinnerSize}px`
+          height: `${spinnerSize}px`,
         }}
       ></div>
       {message && <p className="loading-message">{message}</p>}
@@ -34,11 +34,7 @@ export const LoadingSpinner: React.FC<LoadingSpinnerProps> = ({
   );
 
   if (fullScreen) {
-    return (
-      <div className="loading-fullscreen">
-        {spinner}
-      </div>
-    );
+    return <div className="loading-fullscreen">{spinner}</div>;
   }
 
   return spinner;

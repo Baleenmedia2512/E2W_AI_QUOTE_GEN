@@ -1,5 +1,5 @@
-import { CompanyInfo } from './company';
 import { ClientInfo } from './client';
+import { CompanyInfo } from './company';
 import { Quote } from './quote';
 
 export interface ExtractedPage {
@@ -27,7 +27,11 @@ export interface TemplateProps {
   onDataChange?: (data: TemplateData) => void;
 }
 
-export type TemplateType = 'corporate-minimal' | 'premium-agency' | 'modern-sales' | 'classic-business';
+export type TemplateType =
+  | 'corporate-minimal'
+  | 'premium-agency'
+  | 'modern-sales'
+  | 'classic-business';
 
 export interface Template {
   id: TemplateType;

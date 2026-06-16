@@ -1,7 +1,8 @@
 import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
-import { AuthUser, LoginCredentials } from '../types/auth';
+
 import { authService } from '../services/authService';
+import { AuthUser, LoginCredentials } from '../types/auth';
 
 interface AuthState {
   // State
@@ -15,7 +16,7 @@ interface AuthState {
   logout: () => void;
   setUser: (user: AuthUser | null) => void;
   clearError: () => void;
-  
+
   // Helpers
   checkAuth: () => boolean;
   hasRole: (roleName: string) => boolean;
@@ -39,18 +40,18 @@ export const useAuthStore = create<AuthState>()(
         try {
           const user = await authService.login(credentials);
           authService.saveUser(user);
-          set({ 
-            user, 
-            isAuthenticated: true, 
+          set({
+            user,
+            isAuthenticated: true,
             isLoading: false,
-            error: null
+            error: null,
           });
         } catch (error: any) {
-          set({ 
-            error: error.message || 'Login failed', 
+          set({
+            error: error.message || 'Login failed',
             isLoading: false,
             isAuthenticated: false,
-            user: null
+            user: null,
           });
           throw error;
         }
@@ -59,10 +60,10 @@ export const useAuthStore = create<AuthState>()(
       // Logout action
       logout: () => {
         authService.logout();
-        set({ 
-          user: null, 
+        set({
+          user: null,
           isAuthenticated: false,
-          error: null
+          error: null,
         });
       },
 
@@ -71,9 +72,9 @@ export const useAuthStore = create<AuthState>()(
         if (user) {
           authService.saveUser(user);
         }
-        set({ 
-          user, 
-          isAuthenticated: !!user 
+        set({
+          user,
+          isAuthenticated: !!user,
         });
       },
 
@@ -112,21 +113,21 @@ export const useAuthStore = create<AuthState>()(
       initAuth: () => {
         const user = authService.getCurrentUser();
         if (user) {
-          set({ 
-            user, 
-            isAuthenticated: true 
+          set({
+            user,
+            isAuthenticated: true,
           });
         }
-      }
+      },
     }),
     {
       name: 'auth-storage',
-      partialize: (state) => ({ 
-        user: state.user, 
-        isAuthenticated: state.isAuthenticated 
-      })
-    }
-  )
+      partialize: (state) => ({
+        user: state.user,
+        isAuthenticated: state.isAuthenticated,
+      }),
+    },
+  ),
 );
 
 // Initialize auth on module load
