@@ -11,6 +11,7 @@ const CITY_NAMES = [
 export interface DbService {
   service_id: string;
   service_name: string;
+  content?: string;
   metadata?: {
     locations?: string[];
     duration?: string;

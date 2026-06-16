@@ -25,7 +25,7 @@ function escapeRegExp(s: string): string {
 export const VEHICLE_CATEGORY_PATTERN =
   /\b(bus|buses|auto|autos|cab|cabs|tempo|tempos|metro|train|hoarding|hoardings|gantry|shelter|shelters|lamp\s*post|lift|apartment|vehicle|vehicles|newspaper|radio|billboard|transit|van|vans)\b/i;
 
-const FULL_SERVICE_PATTERNS = [
+export const FULL_SERVICE_PATTERNS = [
   /bus full branding/i,
   /bus semi branding/i,
   /bus back panel/i,
@@ -178,11 +178,14 @@ export function serviceMatchesQuery(svc: DbService, words: string[]): boolean {
 
   if (words.length === 1) {
     const w = words[0];
-    if (new RegExp(`\\b${w.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\b`, 'i').test(name)) return true;
+    const escaped = w.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    if (new RegExp(`\\b${escaped}\\b`, 'i').test(name)) return true;
     if (canonical && queryCanonical && (canonical.includes(queryCanonical) || queryCanonical.includes(canonical))) {
       return true;
     }
-    return name.includes(w);
+    // Avoid loose substring match on short words ("semi", "bus") — causes irrelevant services
+    if (w.length >= 4 && name.includes(w)) return true;
+    return false;
   }
 
   if (canonical && queryCanonical && (canonical.includes(queryCanonical) || queryCanonical.includes(canonical))) {
@@ -278,12 +281,17 @@ export function classifySegmentByDb(
 ): { state: SegmentDbState; matches: DbService[] } {
   const matched = getMatchingServicesForCity(segmentRaw, city, services);
   if (matched.length === 0) return { state: 'not_found', matches: [] };
-  if (matched.length === 1 && !isVagueCategoryQuery(segmentRaw)) {
-    return { state: 'specific', matches: matched };
+
+  // Only auto-confirm without checkboxes when user typed a FULL service name
+  if (FULL_SERVICE_PATTERNS.some((p) => p.test(segmentRaw))) {
+    const words = extractQueryWords(stripCitiesFromSegment(segmentRaw, [city]));
+    const queryCanon = canonicalizeServiceName(words.join(' '));
+    const exact = matched.find(
+      (s) => canonicalizeServiceName(s.service_name || '') === queryCanon,
+    );
+    return { state: 'specific', matches: exact ? [exact] : [matched[0]] };
   }
-  if (matched.length === 1 && isVagueCategoryQuery(segmentRaw)) {
-    return { state: 'vague', matches: matched };
-  }
+
   return { state: 'vague', matches: matched };
 }
 

@@ -1,0 +1,155 @@
+import { canonicalizeServiceName } from '../hooks/useCityServiceRegistry';
+import {
+  ConfirmationRow,
+  FULL_SERVICE_PATTERNS,
+  dedupeConfirmationRows,
+} from './cloudQuoteValidation';
+import { DbService, resolveServiceIdFromCatalog } from './serviceResolver';
+
+/** True when segment text contains a complete service name (not a vague category). */
+export function isSegmentFullySpecified(segmentRaw: string): boolean {
+  return FULL_SERVICE_PATTERNS.some((p) => p.test(segmentRaw));
+}
+
+/** Parse display labels like "50 Auto Full Branding (Chennai)" into confirm rows. */
+export function parseConfirmedLabelToRow(label: string): ConfirmationRow | null {
+  const cleaned = label.replace(/\s*⚠️.*$/u, '').trim();
+  let m = cleaned.match(/^(\d+)\s+(.+?)\s*\(([^)]+)\)\s*$/);
+  if (m) {
+    return { service: m[2].trim(), qty: parseInt(m[1], 10), city: m[3].trim() };
+  }
+  m = cleaned.match(/^(\d+)\s+(.+?)\s+([A-Za-z][A-Za-z\s]+)$/);
+  if (m) {
+    return { service: m[2].trim(), qty: parseInt(m[1], 10), city: m[3].trim() };
+  }
+  return null;
+}
+
+export function labelsToConfirmRows(labels: string[]): ConfirmationRow[] {
+  return dedupeConfirmationRows(
+    labels.map(parseConfirmedLabelToRow).filter((r): r is ConfirmationRow => r != null),
+  );
+}
+
+/** Keep only DB rows that match confirmed service + city pairs. */
+export function filterDbServicesForConfirmedRows(
+  rows: ConfirmationRow[],
+  services: DbService[],
+): DbService[] {
+  if (!rows.length || !services.length) return services;
+
+  const seen = new Set<string>();
+  const out: DbService[] = [];
+
+  for (const row of rows) {
+    const cityHint = row.city && row.city !== '—' ? row.city : null;
+    const resolved = resolveServiceIdFromCatalog(row.service, services, cityHint);
+    if (!resolved) continue;
+    const svc = services.find((s) => s.service_id === resolved.serviceId);
+    if (svc && !seen.has(svc.service_id)) {
+      seen.add(svc.service_id);
+      out.push(svc);
+    }
+  }
+
+  if (out.length > 0) return out;
+
+  // Fallback: union of all cities mentioned in rows
+  const cities = [...new Set(rows.map((r) => r.city.toLowerCase()).filter((c) => c && c !== '—'))];
+  if (cities.length === 0) return services;
+
+  return services.filter((svc) => {
+    const locs: string[] = svc.metadata?.locations || [];
+    const doc = (svc.document_name || '').toLowerCase();
+    return cities.some(
+      (c) => locs.some((l) => l.toLowerCase().includes(c)) || doc.includes(c),
+    );
+  });
+}
+
+export function buildGeminiContextFromDbServices(
+  services: DbService[],
+): Array<{ fileName: string; content: string }> {
+  return services.map((svc) => {
+    const m = svc.metadata || {};
+    const pricing = (m.pricing || {}) as Record<string, unknown>;
+    const lines = [
+      `SERVICE: ${svc.service_name}`,
+      `CITY: ${(m.locations || []).join(', ')}`,
+      `PRICING STRUCTURE: ${(pricing.structure as string) || 'combined'}`,
+    ];
+
+    if (pricing.structure === 'separate') {
+      if (pricing.display_price) lines.push(`DISPLAY PRICE: ₹${pricing.display_price} ${pricing.display_period || 'per month'}`);
+      if (pricing.production_price) lines.push(`PRINTING & FIXING PRICE: ₹${pricing.production_price} ${pricing.production_unit || 'per unit'}`);
+      if (pricing.min_quantity) lines.push(`MINIMUM: ${pricing.min_quantity}`);
+    } else if (pricing.structure === 'campaign') {
+      if (pricing.unit_price) lines.push(`UNIT PRICE: ₹${pricing.unit_price} ${pricing.unit || ''}`);
+      if (pricing.min_quantity) lines.push(`MINIMUM QUANTITY: ${pricing.min_quantity}`);
+      if (pricing.total_price) lines.push(`TOTAL PRICE: ₹${pricing.total_price}`);
+    } else {
+      const price = pricing.price || pricing.unit_price;
+      if (price) lines.push(`PRICE: ₹${price} ${pricing.period || pricing.display_period || pricing.unit || 'per month'}`);
+      if (pricing.min_quantity) lines.push(`MINIMUM: ${pricing.min_quantity}`);
+      if (pricing.total_price) lines.push(`TOTAL PRICE: ₹${pricing.total_price}`);
+    }
+
+    const meta = m as Record<string, unknown>;
+    if (meta.size) lines.push(`SIZE: ${typeof meta.size === 'object' ? JSON.stringify(meta.size) : meta.size}`);
+    if (meta.material) lines.push(`MATERIAL: ${String(meta.material)}`);
+    if (meta.terms) lines.push(`TERMS: ${String(meta.terms)}`);
+    if (svc.content) lines.push(`DESCRIPTION: ${String(svc.content).substring(0, 300)}`);
+
+    return { fileName: svc.document_name || 'Rate Card', content: lines.filter(Boolean).join('\n') };
+  });
+}
+
+/** Resolve best DB service name for a city + raw segment (used after city pick). */
+export function resolveDbServiceNameForSegment(
+  segmentRaw: string,
+  city: string,
+  services: DbService[],
+): string | null {
+  const cityHint = city;
+  const words = segmentRaw
+    .replace(/\d+/g, '')
+    .replace(/\b(need|for|the|a|an|in|at|of|and|i|want|please|generate|quote)\b/gi, '')
+    .trim();
+
+  if (isSegmentFullySpecified(segmentRaw)) {
+    const resolved = resolveServiceIdFromCatalog(words, services, cityHint);
+    return resolved?.serviceName ?? null;
+  }
+  return null;
+}
+
+export function rowsFromCloudBelowMin(
+  validLabels: string[],
+  belowMin: Array<{ svcLabel: string; cityLabel: string; requestedQty: number }>,
+): ConfirmationRow[] {
+  const fromLabels = labelsToConfirmRows(validLabels);
+  const fromBelow = belowMin.map((b) => ({
+    service: b.svcLabel,
+    qty: b.requestedQty,
+    city: b.cityLabel,
+  }));
+  return dedupeConfirmationRows([...fromLabels, ...fromBelow]);
+}
+
+/** Strict check: confirmed row service name must match DB catalog entry. */
+export function validateConfirmedRowsAgainstDb(
+  rows: ConfirmationRow[],
+  services: DbService[],
+): ConfirmationRow[] {
+  return rows.filter((row) => {
+    const cityHint = row.city && row.city !== '—' ? row.city : null;
+    return resolveServiceIdFromCatalog(row.service, services, cityHint) != null;
+  });
+}
+
+export function canonicalRowKey(row: ConfirmationRow): string {
+  const qty = typeof row.qty === 'number' ? row.qty : parseInt(String(row.qty), 10) || 1;
+  const svc = canonicalizeServiceName(row.service) || row.service.toLowerCase();
+  const city = (row.city && row.city !== '—' ? row.city : '').toLowerCase();
+  return `${svc}|${city}|${qty}`;
+}

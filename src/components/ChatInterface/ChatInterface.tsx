@@ -49,6 +49,12 @@ import {
   validateQuoteItemsAgainstDbMinQty,
   VEHICLE_CATEGORY_PATTERN,
 } from '../../utils/cloudQuoteValidation';
+import {
+  buildGeminiContextFromDbServices,
+  filterDbServicesForConfirmedRows,
+  labelsToConfirmRows,
+  rowsFromCloudBelowMin,
+} from '../../utils/confirmedQuotePipeline';
 import type { DbService } from '../../utils/serviceResolver';
 
 // ═══════════════════════════════════════════════════════════════════════
@@ -118,6 +124,8 @@ const ChatInterface: React.FC = () => {
   const recognitionRef = useRef<any>(null);
   // Cache: service key (lowercase) -> minimum quantity, persists across messages in the same session
   const minQtyCacheRef = useRef<Map<string, number>>(new Map());
+  /** Locked confirm rows for the current generate request (scoped Gemini context). */
+  const confirmedRowsRef = useRef<Array<{ service: string; qty: number | string; city: string }> | null>(null);
 
   // ── Command History ────────────────────────────────────────────────────────
   const { user } = useAuthStore();
@@ -155,7 +163,7 @@ const ChatInterface: React.FC = () => {
     requireServiceSelection?: boolean;
   } | null>(null);
 
-  // Pending confirm after min-qty modal (confirm-table → min qty → Gemini)
+  // Pending rows after min-qty modal → opens confirm table (not direct Gemini)
   const [pendingConfirmGeneration, setPendingConfirmGeneration] = useState<{
     rows: Array<{ service: string; qty: number | string; city: string }>;
     originalUserInput: string;
@@ -907,11 +915,14 @@ const ChatInterface: React.FC = () => {
 
             if (cloudResult.belowMinSegments.length > 0 && !isQtyOverride) {
               setMessages(prev => [...prev, userMessage]);
-              const fullMessage = cloudResult.validSegmentRaws.join(' and ');
-              let rewritten = resolvedRows.map(r => r.raw).join(' and ');
-              for (const bm of cloudResult.belowMinSegments) {
-                rewritten = rewritten.replace(bm.rawSegment, bm.rawSegment.replace(/\b\d+\b/, String(bm.minQty)));
-              }
+              const confirmRows = rowsFromCloudBelowMin(
+                cloudResult.validSegmentLabels,
+                cloudResult.belowMinSegments.map((bm) => ({
+                  svcLabel: bm.svcLabel,
+                  cityLabel: bm.cityLabel,
+                  requestedQty: bm.requestedQty,
+                })),
+              );
               setMinQtyWarning({
                 items: cloudResult.belowMinSegments.map(bm => ({
                   description: `${bm.svcLabel} - ${bm.cityLabel}`,
@@ -921,8 +932,13 @@ const ChatInterface: React.FC = () => {
                 })),
                 pendingQuote: null as any,
               });
-              setPendingValidMessage(fullMessage || resolvedRows.map(r => r.raw).join(' and '));
-              setPendingMinReplacedMessage(rewritten);
+              setPendingConfirmGeneration({
+                rows: confirmRows,
+                originalUserInput: cleanedText,
+                messageId: userMessage.id,
+              });
+              setPendingValidMessage(null);
+              setPendingMinReplacedMessage(null);
               if (cloudResult.preAlerts.length > 0) setUnavailableServices(cloudResult.preAlerts);
               return;
             }
@@ -938,13 +954,12 @@ const ChatInterface: React.FC = () => {
                 isMultipleMatch: true,
                 groupedServices: cloudResult.vagueGroups,
                 originalUserInput: cleanedText,
-                directParts: cloudResult.validSegmentLabels.length > 0 ? cloudResult.validSegmentLabels : undefined,
+                directParts: cloudResult.validSegmentLabels.length > 0
+                  ? cloudResult.validSegmentLabels
+                  : undefined,
               };
               setMessages(prev => [...prev, userMessage, assistantMsg]);
               setInputValue('');
-              if (cloudResult.validSegmentRaws.length > 0) {
-                setPendingValidMessage(cloudResult.validSegmentRaws.join(' and '));
-              }
               return;
             }
 
@@ -1332,57 +1347,33 @@ const ChatInterface: React.FC = () => {
           const dbServices = prefetchedDbServices ?? await loadAllServicesFromCloud();
           dbServicesForResolution = dbServices || [];
 
-          // Build compact service context from DB — pricing + terms only (no full PDF text)
-          const buildSvcContext = (svc: any): { fileName: string; content: string } => {
-              const m = svc.metadata || {};
-              const pricing = m.pricing || {};
-              const lines = [
-                `SERVICE: ${svc.service_name}`,
-                `CITY: ${(m.locations || []).join(', ')}`,
-                `PRICING STRUCTURE: ${pricing.structure || 'combined'}`,
-              ];
-
-              if (pricing.structure === 'separate') {
-                if (pricing.display_price)    lines.push(`DISPLAY PRICE: ₹${pricing.display_price} ${pricing.display_period || 'per month'}`);
-                if (pricing.production_price) lines.push(`PRINTING & FIXING PRICE: ₹${pricing.production_price} ${pricing.production_unit || 'per unit'}`);
-                if (pricing.min_quantity)     lines.push(`MINIMUM: ${pricing.min_quantity}`);
-              } else if (pricing.structure === 'campaign') {
-                if (pricing.unit_price)   lines.push(`UNIT PRICE: ₹${pricing.unit_price} ${pricing.unit || ''}`);
-                if (pricing.min_quantity) lines.push(`MINIMUM QUANTITY: ${pricing.min_quantity}`);
-                if (pricing.total_price)  lines.push(`TOTAL PRICE: ₹${pricing.total_price}`);
-              } else {
-                const price = pricing.price || pricing.unit_price;
-                if (price) lines.push(`PRICE: ₹${price} ${pricing.period || pricing.display_period || pricing.unit || 'per month'} (includes display, printing & mounting)`);
-                if (pricing.min_quantity) lines.push(`MINIMUM: ${pricing.min_quantity}`);
-                if (pricing.total_price)  lines.push(`TOTAL PRICE: ₹${pricing.total_price}`);
-              }
-
-              if (m.size)     lines.push(`SIZE: ${typeof m.size === 'object' ? JSON.stringify(m.size) : m.size}`);
-              if (m.material) lines.push(`MATERIAL: ${m.material}`);
-              if (m.terms)    lines.push(`TERMS: ${m.terms}`);
-              if (svc.content) lines.push(`DESCRIPTION: ${svc.content.substring(0, 300)}`);
-
-              return { fileName: svc.document_name || 'Rate Card', content: lines.filter(Boolean).join('\n') };
-          };
-
           if (dbServices && dbServices.length > 0) {
-            // If user mentioned a specific city, only send that city's services to Gemini
-            const detectedCity = detectKnownCityInText(cleanedText, dbServicesForResolution);
-            let servicesToSend = dbServices;
-            if (detectedCity) {
-              const cityFiltered = dbServices.filter((svc: any) => {
-                const locs: string[] = svc.metadata?.locations || [];
-                const docName = (svc.document_name || '').toLowerCase();
-                return locs.some((l: string) => l.toLowerCase().includes(detectedCity))
-                    || docName.includes(detectedCity);
-              });
-              if (cityFiltered.length > 0) {
-                servicesToSend = cityFiltered;
-                console.log(`🏙️ [CityFilter] Filtered to "${detectedCity}": ${cityFiltered.length} services`);
+            let servicesToSend = dbServices as DbService[];
+
+            // Post-confirm: send ONLY the services the user locked in the confirm table
+            if (isCheckboxConfirmedFlag && confirmedRowsRef.current?.length) {
+              servicesToSend = filterDbServicesForConfirmedRows(
+                confirmedRowsRef.current,
+                servicesToSend,
+              );
+              console.log(`🔒 [ConfirmedPipeline] Scoped Gemini context to ${servicesToSend.length} confirmed service(s)`);
+            } else {
+              const detectedCity = detectKnownCityInText(cleanedText, dbServicesForResolution);
+              if (detectedCity) {
+                const cityFiltered = dbServices.filter((svc: any) => {
+                  const locs: string[] = svc.metadata?.locations || [];
+                  const docName = (svc.document_name || '').toLowerCase();
+                  return locs.some((l: string) => l.toLowerCase().includes(detectedCity))
+                      || docName.includes(detectedCity);
+                });
+                if (cityFiltered.length > 0) {
+                  servicesToSend = cityFiltered;
+                  console.log(`🏙️ [CityFilter] Filtered to "${detectedCity}": ${cityFiltered.length} services`);
+                }
               }
             }
 
-            proposalContexts = servicesToSend.map(buildSvcContext);
+            proposalContexts = buildGeminiContextFromDbServices(servicesToSend);
             console.log(`☁️ [USE_CLOUD_DATA] Using ${proposalContexts.length} DB services as context (~${proposalContexts.reduce((s, p) => s + p.content.length, 0)} chars)`);
             // DEBUG: Show exact context for first 3 services so we can verify pricing format
             console.log('📋 [DB-CONTEXT-DEBUG] Sample service contexts sent to Gemini:');
@@ -1667,7 +1658,13 @@ const ChatInterface: React.FC = () => {
           let sectionServiceId: string | undefined;
           let sectionServiceName: string | undefined;
           if (sectionTitle && dbServicesForResolution.length > 0) {
-            const cityHintEarly = extractCityHint(cleanedText);
+            const rowMatch = confirmedRowsRef.current?.find((r) =>
+              sectionTitle.toLowerCase().includes(r.service.toLowerCase()) ||
+              r.service.toLowerCase().includes(sectionTitle.toLowerCase()),
+            );
+            const cityHintEarly = rowMatch?.city && rowMatch.city !== '—'
+              ? rowMatch.city.toLowerCase()
+              : extractCityHint(cleanedText);
             const resolved = resolveServiceIdFromCatalog(sectionTitle, dbServicesForResolution, cityHintEarly);
             if (resolved) {
               sectionServiceId = resolved.serviceId;
@@ -2166,6 +2163,11 @@ const ChatInterface: React.FC = () => {
     }
 
     if (directParts.length > 0 && groupedServices.length === 0 && !needsGemini) {
+      const confirmRows = labelsToConfirmRows(directParts as string[]);
+      if (confirmRows.length > 0) {
+        void executeConfirmedGeneration(confirmRows, pickerSnapshot.originalMessage, '');
+        return;
+      }
       const durationMatch = pickerSnapshot.originalMessage.match(/(\d+)\s*(days?|months?)/i);
       const durationSuffix = durationMatch ? ` for ${durationMatch[0]}` : '';
       const combined = `Generate quote for ${directParts.join(' and ')}${durationSuffix} [User has already specified complete service names from checkboxes]`;
@@ -2175,6 +2177,17 @@ const ChatInterface: React.FC = () => {
     }
 
     if (needsGemini || (groupedServices.length === 0 && missingServiceAlerts.length === 0 && !isVagueFlow)) {
+      if (USE_CLOUD_DATA && dbServices.length > 0 && pairs.length > 0) {
+        const fallbackRows = dedupeConfirmationRows(
+          pairs.map((p) => ({
+            service: p.raw.replace(/\d+/g, '').trim(),
+            qty: p.qty,
+            city: p.city,
+          })),
+        );
+          void executeConfirmedGeneration(fallbackRows, pickerSnapshot.originalMessage, '');
+        return;
+      }
       const reconstructed = pairs.map(p => `${p.city} ${p.qty > 1 ? p.qty + ' ' : ''}${p.raw.replace(/\d+/g, '').trim()}`).join(' and ');
       sendMessageWithContent(reconstructed);
       return;
@@ -2286,35 +2299,42 @@ const ChatInterface: React.FC = () => {
     if (!pendingQuote) {
       if (pendingConfirmGeneration) {
         const gen = pendingConfirmGeneration;
-        const updatedRows = gen.rows.map(row => {
-          const match = currentItems.find(it =>
-            it.description.toLowerCase().includes(row.service.toLowerCase()) &&
-            (row.city === '—' || it.description.toLowerCase().includes(row.city.toLowerCase()))
-          );
-          if (match && match.requested !== match.originalRequested) {
-            return { ...row, qty: match.requested };
-          }
-          return row;
-        });
+        const updatedRows = applyMinQtyToConfirmRows(gen.rows, currentItems, 'continue');
         setPendingConfirmGeneration(null);
-        executeConfirmedGeneration(updatedRows, gen.originalUserInput, gen.messageId);
+        openConfirmationTable(gen.messageId, updatedRows, gen.originalUserInput);
         return;
       }
       if (pending) {
-        // Replace original requested qty with current (possibly edited) qty for each item
+        const parsedRows = labelsToConfirmRows(
+          pending.split(/\s+and\s+/i).map((s) => s.trim()).filter(Boolean),
+        );
+        if (parsedRows.length > 0) {
+          const updatedRows = parsedRows.map((row) => {
+            const match = currentItems.find(
+              (it) =>
+                it.description.toLowerCase().includes(row.service.toLowerCase()) &&
+                (row.city === '—' || it.description.toLowerCase().includes(String(row.city).toLowerCase())),
+            );
+            return match ? { ...row, qty: match.requested } : row;
+          });
+          setPendingValidMessage(null);
+          setPendingMinReplacedMessage(null);
+          void executeConfirmedGeneration(updatedRows, '', '');
+          return;
+        }
         let rewrittenMsg = pending;
         currentItems.forEach((item) => {
           if (item.originalRequested !== item.requested) {
             rewrittenMsg = rewrittenMsg.replace(
               new RegExp(`\\b${item.originalRequested}\\b`),
-              String(item.requested)
+              String(item.requested),
             );
           }
         });
         setPendingValidMessage(null);
         setPendingMinReplacedMessage(null);
         pushToHistory(rewrittenMsg.replace(/\s*\[User has already specified complete service names from checkboxes\]/g, '').replace(/\s*\[QTY_OVERRIDE\]/g, '').trim());
-        sendMessageWithContent(rewrittenMsg + ' [QTY_OVERRIDE]');
+        sendMessageWithContent(`${rewrittenMsg} [User has already specified complete service names from checkboxes] [QTY_OVERRIDE]`);
       }
       return;
     }
@@ -2355,20 +2375,29 @@ const ChatInterface: React.FC = () => {
       setEditedQuantity('');
       if (pendingConfirmGeneration) {
         const gen = pendingConfirmGeneration;
-        const updatedRows = gen.rows.map(row => {
-          const match = currentItems.find(it =>
-            it.description.toLowerCase().includes(row.service.toLowerCase()) &&
-            (row.city === '—' || it.description.toLowerCase().includes(row.city.toLowerCase()))
-          );
-          if (!match) return row;
-          const useQty = match.requested !== match.originalRequested ? match.requested : match.minimum;
-          return { ...row, qty: useQty };
-        });
+        const updatedRows = applyMinQtyToConfirmRows(gen.rows, currentItems, 'minimum');
         setPendingConfirmGeneration(null);
-        executeConfirmedGeneration(updatedRows, gen.originalUserInput, gen.messageId);
+        openConfirmationTable(gen.messageId, updatedRows, gen.originalUserInput);
         return;
       }
       if (pending) {
+        const parsedRows = labelsToConfirmRows(
+          pending.replace(/^generate\s+quote\s+for\s+/i, '').split(/\s+and\s+/i).map((s) => s.trim()).filter(Boolean),
+        );
+        if (parsedRows.length > 0) {
+          const updatedRows = parsedRows.map((row) => {
+            const match = currentItems.find(
+              (it) =>
+                it.description.toLowerCase().includes(row.service.toLowerCase()) &&
+                (row.city === '—' || it.description.toLowerCase().includes(String(row.city).toLowerCase())),
+            );
+            return match ? { ...row, qty: match.minimum } : row;
+          });
+          setPendingValidMessage(null);
+          setPendingMinReplacedMessage(null);
+          void executeConfirmedGeneration(updatedRows, '', '');
+          return;
+        }
         let newMsg = pending;
         currentItems.forEach((item) => {
           const origQty = item.originalRequested;
@@ -2378,7 +2407,7 @@ const ChatInterface: React.FC = () => {
         setPendingValidMessage(null);
         setPendingMinReplacedMessage(null);
         pushToHistory(newMsg.replace(/\s*\[User has already specified complete service names from checkboxes\]/g, '').replace(/\s*\[QTY_OVERRIDE\]/g, '').trim());
-        sendMessageWithContent(newMsg + ' [QTY_OVERRIDE]');
+        sendMessageWithContent(`${newMsg} [User has already specified complete service names from checkboxes] [QTY_OVERRIDE]`);
       }
       return;
     }
@@ -2473,25 +2502,23 @@ const ChatInterface: React.FC = () => {
     });
   };
 
-  // Build confirmation table rows from selected services, then show table (don't send yet)
-  const handleShowConfirmation = (messageId: string, groupedServices: any[]) => {
+  // Build confirmation table rows from selected services (shared helper)
+  const buildConfirmationRows = (
+    messageId: string,
+    groupedServices: any[],
+  ): { rows: Array<{ service: string; qty: number | string; city: string }>; originalUserInput: string } | null => {
     const selected = selectedServices[messageId];
     const assistantMsg = messages.find(m => m.id === messageId);
     const hasSelected = selected && Object.keys(selected).length > 0;
     const hasDirectParts = !!assistantMsg?.directParts?.length;
-    // Allow confirmation when EITHER checkboxes are ticked OR directParts (auto-confirmed
-    // services) exist. Previously bailed out when no checkbox was ticked, which made the
-    // "Review & Confirm" button silently do nothing for users who only had auto-confirmed
-    // services and didn't want any of the optional checkbox groups.
-    if (!hasSelected && !hasDirectParts) return;
+    if (!hasSelected && !hasDirectParts) return null;
 
     const originalUserMsg = assistantMsg?.originalUserInput || '';
     const rows: Array<{ service: string; qty: number | string; city: string }> = [];
 
-    groupedServices.forEach(group => {
+    groupedServices.forEach((group: { vehicleType: string; requestedQuantity: number }) => {
       const services = (selected && selected[group.vehicleType]) || [];
-      services.forEach(svcName => {
-        // Extract city from vehicleType key if present (format: "Bus|Chennai")
+      services.forEach((svcName: string) => {
         const [, city] = group.vehicleType.includes('|')
           ? group.vehicleType.split('|')
           : [group.vehicleType, ''];
@@ -2499,46 +2526,101 @@ const ChatInterface: React.FC = () => {
       });
     });
 
-    // Also add directParts (auto-confirmed services) to the confirmation table.
-    // Accepted formats produced upstream:
-    //   "100 Cab Branding (Chennai)"
-    //   "100 Cab Branding (Chennai) ⚠️ below min 100"
-    //   "100 Cab Branding Chennai"   (legacy, no parens)
     if (assistantMsg?.directParts?.length) {
       (assistantMsg.directParts as string[]).forEach(part => {
-        // Strip any trailing warning marker (e.g. "⚠️ below min 100") before parsing.
         const cleaned = part.replace(/\s*⚠️.*$/u, '').trim();
-
-        // Try "(City)" parenthesised form first.
         let m = cleaned.match(/^(\d+)\s+(.+?)\s*\(([^)]+)\)\s*$/);
         if (m) {
-          rows.push({ service: m[2].trim(), qty: parseInt(m[1]), city: m[3].trim() });
+          rows.push({ service: m[2].trim(), qty: parseInt(m[1], 10), city: m[3].trim() });
           return;
         }
-        // Fallback to legacy space-separated trailing-word city.
         m = cleaned.match(/^(\d+)\s+(.+?)\s+(\w+)$/);
         if (m) {
-          rows.push({ service: m[2].trim(), qty: parseInt(m[1]), city: m[3].trim() });
+          rows.push({ service: m[2].trim(), qty: parseInt(m[1], 10), city: m[3].trim() });
           return;
         }
         rows.push({ service: cleaned || part, qty: 1, city: '—' });
       });
     }
 
-    if (rows.length === 0) return;
+    if (rows.length === 0) return null;
+    return { rows: dedupeConfirmationRows(rows), originalUserInput: originalUserMsg };
+  };
+
+  const openConfirmationTable = (
+    messageId: string,
+    rows: Array<{ service: string; qty: number | string; city: string }>,
+    originalUserInput: string,
+  ) => {
     setConfirmationTable({
       messageId,
       rows: dedupeConfirmationRows(rows),
-      originalUserInput: originalUserMsg,
+      originalUserInput,
     });
   };
 
-  const executeConfirmedGeneration = (
+  const applyMinQtyToConfirmRows = (
+    rows: Array<{ service: string; qty: number | string; city: string }>,
+    items: Array<{ description: string; requested: number; originalRequested: number; minimum: number }>,
+    mode: 'continue' | 'minimum',
+  ) => rows.map((row) => {
+    const match = items.find(
+      (it) =>
+        it.description.toLowerCase().includes(row.service.toLowerCase()) &&
+        (row.city === '—' || it.description.toLowerCase().includes(String(row.city).toLowerCase())),
+    );
+    if (!match) return row;
+    const qty =
+      mode === 'minimum'
+        ? (match.requested !== match.originalRequested ? match.requested : match.minimum)
+        : match.requested;
+    return { ...row, qty };
+  });
+
+  /** Min qty runs BEFORE confirm table: pick services → min → confirm → quote */
+  const runMinQtyGateBeforeConfirm = async (
+    messageId: string,
+    rows: Array<{ service: string; qty: number | string; city: string }>,
+    originalUserInput: string,
+  ) => {
+    const deduped = dedupeConfirmationRows(rows);
+
+    if (USE_CLOUD_DATA) {
+      try {
+        const { loadAllServicesFromCloud } = await import('../../services/supabaseProposalService');
+        const dbServices = (await loadAllServicesFromCloud()) || [];
+        const violations = validateConfirmationRowsMinQty(deduped, dbServices);
+        if (violations.length > 0) {
+          console.log('⚠️ [MinQty-PreConfirm] Below minimum before confirm table:', violations);
+          setPendingConfirmGeneration({ rows: deduped, originalUserInput, messageId });
+          setMinQtyWarning({ items: violations, pendingQuote: null });
+          return;
+        }
+      } catch (err) {
+        console.warn('⚠️ Min-qty pre-confirm check failed, showing confirm table:', err);
+      }
+    }
+
+    openConfirmationTable(messageId, deduped, originalUserInput);
+  };
+
+  const handleShowConfirmation = async (messageId: string, groupedServices: any[]) => {
+    const built = buildConfirmationRows(messageId, groupedServices);
+    if (!built) return;
+    await runMinQtyGateBeforeConfirm(messageId, built.rows, built.originalUserInput);
+  };
+
+  /** Build quote from DB after confirm — no Gemini on this path when cloud catalog is loaded. */
+  const executeConfirmedGeneration = async (
     rows: Array<{ service: string; qty: number | string; city: string }>,
     originalUserInput: string,
     messageId: string,
   ) => {
+    if (isLoading) return;
+
     const uniqueRows = dedupeConfirmationRows(rows);
+    confirmedRowsRef.current = uniqueRows;
+
     const durationMatch = originalUserInput.match(/(\d+)\s*(days?|months?)/i);
     const durationSuffix = durationMatch ? ` for ${durationMatch[0]}` : '';
 
@@ -2548,43 +2630,105 @@ const ChatInterface: React.FC = () => {
         : `${r.qty} ${r.service}`
     );
 
-    const combinedRequest = `Generate quote for ${parts.join(' and ')}${durationSuffix} [User has already specified complete service names from checkboxes]`;
-    console.log('🔧 Confirmation → Gemini request:', combinedRequest);
+    const displayRequest = `Generate quote for ${parts.join(' and ')}${durationSuffix}`;
+    console.log('🔧 [ConfirmedPipeline] Building quote from DB:', displayRequest);
 
     setSelectedServices(prev => {
       const newState = { ...prev };
-      delete newState[messageId];
+      if (messageId) delete newState[messageId];
       return newState;
     });
     setInputValue('');
-    pushToHistory(`Generate quote for ${parts.join(' and ')}${durationSuffix}`);
-    sendMessageWithContent(combinedRequest);
-  };
+    pushToHistory(displayRequest);
 
-  // Final confirm: min-qty check first, then send selected services to Gemini
-  const handleConfirmAndGenerate = async () => {
-    if (!confirmationTable) return;
-    const { rows, originalUserInput, messageId } = confirmationTable;
+    const userMessage: Message = {
+      id: Date.now().toString(),
+      role: 'user',
+      content: displayRequest,
+      timestamp: new Date(),
+    };
+    setMessages(prev => [...prev, userMessage]);
+    setIsLoading(true);
+    setError(null);
 
-    if (USE_CLOUD_DATA) {
-      try {
+    try {
+      if (USE_CLOUD_DATA) {
         const { loadAllServicesFromCloud } = await import('../../services/supabaseProposalService');
+        const { buildQuoteFromConfirmedRows } = await import('../../utils/buildQuoteFromConfirmedRows');
         const dbServices = (await loadAllServicesFromCloud()) || [];
-        const violations = validateConfirmationRowsMinQty(rows, dbServices);
-        if (violations.length > 0) {
-          console.log('⚠️ [MinQty-Confirm] Below minimum before quote:', violations);
-          setPendingConfirmGeneration({ rows, originalUserInput, messageId });
-          setMinQtyWarning({ items: violations, pendingQuote: null });
-          setConfirmationTable(null);
+
+        if (dbServices.length > 0) {
+          const result = buildQuoteFromConfirmedRows(
+            uniqueRows,
+            dbServices,
+            originalUserInput || displayRequest,
+          );
+
+          if (result.success) {
+            const minViolations = validateQuoteItemsAgainstDbMinQty(result.quote.items, dbServices);
+            if (minViolations.length > 0) {
+              console.log('⚠️ [MinQty-DB] Below minimum after DB quote build:', minViolations);
+              setMinQtyWarning({ items: minViolations, pendingQuote: result.quote });
+              setIsLoading(false);
+              return;
+            }
+
+            setCurrentQuote(result.quote);
+            loadCloudServices().catch((err) => {
+              console.warn('⚠️ Could not refresh cloud services after quote:', err);
+            });
+
+            const quoteReadyMessage: Message = {
+              id: (Date.now() + 1).toString(),
+              role: 'assistant',
+              content: '✓ Your Quote generated successfully!',
+              timestamp: new Date(),
+            };
+            setMessages(prev => [...prev, quoteReadyMessage]);
+            setTimeout(() => { history.push('/quote'); }, 1500);
+            setIsLoading(false);
+            return;
+          }
+
+          const failMsg: Message = {
+            id: (Date.now() + 1).toString(),
+            role: 'assistant',
+            content: `Could not build quote from rate card: ${result.message}. Please verify the service exists in your uploaded proposals.`,
+            timestamp: new Date(),
+          };
+          setMessages(prev => [...prev, failMsg]);
+          setIsLoading(false);
           return;
         }
-      } catch (err) {
-        console.warn('⚠️ Confirm min-qty check failed, proceeding:', err);
       }
-    }
 
+      // Fallback when cloud catalog unavailable: legacy Gemini path
+      const combinedRequest =
+        `${displayRequest} [User has already specified complete service names from checkboxes]`;
+      console.log('🔧 Confirmation → Gemini fallback:', combinedRequest);
+      setMessages(prev => prev.filter(m => m.id !== userMessage.id));
+      await sendMessageWithContent(combinedRequest);
+    } catch (err: unknown) {
+      console.error('❌ [ConfirmedPipeline] Quote build failed:', err);
+      const errText = err instanceof Error ? err.message : 'Failed to generate quote';
+      setError(errText);
+      const errorMessage: Message = {
+        id: (Date.now() + 1).toString(),
+        role: 'assistant',
+        content: `Sorry, quote generation failed: ${errText}`,
+        timestamp: new Date(),
+      };
+      setMessages(prev => [...prev, errorMessage]);
+      setIsLoading(false);
+    }
+  };
+
+  // Confirm table → generate quote (min qty already resolved before this step)
+  const handleConfirmAndGenerate = () => {
+    if (!confirmationTable) return;
+    const { rows, originalUserInput, messageId } = confirmationTable;
     setConfirmationTable(null);
-    executeConfirmedGeneration(rows, originalUserInput, messageId);
+    void executeConfirmedGeneration(rows, originalUserInput, messageId);
   };
 
 
@@ -3045,7 +3189,7 @@ const ChatInterface: React.FC = () => {
                                 fontSize="15px"
                                 py={6}
                                 borderRadius="14px"
-                                onClick={() => handleShowConfirmation(message.id, message.groupedServices!)}
+                                onClick={() => { void handleShowConfirmation(message.id, message.groupedServices!); }}
                                 isDisabled={isLoading}
                                 _hover={{
                                   bgGradient: 'linear(135deg, #b91c1c 0%, #9f1239 50%, #881337 100%)',
@@ -4138,7 +4282,7 @@ Generate a detailed quote based on the above information.`;
         </HStack>
       </VStack>
 
-      {/* Confirmation Table Modal — shown after service selection, before Gemini call */}
+      {/* Confirmation Table Modal — shown after min qty (if any) and before Gemini */}
       {confirmationTable && (
         <Box
           position="fixed"
@@ -4173,6 +4317,7 @@ Generate a detailed quote based on the above information.`;
               <Box borderRadius="8px" overflow="hidden" border="1px solid" borderColor="gray.200">
                 <HStack bg="gray.800" px={3} py={2} spacing={0}>
                   <Text flex={2} fontSize="11px" fontWeight="700" color="white" textTransform="uppercase" letterSpacing="wider">Service</Text>
+                  <Text flex={0.6} fontSize="11px" fontWeight="700" color="white" textTransform="uppercase" letterSpacing="wider" textAlign="center">Qty</Text>
                   <Text flex={1} fontSize="11px" fontWeight="700" color="white" textTransform="uppercase" letterSpacing="wider" textAlign="right">City</Text>
                 </HStack>
                 {confirmationTable.rows.map((row, idx) => (
@@ -4186,6 +4331,7 @@ Generate a detailed quote based on the above information.`;
                     borderColor="gray.100"
                   >
                     <Text flex={2} fontSize="13px" fontWeight="500" color="gray.800">{row.service}</Text>
+                    <Text flex={0.6} fontSize="13px" fontWeight="600" color="gray.700" textAlign="center">{row.qty}</Text>
                     <Text flex={1} fontSize="13px" color="blue.600" fontWeight="600" textAlign="right">{row.city}</Text>
                   </HStack>
                 ))}
