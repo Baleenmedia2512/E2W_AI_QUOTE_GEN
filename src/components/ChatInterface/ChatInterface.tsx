@@ -181,6 +181,8 @@ const ChatInterface: React.FC = () => {
   // Minimum quantity warning dialog state
   const [minQtyWarning, setMinQtyWarning] = useState<{
     items: Array<{ description: string; requested: number; originalRequested: number; minimum: number }>;
+    /** Display-only above-minimum rows shown as green in the popup. NOT used by any handler. */
+    aboveMinItems?: Array<{ description: string; requested: number; minimum: number }>;
     pendingQuote: Quote | null;
   } | null>(null);
 
@@ -675,8 +677,21 @@ const ChatInterface: React.FC = () => {
     }
     const gate = gateMinQtyBeforeConfirm(rows, dbServices);
     if (gate.type === 'min_qty') {
+      // Compute above-min rows for display (green rows) — display-only, not used by handlers
+      const violationDescs = new Set(gate.violations.map(v => v.description.toLowerCase()));
+      const aboveMinItems = gate.rows
+        .filter(row => !violationDescs.has(`${row.service} - ${row.city}`.toLowerCase()))
+        .map(row => {
+          const qty = typeof row.qty === 'number' ? row.qty : parseInt(String(row.qty), 10) || 1;
+          const cityHint = row.city && row.city !== '—' ? row.city.toLowerCase() : undefined;
+          const resolved = dbServices.length ? resolveServiceIdFromCatalog(row.service, dbServices, cityHint) : null;
+          const svc = resolved ? dbServices.find(s => s.service_id === resolved.serviceId) : null;
+          const rawMin = svc?.metadata?.min_quantity ?? (svc as any)?.min_quantity;
+          const minimum = Number.isFinite(Number(rawMin)) && Number(rawMin) > 1 ? Number(rawMin) : 1;
+          return { description: `${row.service} - ${row.city}`, requested: qty, minimum };
+        });
       setPendingConfirmGeneration({ rows: gate.rows, originalUserInput, messageId });
-      setMinQtyWarning({ items: gate.violations, pendingQuote: null as any });
+      setMinQtyWarning({ items: gate.violations, aboveMinItems, pendingQuote: null as any });
     } else {
       setConfirmationTable({ messageId, rows: gate.rows, originalUserInput });
     }
@@ -4593,109 +4608,146 @@ Generate a detailed quote based on the above information.`;
               </Box>
             </Box>
 
-            {/* Scrollable Items Body */}
-            <Box flex={1} overflowY="auto" px={{ base: 3, md: 6 }} pb={2}>
-              {minQtyWarning.items.map((item, i) => (
-                <Box 
-                  key={i} 
-                  mb={{ base: 2, md: 3 }} 
-                  p={{ base: 3, md: 3 }} 
-                  bg="#fff5f5" 
-                  borderRadius={{ base: "8px", md: "8px" }} 
-                  borderLeft="3px solid #c0392b"
-                  display="flex"
-                  alignItems="center"
-                  justifyContent="space-between"
-                  gap={2}
-                >
-                  <Box flex={1} minW={0}>
-                    <Text 
-                      fontSize={{ base: "12px", md: "13px" }} 
-                      fontWeight="600" 
-                      color="#2d3436"
-                      lineHeight="1.4"
-                    >
-                      {item.description}
+            {/* Scrollable Items Body — Table Layout */}
+            <Box flex={1} overflowY="auto" pb={2}>
+              {/* Table Header */}
+              <Box
+                display="grid"
+                gridTemplateColumns="1fr 72px 56px 90px"
+                px={{ base: 3, md: 6 }}
+                py={2}
+                bg="#1a3a5c"
+              >
+                {['SERVICE', 'QTY', 'MIN', 'CITY'].map((col) => (
+                  <Text key={col} fontSize="11px" fontWeight="700" color="white" letterSpacing="0.05em">
+                    {col}
+                  </Text>
+                ))}
+              </Box>
+
+              {/* Table Rows — RED (below min) first, then GREEN (at/above min) */}
+
+              {/* RED rows: items from minQtyWarning.items where requested < minimum */}
+              {minQtyWarning.items.map((item, i) => {
+                if (item.requested >= item.minimum) return null; // skip — will render in green section
+                const dashIdx = item.description.lastIndexOf(' - ');
+                const servicePart = dashIdx !== -1 ? item.description.slice(0, dashIdx) : item.description;
+                const cityPart = dashIdx !== -1 ? item.description.slice(dashIdx + 3) : '';
+                return (
+                  <Box
+                    key={`red-${i}`}
+                    display="grid"
+                    gridTemplateColumns="1fr 72px 56px 90px"
+                    px={{ base: 3, md: 6 }}
+                    py={{ base: 2, md: 2 }}
+                    bg="#fff5f5"
+                    borderBottom="1px solid"
+                    borderColor="#fecaca"
+                    borderLeft="3px solid #c0392b"
+                    alignItems="center"
+                  >
+                    <Text fontSize={{ base: "11px", md: "12px" }} fontWeight="600" color="#2d3436" pr={2} lineHeight="1.4">
+                      {servicePart}
                     </Text>
+                    <Box>
                       {editingItemIndex === i ? (
-                        <Box mt={1.5}>
-                          <HStack spacing={1.5} align="center">
-                            <Input
-                              size="xs"
-                              type="number"
-                              value={editedQuantity}
-                              onChange={(e) => setEditedQuantity(e.target.value)}
-                              placeholder="Qty"
-                              fontSize={{ base: "12px", md: "12px" }}
-                              h={{ base: "32px", md: "30px" }}
-                              w={{ base: "90px", md: "100px" }}
-                              borderColor="#c0392b"
-                              borderWidth="1.5px"
-                              borderRadius="8px"
-                              _focus={{ borderColor: "#c0392b", boxShadow: "0 0 0 1px #c0392b" }}
-                              textAlign="center"
-                              autoFocus
-                            />
-                            <Button
-                              size="xs"
-                              bg="#1a3a5c"
-                              color="white"
-                              onClick={() => handleSaveEditedQuantity(i)}
-                              fontSize="11px"
-                              h={{ base: "32px", md: "30px" }}
-                              w="fit-content"
-                              minW="44px"
-                              px={3}
-                              borderRadius="8px"
-                              _hover={{ bg: '#1e4d78' }}
-                            >
-                              Save
-                            </Button>
-                            <Button
-                              size="xs"
-                              variant="ghost"
-                              color="gray.500"
-                              onClick={handleCancelEdit}
-                              fontSize="11px"
-                              h={{ base: "32px", md: "30px" }}
-                              w="fit-content"
-                              minW="52px"
-                              px={2}
-                              borderRadius="8px"
-                            >
-                              Cancel
-                            </Button>
-                          </HStack>
-                        </Box>
+                        <HStack spacing={1} align="center">
+                          <input
+                            type="number"
+                            value={editedQuantity}
+                            onChange={(e) => setEditedQuantity(e.target.value)}
+                            placeholder="Qty"
+                            autoFocus
+                            style={{ color: '#2d3436', WebkitTextFillColor: '#2d3436', backgroundColor: 'white', fontSize: '13px', height: '26px', width: '64px', border: '1.5px solid #c0392b', borderRadius: '6px', textAlign: 'center', outline: 'none', padding: '0 4px' }}
+                          />
+                          <Button size="xs" bg="#1a3a5c" color="white" onClick={() => handleSaveEditedQuantity(i)} fontSize="10px" h="26px" minW="32px" px={1.5} borderRadius="6px" _hover={{ bg: '#1e4d78' }}>✓</Button>
+                          <Button size="xs" variant="ghost" color="gray.500" onClick={handleCancelEdit} fontSize="10px" h="26px" minW="24px" px={1} borderRadius="6px">✕</Button>
+                        </HStack>
                       ) : (
-                        <Text 
-                          fontSize={{ base: "11px", md: "12px" }} 
-                          color="#636e72" 
-                          mt={1}
-                          lineHeight="1.5"
-                        >
-                          Minimum: <b>{item.minimum}</b> units | You requested: <b>{item.requested}</b> units
-                        </Text>
+                        <HStack spacing={1} align="center">
+                          <Text fontSize={{ base: "12px", md: "13px" }} fontWeight="700" color="#c0392b">{item.requested}</Text>
+                          <IconButton aria-label="Edit quantity" icon={<FiEdit2 />} size="xs" variant="ghost" color="#1a3a5c" onClick={() => handleEditItemQuantity(i)} _hover={{ bg: 'gray.100' }} fontSize="11px" w="20px" h="20px" minW="20px" />
+                        </HStack>
                       )}
+                    </Box>
+                    <Text fontSize={{ base: "12px", md: "13px" }} fontWeight="600" color="#c0392b">{item.minimum}</Text>
+                    <Text fontSize={{ base: "11px", md: "12px" }} fontWeight="600" color="#2980b9">{cityPart || '—'}</Text>
                   </Box>
-                  {editingItemIndex !== i && (
-                    <IconButton
-                      aria-label="Edit quantity"
-                      icon={<FiEdit2 />}
-                      size="xs"
-                      variant="ghost"
-                      color="#1a3a5c"
-                      onClick={() => handleEditItemQuantity(i)}
-                      _hover={{ bg: 'gray.100' }}
-                      fontSize={{ base: "14px", md: "13px" }}
-                      flexShrink={0}
-                      w={{ base: "28px", md: "24px" }}
-                      h={{ base: "28px", md: "24px" }}
-                      minW={{ base: "28px", md: "24px" }}
-                    />
-                  )}
-                </Box>
-              ))}
+                );
+              })}
+
+              {/* GREEN rows: items from minQtyWarning.items that were edited to >= minimum */}
+              {minQtyWarning.items.map((item, i) => {
+                if (item.requested < item.minimum) return null; // skip — already shown in red section
+                const dashIdx = item.description.lastIndexOf(' - ');
+                const servicePart = dashIdx !== -1 ? item.description.slice(0, dashIdx) : item.description;
+                const cityPart = dashIdx !== -1 ? item.description.slice(dashIdx + 3) : '';
+                return (
+                  <Box
+                    key={`green-edited-${i}`}
+                    display="grid"
+                    gridTemplateColumns="1fr 72px 56px 90px"
+                    px={{ base: 3, md: 6 }}
+                    py={{ base: 2, md: 2 }}
+                    bg="#f0fff4"
+                    borderBottom="1px solid"
+                    borderColor="#bbf7d0"
+                    borderLeft="3px solid #27ae60"
+                    alignItems="center"
+                  >
+                    <Text fontSize={{ base: "11px", md: "12px" }} fontWeight="600" color="#2d3436" pr={2} lineHeight="1.4">{servicePart}</Text>
+                    <Box>
+                      {editingItemIndex === i ? (
+                        <HStack spacing={1} align="center">
+                          <input
+                            type="number"
+                            value={editedQuantity}
+                            onChange={(e) => setEditedQuantity(e.target.value)}
+                            placeholder="Qty"
+                            autoFocus
+                            style={{ color: '#2d3436', WebkitTextFillColor: '#2d3436', backgroundColor: 'white', fontSize: '13px', height: '26px', width: '64px', border: '1.5px solid #27ae60', borderRadius: '6px', textAlign: 'center', outline: 'none', padding: '0 4px' }}
+                          />
+                          <Button size="xs" bg="#1a3a5c" color="white" onClick={() => handleSaveEditedQuantity(i)} fontSize="10px" h="26px" minW="32px" px={1.5} borderRadius="6px" _hover={{ bg: '#1e4d78' }}>✓</Button>
+                          <Button size="xs" variant="ghost" color="gray.500" onClick={handleCancelEdit} fontSize="10px" h="26px" minW="24px" px={1} borderRadius="6px">✕</Button>
+                        </HStack>
+                      ) : (
+                        <HStack spacing={1} align="center">
+                          <Text fontSize={{ base: "12px", md: "13px" }} fontWeight="700" color="#27ae60">{item.requested}</Text>
+                          <IconButton aria-label="Edit quantity" icon={<FiEdit2 />} size="xs" variant="ghost" color="#1a3a5c" onClick={() => handleEditItemQuantity(i)} _hover={{ bg: 'gray.100' }} fontSize="11px" w="20px" h="20px" minW="20px" />
+                        </HStack>
+                      )}
+                    </Box>
+                    <Text fontSize={{ base: "12px", md: "13px" }} fontWeight="600" color="#27ae60">{item.minimum}</Text>
+                    <Text fontSize={{ base: "11px", md: "12px" }} fontWeight="600" color="#2980b9">{cityPart || '—'}</Text>
+                  </Box>
+                );
+              })}
+
+              {/* GREEN rows: original above-min items — display only, no edit icons */}
+              {(minQtyWarning.aboveMinItems || []).map((item, i) => {
+                const dashIdx = item.description.lastIndexOf(' - ');
+                const servicePart = dashIdx !== -1 ? item.description.slice(0, dashIdx) : item.description;
+                const cityPart = dashIdx !== -1 ? item.description.slice(dashIdx + 3) : '';
+                return (
+                  <Box
+                    key={`green-above-${i}`}
+                    display="grid"
+                    gridTemplateColumns="1fr 72px 56px 90px"
+                    px={{ base: 3, md: 6 }}
+                    py={{ base: 2, md: 2 }}
+                    bg="#f0fff4"
+                    borderBottom="1px solid"
+                    borderColor="#bbf7d0"
+                    borderLeft="3px solid #27ae60"
+                    alignItems="center"
+                  >
+                    <Text fontSize={{ base: "11px", md: "12px" }} fontWeight="600" color="#2d3436" pr={2} lineHeight="1.4">{servicePart}</Text>
+                    <Text fontSize={{ base: "12px", md: "13px" }} fontWeight="700" color="#27ae60">{item.requested}</Text>
+                    <Text fontSize={{ base: "12px", md: "13px" }} fontWeight="600" color="#27ae60">{item.minimum}</Text>
+                    <Text fontSize={{ base: "11px", md: "12px" }} fontWeight="600" color="#2980b9">{cityPart || '—'}</Text>
+                  </Box>
+                );
+              })}
             </Box>
 
             {/* Sticky Footer */}

@@ -48,6 +48,20 @@ function titleCaseService(name: string): string {
   return name.split(' ').map(w => w.charAt(0).toUpperCase() + w.slice(1).toLowerCase()).join(' ');
 }
 
+/** Plural → singular map for vehicle/category keywords only. */
+const PLURAL_NORMALIZE_MAP: Record<string, string> = {
+  buses: 'bus',
+  autos: 'auto',
+  cabs: 'cab',
+  tempos: 'tempo',
+  vans: 'van',
+  hoardings: 'hoarding',
+  shelters: 'shelter',
+  vehicles: 'vehicle',
+  trains: 'train',
+  billboards: 'billboard',
+};
+
 /** Extract meaningful query words (supports single-word queries like "bus"). */
 export function extractQueryWords(query: string): string[] {
   return query
@@ -56,7 +70,8 @@ export function extractQueryWords(query: string): string[] {
     .toLowerCase()
     .trim()
     .split(/\s+/)
-    .filter((w) => w.length >= 2);
+    .filter((w) => w.length >= 2)
+    .map((w) => PLURAL_NORMALIZE_MAP[w] ?? w);
 }
 
 /** True when the user typed a category (e.g. "bus") rather than a full service name. */
