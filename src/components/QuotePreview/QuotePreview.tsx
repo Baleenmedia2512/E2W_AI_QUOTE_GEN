@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+﻿import React, { useState, useEffect } from 'react';
 import {
   Box,
   Button,
@@ -100,9 +100,11 @@ const QuotePreview: React.FC<QuotePreviewProps> = ({ quote, onUpdate, onSave }) 
       id: item.id,
       description: item.description,
       quantity: item.quantity,
+      quantityUnit: item.quantityUnit,
       unitPrice: item.rate,
       duration: item.duration,
       durationUnit: item.durationUnit,
+      durationLabel: item.durationLabel,
       durationIsAuto: item.durationIsAuto,
       total: item.total,
       remark: item.remark
@@ -161,13 +163,17 @@ const QuotePreview: React.FC<QuotePreviewProps> = ({ quote, onUpdate, onSave }) 
           if (!item.durationUnit) item.durationUnit = 'months';
           item.durationIsAuto = false;
         } else {
-          item.duration = undefined;
-          item.durationUnit = undefined;
+          // Keep duration as 0 so the input stays visible; clear unit/auto flags
+          item.duration = 0;
           item.durationIsAuto = undefined;
         }
         item.total = item.quantity * item.rate * lineItemPricingMultiplier(item);
       } else if (field === 'remark') {
         item.remark = value;
+      } else if (field === 'quantityUnit') {
+        item.quantityUnit = value;
+      } else if (field === 'durationLabel') {
+        item.durationLabel = value;
       }
     }
     
@@ -500,6 +506,26 @@ const QuotePreview: React.FC<QuotePreviewProps> = ({ quote, onUpdate, onSave }) 
                                 _focus={{ borderColor: '#750926', boxShadow: '0 0 0 1px #750926' }}
                               />
                             </NumberInput>
+                            <Input
+                              value={lineItem.quantityUnit || ''}
+                              onChange={(e) => updateLineItem(itemIndex, lineItemIndex, 'quantityUnit' as keyof LineItem, e.target.value)}
+                              placeholder="unit label"
+                              size="xs"
+                              mt="5px"
+                              textAlign="center"
+                              bg="#f4f6f8"
+                              border="1px dashed"
+                              borderColor="gray.300"
+                              borderRadius="4px"
+                              h="22px"
+                              fontSize="11px"
+                              fontStyle="italic"
+                              color="gray.600"
+                              fontWeight="500"
+                              _placeholder={{ color: 'gray.400', fontStyle: 'italic' }}
+                              _hover={{ bg: 'white', borderColor: 'red.400', borderStyle: 'solid' }}
+                              _focus={{ bg: 'white', borderColor: 'red.500', borderStyle: 'solid', boxShadow: '0 0 0 3px rgba(201,31,61,0.15)' }}
+                            />
                           </Box>
                           <Box flex={1}>
                             <Text fontSize="11px" fontWeight="600" color="gray.500" textTransform="uppercase" letterSpacing="0.5px" mb={1}>
@@ -541,13 +567,12 @@ const QuotePreview: React.FC<QuotePreviewProps> = ({ quote, onUpdate, onSave }) 
                             <Text fontSize="11px" fontWeight="600" color="gray.500" textTransform="uppercase" letterSpacing="0.5px" mb={1} title="Campaign duration in months or days">
                               Duration
                             </Text>
-                            {shouldShowDuration(lineItem) ? (
                             <NumberInput
-                              value={lineItem.duration}
+                              value={lineItem.duration ?? ''}
                               onChange={(_, value) =>
                                 updateLineItem(itemIndex, lineItemIndex, 'duration' as keyof LineItem, value)
                               }
-                              min={1}
+                              min={0}
                               size="sm"
                             >
                               <NumberInputField
@@ -561,9 +586,26 @@ const QuotePreview: React.FC<QuotePreviewProps> = ({ quote, onUpdate, onSave }) 
                                   _focus={{ borderColor: '#750926', boxShadow: '0 0 0 1px #750926' }}
                                 />
                               </NumberInput>
-                            ) : (
-                              <Text fontSize="sm" color="gray.400" textAlign="right" pt={2}>—</Text>
-                            )}
+                              <Input
+                                value={lineItem.durationLabel || ''}
+                                onChange={(e) => updateLineItem(itemIndex, lineItemIndex, 'durationLabel' as keyof LineItem, e.target.value)}
+                                placeholder="unit label"
+                                size="xs"
+                                mt="5px"
+                                textAlign="center"
+                                bg="#f4f6f8"
+                                border="1px dashed"
+                                borderColor="gray.300"
+                                borderRadius="4px"
+                                h="22px"
+                                fontSize="11px"
+                                fontStyle="italic"
+                                color="gray.600"
+                                fontWeight="500"
+                                _placeholder={{ color: 'gray.400', fontStyle: 'italic' }}
+                                _hover={{ bg: 'white', borderColor: 'red.400', borderStyle: 'solid' }}
+                                _focus={{ bg: 'white', borderColor: 'red.500', borderStyle: 'solid', boxShadow: '0 0 0 3px rgba(201,31,61,0.15)' }}
+                              />
                             </Box>
                           )}
                         </Flex>
@@ -659,7 +701,7 @@ const QuotePreview: React.FC<QuotePreviewProps> = ({ quote, onUpdate, onSave }) 
                                 py={2}
                               />
                             </Td>
-                            <Td isNumeric>
+                            <Td isNumeric verticalAlign="top">
                               <NumberInput
                                 value={lineItem.quantity}
                                 onChange={(_, value) =>
@@ -677,6 +719,26 @@ const QuotePreview: React.FC<QuotePreviewProps> = ({ quote, onUpdate, onSave }) 
                                   px={2}
                                 />
                               </NumberInput>
+                              <Input
+                                value={lineItem.quantityUnit || ''}
+                                onChange={(e) => updateLineItem(itemIndex, lineItemIndex, 'quantityUnit' as keyof LineItem, e.target.value)}
+                                placeholder="unit label"
+                                size="xs"
+                                mt="5px"
+                                textAlign="center"
+                                bg="#f4f6f8"
+                                border="1px dashed"
+                                borderColor="gray.300"
+                                borderRadius="4px"
+                                h="22px"
+                                fontSize="11px"
+                                fontStyle="italic"
+                                color="gray.600"
+                                fontWeight="500"
+                                _placeholder={{ color: 'gray.400', fontStyle: 'italic' }}
+                                _hover={{ bg: 'white', borderColor: '#750926', borderStyle: 'solid' }}
+                                _focus={{ bg: 'white', borderColor: '#750926', borderStyle: 'solid', boxShadow: '0 0 0 1px #750926' }}
+                              />
                             </Td>
                             <Td isNumeric>
                               <NumberInput
@@ -709,14 +771,13 @@ const QuotePreview: React.FC<QuotePreviewProps> = ({ quote, onUpdate, onSave }) 
                               </NumberInput>
                             </Td>
                             {showDurationColumn && (
-                            <Td isNumeric>
-                              {shouldShowDuration(lineItem) ? (
+                            <Td isNumeric verticalAlign="top">
                               <NumberInput
-                                value={lineItem.duration}
+                                value={lineItem.duration ?? ''}
                                 onChange={(_, value) =>
                                   updateLineItem(itemIndex, lineItemIndex, 'duration' as keyof LineItem, value)
                                 }
-                                min={1}
+                                min={0}
                                 size="sm"
                               >
                                 <NumberInputField
@@ -729,9 +790,26 @@ const QuotePreview: React.FC<QuotePreviewProps> = ({ quote, onUpdate, onSave }) 
                                   title="Campaign months or days"
                                   />
                                 </NumberInput>
-                              ) : (
-                                <Text fontSize="sm" color="gray.400">—</Text>
-                              )}
+                                <Input
+                                  value={lineItem.durationLabel || ''}
+                                  onChange={(e) => updateLineItem(itemIndex, lineItemIndex, 'durationLabel' as keyof LineItem, e.target.value)}
+                                  placeholder="unit label"
+                                  size="xs"
+                                  mt="5px"
+                                  textAlign="center"
+                                  bg="#f4f6f8"
+                                  border="1px dashed"
+                                  borderColor="gray.300"
+                                  borderRadius="4px"
+                                  h="22px"
+                                  fontSize="11px"
+                                  fontStyle="italic"
+                                  color="gray.600"
+                                  fontWeight="500"
+                                  _placeholder={{ color: 'gray.400', fontStyle: 'italic' }}
+                                  _hover={{ bg: 'white', borderColor: '#750926', borderStyle: 'solid' }}
+                                  _focus={{ bg: 'white', borderColor: '#750926', borderStyle: 'solid', boxShadow: '0 0 0 1px #750926' }}
+                                />
                               </Td>
                             )}
                             <Td isNumeric fontWeight="500">
