@@ -2,7 +2,9 @@ import { canonicalizeServiceName } from '../hooks/useCityServiceRegistry';
 import {
   ConfirmationRow,
   FULL_SERVICE_PATTERNS,
+  MinQtyViolation,
   dedupeConfirmationRows,
+  validateConfirmationRowsMinQty,
 } from './cloudQuoteValidation';
 import { DbService, resolveServiceIdFromCatalog } from './serviceResolver';
 
@@ -29,6 +31,51 @@ export function labelsToConfirmRows(labels: string[]): ConfirmationRow[] {
   return dedupeConfirmationRows(
     labels.map(parseConfirmedLabelToRow).filter((r): r is ConfirmationRow => r != null),
   );
+}
+
+export type MinQtyGateResult =
+  | { type: 'confirm'; rows: ConfirmationRow[] }
+  | { type: 'min_qty'; rows: ConfirmationRow[]; violations: MinQtyViolation[] };
+
+/** Min-qty check before opening the confirm table. */
+export function gateMinQtyBeforeConfirm(
+  rows: ConfirmationRow[],
+  services: DbService[],
+): MinQtyGateResult {
+  const deduped = dedupeConfirmationRows(rows);
+  if (!services.length) {
+    return { type: 'confirm', rows: deduped };
+  }
+  const violations = validateConfirmationRowsMinQty(deduped, services);
+  if (violations.length > 0) {
+    return { type: 'min_qty', rows: deduped, violations };
+  }
+  return { type: 'confirm', rows: deduped };
+}
+
+/** Parse pending quote text (modal / legacy paths) into confirm rows. */
+export function parseMessageToConfirmRows(message: string): ConfirmationRow[] {
+  const cleaned = message
+    .replace(/^generate\s+quote\s+for\s+/i, '')
+    .replace(/\s*\[User has already specified complete service names from checkboxes\]/g, '')
+    .replace(/\s*\[QTY_OVERRIDE\]/g, '')
+    .replace(/\s+for\s+\d+\s*(days?|months?)\s*$/i, '')
+    .trim();
+
+  if (!cleaned) return [];
+
+  const parts = cleaned.split(/\s+and\s+/i).map((p) => p.trim()).filter(Boolean);
+  const fromLabels = labelsToConfirmRows(parts);
+  if (fromLabels.length > 0) return fromLabels;
+
+  const parsed: ConfirmationRow[] = [];
+  for (const part of parts) {
+    const m = part.match(/^(\d+)\s+(.+?)\s+([A-Za-z][A-Za-z\s]+)$/);
+    if (m) {
+      parsed.push({ service: m[2].trim(), qty: parseInt(m[1], 10), city: m[3].trim() });
+    }
+  }
+  return dedupeConfirmationRows(parsed);
 }
 
 /** Keep only DB rows that match confirmed service + city pairs. */

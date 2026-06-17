@@ -2,129 +2,27 @@ import { Quote, QuoteItem } from '../types/quote';
 import {
   ConfirmationRow,
   dedupeConfirmationRows,
-  getMinQuantityFromDbService,
 } from './cloudQuoteValidation';
 import {
-  DbMetadataLike,
-  enrichQuoteItemsDurationFromDb,
-  resolveQuoteLineDuration,
-} from './durationUtils';
+  buildLineItemsFromDbPricing,
+  hasQuotablePricing,
+} from './dbPricingUtils';
+import { enrichQuoteItemsDurationFromDb } from './durationUtils';
 import { DEFAULT_GENERAL_TERMS } from './quoteGrouping';
 import { DbService, resolveServiceIdFromCatalog } from './serviceResolver';
 import { hydrateQuoteTermsFromCatalog } from './termsHydration';
-
-interface DbPricing {
-  structure?: string;
-  display_price?: number;
-  production_price?: number;
-  display_period?: string;
-  production_unit?: string;
-  unit_price?: number;
-  price?: number;
-  combined_price?: number;
-  total_price?: number;
-  period?: string;
-  min_quantity?: number;
-  unit?: string;
-}
 
 export type BuildQuoteFromDbResult =
   | { success: true; quote: Quote }
   | { success: false; message: string; unresolved: string[] };
 
-function readNumber(...values: unknown[]): number {
-  for (const v of values) {
-    if (v == null || v === '') continue;
-    const n = Number(v);
-    if (Number.isFinite(n) && n >= 0) return n;
-  }
-  return 0;
-}
-
-function buildLineItemsFromDbService(
-  svc: DbService,
-  quantity: number,
-  userMessage: string,
-  sectionIndex: number,
-): QuoteItem[] {
-  const m = svc.metadata || {};
-  const pricing = (m.pricing || {}) as DbPricing;
-  const serviceName = svc.service_name;
-  const meta = m as DbMetadataLike;
-  const minQty = getMinQuantityFromDbService(svc) ?? undefined;
-  const items: QuoteItem[] = [];
-  let lineIndex = 0;
-
-  const mkId = () => `${sectionIndex}-${lineIndex++}`;
-
-  const addLine = (description: string, rate: number, qty: number, isRecurring: boolean) => {
-    const resolved = resolveQuoteLineDuration({ description }, userMessage, meta);
-    const mult = isRecurring ? resolved.multiplier : 1;
-    items.push({
-      id: mkId(),
-      title: serviceName,
-      description,
-      serviceId: svc.service_id,
-      serviceName,
-      quantity: qty,
-      rate,
-      duration: isRecurring ? resolved.duration : undefined,
-      durationUnit: isRecurring ? resolved.durationUnit : undefined,
-      durationIsAuto: isRecurring ? resolved.isAutoFromDb : undefined,
-      total: qty * rate * mult,
-      minimumQuantity: minQty,
-    });
-  };
-
-  if (pricing.structure === 'separate' || (pricing.display_price && pricing.production_price)) {
-    const displayPeriod = pricing.display_period || pricing.period || 'per month';
-    addLine(
-      `${serviceName} - Display Price (${displayPeriod})`,
-      readNumber(pricing.display_price),
-      quantity,
-      true,
-    );
-    const prodUnit = pricing.production_unit || 'per unit';
-    addLine(
-      `${serviceName} - Printing & Fixing Price (${prodUnit})`,
-      readNumber(pricing.production_price),
-      quantity,
-      false,
-    );
-    return items;
-  }
-
-  if (pricing.structure === 'campaign' || (pricing.unit_price && pricing.min_quantity)) {
-    const unitPrice = readNumber(pricing.unit_price, (m as { unit_price?: number }).unit_price);
-    const period = pricing.period || String((m as { duration?: string }).duration || '').trim();
-    addLine(
-      `${serviceName} - Unit Price${period ? ` (${period})` : ''}`,
-      unitPrice,
-      quantity,
-      true,
-    );
-    return items;
-  }
-
-  const price = readNumber(
-    pricing.price,
-    pricing.unit_price,
-    pricing.combined_price,
-    pricing.total_price,
-    (m as { unit_price?: number }).unit_price,
-  );
-  const period =
-    pricing.period ||
-    pricing.display_period ||
-    String((m as { duration?: string }).duration || '').trim() ||
-    'per month';
-  addLine(`${serviceName} - Rental Price (${period})`, price, quantity, true);
-  return items;
+function titleCaseCity(city: string): string {
+  return city.charAt(0).toUpperCase() + city.slice(1);
 }
 
 /**
  * Build a complete Quote from confirm-table rows using proposal_chunks DB metadata.
- * No Gemini — service_id, pricing, and terms come from the catalog.
+ * No Gemini — service_id, pricing, terms, and city come from the catalog.
  */
 export function buildQuoteFromConfirmedRows(
   rows: ConfirmationRow[],
@@ -140,6 +38,8 @@ export function buildQuoteFromConfirmedRows(
     const qty =
       typeof row.qty === 'number' ? row.qty : parseInt(String(row.qty), 10) || 1;
     const cityHint = row.city && row.city !== '—' ? row.city : null;
+    const cityLabel = cityHint ? titleCaseCity(cityHint) : undefined;
+
     const resolved = resolveServiceIdFromCatalog(row.service, services, cityHint);
     if (!resolved) {
       unresolved.push(`${row.service} (${row.city})`);
@@ -152,7 +52,12 @@ export function buildQuoteFromConfirmedRows(
       continue;
     }
 
-    const lineItems = buildLineItemsFromDbService(
+    if (!hasQuotablePricing(svc)) {
+      unresolved.push(`${row.service} (${row.city}) — no pricing in DB`);
+      continue;
+    }
+
+    const lineItems = buildLineItemsFromDbPricing(
       svc,
       qty,
       originalUserInput,
@@ -165,7 +70,9 @@ export function buildQuoteFromConfirmedRows(
       continue;
     }
 
-    allItems.push(...lineItems);
+    for (const line of lineItems) {
+      allItems.push({ ...line, city: cityLabel });
+    }
   }
 
   if (unresolved.length > 0) {
@@ -190,7 +97,10 @@ export function buildQuoteFromConfirmedRows(
     services,
   );
   const hydrated = hydrateQuoteTermsFromCatalog(enriched, '', services);
-  const quoteItems = hydrated.items;
+  const quoteItems = hydrated.items.map((item) => ({
+    ...item,
+    city: item.city || enriched.find((e) => e.id === item.id)?.city,
+  }));
 
   const finalTerms = hydrated.hydratedFromDb
     ? hydrated.termsAndConditions

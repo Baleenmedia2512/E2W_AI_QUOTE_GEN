@@ -34,6 +34,8 @@ export interface QuoteItem {
   serviceId?: string;
   /** Canonical service name from proposal_chunks */
   serviceName?: string;
+  /** Campaign city (e.g. Chennai) — used for multi-location PDF sections */
+  city?: string;
 }
 
 export interface Quote {

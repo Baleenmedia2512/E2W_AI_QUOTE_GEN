@@ -2,9 +2,40 @@ import { QuoteItem } from '../types/quote';
 
 export interface ServiceGroup {
   serviceType: string;
+  /** City label when quote spans multiple locations (e.g. "Chennai") */
+  city?: string;
   items: QuoteItem[];
   subtotal: number;
   termsAndConditions?: string;
+}
+
+/** Unique group key: city + service when city is set, else service only. */
+export function getQuoteItemGroupKey(item: QuoteItem): string {
+  const serviceType = extractServiceType(item.description);
+  const city = item.city?.trim().toLowerCase();
+  if (city && city !== '—') {
+    return `${city}|${serviceType.toLowerCase()}`;
+  }
+  return serviceType.toLowerCase();
+}
+
+/** True when quote items span more than one city. */
+export function quoteHasMultipleCities(items: QuoteItem[]): boolean {
+  const cities = new Set(
+    items
+      .map((i) => i.city?.trim().toLowerCase())
+      .filter((c) => c && c !== '—'),
+  );
+  return cities.size > 1;
+}
+
+/** Prefix description with city on summary tables when multiple cities present. */
+export function formatQuoteItemDescription(item: QuoteItem, showCity: boolean): string {
+  if (!showCity || !item.city?.trim() || item.city === '—') {
+    return item.description;
+  }
+  const cityLabel = item.city.charAt(0).toUpperCase() + item.city.slice(1);
+  return `${cityLabel} — ${item.description}`;
 }
 
 /**
@@ -93,21 +124,23 @@ export function extractServiceType(description: string): string {
  */
 export function groupItemsByServiceType(items: QuoteItem[]): ServiceGroup[] {
   const groups = new Map<string, QuoteItem[]>();
-  
-  items.forEach(item => {
-    const serviceType = extractServiceType(item.description);
-    if (!groups.has(serviceType)) {
-      groups.set(serviceType, []);
+
+  items.forEach((item) => {
+    const key = getQuoteItemGroupKey(item);
+    if (!groups.has(key)) {
+      groups.set(key, []);
     }
-    groups.get(serviceType)!.push(item);
+    groups.get(key)!.push(item);
   });
-  
-  // Convert to array and calculate subtotals
-  return Array.from(groups.entries()).map(([serviceType, groupItems]) => ({
-    serviceType,
+
+  return Array.from(groups.values()).map((groupItems) => ({
+    serviceType: extractServiceType(groupItems[0].description),
+    city: groupItems[0].city?.trim() && groupItems[0].city !== '—'
+      ? groupItems[0].city
+      : undefined,
     items: groupItems,
     subtotal: groupItems.reduce((sum, item) => sum + item.total, 0),
-    termsAndConditions: groupItems[0]?.termsAndConditions
+    termsAndConditions: groupItems[0]?.termsAndConditions,
   }));
 }
 
@@ -115,11 +148,8 @@ export function groupItemsByServiceType(items: QuoteItem[]): ServiceGroup[] {
  * Check if quote has multiple service types
  */
 export function isMultiServiceQuote(items: QuoteItem[]): boolean {
-  const serviceTypes = new Set<string>();
-  items.forEach(item => {
-    serviceTypes.add(extractServiceType(item.description));
-  });
-  return serviceTypes.size > 1;
+  const keys = new Set(items.map(getQuoteItemGroupKey));
+  return keys.size > 1;
 }
 
 /**
@@ -366,5 +396,9 @@ export function filterNotesByServiceType(notes: string | undefined, serviceType:
  * "Bus Shelter Panel - Lit") so we return it directly.
  */
 export function getServiceGroupHeading(group: ServiceGroup): string {
+  if (group.city?.trim() && group.city !== '—') {
+    const cityLabel = group.city.charAt(0).toUpperCase() + group.city.slice(1);
+    return `${cityLabel} — ${group.serviceType}`;
+  }
   return group.serviceType;
 }

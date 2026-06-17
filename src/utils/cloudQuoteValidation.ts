@@ -6,6 +6,7 @@ import {
   extractServiceNameFromItem,
   resolveServiceIdFromCatalog,
 } from './serviceResolver';
+import { hasQuotablePricing, pickPreferredDbService } from './dbPricingUtils';
 
 /** Known city keys used across the app (lowercase). DB locations may add more at runtime. */
 export const CLOUD_CITY_KEYS = [
@@ -194,17 +195,20 @@ export function serviceMatchesQuery(svc: DbService, words: string[]): boolean {
   return words.every((w) => name.includes(w));
 }
 
-/** Deduplicate DB rows by canonical service name. */
+/** Deduplicate DB rows by canonical service name; prefer rows with complete pricing. */
 export function dedupeDbServices(services: DbService[]): DbService[] {
-  const seen = new Set<string>();
-  const out: DbService[] = [];
+  const byKey = new Map<string, DbService>();
   for (const svc of services) {
     const key = canonicalizeServiceName(svc.service_name || '') || svc.service_id;
-    if (seen.has(key)) continue;
-    seen.add(key);
-    out.push(svc);
+    const existing = byKey.get(key);
+    if (!existing) {
+      byKey.set(key, svc);
+      continue;
+    }
+    const preferred = pickPreferredDbService([existing, svc]);
+    if (preferred) byKey.set(key, preferred);
   }
-  return out;
+  return [...byKey.values()];
 }
 
 /** Strip detected city names from segment text before service matching. */
@@ -226,7 +230,9 @@ export function getCitiesForServiceQuery(query: string, services: DbService[]): 
   const words = extractQueryWords(queryBody);
   if (words.length === 0 || services.length === 0) return [];
 
-  const matched = services.filter((svc) => serviceMatchesQuery(svc, words));
+  const matched = services.filter(
+    (svc) => serviceMatchesQuery(svc, words) && hasQuotablePricing(svc),
+  );
   if (matched.length === 0) return [];
 
   const citySet = new Set<string>();
@@ -249,14 +255,38 @@ export interface CloudSegmentPlan {
   matchedCities?: string[];
 }
 
+/** True when the message has multiple clauses joined by "and" or ",". */
+export function isMultiSegmentQuoteRequest(text: string): boolean {
+  return /,|\band\b/i.test(text.trim());
+}
+
+/** Cities for parsing user-typed city names (catalog + known keys). */
+export function getCityDetectionList(dbServices: DbService[]): string[] {
+  const fromDb = collectCitiesFromDbServices(dbServices);
+  const known = CLOUD_CITY_KEYS.map(titleCaseCity);
+  return mergeCityLists(fromDb, known);
+}
+
 /** Auto-assign city when a segment's service exists in exactly one DB city. */
 export function buildCloudSegmentCityPlan(
   segments: CloudSegmentPlan[],
   dbServices: DbService[],
   forcePickerForSingleCityless: boolean,
 ): CloudSegmentPlan[] {
+  const knownCityLabels = CLOUD_CITY_KEYS.map(titleCaseCity);
+
   return segments.map((seg) => {
     if (!seg.cityNeeded || seg.detectedCity) return seg;
+
+    const typedCity = detectCityInTextList(seg.raw, knownCityLabels);
+    if (typedCity) {
+      return {
+        ...seg,
+        cityNeeded: false,
+        detectedCity: typedCity,
+        matchedCities: getCitiesForSegmentQuery(seg.raw, dbServices),
+      };
+    }
 
     const matchedCities = getCitiesForSegmentQuery(seg.raw, dbServices);
     if (matchedCities.length === 1 && !forcePickerForSingleCityless) {
@@ -289,7 +319,8 @@ export function classifySegmentByDb(
     const exact = matched.find(
       (s) => canonicalizeServiceName(s.service_name || '') === queryCanon,
     );
-    return { state: 'specific', matches: exact ? [exact] : [matched[0]] };
+    const best = exact || pickPreferredDbService(matched);
+    return { state: 'specific', matches: best ? [best] : matched.slice(0, 1) };
   }
 
   return { state: 'vague', matches: matched };
@@ -313,10 +344,12 @@ export function buildCityServiceListFromDb(
   services: DbService[],
 ): { city: string; services: Array<{ name: string; minQty: number }> } | null {
   const matched = dedupeDbServices(
-    services.filter((svc) => {
-      const svcCity = extractCityFromDbService(svc);
-      return svcCity != null && citiesMatch(svcCity, cityKey);
-    }),
+    services
+      .filter((svc) => {
+        const svcCity = extractCityFromDbService(svc);
+        return svcCity != null && citiesMatch(svcCity, cityKey);
+      })
+      .filter(hasQuotablePricing),
   );
   if (matched.length === 0) return null;
 
@@ -423,11 +456,13 @@ export function getMatchingServicesForCity(
   if (words.length === 0 || !city) return [];
 
   return dedupeDbServices(
-    services.filter((svc) => {
-      if (!serviceMatchesQuery(svc, words)) return false;
-      const svcCity = extractCityFromDbService(svc);
-      return svcCity != null && citiesMatch(svcCity, city);
-    }),
+    services
+      .filter((svc) => {
+        if (!serviceMatchesQuery(svc, words)) return false;
+        const svcCity = extractCityFromDbService(svc);
+        return svcCity != null && citiesMatch(svcCity, city);
+      })
+      .filter(hasQuotablePricing),
   );
 }
 

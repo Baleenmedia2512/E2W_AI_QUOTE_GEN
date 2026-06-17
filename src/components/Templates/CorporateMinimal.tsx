@@ -1,7 +1,7 @@
 import React from 'react';
 import { TemplateProps } from '../../types';
 import { ReferenceImages } from './ReferenceImages';
-import { isMultiServiceQuote, groupItemsByServiceType, DEFAULT_GENERAL_TERMS, getServiceGroupHeading, normalizeTermsList, resolveGeneralTermsList, extractServiceType } from '../../utils/quoteGrouping';
+import { isMultiServiceQuote, groupItemsByServiceType, DEFAULT_GENERAL_TERMS, getServiceGroupHeading, normalizeTermsList, resolveGeneralTermsList, extractServiceType, formatQuoteItemDescription, quoteHasMultipleCities } from '../../utils/quoteGrouping';
 import { formatDurationLabel, quoteHasAnyDuration } from '../../utils/durationUtils';
 import './CorporateMinimal.css';
 
@@ -30,6 +30,7 @@ export const CorporateMinimal: React.FC<TemplateProps> = ({ data, editable: _edi
   // Check if this is a multi-service quote
   const isMultiService = quote.items.length > 0 && isMultiServiceQuote(quote.items);
   const serviceGroups = isMultiService ? groupItemsByServiceType(quote.items) : [];
+  const showCityInSummary = quoteHasMultipleCities(quote.items);
 
   const formatCurrency = (amount: number) => {
     return new Intl.NumberFormat('en-IN', {
@@ -77,7 +78,7 @@ export const CorporateMinimal: React.FC<TemplateProps> = ({ data, editable: _edi
   const normalizeTerms = normalizeTermsList;
 
   // Reusable items table with per-item GST breakdown columns
-  const renderItemsTable = (items: typeof quote.items) => {
+  const renderItemsTable = (items: typeof quote.items, prefixCity = false) => {
     const hasDuration = quoteHasAnyDuration(items);
     const hasRemark = items.some(i => i.remark);
     const formatDuration = (item: typeof quote.items[0]) => formatDurationLabel(item);
@@ -108,7 +109,7 @@ export const CorporateMinimal: React.FC<TemplateProps> = ({ data, editable: _edi
             return (
               <tr key={item.id}>
                 <td className="item-description">
-                  <div className="item-title">{item.description}</div>
+                  <div className="item-title">{formatQuoteItemDescription(item, prefixCity)}</div>
                   {item.details && <div className="item-details">{item.details}</div>}
                 </td>
                 <td className="item-quantity">{item.quantity}</td>
@@ -334,9 +335,9 @@ export const CorporateMinimal: React.FC<TemplateProps> = ({ data, editable: _edi
               Executive Pricing Summary
             </h3>
           </div>
-          <div data-pdf-block="table">
-            {renderItemsTable(quote.items)}
-          </div>
+            <div data-pdf-block="table">
+              {renderItemsTable(quote.items, showCityInSummary)}
+            </div>
         </div>
 
         {/* Company Contact Footer */}

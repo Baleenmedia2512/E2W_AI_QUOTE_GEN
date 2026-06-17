@@ -2178,6 +2178,10 @@ const CITY_NAMES = ['chennai', 'madurai', 'coimbatore', 'salem', 'trichy', 'tiru
  */
 function extractCityFromItems(items: QuoteItem[]): string | null {
   for (const item of items) {
+    const fromField = item.city?.trim().toLowerCase();
+    if (fromField && fromField !== '—') return fromField;
+  }
+  for (const item of items) {
     const desc = item.description.toLowerCase();
     for (const city of CITY_NAMES) {
       if (desc.includes(city)) return city;

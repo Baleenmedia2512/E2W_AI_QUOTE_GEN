@@ -42,6 +42,8 @@ import {
   detectCityInTextList,
   detectCityOnlyInList,
   getCitiesForServiceQuery,
+  getCityDetectionList,
+  isMultiSegmentQuoteRequest,
   isVagueCategoryQuery,
   mergeCityLists,
   runCloudPreGeminiValidation,
@@ -52,7 +54,9 @@ import {
 import {
   buildGeminiContextFromDbServices,
   filterDbServicesForConfirmedRows,
+  gateMinQtyBeforeConfirm,
   labelsToConfirmRows,
+  parseMessageToConfirmRows,
   rowsFromCloudBelowMin,
 } from '../../utils/confirmedQuotePipeline';
 import type { DbService } from '../../utils/serviceResolver';
@@ -187,30 +191,24 @@ const ChatInterface: React.FC = () => {
 
   // Unavailable service alert state: shown when a service doesn't exist in a city's rate card
   const [unavailableServices, setUnavailableServices] = useState<Array<{ city: string; service: string }>>([]);
-  // Pending valid message to send to Gemini after user dismisses the unavailable-service alert
+  // Pending valid rows after unavailable-service modal → confirm table → DB quote
+  const [pendingValidConfirm, setPendingValidConfirm] = useState<{
+    rows: Array<{ service: string; qty: number | string; city: string }>;
+    originalUserInput: string;
+    messageId: string;
+  } | null>(null);
+  // Legacy string fallback for partial-valid paths
   const [pendingValidMessage, setPendingValidMessage] = useState<string | null>(null);
   // Alternate message used when user clicks "Use Minimum" on a multi-segment below-min warning.
   // Holds the original message rewritten with each below-min segment's qty bumped to its registry minimum.
   const [pendingMinReplacedMessage, setPendingMinReplacedMessage] = useState<string | null>(null);
+  /** Gemini EXACT_MATCH hint only — cloud gate handles validation first. */
   const isFullySpecifiedRequest = (userRequest: string): boolean => {
-    const request = userRequest.toLowerCase();
-    
-    // Check for multi-city pattern: "CityName qty service, CityName qty service"
-    // e.g. "Chennai 50 auto full branding, Madurai 100 auto semi branding"
-    // Uses KNOWN_CITY_LIST to stay in sync with the rest of the app
-    const commaParts = request.split(',').map(p => p.trim()).filter(p => p.length > 0);
-    if (commaParts.length > 1) {
-      const allPartsHaveCity = commaParts.every(part =>
-        KNOWN_CITY_LIST.some(city => part.startsWith(city))
-      );
-      if (allPartsHaveCity) {
-        console.log('✅ Client-side detection: Multi-city request detected, treating as EXACT_MATCH');
-        return true;
-      }
+    if (isMultiSegmentQuoteRequest(userRequest)) {
+      return false;
     }
-    
-    // Check if request contains complete service specifications
-    // These patterns indicate the user has already specified the full service name
+
+    const request = userRequest.toLowerCase();
     const fullServicePatterns = [
       /bus full branding/i,
       /bus semi branding/i,
@@ -224,16 +222,8 @@ const ChatInterface: React.FC = () => {
       /apartment\s+lift/i,
       /traffic\s+(?:awareness|signal)/i,
     ];
-    
-    // If request matches any full service pattern, it's fully specified
-    const hasFullServiceName = fullServicePatterns.some(pattern => pattern.test(request));
-    
-    if (hasFullServiceName) {
-      console.log('✅ Client-side detection: Request contains full service names, will skip MULTIPLE_MATCH');
-      return true;
-    }
-    
-    return false;
+
+    return fullServicePatterns.some((pattern) => pattern.test(request));
   };
 
   // Extract city names from activeProposals file names (matched against KNOWN_CITY_LIST)
@@ -668,6 +658,62 @@ const ChatInterface: React.FC = () => {
   };
   // ──────────────────────────────────────────────────────────────────────────
 
+  /** Min-qty gate then confirm table (shared: modal proceed, cloud valid segments, checkboxes). */
+  const applyMinQtyGateOrConfirmTable = async (
+    messageId: string,
+    rows: Array<{ service: string; qty: number | string; city: string }>,
+    originalUserInput: string,
+  ) => {
+    let dbServices: DbService[] = [];
+    if (USE_CLOUD_DATA) {
+      try {
+        const { loadAllServicesFromCloud } = await import('../../services/supabaseProposalService');
+        dbServices = (await loadAllServicesFromCloud()) || [];
+      } catch {
+        console.warn('⚠️ Min-qty gate skipped — could not load cloud catalog');
+      }
+    }
+    const gate = gateMinQtyBeforeConfirm(rows, dbServices);
+    if (gate.type === 'min_qty') {
+      setPendingConfirmGeneration({ rows: gate.rows, originalUserInput, messageId });
+      setMinQtyWarning({ items: gate.violations, pendingQuote: null as any });
+    } else {
+      setConfirmationTable({ messageId, rows: gate.rows, originalUserInput });
+    }
+  };
+
+  /** Unavailable modal → proceed with valid services via DB confirm pipeline (not Gemini). */
+  const handleUnavailableProceed = async () => {
+    setUnavailableServices([]);
+
+    if (pendingValidConfirm) {
+      const pending = pendingValidConfirm;
+      setPendingValidConfirm(null);
+      setPendingValidMessage(null);
+      await applyMinQtyGateOrConfirmTable(
+        pending.messageId || Date.now().toString(),
+        pending.rows,
+        pending.originalUserInput,
+      );
+      return;
+    }
+
+    if (pendingValidMessage) {
+      const msg = pendingValidMessage;
+      setPendingValidMessage(null);
+      const rows = parseMessageToConfirmRows(msg);
+      const displayText = msg
+        .replace(/^generate\s+quote\s+for\s+/i, '')
+        .replace(/\s*\[User has already specified complete service names from checkboxes\]/g, '')
+        .replace(/\s*\[QTY_OVERRIDE\]/g, '')
+        .trim();
+      pushToHistory(displayText);
+      if (rows.length > 0) {
+        await applyMinQtyGateOrConfirmTable(Date.now().toString(), rows, displayText);
+      }
+    }
+  };
+
   // Core send logic — accepts text directly, no reliance on inputValue state
   const sendMessageWithContent = async (text: string) => {
     if (!text.trim() || isLoading) return;
@@ -787,13 +833,12 @@ const ChatInterface: React.FC = () => {
 
     let prefetchedDbServices: any[] | null = null;
 
-    // ─── CLOUD CITY GATE (DB-backed — works without local PDFs) ─────────────
+    // ─── CLOUD CITY GATE (DB-backed — all quote requests when catalog loaded) ──
     if (
       USE_CLOUD_DATA &&
       !isQtyOverride &&
       !isCheckboxConfirmedFlag &&
-      isQuoteRequest &&
-      !isFullySpecifiedRequest(cleanedText)
+      isQuoteRequest
     ) {
       try {
         const { loadAllServicesFromCloud } = await import('../../services/supabaseProposalService');
@@ -802,15 +847,16 @@ const ChatInterface: React.FC = () => {
 
         if (dbList.length > 0) {
           const dynamicCities = getMergedDynamicCities(dbList);
-          const isMultiSegment = /,|\band\b/i.test(cleanedText);
+          const cityDetectionList = getCityDetectionList(dbList);
+          const isMultiSegment = isMultiSegmentQuoteRequest(cleanedText);
           const isVagueWhole = isVagueCategoryQuery(cleanedText);
           const knownCityWhole = detectKnownCityInText(cleanedText, dbList);
 
-          // ── Single-segment vague with no city (e.g. "bus") ──
+          // ── Single-segment vague with no city (e.g. "bus") → always city picker ──
           if (!isMultiSegment && isVagueWhole && !knownCityWhole) {
             const cloudCities = getCitiesForServiceQuery(cleanedText, dbList);
 
-            if (cloudCities.length >= 2) {
+            if (cloudCities.length >= 1) {
               const segments: CityPickerSegment[] = [{
                 raw: cleanedText,
                 cityNeeded: true,
@@ -822,7 +868,9 @@ const ChatInterface: React.FC = () => {
               const pickerMsg: Message = {
                 id: pickerMsgId,
                 role: 'assistant',
-                content: '🏙️ This service is available in multiple cities. Please select your city:',
+                content: cloudCities.length >= 2
+                  ? '🏙️ This service is available in multiple cities. Please select your city:'
+                  : '🏙️ Please select your city to see available services:',
                 timestamp: new Date(),
                 isCityPicker: true,
               };
@@ -832,37 +880,16 @@ const ChatInterface: React.FC = () => {
                 messageId: pickerMsgId,
                 originalMessage: cleanedText,
                 segments,
-                availableCities: cloudCities,
+                availableCities: cloudCities.length >= 2 ? cloudCities : dynamicCities,
                 dbServices: dbList,
                 requireServiceSelection: true,
               });
               return;
             }
-
-            if (cloudCities.length === 1) {
-              const qtyMatch = cleanedText.match(/(\d+)/);
-              const qty = qtyMatch ? parseInt(qtyMatch[1], 10) : 1;
-              const group = buildGroupedServicesFromDb(cleanedText, cloudCities[0], qty, dbList);
-              if (group && group.services.length > 0) {
-                const msgId = (Date.now() + 1).toString();
-                const assistantMsg: Message = {
-                  id: msgId,
-                  role: 'assistant',
-                  content: `🔀 Multiple services found in ${cloudCities[0]}. Select all you need:`,
-                  timestamp: new Date(),
-                  isMultipleMatch: true,
-                  groupedServices: [group],
-                  originalUserInput: cleanedText,
-                };
-                setMessages(prev => [...prev, userMessage, assistantMsg]);
-                setInputValue('');
-                return;
-              }
-            }
           }
 
           // ── Multi-segment OR single segment with city in text ──
-          const rawSegments = parseSegmentsForCity(cleanedText, dynamicCities);
+          const rawSegments = parseSegmentsForCity(cleanedText, cityDetectionList);
           const forceCityPickerForSingleCityless =
             rawSegments.length === 1 &&
             rawSegments[0].cityNeeded &&
@@ -913,6 +940,31 @@ const ChatInterface: React.FC = () => {
           if (resolvedRows.length > 0) {
             const cloudResult = runCloudPreGeminiValidation(resolvedRows, dbList);
 
+            // ── Partial invalid FIRST (when no checkbox UI needed) ──
+            if (
+              cloudResult.preAlerts.length > 0 &&
+              cloudResult.vagueGroups.length === 0
+            ) {
+              setMessages(prev => [...prev, userMessage]);
+              setInputValue('');
+              setUnavailableServices(cloudResult.preAlerts);
+              if (cloudResult.validSegmentLabels.length === 0) {
+                return;
+              }
+              const partialRows = labelsToConfirmRows(cloudResult.validSegmentLabels);
+              if (partialRows.length > 0) {
+                setPendingValidConfirm({
+                  rows: partialRows,
+                  originalUserInput: cleanedText,
+                  messageId: userMessage.id,
+                });
+                setPendingValidMessage(null);
+              } else {
+                setPendingValidMessage(cloudResult.validSegmentRaws.join(' and '));
+              }
+              return;
+            }
+
             if (cloudResult.belowMinSegments.length > 0 && !isQtyOverride) {
               setMessages(prev => [...prev, userMessage]);
               const confirmRows = rowsFromCloudBelowMin(
@@ -939,12 +991,24 @@ const ChatInterface: React.FC = () => {
               });
               setPendingValidMessage(null);
               setPendingMinReplacedMessage(null);
-              if (cloudResult.preAlerts.length > 0) setUnavailableServices(cloudResult.preAlerts);
               return;
             }
 
             if (cloudResult.vagueGroups.length > 0) {
-              if (cloudResult.preAlerts.length > 0) setUnavailableServices(cloudResult.preAlerts);
+              if (cloudResult.preAlerts.length > 0) {
+                setUnavailableServices(cloudResult.preAlerts);
+                if (cloudResult.validSegmentLabels.length > 0) {
+                  const partialRows = labelsToConfirmRows(cloudResult.validSegmentLabels);
+                  if (partialRows.length > 0) {
+                    setPendingValidConfirm({
+                      rows: partialRows,
+                      originalUserInput: cleanedText,
+                      messageId: userMessage.id,
+                    });
+                    setPendingValidMessage(null);
+                  }
+                }
+              }
               const assistantId = Date.now().toString();
               const assistantMsg: Message = {
                 id: assistantId,
@@ -963,15 +1027,18 @@ const ChatInterface: React.FC = () => {
               return;
             }
 
-            if (cloudResult.preAlerts.length > 0) {
-              setUnavailableServices(cloudResult.preAlerts);
-              if (cloudResult.validSegmentRaws.length === 0) {
-                setMessages(prev => [...prev, userMessage]);
+            if (
+              cloudResult.validSegmentLabels.length > 0 &&
+              cloudResult.vagueGroups.length === 0 &&
+              cloudResult.belowMinSegments.length === 0
+            ) {
+              setMessages(prev => [...prev, userMessage]);
+              setInputValue('');
+              const confirmRows = labelsToConfirmRows(cloudResult.validSegmentLabels);
+              if (confirmRows.length > 0) {
+                await applyMinQtyGateOrConfirmTable(userMessage.id, confirmRows, cleanedText);
                 return;
               }
-              setMessages(prev => [...prev, userMessage]);
-              setPendingValidMessage(cloudResult.validSegmentRaws.join(' and '));
-              return;
             }
           }
         }
@@ -1238,18 +1305,34 @@ const ChatInterface: React.FC = () => {
           }
         }
 
-        // ── If any below-min segments were collected, surface a single combined warning ──
-        // pendingValidMessage carries the FULL message (all segments) so Continue keeps
-        // every service. pendingMinReplacedMessage carries the same message with each
-        // below-min segment's first number rewritten to its registry minimum.
+        // ── Partial invalid FIRST (when no checkbox UI needed) ──
+        if (preAlerts.length > 0 && vagueSegments.length === 0) {
+          setUnavailableServices(preAlerts);
+          setMessages(prev => [...prev, userMessage]);
+          setInputValue('');
+          if (validSegmentRaws.length === 0) {
+            return;
+          }
+          const partialRows = labelsToConfirmRows(validSegmentLabels);
+          if (partialRows.length > 0) {
+            setPendingValidConfirm({
+              rows: partialRows,
+              originalUserInput: cleanedText,
+              messageId: userMessage.id,
+            });
+            setPendingValidMessage(null);
+          } else {
+            setPendingValidMessage(validSegmentRaws.join(' and '));
+          }
+          return;
+        }
+
+        // ── Below-minimum segments (only when no availability alerts) ──
         if (belowMinSegments.length > 0) {
           setMessages(prev => [...prev, userMessage]);
           const fullMessage = validSegmentRaws.join(' and ');
           let rewritten = fullMessage;
           for (const bm of belowMinSegments) {
-            // Replace the original below-min segment with the same segment whose first
-            // number has been bumped to its minimum. We replace the exact raw substring
-            // to avoid colliding with other segments that share keywords.
             const rewrittenSeg = bm.rawSegment.replace(/\b\d+\b/, String(bm.minQty));
             rewritten = rewritten.replace(bm.rawSegment, rewrittenSeg);
           }
@@ -1264,8 +1347,6 @@ const ChatInterface: React.FC = () => {
           });
           setPendingValidMessage(fullMessage);
           setPendingMinReplacedMessage(rewritten);
-          // Surface availability alerts (if any) at the same time so the user sees the full picture.
-          if (preAlerts.length > 0) setUnavailableServices(preAlerts);
           return;
         }
 
@@ -1299,7 +1380,20 @@ const ChatInterface: React.FC = () => {
           });
 
           if (groupedServices.length > 0) {
-            if (preAlerts.length > 0) setUnavailableServices(preAlerts);
+            if (preAlerts.length > 0) {
+              setUnavailableServices(preAlerts);
+              if (validSegmentLabels.length > 0) {
+                const partialRows = labelsToConfirmRows(validSegmentLabels);
+                if (partialRows.length > 0) {
+                  setPendingValidConfirm({
+                    rows: partialRows,
+                    originalUserInput: cleanedText,
+                    messageId: userMessage.id,
+                  });
+                  setPendingValidMessage(null);
+                }
+              }
+            }
             const assistantId = Date.now().toString();
             const assistantMsg: Message = {
               id: assistantId,
@@ -1314,17 +1408,6 @@ const ChatInterface: React.FC = () => {
             setInputValue('');
             return;
           }
-        }
-
-        if (preAlerts.length > 0) {
-          setUnavailableServices(preAlerts);
-          if (validSegmentRaws.length === 0) {
-            setMessages(prev => [...prev, userMessage]);
-            return;
-          }
-          setMessages(prev => [...prev, userMessage]);
-          setPendingValidMessage(validSegmentRaws.join(' and '));
-          return;
         }
       }
     }
@@ -1551,7 +1634,7 @@ const ChatInterface: React.FC = () => {
             if (!detectKnownCityInText(cleanedText, dbList)) {
             const cloudCities = getCitiesForServiceQuery(cleanedText, dbList);
 
-            if (cloudCities.length >= 2) {
+            if (cloudCities.length >= 1) {
               const segments: CityPickerSegment[] = [{
                 raw: cleanedText,
                 cityNeeded: true,
@@ -1563,7 +1646,9 @@ const ChatInterface: React.FC = () => {
               const pickerMsg: Message = {
                 id: pickerMsgId,
                 role: 'assistant',
-                content: '🏙️ This service is available in multiple cities. Please select your city:',
+                content: cloudCities.length >= 2
+                  ? '🏙️ This service is available in multiple cities. Please select your city:'
+                  : '🏙️ Please select your city to see available services:',
                 timestamp: new Date(),
                 isCityPicker: true,
               };
@@ -1572,26 +1657,12 @@ const ChatInterface: React.FC = () => {
                 messageId: pickerMsgId,
                 originalMessage: cleanedText,
                 segments,
-                availableCities: cloudCities,
+                availableCities: cloudCities.length >= 2 ? cloudCities : getMergedDynamicCities(dbList),
                 dbServices: dbList,
                 requireServiceSelection: true,
               });
               setIsLoading(false);
               return;
-            }
-
-            if (cloudCities.length === 1 && dbList.length > 0) {
-              const qtyMatch = cleanedText.match(/(\d+)/);
-              const qty = qtyMatch ? parseInt(qtyMatch[1], 10) : 1;
-              const group = buildGroupedServicesFromDb(cleanedText, cloudCities[0], qty, dbList);
-              if (group && group.services.length > 0) {
-                assistantMessage.content = `🔀 Multiple services found in ${cloudCities[0]}. Select all you need:`;
-                assistantMessage.groupedServices = [group];
-                assistantMessage.originalUserInput = cleanedText;
-                setMessages(prev => [...prev, assistantMessage]);
-                setIsLoading(false);
-                return;
-              }
             }
             }
           } catch (redirectErr) {
@@ -2128,9 +2199,15 @@ const ChatInterface: React.FC = () => {
         return;
       }
       if (directParts.length > 0) {
-        const durationMatch = pickerSnapshot.originalMessage.match(/(\d+)\s*(days?|months?)/i);
-        const durationSuffix = durationMatch ? ` for ${durationMatch[0]}` : '';
-        setPendingValidMessage(`Generate quote for ${directParts.join(' and ')}${durationSuffix} [User has already specified complete service names from checkboxes]`);
+        const confirmRows = labelsToConfirmRows(directParts as string[]);
+        if (confirmRows.length > 0) {
+          setPendingValidConfirm({
+            rows: confirmRows,
+            originalUserInput: pickerSnapshot.originalMessage,
+            messageId: '',
+          });
+          setPendingValidMessage(null);
+        }
       }
     }
 
@@ -2165,7 +2242,8 @@ const ChatInterface: React.FC = () => {
     if (directParts.length > 0 && groupedServices.length === 0 && !needsGemini) {
       const confirmRows = labelsToConfirmRows(directParts as string[]);
       if (confirmRows.length > 0) {
-        void executeConfirmedGeneration(confirmRows, pickerSnapshot.originalMessage, '');
+        const msgId = (Date.now() + 1).toString();
+        await runMinQtyGateBeforeConfirm(msgId, confirmRows, pickerSnapshot.originalMessage);
         return;
       }
       const durationMatch = pickerSnapshot.originalMessage.match(/(\d+)\s*(days?|months?)/i);
@@ -2319,7 +2397,12 @@ const ChatInterface: React.FC = () => {
           });
           setPendingValidMessage(null);
           setPendingMinReplacedMessage(null);
-          void executeConfirmedGeneration(updatedRows, '', '');
+          const displayText = pending
+            .replace(/^generate\s+quote\s+for\s+/i, '')
+            .replace(/\s*\[User has already specified complete service names from checkboxes\]/g, '')
+            .replace(/\s*\[QTY_OVERRIDE\]/g, '')
+            .trim();
+          openConfirmationTable(Date.now().toString(), updatedRows, displayText);
           return;
         }
         let rewrittenMsg = pending;
@@ -2395,7 +2478,12 @@ const ChatInterface: React.FC = () => {
           });
           setPendingValidMessage(null);
           setPendingMinReplacedMessage(null);
-          void executeConfirmedGeneration(updatedRows, '', '');
+          const displayText = pending
+            .replace(/^generate\s+quote\s+for\s+/i, '')
+            .replace(/\s*\[User has already specified complete service names from checkboxes\]/g, '')
+            .replace(/\s*\[QTY_OVERRIDE\]/g, '')
+            .trim();
+          openConfirmationTable(Date.now().toString(), updatedRows, displayText);
           return;
         }
         let newMsg = pending;
@@ -2583,25 +2671,7 @@ const ChatInterface: React.FC = () => {
     rows: Array<{ service: string; qty: number | string; city: string }>,
     originalUserInput: string,
   ) => {
-    const deduped = dedupeConfirmationRows(rows);
-
-    if (USE_CLOUD_DATA) {
-      try {
-        const { loadAllServicesFromCloud } = await import('../../services/supabaseProposalService');
-        const dbServices = (await loadAllServicesFromCloud()) || [];
-        const violations = validateConfirmationRowsMinQty(deduped, dbServices);
-        if (violations.length > 0) {
-          console.log('⚠️ [MinQty-PreConfirm] Below minimum before confirm table:', violations);
-          setPendingConfirmGeneration({ rows: deduped, originalUserInput, messageId });
-          setMinQtyWarning({ items: violations, pendingQuote: null });
-          return;
-        }
-      } catch (err) {
-        console.warn('⚠️ Min-qty pre-confirm check failed, showing confirm table:', err);
-      }
-    }
-
-    openConfirmationTable(messageId, deduped, originalUserInput);
+    await applyMinQtyGateOrConfirmTable(messageId, rows, originalUserInput);
   };
 
   const handleShowConfirmation = async (messageId: string, groupedServices: any[]) => {
@@ -4418,13 +4488,17 @@ Generate a detailed quote based on the above information.`;
             ))}
 
             {/* Context-aware footer message */}
-            {pendingValidMessage ? (
+            {pendingValidMessage || pendingValidConfirm ? (
               <Box mt={3} mb={4} p={3} bg="#f0fdf4" borderRadius="8px" borderLeft="3px solid #16a34a">
                 <Text fontSize="12.5px" color="#15803d" fontWeight="600">
-                  ✓ Don't worry — we'll still generate the quote for your other available service{pendingValidMessage.toLowerCase().includes(' and ') ? 's' : ''}.
+                  ✓ Don't worry — we'll still generate the quote for your other available service
+                  {(pendingValidConfirm?.rows.length ?? 0) > 1 ||
+                  (pendingValidMessage?.toLowerCase().includes(' and ') ?? false)
+                    ? 's'
+                    : ''}.
                 </Text>
                 <Text fontSize="12px" color="#166534" mt={1}>
-                  Click <b>Close</b> to proceed with the available request.
+                  Click <b>Close &amp; Generate Quote</b> to review and confirm the available service(s).
                 </Text>
               </Box>
             ) : (
@@ -4435,7 +4509,7 @@ Generate a detailed quote based on the above information.`;
             )}
 
             <HStack spacing={3} justify="flex-end">
-              {pendingValidMessage && (
+              {(pendingValidMessage || pendingValidConfirm) && (
                 <Button
                   size="sm"
                   variant="outline"
@@ -4445,6 +4519,7 @@ Generate a detailed quote based on the above information.`;
                   onClick={() => {
                     setUnavailableServices([]);
                     setPendingValidMessage(null);
+                    setPendingValidConfirm(null);
                   }}
                   _hover={{ bg: 'gray.50' }}
                 >
@@ -4453,22 +4528,19 @@ Generate a detailed quote based on the above information.`;
               )}
               <Button
                 size="sm"
-                bg={pendingValidMessage ? '#16a34a' : '#1a3a5c'}
+                bg={pendingValidMessage || pendingValidConfirm ? '#16a34a' : '#1a3a5c'}
                 color="white"
                 borderRadius="8px"
                 onClick={() => {
-                  setUnavailableServices([]);
-                  if (pendingValidMessage) {
-                    const msg = pendingValidMessage;
-                    setPendingValidMessage(null);
-                    // Save prompt so arrow-up can recall it
-                    pushToHistory(msg.replace(/\s*\[User has already specified complete service names from checkboxes\]/g, '').replace(/\s*\[QTY_OVERRIDE\]/g, '').trim());
-                    sendMessageWithContent(msg);
+                  if (pendingValidMessage || pendingValidConfirm) {
+                    void handleUnavailableProceed();
+                  } else {
+                    setUnavailableServices([]);
                   }
                 }}
-                _hover={{ bg: pendingValidMessage ? '#15803d' : '#1e4d78' }}
+                _hover={{ bg: pendingValidMessage || pendingValidConfirm ? '#15803d' : '#1e4d78' }}
               >
-                {pendingValidMessage ? 'Close & Generate Quote' : 'Close'}
+                {pendingValidMessage || pendingValidConfirm ? 'Close & Generate Quote' : 'Close'}
               </Button>
             </HStack>
           </Box>

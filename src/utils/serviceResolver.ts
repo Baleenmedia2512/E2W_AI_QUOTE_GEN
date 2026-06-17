@@ -1,5 +1,6 @@
 import { QuoteItem } from '../types/quote';
 import { canonicalizeServiceName } from '../hooks/useCityServiceRegistry';
+import { pickPreferredDbService } from './dbPricingUtils';
 
 const CITY_NAMES = [
   'chennai', 'madurai', 'coimbatore', 'salem', 'trichy', 'tiruchirappalli',
@@ -123,23 +124,30 @@ export function resolveServiceIdFromCatalog(
     if (cityFiltered.length > 0) pool = cityFiltered;
   }
 
-  const byId = pool.find((s) => {
+  const byIdMatches = pool.filter((s) => {
     const sid = normalizeServiceId(s.service_id);
     const k = normalizeServiceId(kebab);
     return sid === k || sid.endsWith(`-${k}`);
   });
+  const byId = pickPreferredDbService(byIdMatches);
   if (byId) return { serviceId: byId.service_id, serviceName: byId.service_name };
 
-  const byCanonical = pool.find(
+  const canonicalMatches = pool.filter(
     (s) => canonicalizeServiceName(s.service_name) === canonical,
   );
-  if (byCanonical) return { serviceId: byCanonical.service_id, serviceName: byCanonical.service_name };
+  const byCanonical = pickPreferredDbService(canonicalMatches);
+  if (byCanonical) {
+    return { serviceId: byCanonical.service_id, serviceName: byCanonical.service_name };
+  }
 
-  const byContains = pool.find((s) => {
+  const containsMatches = pool.filter((s) => {
     const sc = canonicalizeServiceName(s.service_name);
     return sc.includes(canonical) || canonical.includes(sc);
   });
-  if (byContains) return { serviceId: byContains.service_id, serviceName: byContains.service_name };
+  const byContains = pickPreferredDbService(containsMatches);
+  if (byContains) {
+    return { serviceId: byContains.service_id, serviceName: byContains.service_name };
+  }
 
   return null;
 }
