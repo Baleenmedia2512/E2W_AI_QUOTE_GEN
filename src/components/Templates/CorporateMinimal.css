@@ -515,6 +515,16 @@
  * desktop rows are captured, causing the tfoot to overflow the usable area. */
 .pdf-export-mode .items-table {
   font-size: 17.5px !important;
+  min-width: unset !important;
+  width: 100% !important;
+}
+.pdf-export-mode .items-table--gst {
+  min-width: unset !important;
+  width: 100% !important;
+}
+.pdf-export-mode .table-scroll-wrap {
+  overflow: visible !important;
+  min-width: unset !important;
 }
 .pdf-export-mode .items-table th {
   padding: 13px 10px !important;
