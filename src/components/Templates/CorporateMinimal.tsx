@@ -82,6 +82,13 @@ export const CorporateMinimal: React.FC<TemplateProps> = ({ data, editable: _edi
     const hasDuration = quoteHasAnyDuration(items);
     const hasRemark = items.some(i => i.remark);
     const formatDuration = (item: typeof quote.items[0]) => formatDurationLabel(item);
+    const cap = (s: string) => s ? s.charAt(0).toUpperCase() + s.slice(1) : s;
+    const abbrevDuration = (s: string) => {
+      const lower = s.toLowerCase().trim();
+      if (lower === 'months' || lower === 'month') return 'Mon';
+      if (lower === 'days' || lower === 'day') return 'Day';
+      return cap(s);
+    };
     const subtotal = items.reduce((sum, i) => sum + i.total, 0);
     const gstAmt = quote.gstEnabled ? subtotal * gstPct / 100 : 0;
     const inclGST = subtotal + gstAmt;
@@ -112,10 +119,16 @@ export const CorporateMinimal: React.FC<TemplateProps> = ({ data, editable: _edi
                   <div className="item-title">{formatQuoteItemDescription(item, prefixCity)}</div>
                   {item.details && <div className="item-details">{item.details}</div>}
                 </td>
-                <td className="item-quantity">{item.quantity}</td>
+                <td className="item-quantity">
+                  <div className="item-cell-number">{item.quantity}</div>
+                  {item.quantityUnit && <div className="item-unit-label">({cap(item.quantityUnit)})</div>}
+                </td>
                 <td className="item-rate">{formatRate(item.rate)}</td>
                 {hasDuration && (
-                <td className="item-duration">{formatDuration(item)}</td>
+                <td className="item-duration">
+                  <div className="item-cell-number">{item.duration ?? '—'}</div>
+                  {item.duration && <div className="item-unit-label">({item.durationLabel ? cap(item.durationLabel) : abbrevDuration(item.durationUnit || 'months')})</div>}
+                </td>
                 )}
                 {!quote.gstEnabled && <td className="item-total">{formatCurrency(item.total)}</td>}
                 {quote.gstEnabled && <td className="item-gst-pct">{gstPct}%</td>}
