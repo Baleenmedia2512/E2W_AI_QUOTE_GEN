@@ -82,7 +82,7 @@
 
 .template-corporate-minimal .company-details {
   flex: 1;
-  font-size: 13px;
+  font-size: 18.5px;
   color: #636e72;
   line-height: 1.7;
   font-weight: 600;
@@ -101,7 +101,7 @@
 .template-corporate-minimal .company-details a {
   color: #1a3a5c !important;
   font-weight: 600;
-  font-size: 13px;
+  font-size: 20px;
   text-decoration: none;
   text-transform: none;
   letter-spacing: 0;
@@ -113,6 +113,10 @@
   text-decoration: underline;
   word-break: break-word;
   padding: 2px 0;
+}
+
+.template-corporate-minimal .contact-link[href^="mailto"] {
+  font-size: 18px;
 }
 
 .template-corporate-minimal .contact-link:hover {
