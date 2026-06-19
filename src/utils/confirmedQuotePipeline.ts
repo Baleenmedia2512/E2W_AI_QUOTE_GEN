@@ -3,10 +3,13 @@ import {
   ConfirmationRow,
   FULL_SERVICE_PATTERNS,
   MinQtyViolation,
+  MinDurViolation,
   dedupeConfirmationRows,
   validateConfirmationRowsMinQty,
+  getMinDurationFromDbService,
 } from './cloudQuoteValidation';
 import { DbService, resolveServiceIdFromCatalog } from './serviceResolver';
+import { parseDurationFromUserText } from './durationUtils';
 
 /** True when segment text contains a complete service name (not a vague category). */
 export function isSegmentFullySpecified(segmentRaw: string): boolean {
@@ -199,4 +202,58 @@ export function canonicalRowKey(row: ConfirmationRow): string {
   const svc = canonicalizeServiceName(row.service) || row.service.toLowerCase();
   const city = (row.city && row.city !== '—' ? row.city : '').toLowerCase();
   return `${svc}|${city}|${qty}`;
+}
+
+export type MinDurGateResult =
+  | { type: 'confirm'; rows: ConfirmationRow[] }
+  | { type: 'min_dur'; rows: ConfirmationRow[]; violations: MinDurViolation[] };
+
+/**
+ * Min-duration check before opening the confirm table.
+ * Only fires when the user explicitly typed a duration (e.g. "for 1 month").
+ * Rows with no matching DB service or no min_duration in metadata are silently skipped.
+ */
+export function gateMinDurationBeforeConfirm(
+  rows: ConfirmationRow[],
+  services: DbService[],
+  userMessage: string,
+): MinDurGateResult {
+  const deduped = dedupeConfirmationRows(rows);
+  if (!services.length) return { type: 'confirm', rows: deduped };
+
+  const userDur = parseDurationFromUserText(userMessage);
+  if (!userDur) return { type: 'confirm', rows: deduped }; // No duration typed → skip check
+
+  const violations: MinDurViolation[] = [];
+
+  for (const row of deduped) {
+    const cityHint = row.city && row.city !== '—' ? row.city.toLowerCase() : undefined;
+    const resolved = resolveServiceIdFromCatalog(row.service, services, cityHint);
+    if (!resolved) continue;
+    const svc = services.find((s) => s.service_id === resolved.serviceId);
+    if (!svc) continue;
+
+    const minDur = getMinDurationFromDbService(svc);
+    if (!minDur) continue;
+
+    // Normalize to months for comparison
+    const reqMonths = userDur.unit === 'days' ? userDur.value / 30 : userDur.value;
+    const minMonths = minDur.unit === 'days' ? minDur.value / 30 : minDur.value;
+
+    if (reqMonths < minMonths) {
+      violations.push({
+        description: `${row.service} - ${row.city}`,
+        requestedDuration: userDur.value,
+        requestedDurationUnit: userDur.unit,
+        originalRequested: userDur.value,
+        minimumDuration: minDur.value,
+        durationUnit: minDur.unit,
+      });
+    }
+  }
+
+  if (violations.length > 0) {
+    return { type: 'min_dur', rows: deduped, violations };
+  }
+  return { type: 'confirm', rows: deduped };
 }

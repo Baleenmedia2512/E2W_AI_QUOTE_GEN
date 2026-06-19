@@ -470,9 +470,11 @@ OUTPUT FORMAT — return ONLY valid JSON
       "placement": "Mobile van mounted"
     },
     "duration": "30 days",
+    "min_duration": "1 month",
     "locations": ["Bangalore", "Delhi"],
     "category": "Mobile Advertising",
     "min_quantity": 1,
+    "min_duration": "1 month",
     "terms": "Minimum 1 month booking required. Advance payment mandatory.",
     "page_range": [5, 7],
     "image_pages": {
@@ -629,6 +631,14 @@ function extractMetadataFromText(text: string): ServiceChunk['metadata'] {
   const durationMatch = text.match(/(\d+)\s*(days?|months?)/i);
   if (durationMatch) {
     metadata.duration = `${durationMatch[1]} ${durationMatch[2]}`;
+  }
+
+  // Extract minimum booking duration (e.g. "minimum 3 months", "minimum 1 month booking")
+  const minDurMatch = text.match(
+    /minimum\s+(?:booking\s+(?:of\s+)?|campaign\s+(?:duration\s+(?:of\s+)?)?)?(\d+)\s*(months?|days?)/i,
+  );
+  if (minDurMatch) {
+    metadata.min_duration = `${minDurMatch[1]} ${minDurMatch[2]}`;
   }
   
   // Extract locations

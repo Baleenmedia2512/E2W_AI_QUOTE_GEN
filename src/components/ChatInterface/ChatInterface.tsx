@@ -55,10 +55,14 @@ import {
   buildGeminiContextFromDbServices,
   filterDbServicesForConfirmedRows,
   gateMinQtyBeforeConfirm,
+  gateMinDurationBeforeConfirm,
   labelsToConfirmRows,
   parseMessageToConfirmRows,
   rowsFromCloudBelowMin,
 } from '../../utils/confirmedQuotePipeline';
+import {
+  validateQuoteItemsAgainstDbMinDuration,
+} from '../../utils/cloudQuoteValidation';
 import type { DbService } from '../../utils/serviceResolver';
 
 // ═══════════════════════════════════════════════════════════════════════
@@ -189,6 +193,27 @@ const ChatInterface: React.FC = () => {
   // State to track which item is being edited in the min qty warning modal
   const [editingItemIndex, setEditingItemIndex] = useState<number | null>(null);
   const [editedQuantity, setEditedQuantity] = useState<string>('');
+
+  // Minimum duration warning dialog state
+  const [minDurWarning, setMinDurWarning] = useState<{
+    items: Array<{
+      description: string;
+      requestedDuration: number;
+      originalRequested: number;
+      minimumDuration: number;
+      durationUnit: 'months' | 'days';
+    }>;
+    pendingQuote: Quote | null; // null = pre-Gemini path, Quote = post-Gemini path
+  } | null>(null);
+  // Pending confirm generation blocked by min-duration popup (pre-Gemini path)
+  const [pendingDurationConfirm, setPendingDurationConfirm] = useState<{
+    rows: Array<{ service: string; qty: number | string; city: string }>;
+    originalUserInput: string;
+    messageId: string;
+  } | null>(null);
+  // State for inline editing inside the min-duration modal
+  const [editingDurIndex, setEditingDurIndex] = useState<number | null>(null);
+  const [editedDuration, setEditedDuration] = useState<string>('');
 
 
   // Unavailable service alert state: shown when a service doesn't exist in a city's rate card
@@ -693,7 +718,14 @@ const ChatInterface: React.FC = () => {
       setPendingConfirmGeneration({ rows: gate.rows, originalUserInput, messageId });
       setMinQtyWarning({ items: gate.violations, aboveMinItems, pendingQuote: null as any });
     } else {
-      setConfirmationTable({ messageId, rows: gate.rows, originalUserInput });
+      // Min-qty passed — now check min-duration before opening confirm table
+      const durGate = gateMinDurationBeforeConfirm(gate.rows, dbServices, originalUserInput);
+      if (durGate.type === 'min_dur') {
+        setPendingDurationConfirm({ rows: durGate.rows, originalUserInput, messageId });
+        setMinDurWarning({ items: durGate.violations, pendingQuote: null });
+      } else {
+        setConfirmationTable({ messageId, rows: gate.rows, originalUserInput });
+      }
     }
   };
 
@@ -1961,6 +1993,14 @@ const ChatInterface: React.FC = () => {
             setIsLoading(false);
             return;
           }
+          // Post-Gemini min-duration check (only when min-qty passes)
+          const durViolations = validateQuoteItemsAgainstDbMinDuration(quoteItems, dbServicesForResolution);
+          if (durViolations.length > 0) {
+            console.log('⚠️ [MinDur-DB] Below minimum duration:', durViolations);
+            setMinDurWarning({ items: durViolations, pendingQuote: quote });
+            setIsLoading(false);
+            return;
+          }
         }
 
         setCurrentQuote(quote);
@@ -2378,6 +2418,118 @@ const ChatInterface: React.FC = () => {
     setEditedQuantity('');
   };
 
+  // ── Min-Duration Warning Handlers ──────────────────────────────────────────
+
+  const handleMinDurClose = () => {
+    setMinDurWarning(null);
+    setEditingDurIndex(null);
+    setEditedDuration('');
+    setPendingDurationConfirm(null);
+  };
+
+  const handleEditItemDuration = (index: number) => {
+    if (!minDurWarning) return;
+    setEditingDurIndex(index);
+    setEditedDuration(String(minDurWarning.items[index].requestedDuration));
+  };
+
+  const handleSaveEditedDuration = (index: number) => {
+    if (!minDurWarning || editingDurIndex !== index) return;
+    const newDur = parseInt(editedDuration, 10);
+    if (isNaN(newDur) || newDur < 1) return;
+    const updatedItems = minDurWarning.items.map((item, i) =>
+      i === index ? { ...item, requestedDuration: newDur } : item,
+    );
+    setMinDurWarning({ ...minDurWarning, items: updatedItems });
+    setEditingDurIndex(null);
+    setEditedDuration('');
+  };
+
+  const handleCancelDurEdit = () => {
+    setEditingDurIndex(null);
+    setEditedDuration('');
+  };
+
+  /** Replace duration token in a user-input string (e.g. "1 month" → "3 months"). */
+  const replaceDurationInInput = (input: string, newValue: number, unit: 'months' | 'days'): string => {
+    const label = unit === 'months' ? (newValue === 1 ? 'month' : 'months') : (newValue === 1 ? 'day' : 'days');
+    return input.replace(/(\d+)\s*(days?|months?)/i, `${newValue} ${label}`);
+  };
+
+  // User continues with their originally requested duration (no changes)
+  const handleMinDurContinue = () => {
+    if (!minDurWarning) return;
+    const pendingQuote = minDurWarning.pendingQuote;
+    setMinDurWarning(null);
+    setEditingDurIndex(null);
+    setEditedDuration('');
+
+    if (!pendingQuote) {
+      // Pre-Gemini path: open confirm table as-is (duration stays as requested)
+      if (pendingDurationConfirm) {
+        const gen = pendingDurationConfirm;
+        setPendingDurationConfirm(null);
+        openConfirmationTable(gen.messageId, gen.rows, gen.originalUserInput);
+      }
+      return;
+    }
+
+    // Post-Gemini path: navigate with quote as-is
+    setCurrentQuote(pendingQuote);
+    setTimeout(() => { history.push('/quote'); }, 1500);
+  };
+
+  // User wants to bump duration up to minimum
+  const handleMinDurUseMinimum = () => {
+    if (!minDurWarning) return;
+    const currentItems = minDurWarning.items;
+    const pendingQuote = minDurWarning.pendingQuote;
+    setMinDurWarning(null);
+    setEditingDurIndex(null);
+    setEditedDuration('');
+
+    if (!pendingQuote) {
+      // Pre-Gemini path: update duration in originalUserInput then open confirm table
+      if (pendingDurationConfirm) {
+        const gen = pendingDurationConfirm;
+        setPendingDurationConfirm(null);
+        // Use the first violation's minimum (or edited value if user edited it)
+        const primary = currentItems[0];
+        const useValue = primary.requestedDuration !== primary.originalRequested
+          ? primary.requestedDuration
+          : primary.minimumDuration;
+        const newInput = replaceDurationInInput(gen.originalUserInput, useValue, primary.durationUnit);
+        openConfirmationTable(gen.messageId, gen.rows, newInput);
+      }
+      return;
+    }
+
+    // Post-Gemini path: update each quote item's duration to the minimum (or edited value)
+    const updatedQuote = { ...pendingQuote };
+    updatedQuote.items = updatedQuote.items.map((qItem) => {
+      if (!qItem.duration || qItem.durationIsAuto) return qItem;
+      const violation = currentItems.find(
+        (it) =>
+          qItem.description === it.description ||
+          qItem.description.toLowerCase().includes(it.description.toLowerCase().split(' - ')[0]),
+      );
+      if (!violation) return qItem;
+      const useDur = violation.requestedDuration !== violation.originalRequested
+        ? violation.requestedDuration
+        : violation.minimumDuration;
+      return { ...qItem, duration: useDur, total: qItem.quantity * qItem.rate * useDur };
+    });
+    const newSubtotal = updatedQuote.items.reduce((sum, i) => sum + i.total, 0);
+    const newGst = newSubtotal * (updatedQuote.gstPercentage / 100);
+    updatedQuote.subtotal = newSubtotal;
+    updatedQuote.gstAmount = newGst;
+    updatedQuote.total = newSubtotal + newGst;
+    setCurrentQuote(updatedQuote);
+    setTimeout(() => { history.push('/quote'); }, 1500);
+  };
+
+  // ────────────────────────────────────────────────────────────────────────────
+
   // Handle min qty warning: user chooses to continue with requested qty
   const handleMinQtyContinue = () => {
     if (!minQtyWarning) return;
@@ -2754,6 +2906,14 @@ const ChatInterface: React.FC = () => {
             if (minViolations.length > 0) {
               console.log('⚠️ [MinQty-DB] Below minimum after DB quote build:', minViolations);
               setMinQtyWarning({ items: minViolations, pendingQuote: result.quote });
+              setIsLoading(false);
+              return;
+            }
+            // Min-duration check after DB quote build (only when min-qty passes)
+            const durViolations = validateQuoteItemsAgainstDbMinDuration(result.quote.items, dbServices);
+            if (durViolations.length > 0) {
+              console.log('⚠️ [MinDur-DB] Below minimum duration after DB quote build:', durViolations);
+              setMinDurWarning({ items: durViolations, pendingQuote: result.quote });
               setIsLoading(false);
               return;
             }
@@ -4807,6 +4967,232 @@ Generate a detailed quote based on the above information.`;
                 >
                   {minQtyWarning.items.length === 1
                     ? `Use Minimum (${minQtyWarning.items[0].minimum})`
+                    : `Use Minimums`}
+                </Button>
+              </Stack>
+            </Box>
+          </Box>
+        </Box>
+      )}
+
+      {/* ── Minimum Duration Warning Dialog ── */}
+      {minDurWarning && (
+        <Box
+          position="fixed"
+          top="0" left="0" right="0" bottom="0"
+          bg="rgba(0,0,0,0.55)"
+          zIndex={9999}
+          display="flex"
+          alignItems="center"
+          justifyContent="center"
+          px={{ base: 2, md: 4 }}
+          py={{ base: 2, md: 4 }}
+        >
+          <Box
+            bg="white"
+            borderRadius={{ base: "14px", md: "14px" }}
+            maxW={{ base: "100%", sm: "420px" }}
+            w="100%"
+            boxShadow="0 8px 32px rgba(0,0,0,0.18)"
+            display="flex"
+            flexDirection="column"
+            maxH={{ base: "90vh", md: "90vh" }}
+            overflow="hidden"
+          >
+            {/* Sticky Header */}
+            <Box px={{ base: 3, md: 6 }} pt={{ base: 3, md: 6 }} pb={{ base: 2, md: 3 }} flexShrink={0} display="flex" alignItems="center" justifyContent="space-between" gap={2}>
+              <Text fontSize={{ base: "14px", md: "15px" }} fontWeight="700" color="#c0392b" lineHeight="1.3">
+                ⚠️ Below Minimum Duration
+              </Text>
+              <Box flexShrink={0}>
+                <IconButton
+                  aria-label="Close"
+                  icon={<FiX />}
+                  size="xs"
+                  variant="ghost"
+                  onClick={handleMinDurClose}
+                  _hover={{ bg: 'gray.100' }}
+                  color="gray.500"
+                  w="24px" h="24px" minW="24px" fontSize="14px"
+                />
+              </Box>
+            </Box>
+
+            {/* Scrollable Table Body */}
+            <Box flex={1} overflowY="auto" pb={2}>
+              {/* Table Header */}
+              <Box
+                display="grid"
+                gridTemplateColumns="1fr 84px 56px 90px"
+                px={{ base: 3, md: 6 }}
+                py={2}
+                bg="#1a3a5c"
+              >
+                {['SERVICE', 'DURATION', 'MIN', 'CITY'].map((col) => (
+                  <Text key={col} fontSize="11px" fontWeight="700" color="white" letterSpacing="0.05em">
+                    {col}
+                  </Text>
+                ))}
+              </Box>
+
+              {/* RED rows: requested duration < minimum (unit-normalized comparison) */}
+              {minDurWarning.items.map((item, i) => {
+                const reqNorm = item.requestedDurationUnit === 'days' ? item.requestedDuration / 30 : item.requestedDuration;
+                const minNorm = item.durationUnit === 'days' ? item.minimumDuration / 30 : item.minimumDuration;
+                if (reqNorm >= minNorm) return null;
+                const dashIdx = item.description.lastIndexOf(' - ');
+                const servicePart = dashIdx !== -1 ? item.description.slice(0, dashIdx) : item.description;
+                const cityPart = dashIdx !== -1 ? item.description.slice(dashIdx + 3) : '';
+                const reqUnitLabel = item.requestedDurationUnit === 'days' ? 'Da' : 'Mo';
+                const minUnitLabel = item.durationUnit === 'days' ? 'Da' : 'Mo';
+                return (
+                  <Box
+                    key={`dur-red-${i}`}
+                    display="grid"
+                    gridTemplateColumns="1fr 84px 56px 90px"
+                    px={{ base: 3, md: 6 }}
+                    py={{ base: 2, md: 2 }}
+                    bg="#fff5f5"
+                    borderBottom="1px solid"
+                    borderColor="#fecaca"
+                    borderLeft="3px solid #c0392b"
+                    alignItems="center"
+                  >
+                    <Text fontSize={{ base: "11px", md: "12px" }} fontWeight="600" color="#2d3436" pr={2} lineHeight="1.4">
+                      {servicePart}
+                    </Text>
+                    <Box>
+                      {editingDurIndex === i ? (
+                        <HStack spacing={1} align="center">
+                          <input
+                            type="number"
+                            value={editedDuration}
+                            onChange={(e) => setEditedDuration(e.target.value)}
+                            placeholder="Dur"
+                            autoFocus
+                            style={{ color: '#2d3436', WebkitTextFillColor: '#2d3436', backgroundColor: 'white', fontSize: '13px', height: '26px', width: '56px', border: '1.5px solid #c0392b', borderRadius: '6px', textAlign: 'center', outline: 'none', padding: '0 4px' }}
+                          />
+                          <Button size="xs" bg="#1a3a5c" color="white" onClick={() => handleSaveEditedDuration(i)} fontSize="10px" h="26px" minW="32px" px={1.5} borderRadius="6px" _hover={{ bg: '#1e4d78' }}>✓</Button>
+                          <Button size="xs" variant="ghost" color="gray.500" onClick={handleCancelDurEdit} fontSize="10px" h="26px" minW="24px" px={1} borderRadius="6px">✕</Button>
+                        </HStack>
+                      ) : (
+                        <HStack spacing={1} align="center">
+                          <Text fontSize={{ base: "12px", md: "13px" }} fontWeight="700" color="#c0392b">{item.requestedDuration} {reqUnitLabel}</Text>
+                          <IconButton aria-label="Edit duration" icon={<FiEdit2 />} size="xs" variant="ghost" color="#1a3a5c" onClick={() => handleEditItemDuration(i)} _hover={{ bg: 'gray.100' }} fontSize="11px" w="20px" h="20px" minW="20px" />
+                        </HStack>
+                      )}
+                    </Box>
+                    <Text fontSize={{ base: "12px", md: "13px" }} fontWeight="600" color="#c0392b">{item.minimumDuration} {minUnitLabel}</Text>
+                    <Text fontSize={{ base: "11px", md: "12px" }} fontWeight="600" color="#2980b9">{cityPart || '—'}</Text>
+                  </Box>
+                );
+              })}
+
+              {/* GREEN rows: items edited to >= minimum (unit-normalized comparison) */}
+              {minDurWarning.items.map((item, i) => {
+                const reqNorm = item.requestedDurationUnit === 'days' ? item.requestedDuration / 30 : item.requestedDuration;
+                const minNorm = item.durationUnit === 'days' ? item.minimumDuration / 30 : item.minimumDuration;
+                if (reqNorm < minNorm) return null;
+                const dashIdx = item.description.lastIndexOf(' - ');
+                const servicePart = dashIdx !== -1 ? item.description.slice(0, dashIdx) : item.description;
+                const cityPart = dashIdx !== -1 ? item.description.slice(dashIdx + 3) : '';
+                const reqUnitLabel = item.requestedDurationUnit === 'days' ? 'Da' : 'Mo';
+                const minUnitLabel = item.durationUnit === 'days' ? 'Da' : 'Mo';
+                return (
+                  <Box
+                    key={`dur-green-${i}`}
+                    display="grid"
+                    gridTemplateColumns="1fr 84px 56px 90px"
+                    px={{ base: 3, md: 6 }}
+                    py={{ base: 2, md: 2 }}
+                    bg="#f0fff4"
+                    borderBottom="1px solid"
+                    borderColor="#bbf7d0"
+                    borderLeft="3px solid #27ae60"
+                    alignItems="center"
+                  >
+                    <Text fontSize={{ base: "11px", md: "12px" }} fontWeight="600" color="#2d3436" pr={2} lineHeight="1.4">{servicePart}</Text>
+                    <Box>
+                      {editingDurIndex === i ? (
+                        <HStack spacing={1} align="center">
+                          <input
+                            type="number"
+                            value={editedDuration}
+                            onChange={(e) => setEditedDuration(e.target.value)}
+                            placeholder="Dur"
+                            autoFocus
+                            style={{ color: '#2d3436', WebkitTextFillColor: '#2d3436', backgroundColor: 'white', fontSize: '13px', height: '26px', width: '56px', border: '1.5px solid #27ae60', borderRadius: '6px', textAlign: 'center', outline: 'none', padding: '0 4px' }}
+                          />
+                          <Button size="xs" bg="#1a3a5c" color="white" onClick={() => handleSaveEditedDuration(i)} fontSize="10px" h="26px" minW="32px" px={1.5} borderRadius="6px" _hover={{ bg: '#1e4d78' }}>✓</Button>
+                          <Button size="xs" variant="ghost" color="gray.500" onClick={handleCancelDurEdit} fontSize="10px" h="26px" minW="24px" px={1} borderRadius="6px">✕</Button>
+                        </HStack>
+                      ) : (
+                        <HStack spacing={1} align="center">
+                          <Text fontSize={{ base: "12px", md: "13px" }} fontWeight="700" color="#27ae60">{item.requestedDuration} {reqUnitLabel}</Text>
+                          <IconButton aria-label="Edit duration" icon={<FiEdit2 />} size="xs" variant="ghost" color="#1a3a5c" onClick={() => handleEditItemDuration(i)} _hover={{ bg: 'gray.100' }} fontSize="11px" w="20px" h="20px" minW="20px" />
+                        </HStack>
+                      )}
+                    </Box>
+                    <Text fontSize={{ base: "12px", md: "13px" }} fontWeight="600" color="#27ae60">{item.minimumDuration} {minUnitLabel}</Text>
+                    <Text fontSize={{ base: "11px", md: "12px" }} fontWeight="600" color="#2980b9">{cityPart || '—'}</Text>
+                  </Box>
+                );
+              })}
+            </Box>
+
+            {/* Sticky Footer */}
+            <Box
+              px={{ base: 3, md: 6 }}
+              pt={{ base: 3, md: 3 }}
+              pb={{ base: 4, md: 6 }}
+              flexShrink={0}
+              borderTop="1px solid"
+              borderColor="gray.100"
+            >
+              <Text fontSize={{ base: "11px", md: "12.5px" }} color="#636e72" mb={{ base: 3, md: 4 }} lineHeight="1.5">
+                Would you like to continue with your requested duration, or update to the minimum?
+              </Text>
+              <Stack
+                direction={{ base: "column", sm: "row" }}
+                spacing={{ base: 2, sm: 3 }}
+                justify={{ base: "stretch", sm: "flex-end" }}
+              >
+                <Button
+                  size="sm"
+                  variant="outline"
+                  borderColor="#c0392b"
+                  color="#c0392b"
+                  onClick={handleMinDurContinue}
+                  _hover={{ bg: '#fff5f5' }}
+                  w={{ base: "100%", sm: "auto" }}
+                  h={{ base: "40px", sm: "36px" }}
+                  fontSize={{ base: "13px", md: "14px" }}
+                  borderRadius="10px"
+                  order={{ base: 2, sm: 1 }}
+                >
+                  {(() => {
+                    const durs = minDurWarning.items.map(it => it.requestedDuration);
+                    const allSame = durs.every(d => d === durs[0]);
+                    const unitLabel = minDurWarning.items[0]?.requestedDurationUnit === 'days' ? 'day' : 'month';
+                    return minDurWarning.items.length === 1 || allSame
+                      ? `Continue with ${durs[0]} ${unitLabel}${durs[0] !== 1 ? 's' : ''}`
+                      : `Generate as Requested`;
+                  })()}
+                </Button>
+                <Button
+                  size="sm"
+                  bg="#1a3a5c"
+                  color="white"
+                  onClick={handleMinDurUseMinimum}
+                  _hover={{ bg: '#1e4d78' }}
+                  w={{ base: "100%", sm: "auto" }}
+                  h={{ base: "40px", sm: "36px" }}
+                  fontSize={{ base: "13px", md: "14px" }}
+                  borderRadius="10px"
+                  order={{ base: 1, sm: 2 }}
+                >
+                  {minDurWarning.items.length === 1
+                    ? `Use Minimum (${minDurWarning.items[0].minimumDuration} ${minDurWarning.items[0].durationUnit === 'days' ? 'days' : 'months'})`
                     : `Use Minimums`}
                 </Button>
               </Stack>

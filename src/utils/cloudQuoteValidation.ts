@@ -7,6 +7,7 @@ import {
   resolveServiceIdFromCatalog,
 } from './serviceResolver';
 import { hasQuotablePricing, pickPreferredDbService } from './dbPricingUtils';
+import { parseDurationFromDbMetadata, DbMetadataLike } from './durationUtils';
 
 /** Known city keys used across the app (lowercase). DB locations may add more at runtime. */
 export const CLOUD_CITY_KEYS = [
@@ -65,6 +66,7 @@ const PLURAL_NORMALIZE_MAP: Record<string, string> = {
 /** Extract meaningful query words (supports single-word queries like "bus"). */
 export function extractQueryWords(query: string): string[] {
   return query
+    .replace(/\b(?:for\s+)?\d+\s*(?:days?|months?)\b/gi, '') // strip duration before digit removal
     .replace(/\d+/g, '')
     .replace(/\b(need|for|the|a|an|in|at|of|and|i|want|please|generate|quote|services?|ads?|advertising|outdoor|some|any)\b/gi, '')
     .toLowerCase()
@@ -423,6 +425,7 @@ export function runCloudPreGeminiValidation(
     if (cls.state === 'not_found') {
       const svcLabel =
         stripCitiesFromSegment(row.raw, [row.city])
+          .replace(/\b(?:for\s+)?\d+\s*(?:days?|months?)\b/gi, '') // strip duration before digit removal
           .replace(/\d+/g, '')
           .replace(/\b(need|for|the|a|an|in|at|of)\b/gi, '')
           .replace(/\s+/g, ' ')
@@ -619,6 +622,101 @@ export function validateQuoteItemsAgainstDbMinQty(
         requested: item.quantity,
         originalRequested: item.quantity,
         minimum,
+      });
+    }
+  }
+
+  return violations;
+}
+
+/** Read minimum booking duration from proposal_chunks metadata.
+ * Priority:
+ *   1. Explicit `min_duration` field (e.g. "3 months") — set by AI extraction or manual entry
+ *   2. Fallback: `pricing.display_period` treated as the minimum booking unit
+ *      (e.g. "per month" → 1 month minimum, "per day" → 1 day minimum)
+ */
+export function getMinDurationFromDbService(
+  svc: DbService,
+): { value: number; unit: 'months' | 'days' } | null {
+  const m = svc.metadata || {};
+
+  // 1. Explicit min_duration field
+  const raw: string | undefined = (m as any).min_duration;
+  if (raw) {
+    const match = String(raw).match(/(\d+)\s*(days?|months?)/i);
+    if (match) {
+      const value = parseInt(match[1], 10);
+      if (Number.isFinite(value) && value >= 1) {
+        const unit = match[2].toLowerCase().startsWith('day') ? 'days' : 'months';
+        return { value, unit };
+      }
+    }
+  }
+
+  // 2. Fallback: pricing.display_period as minimum booking unit
+  //    "per month" → 1 month, "30 days" → 1 month, "per day" → 1 day
+  return parseDurationFromDbMetadata(m as DbMetadataLike) ?? null;
+}
+
+export interface MinDurViolation {
+  description: string;
+  requestedDuration: number;
+  requestedDurationUnit: 'months' | 'days'; // unit of what the user requested
+  originalRequested: number;
+  minimumDuration: number;
+  durationUnit: 'months' | 'days'; // unit of the minimum
+}
+
+/**
+ * Compare generated quote line items against DB min_duration.
+ * One warning row per service section (not every duplicated line item).
+ */
+export function validateQuoteItemsAgainstDbMinDuration(
+  items: QuoteItem[],
+  services: DbService[],
+): MinDurViolation[] {
+  if (!items.length || !services.length) return [];
+
+  const violations: MinDurViolation[] = [];
+  const seen = new Set<string>();
+
+  for (const item of items) {
+    // Only check items that actually have a user-requested duration
+    if (!item.duration || item.durationIsAuto) continue;
+
+    const cityHint = extractCityHint(item.description);
+    const lookupName = extractServiceNameFromItem(item);
+    const sectionKey = (item.serviceId || canonicalizeServiceName(lookupName) || lookupName).toLowerCase();
+    if (seen.has(sectionKey)) continue;
+
+    let svc: DbService | null = null;
+    if (item.serviceId) {
+      svc = services.find((s) => s.service_id === item.serviceId) || null;
+    }
+    if (!svc) {
+      const resolved = resolveServiceIdFromCatalog(lookupName, services, cityHint);
+      if (resolved) {
+        svc = services.find((s) => s.service_id === resolved.serviceId) || null;
+      }
+    }
+    if (!svc) continue;
+
+    const minDur = getMinDurationFromDbService(svc);
+    if (!minDur) continue;
+
+    // Normalize to months for comparison
+    const reqMonths = item.durationUnit === 'days' ? item.duration / 30 : item.duration;
+    const minMonths = minDur.unit === 'days' ? minDur.value / 30 : minDur.value;
+
+    if (reqMonths < minMonths) {
+      seen.add(sectionKey);
+      violations.push({
+        description: item.description,
+        requestedDuration: item.duration,
+        requestedDurationUnit: item.durationUnit ?? minDur.unit,
+        originalRequested: item.duration,
+        minimumDuration: minDur.value,
+        durationUnit: minDur.unit,
       });
     }
   }
