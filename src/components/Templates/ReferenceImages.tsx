@@ -3039,9 +3039,10 @@ export const ReferenceImages: React.FC<ReferenceImagesProps> = ({ proposalPages,
 
   // Dynamic section numbering — only count sections that will actually render.
   // "1. Pricing Summary" is always rendered by the parent; we start after it.
+  // Order: Pricing → Reference Images → Display Specification → Review → T&C
   let _sn = 1;
-  const specSectionNum   = (!noSpec && (hasSpecContent || specImgSrcs.length > 0)) ? ++_sn : 0;
   const refSectionNum    = refImageUrls.length > 0                                 ? ++_sn : 0;
+  const specSectionNum   = (!noSpec && (hasSpecContent || specImgSrcs.length > 0)) ? ++_sn : 0;
   const reviewSectionNum = !!finalReview                                           ? ++_sn : 0;
   const termsSectionNum  = terms.length > 0                                        ? ++_sn : 0;
 
@@ -3049,6 +3050,27 @@ export const ReferenceImages: React.FC<ReferenceImagesProps> = ({ proposalPages,
     <div className="smart-reference-page" ref={containerRef}>
       {/* pdf-top-spacer must be a tracked block so the engine removes it from continuation pages */}
       <div className="pdf-top-spacer" data-pdf-block="atomic" />
+
+      {/* Reference Images — each image is its own atomic block so the greedy
+          packer can place them individually. The section heading travels with
+          the first image so it is never orphaned at the bottom of a page. */}
+      {refImageUrls.length > 0 && finalRefImageUrls.map((src, idx) => (
+        <div key={idx} className="smart-section" data-pdf-block="atomic">
+          {idx === 0 && (
+            <h3 className="smart-section-heading">
+              <span className="smart-heading-bar" />
+              {refSectionNum}. Reference Image(s)
+            </h3>
+          )}
+          <div className="ref-img-container ref-img-single-center">
+            <img
+              src={src}
+              alt={`Reference ${idx + 1}`}
+              className={`ref-img ${finalRefImageUrls.length === 1 ? 'ref-img-single' : ''}`}
+            />
+          </div>
+        </div>
+      ))}
 
       {!noSpec && (hasSpecContent || specImgSrcs.length > 0) && (
         hasMetroStyleTables ? (
@@ -3106,27 +3128,6 @@ export const ReferenceImages: React.FC<ReferenceImagesProps> = ({ proposalPages,
           </div>
         )
       )}
-
-      {/* Reference Images — each image is its own atomic block so the greedy
-          packer can place them individually. The section heading travels with
-          the first image so it is never orphaned at the bottom of a page. */}
-      {refImageUrls.length > 0 && finalRefImageUrls.map((src, idx) => (
-        <div key={idx} className="smart-section" data-pdf-block="atomic">
-          {idx === 0 && (
-            <h3 className="smart-section-heading">
-              <span className="smart-heading-bar" />
-              {refSectionNum}. Reference Image(s)
-            </h3>
-          )}
-          <div className="ref-img-container ref-img-single-center">
-            <img
-              src={src}
-              alt={`Reference ${idx + 1}`}
-              className={`ref-img ${finalRefImageUrls.length === 1 ? 'ref-img-single' : ''}`}
-            />
-          </div>
-        </div>
-      ))}
 
       {/* Customer Review */}
       {finalReview && (
