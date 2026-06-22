@@ -272,6 +272,8 @@ export const CorporateMinimal: React.FC<TemplateProps> = ({ data, editable: _edi
               proposalPageMap={data.proposalPageMap}
               items={quote.items}
               terms={[]}
+              serviceKey={quote.items[0]?.serviceId || 'single'}
+              onDataReady={data.onServiceDataReady}
             />
           </div>
 
@@ -357,48 +359,58 @@ export const CorporateMinimal: React.FC<TemplateProps> = ({ data, editable: _edi
         {renderCompanyFooter(++pageCounter, multiTotal)}
       </div>
 
-      {/* Pages 2+: Individual Service Pages */}
-      {serviceGroups.map((group, groupIndex) => {
-        const servicePage = ++pageCounter;
-        const refPage = ++pageCounter;
-        // Fallback to quote top-level terms when item-level is empty (same-service multi-city case
-        // where hydration used the single-service path and put terms on quote.termsAndConditions)
-        const groupTermsRaw = group.termsAndConditions || quote.termsAndConditions || '';
-        const groupTerms = groupTermsRaw.trim()
-          ? filterGSTTerms(normalizeTerms(groupTermsRaw))
-          : [];
-        return (
-          <React.Fragment key={groupIndex}>
-            <div style={{ pageBreakBefore: 'always' }} />
-            <>
-              <div id={`pdf-service-${groupIndex}`} className="template-corporate-minimal">
-                <div className="quote-items-section">
-                  <div data-pdf-block="atomic" style={{ paddingBottom: '1px' }}>
-                    <h3 style={{ marginBottom: '8px', fontSize: '22px', fontWeight: '700', color: '#750926', textAlign: 'center' }}>
-                      {getServiceGroupHeading(group)}
-                    </h3>
-                    <h3 className="smart-section-heading" style={{ fontSize: '15px', fontWeight: '700', textTransform: 'uppercase', letterSpacing: '0.06em', color: '#1a1a2e', margin: '24px 0 14px 0', paddingBottom: '8px', borderBottom: '2px solid #2980b9' }}>
-                      <span className="smart-heading-bar" />
-                      1. Pricing Summary
-                    </h3>
-                  </div>
-                  <div data-pdf-block="table">
-                    {renderItemsTable(group.items)}
-                  </div>
+      {/* Pages 2+: All service pages wrapped in one section so the smart block
+          packer can flow services continuously without forced page breaks.
+          The export service captures this as a single 'pdf-page-services' section
+          and splits it into virtual pages only where content genuinely overflows. */}
+      <div id="pdf-page-services" className="template-corporate-minimal">
+        {serviceGroups.map((group, groupIndex) => {
+          // Fallback to quote top-level terms when item-level is empty (same-service multi-city case
+          // where hydration used the single-service path and put terms on quote.termsAndConditions)
+          const groupTermsRaw = group.termsAndConditions || quote.termsAndConditions || '';
+          const groupTerms = groupTermsRaw.trim()
+            ? filterGSTTerms(normalizeTerms(groupTermsRaw))
+            : [];
+          return (
+            <React.Fragment key={groupIndex}>
+              <div className="quote-items-section">
+                <div data-pdf-block="atomic" style={{ paddingBottom: '1px' }}>
+                  <h3 style={{ marginBottom: '8px', fontSize: '22px', fontWeight: '700', color: '#750926', textAlign: 'center' }}>
+                    {getServiceGroupHeading(group)}
+                  </h3>
+                  <h3 className="smart-section-heading" style={{ fontSize: '15px', fontWeight: '700', textTransform: 'uppercase', letterSpacing: '0.06em', color: '#1a1a2e', margin: '24px 0 14px 0', paddingBottom: '8px', borderBottom: '2px solid #2980b9' }}>
+                    <span className="smart-heading-bar" />
+                    1. Pricing Summary
+                  </h3>
                 </div>
-
-                {/* Reference images, spec, review and terms merged into the same
-                    section so the greedy block packer fills space after the
-                    pricing table instead of starting a separate section. */}
-                <ReferenceImages proposalPages={data.proposalPages} proposalPageMap={data.proposalPageMap} items={group.items} terms={groupTerms} />
-
-                {/* Company Contact Footer */}
-                {renderCompanyFooter(servicePage, multiTotal)}
+                <div data-pdf-block="table">
+                  {renderItemsTable(group.items)}
+                </div>
               </div>
-            </>
-          </React.Fragment>
-        );
-      })}
+
+              {/* Reference images, spec, review and terms merged into the same
+                  section so the greedy block packer fills space after the
+                  pricing table instead of starting a separate section. */}
+              <ReferenceImages
+                proposalPages={data.proposalPages}
+                proposalPageMap={data.proposalPageMap}
+                items={group.items}
+                terms={groupTerms}
+                serviceKey={(() => {
+                  const city = group.city?.trim().toLowerCase();
+                  return city && city !== '\u2014' ? `${city}|${group.serviceType.toLowerCase()}` : group.serviceType.toLowerCase();
+                })()}
+                onDataReady={data.onServiceDataReady}
+              />
+            </React.Fragment>
+          );
+        })}
+
+        {/* Single shared footer for the entire services section —
+            compositeWithPageFooter pins it to the bottom of every virtual page.
+            Page numbers are overwritten by jsPDF's injection loop after all pages are captured. */}
+        {renderCompanyFooter(0, 0)}
+      </div>
 
       {/* Last Page: Terms & Conditions */}
       <div id="pdf-page-terms" className="template-corporate-minimal">

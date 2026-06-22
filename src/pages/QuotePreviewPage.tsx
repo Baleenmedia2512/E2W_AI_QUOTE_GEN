@@ -1,10 +1,11 @@
-import React, { useState, useRef, useEffect, useMemo } from 'react';
+import React, { useState, useRef, useEffect, useMemo, useCallback } from 'react';
 import { useHistory } from 'react-router-dom';
 import { useAppStore } from '../store';
 import { CorporateMinimal } from '../components/Templates/CorporateMinimal';
 import { exportToPDF } from '../services/pdfExportService';
 import { ExtractedPage } from '../types';
 import { resolveServiceIdsForItems } from '../utils/serviceResolver';
+import { ServicePdfData } from '../components/Templates/CorporateMinimalPDF';
 import './QuotePreviewPage.css';
 
 // ═══════════════════════════════════════════════════════════════════════
@@ -62,6 +63,41 @@ export const QuotePreviewPage: React.FC = () => {
   const [isContentReady, setIsContentReady] = useState(true); // Set to true for immediate display
   const [zoom, setZoom] = useState(100);
   const previewRef = useRef<HTMLDivElement>(null);
+  const pdfDataRef = useRef<ServicePdfData[]>([]);
+
+  // Collect resolved image/spec/review data from each ReferenceImages instance
+  const handleServiceDataReady = useCallback((serviceKey: string, data: {
+    refImages: string[];
+    specImages: string[];
+    specFields: Array<{ label: string; value: string }>;
+    review: { reviewerName: string; starCount: number; reviewText: string; reviewUrl: string | null } | null;
+  }) => {
+    const existing = pdfDataRef.current.findIndex((d) => d.serviceKey === serviceKey);
+    const entry: ServicePdfData = { serviceKey, ...data };
+    if (existing >= 0) {
+      pdfDataRef.current[existing] = entry;
+    } else {
+      pdfDataRef.current = [...pdfDataRef.current, entry];
+    }
+    // Write to DOM store so pdfExportService can read without React state
+    const store = document.getElementById('pdf-data-store');
+    if (store) {
+      store.setAttribute('data-pdf-store', JSON.stringify(pdfDataRef.current));
+    }
+
+    console.groupCollapsed(`🧩 [PDF-BRIDGE] serviceKey="${serviceKey}"`);
+    console.log(`refImages=${data.refImages?.length || 0}`);
+    console.log(`specImages=${data.specImages?.length || 0}`);
+    console.log(`specFields=${data.specFields?.length || 0}`);
+    console.log(`review=${data.review ? 'yes' : 'no'}`);
+    if (data.refImages?.length) {
+      console.log('ref[0]=', data.refImages[0]?.startsWith('data:') ? `data-url len=${data.refImages[0].length}` : data.refImages[0]);
+    }
+    if (data.specImages?.length) {
+      console.log('spec[0]=', data.specImages[0]?.startsWith('data:') ? `data-url len=${data.specImages[0].length}` : data.specImages[0]);
+    }
+    console.groupEnd();
+  }, []);
   
   // Merge cloud pages and local pages
   // USE_CLOUD_DATA=true  → cloud first (Supabase URLs, any device)
@@ -254,6 +290,7 @@ export const QuotePreviewPage: React.FC = () => {
     quote: currentQuote,
     proposalPages: pageImages,
     proposalPageMap,
+    onServiceDataReady: handleServiceDataReady,
   };
   
   console.log('🎨 DEBUG [Template Data Assembly]: Final data passed to template');
@@ -299,11 +336,18 @@ export const QuotePreviewPage: React.FC = () => {
     console.log('🔄 Starting PDF export...');
     
     try {
+      // Collect document IDs from active proposals so pdfExportService can
+      // fetch images directly from the DB instead of calling Gemini Vision.
+      const docIds = activeProposals
+        .map((p) => p.id)
+        .filter(Boolean) as string[];
+
       await exportToPDF(
         previewRef.current,
         currentQuote.quoteNumber,
         selectedTemplate,
-        clientInfo?.name
+        clientInfo?.name,
+        docIds.length > 0 ? docIds : undefined,
       );
       console.log('✅ PDF exported successfully');
       // Success message is shown by the service itself (different for mobile vs web)
@@ -410,6 +454,12 @@ export const QuotePreviewPage: React.FC = () => {
           </div>
         )}
         <div className="preview-wrapper" style={{ transform: `scale(${zoom / 100})` }}>
+          {/* Hidden DOM store — pdfExportService reads templateData + pdfData from here */}
+          <div
+            id="pdf-data-store"
+            data-template-store={JSON.stringify(templateData)}
+            style={{ display: 'none' }}
+          />
           <div ref={previewRef} className="preview-content">
             {renderTemplate()}
           </div>

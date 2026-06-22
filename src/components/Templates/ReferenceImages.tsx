@@ -35,6 +35,19 @@ interface ReferenceImagesProps {
   specOnly?: boolean;
   /** Skip the Display Specification block (use in pdf-service-ref-N when specOnly is used above) */
   noSpec?: boolean;
+  /**
+   * Called when all async work is done (images cropped, review resolved).
+   * Receives the resolved data for React-PDF rendering.
+   * serviceKey matches the group key used in CorporateMinimalPDF.
+   */
+  onDataReady?: (serviceKey: string, data: {
+    refImages: string[];
+    specImages: string[];
+    specFields: Array<{ label: string; value: string }>;
+    review: { reviewerName: string; starCount: number; reviewText: string; reviewUrl: string | null } | null;
+  }) => void;
+  /** Group key for this instance — passed back through onDataReady */
+  serviceKey?: string;
 }
 
 interface CustomerReviewData {
@@ -2126,6 +2139,103 @@ function extractRefSectionImages(pages: ExtractedPage[]): string[] {
            t.includes('design specs') || t.includes('specification') || t.includes('display area');
   };
 
+  // Helper: check if a data URL is a thin strip (aspect ratio > 5:1).
+  // Thin strips were incorrectly cropped by Gemini Vision at upload time — replace with full page.
+  const isThinStrip = (dataUrl: string): boolean => {
+    try {
+      // Only applicable to base64 data URLs (not https:// Supabase URLs)
+      if (!dataUrl.startsWith('data:')) return false;
+      const img = new window.Image();
+      img.src = dataUrl;
+      // naturalWidth/Height are available synchronously when image is already loaded into memory
+      if (img.naturalWidth > 0 && img.naturalHeight > 0) {
+        const aspect = img.naturalWidth / img.naturalHeight;
+        return aspect > 5;
+      }
+      return false;
+    } catch {
+      return false;
+    }
+  };
+
+  const getDataUrlImageSize = (dataUrl: string): { width: number; height: number } | null => {
+    try {
+      if (!dataUrl.startsWith('data:')) return null;
+      const comma = dataUrl.indexOf(',');
+      if (comma === -1) return null;
+      const header = dataUrl.slice(0, comma).toLowerCase();
+      const binary = atob(dataUrl.slice(comma + 1));
+      const bytes = new Uint8Array(binary.length);
+      for (let i = 0; i < binary.length; i += 1) bytes[i] = binary.charCodeAt(i);
+
+      if (header.includes('image/png') && bytes.length >= 24) {
+        return {
+          width: (bytes[16] << 24) | (bytes[17] << 16) | (bytes[18] << 8) | bytes[19],
+          height: (bytes[20] << 24) | (bytes[21] << 16) | (bytes[22] << 8) | bytes[23],
+        };
+      }
+
+      if (header.includes('image/jpeg') || header.includes('image/jpg')) {
+        let offset = 2;
+        while (offset + 8 < bytes.length) {
+          if (bytes[offset] !== 0xff) break;
+          const marker = bytes[offset + 1];
+          const length = (bytes[offset + 2] << 8) + bytes[offset + 3];
+          const isSof =
+            (marker >= 0xc0 && marker <= 0xc3) ||
+            (marker >= 0xc5 && marker <= 0xc7) ||
+            (marker >= 0xc9 && marker <= 0xcb) ||
+            (marker >= 0xcd && marker <= 0xcf);
+          if (isSof) {
+            return {
+              width: (bytes[offset + 7] << 8) + bytes[offset + 8],
+              height: (bytes[offset + 5] << 8) + bytes[offset + 6],
+            };
+          }
+          offset += 2 + length;
+        }
+      }
+
+      return null;
+    } catch {
+      return null;
+    }
+  };
+
+  const isBadReferenceCrop = (crop: string, page: ExtractedPage): boolean => {
+    const cropSize = getDataUrlImageSize(crop);
+    if (!cropSize || cropSize.width <= 0 || cropSize.height <= 0) {
+      const thinFallback = isThinStrip(crop);
+      const hasPageFallback = !!page.imageDataUrl;
+      const reject = thinFallback || hasPageFallback;
+      console.log(`[REF-CROP-CHECK] page=${page.pageNumber} cropSize=unknown thinFallback=${thinFallback} hasPageFallback=${hasPageFallback} reject=${reject}`);
+      return reject;
+    }
+
+    const aspect = cropSize.width / cropSize.height;
+    if (aspect > 5) {
+      console.log(`[REF-CROP-CHECK] page=${page.pageNumber} crop=${cropSize.width}x${cropSize.height} aspect=${aspect.toFixed(2)} reject=aspect>5`);
+      return true;
+    }
+
+    const pageSize = getDataUrlImageSize(page.imageDataUrl);
+    if (!pageSize || pageSize.width <= 0 || pageSize.height <= 0) {
+      console.log(`[REF-CROP-CHECK] page=${page.pageNumber} crop=${cropSize.width}x${cropSize.height} aspect=${aspect.toFixed(2)} pageSize=unknown reject=false`);
+      return false;
+    }
+
+    const widthShare = cropSize.width / pageSize.width;
+    const heightShare = cropSize.height / pageSize.height;
+    const tooTight = widthShare < 0.72 || heightShare < 0.34;
+    console.log(`[REF-CROP-CHECK] page=${page.pageNumber} crop=${cropSize.width}x${cropSize.height} page=${pageSize.width}x${pageSize.height} aspect=${aspect.toFixed(2)} widthShare=${widthShare.toFixed(2)} heightShare=${heightShare.toFixed(2)} reject=${tooTight}`);
+    if (tooTight) {
+      console.warn(
+        `   Ref page ${page.pageNumber}: crop ${cropSize.width}x${cropSize.height} is too small vs page ${pageSize.width}x${pageSize.height}`,
+      );
+    }
+    return tooTight;
+  };
+
   // ── PER-PAGE STORED CROP DEBUG ───────────────────────────────────────────
   console.log(`📸 Ref pages found: ${refPages.length}`);
   refPages.forEach(p => {
@@ -2145,7 +2255,17 @@ function extractRefSectionImages(pages: ExtractedPage[]): string[] {
     }
     
     if (page.croppedImages && page.croppedImages.length > 0) {
-      allCropped.push(...page.croppedImages);
+      for (const crop of page.croppedImages) {
+        if (isBadReferenceCrop(crop, page)) {
+          // Gemini Vision returned a bad bounding box — use full page image instead
+          console.warn(`   ⚠️  Ref page ${page.pageNumber}: cropped image is a thin strip (aspect > 5:1), falling back to full page image`);
+          console.log(`[REF-CROP-USE] page=${page.pageNumber} source=full-page`);
+          allCropped.push(page.imageDataUrl);
+        } else {
+          console.log(`[REF-CROP-USE] page=${page.pageNumber} source=stored-crop`);
+          allCropped.push(crop);
+        }
+      }
     }
   }
   if (allCropped.length > 0) {
@@ -2245,7 +2365,8 @@ function getDirectLookupReviewPages(pages: ExtractedPage[]): ExtractedPage[] {
   }];
 }
 
-export const ReferenceImages: React.FC<ReferenceImagesProps> = ({ proposalPages, proposalPageMap, items, terms = [], specOnly = false, noSpec = false }) => {
+export const ReferenceImages: React.FC<ReferenceImagesProps> = (props) => {
+  const { proposalPages, proposalPageMap, items, terms = [], specOnly = false, noSpec = false } = props;
   // DEBUG: Log incoming props
   console.log('═══════════════════════════════════════════════════════════');
   console.log('🎬 DEBUG [ReferenceImages]: Component mounted/updated');
@@ -2635,7 +2756,8 @@ export const ReferenceImages: React.FC<ReferenceImagesProps> = ({ proposalPages,
   console.log('🎯 DEBUG: Final review data:', finalReview);
 
   // Lazy Gemini Vision crop for Reference Image section.
-  // Fires only when the ref page has no croppedImages (upload-time crop was skipped or returned empty).
+  // Fires ONLY when the ref page has no croppedImages (upload-time crop missing/empty).
+  // If stored croppedImages exist, always trust them for PDF and preview consistency.
   // Does NOT affect spec image, customer review, or filteredPages logic.
   const [lazyCroppedRefImages, setLazyCroppedRefImages] = useState<string[]>([]);
   // true while Gemini lazy crop is in-flight — suppresses the full-page fallback so the
@@ -2649,26 +2771,24 @@ export const ReferenceImages: React.FC<ReferenceImagesProps> = ({ proposalPages,
              t.includes('reference photo') || t.includes('reference photos') ||
              t.includes('example image') || t.includes('sample photo');
     });
-    // Fire lazy re-crop if:
-    // - ref page has 0 cropped images (upload-time crop was skipped/empty), OR
-    // - ref page has 5+ cropped images (likely Gemini returned duplicate bounding boxes at upload time)
-    // Skip when upload found 1-4 images (native extraction produced reliable crops)
+    // Fire lazy re-crop ONLY when ref page has 0 cropped images.
+    // Never override existing stored crops during export just based on count.
     if (!refPage) {
       setRefImagesLoading(false);
       setLazyCroppedRefImages([]);
       return;
     }
     const storedCount = refPage.croppedImages?.length ?? 0;
-    if (storedCount >= 1 && storedCount <= 4) {
-      // Native extraction produced at least 1 crop — trust it, skip Gemini re-crop
+    if (storedCount > 0) {
+      // Stored crops exist — trust them, skip lazy re-crop
       setRefImagesLoading(false);
       setLazyCroppedRefImages([]);
       return;
     }
-    // storedCount === 0 or >= 5 — Gemini re-crop needed.
+    // storedCount === 0 — lazy re-crop needed.
     // Set loading=true NOW so the full-page fallback is suppressed during the async wait.
     setRefImagesLoading(true);
-    console.log(`🔁 Lazy re-crop triggered: stored count = ${storedCount} (${storedCount === 0 ? 'empty' : 'suspicious duplicate count'})`);
+    console.log(`🔁 Lazy re-crop triggered: stored count = ${storedCount} (empty)`);
     let cancelled = false;
     console.log('🔍 Triggering lazy Gemini Vision crop for reference page', refPage.pageNumber);
     cropReferencePageImage(refPage.imageDataUrl, refPage.pageNumber).then(async cropped => {
@@ -2840,14 +2960,46 @@ export const ReferenceImages: React.FC<ReferenceImagesProps> = ({ proposalPages,
     // Wait for real data before becoming ready. If there are no filtered pages
     // yet, stay false — the next render (when proposalPages arrives) will
     // re-trigger this effect with non-empty filteredPages.
-    if (filteredPages.length === 0) return;
+    if (filteredPages.length === 0 || refImagesLoading) return;
     const tid = setTimeout(() => {
       if (containerRef.current) {
         containerRef.current.setAttribute('data-pdf-ready', 'true');
       }
+
+      // ── React-PDF data bridge ──────────────────────────────────────────
+      // Collect final resolved data and notify CorporateMinimalPDF via callback
+      // AND write into the DOM store so pdfExportService can read it.
+      if (props.onDataReady && props.serviceKey !== undefined) {
+        const finalRef = lazyCroppedRefImages.length > 0 ? lazyCroppedRefImages
+                      : refImagesLoading                 ? []
+                      :                                    refImageUrls;
+        const finalSpecImages: string[] =
+          specImageUrl.length >= 1              ? specImageUrl :
+          lazyCroppedPureSpecImages.length > 0  ? lazyCroppedPureSpecImages :
+          lazyCroppedSpecImage.length > 0       ? lazyCroppedSpecImage :
+                                                  specImageUrl;
+        const flatSpec: Array<{ label: string; value: string }> = specGroups.flatMap(
+          (g) => g.fields,
+        );
+        props.onDataReady(props.serviceKey, {
+          refImages: finalRef,
+          specImages: finalSpecImages,
+          specFields: flatSpec,
+          review: finalReview ?? null,
+        });
+        console.groupCollapsed(`📤 [ReferenceImages->PDF] key="${props.serviceKey}"`);
+        console.log(`finalRef=${finalRef.length}, finalSpecImages=${finalSpecImages.length}, flatSpecFields=${flatSpec.length}, review=${finalReview ? 'yes' : 'no'}`);
+        if (finalRef.length > 0) {
+          console.log('finalRef[0]=', finalRef[0].startsWith('data:') ? `data-url len=${finalRef[0].length}` : finalRef[0]);
+        }
+        if (finalSpecImages.length > 0) {
+          console.log('finalSpecImages[0]=', finalSpecImages[0].startsWith('data:') ? `data-url len=${finalSpecImages[0].length}` : finalSpecImages[0]);
+        }
+        console.groupEnd();
+      }
     }, 500);
     return () => clearTimeout(tid);
-  }, [geminiReview, lazyCroppedRefImages, lazyCroppedSpecImage, lazyCroppedPureSpecImages, filteredPages, specGroups, refImageUrls, hasSpecContent, specImageUrl]);
+  }, [geminiReview, lazyCroppedRefImages, lazyCroppedSpecImage, lazyCroppedPureSpecImages, filteredPages, specGroups, refImageUrls, refImagesLoading, hasSpecContent, specImageUrl]);
   // ─────────────────────────────────────────────────────────────────────────
 
   if (!resolvedPages || resolvedPages.length === 0) {
@@ -3103,29 +3255,63 @@ export const ReferenceImages: React.FC<ReferenceImagesProps> = ({ proposalPages,
             )}
           </>
         ) : (
-          <div className="smart-section" data-pdf-block="atomic">
-            <h3 className="smart-section-heading">
-              <span className="smart-heading-bar" />
-              {specSectionNum}. Display Specification
-            </h3>
-            {hasSpecContent && (
-              <div className="spec-table">
-                {specGroups.map((group, gi) => renderSingleSpecGroup(group, gi))}
+          <>
+            {/* Spec text + spec diagram merged into ONE atomic when both exist so they
+                never split across pages. When only one is present, kept as a single atomic. */}
+            {hasSpecContent && specImgSrcs.length > 0 ? (
+              <div className="smart-section" data-pdf-block="atomic">
+                <h3 className="smart-section-heading">
+                  <span className="smart-heading-bar" />
+                  {specSectionNum}. Display Specification
+                </h3>
+                <div className="spec-table">
+                  {specGroups.map((group, gi) => renderSingleSpecGroup(group, gi))}
+                </div>
+                <div className="ref-img-container spec-img-container">
+                  {specImgSrcs.length >= 2 ? (
+                    <div className="spec-img-grid">
+                      {specImgSrcs.map((s, i) => <img key={i} src={s} alt={`Specification diagram ${i + 1}`} className="ref-img spec-img-grid-item" />)}
+                    </div>
+                  ) : (
+                    <img src={specImgSrcs[0]} alt="Design specification diagram" className="ref-img" />
+                  )}
+                </div>
+              </div>
+            ) : hasSpecContent ? (
+              <div className="smart-section" data-pdf-block="atomic">
+                <h3 className="smart-section-heading">
+                  <span className="smart-heading-bar" />
+                  {specSectionNum}. Display Specification
+                </h3>
+                <div className="spec-table">
+                  {specGroups.map((group, gi) => renderSingleSpecGroup(group, gi))}
+                </div>
+              </div>
+            ) : specImgSrcs.length > 0 ? (
+              <div className="smart-section" data-pdf-block="atomic">
+                <h3 className="smart-section-heading">
+                  <span className="smart-heading-bar" />
+                  {specSectionNum}. Display Specification
+                </h3>
+                <div className="ref-img-container spec-img-container">
+                  {specImgSrcs.length >= 2 ? (
+                    <div className="spec-img-grid">
+                      {specImgSrcs.map((s, i) => <img key={i} src={s} alt={`Specification diagram ${i + 1}`} className="ref-img spec-img-grid-item" />)}
+                    </div>
+                  ) : (
+                    <img src={specImgSrcs[0]} alt="Design specification diagram" className="ref-img" />
+                  )}
+                </div>
+              </div>
+            ) : (
+              <div className="smart-section" data-pdf-block="atomic">
+                <h3 className="smart-section-heading">
+                  <span className="smart-heading-bar" />
+                  {specSectionNum}. Display Specification
+                </h3>
               </div>
             )}
-            {/* Show spec image when available */}
-            {specImgSrcs.length > 0 && (
-              <div className="ref-img-container spec-img-container">
-                {specImgSrcs.length >= 2 ? (
-                  <div className="spec-img-grid">
-                    {specImgSrcs.map((s, i) => <img key={i} src={s} alt={`Specification diagram ${i + 1}`} className="ref-img spec-img-grid-item" />)}
-                  </div>
-                ) : (
-                  <img src={specImgSrcs[0]} alt="Design specification diagram" className="ref-img" />
-                )}
-              </div>
-            )}
-          </div>
+          </>
         )
       )}
 

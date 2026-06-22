@@ -173,7 +173,7 @@ export function formatDurationLabel(item: {
   durationUnit?: 'months' | 'days';
 }): string {
   if (!shouldShowDuration(item)) return '—';
-  const unit = item.durationUnit === 'days' ? 'Da' : 'Mo';
+  const unit = item.durationUnit === 'days' ? 'day' : 'month';
   return `${item.duration} ${unit}`;
 }
 

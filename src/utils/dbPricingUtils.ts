@@ -190,6 +190,8 @@ export function buildLineItemsFromDbPricing(
 
   const mkId = () => `${sectionIndex}-${lineIndex++}`;
 
+  const unitLabel = (m as Record<string, unknown>).unit_label as string | undefined;
+
   const addLine = (description: string, rate: number, qty: number, isRecurring: boolean) => {
     if (rate <= 0) return;
     const resolved = resolveQuoteLineDuration({ description }, userMessage, meta);
@@ -201,6 +203,7 @@ export function buildLineItemsFromDbPricing(
       serviceId: svc.service_id,
       serviceName,
       quantity: qty,
+      quantityUnit: unitLabel,
       rate,
       duration: isRecurring ? resolved.duration : undefined,
       durationUnit: isRecurring ? resolved.durationUnit : undefined,

@@ -587,7 +587,7 @@ const QuotePreview: React.FC<QuotePreviewProps> = ({ quote, onUpdate, onSave }) 
                                 />
                               </NumberInput>
                               <Input
-                                value={lineItem.durationLabel || ''}
+                                value={lineItem.durationLabel || (lineItem.durationUnit === 'days' ? 'day' : lineItem.durationUnit === 'months' ? 'month' : '')}
                                 onChange={(e) => updateLineItem(itemIndex, lineItemIndex, 'durationLabel' as keyof LineItem, e.target.value)}
                                 placeholder="unit label"
                                 size="xs"
@@ -791,7 +791,7 @@ const QuotePreview: React.FC<QuotePreviewProps> = ({ quote, onUpdate, onSave }) 
                                   />
                                 </NumberInput>
                                 <Input
-                                  value={lineItem.durationLabel || ''}
+                                  value={lineItem.durationLabel || (lineItem.durationUnit === 'days' ? 'day' : lineItem.durationUnit === 'months' ? 'month' : '')}
                                   onChange={(e) => updateLineItem(itemIndex, lineItemIndex, 'durationLabel' as keyof LineItem, e.target.value)}
                                   placeholder="unit label"
                                   size="xs"

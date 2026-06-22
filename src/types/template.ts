@@ -12,6 +12,13 @@ export interface ExtractedPage {
   sourceName?: string;
 }
 
+export interface ServiceReadyData {
+  refImages: string[];
+  specImages: string[];
+  specFields: Array<{ label: string; value: string }>;
+  review: { reviewerName: string; starCount: number; reviewText: string; reviewUrl: string | null } | null;
+}
+
 export interface TemplateData {
   company: CompanyInfo;
   client: ClientInfo;
@@ -19,6 +26,8 @@ export interface TemplateData {
   proposalPages?: ExtractedPage[];
   // Multi-PDF map: city/sourceName key -> pages from that PDF
   proposalPageMap?: Record<string, ExtractedPage[]>;
+  /** Called by ReferenceImages when images/spec/review are resolved — used by React-PDF */
+  onServiceDataReady?: (serviceKey: string, data: ServiceReadyData) => void;
 }
 
 export interface TemplateProps {

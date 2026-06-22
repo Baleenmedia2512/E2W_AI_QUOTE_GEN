@@ -17,6 +17,9 @@ pdfjsLib.GlobalWorkerOptions.workerSrc = workerSrc;
 
 const mode = USE_GEMINI_VISION_ONLY ? 'Gemini Vision ONLY (testing)' : 'Native + Gemini fallback';
 console.log(`📦 PDF.js worker configured - Mode: ${mode}`);
+const IMAGE_DEBUG_TAG = '[image debug]';
+const imageDebug = (...args: any[]) => console.log(IMAGE_DEBUG_TAG, ...args);
+const imageDebugWarn = (...args: any[]) => console.warn(IMAGE_DEBUG_TAG, ...args);
 
 export interface ExtractedPage {
   pageNumber: number;
@@ -405,6 +408,134 @@ function extractPhotoFromLayoutRaster(
   return out;
 }
 
+function isReviewLikePage(pageText: string): boolean {
+  return /customer\s*review|google\s*review|client\s*review|customer\s*feedback/i.test(pageText);
+}
+
+function trimAndValidateCropCanvas(
+  inputCanvas: HTMLCanvasElement,
+  options?: {
+    rejectTinyContent?: boolean;
+    allowAggressiveTrim?: boolean;
+    debugContext?: string;
+  },
+): HTMLCanvasElement | null {
+  const rejectTinyContent = options?.rejectTinyContent !== false;
+  const allowAggressiveTrim = options?.allowAggressiveTrim !== false;
+  const debugContext = options?.debugContext || 'unknown';
+
+  const w = inputCanvas.width;
+  const h = inputCanvas.height;
+  if (w < 24 || h < 24) {
+    imageDebugWarn(`action=hide reason=too-small-canvas context=${debugContext} canvas=${w}x${h}`);
+    return null;
+  }
+
+  const ctx = inputCanvas.getContext('2d');
+  if (!ctx) {
+    imageDebugWarn(`action=hide reason=no-canvas-context context=${debugContext} canvas=${w}x${h}`);
+    return null;
+  }
+
+  const WHITE_BG = 245;
+  const MIN_NON_WHITE_RATIO = 0.02;
+  const TINY_AREA_RATIO = 0.14;
+  const TINY_MAX_W_RATIO = 0.5;
+  const TINY_MAX_H_RATIO = 0.5;
+
+  const pixels = ctx.getImageData(0, 0, w, h).data;
+  let minX = w;
+  let minY = h;
+  let maxX = -1;
+  let maxY = -1;
+  let nonWhiteCount = 0;
+
+  for (let y = 0; y < h; y++) {
+    for (let x = 0; x < w; x++) {
+      const i = (y * w + x) * 4;
+      const r = pixels[i];
+      const g = pixels[i + 1];
+      const b = pixels[i + 2];
+      if (r < WHITE_BG || g < WHITE_BG || b < WHITE_BG) {
+        nonWhiteCount++;
+        if (x < minX) minX = x;
+        if (y < minY) minY = y;
+        if (x > maxX) maxX = x;
+        if (y > maxY) maxY = y;
+      }
+    }
+  }
+
+  if (maxX < minX || maxY < minY) {
+    imageDebugWarn(`action=hide reason=no-visible-content context=${debugContext} canvas=${w}x${h}`);
+    return null;
+  }
+
+  const nonWhiteRatio = nonWhiteCount / (w * h);
+  if (nonWhiteRatio < MIN_NON_WHITE_RATIO) {
+    imageDebugWarn(`action=hide reason=near-blank context=${debugContext} canvas=${w}x${h} nonWhiteRatio=${nonWhiteRatio.toFixed(4)}`);
+    return null;
+  }
+
+  const boundsW = maxX - minX + 1;
+  const boundsH = maxY - minY + 1;
+  const boundsAreaRatio = (boundsW * boundsH) / (w * h);
+  const boundsWRatio = boundsW / w;
+  const boundsHRatio = boundsH / h;
+
+  if (
+    rejectTinyContent &&
+    boundsAreaRatio < TINY_AREA_RATIO &&
+    boundsWRatio < TINY_MAX_W_RATIO &&
+    boundsHRatio < TINY_MAX_H_RATIO
+  ) {
+    imageDebugWarn(
+      `action=hide reason=tiny-content context=${debugContext} canvas=${w}x${h} content=${boundsW}x${boundsH} areaRatio=${boundsAreaRatio.toFixed(4)}`,
+    );
+    return null;
+  }
+
+  const marginLeft = minX;
+  const marginTop = minY;
+  const marginRight = w - 1 - maxX;
+  const marginBottom = h - 1 - maxY;
+  const hasLargeWhitespaceMargin =
+    marginLeft > 12 || marginTop > 12 || marginRight > 12 || marginBottom > 12;
+
+  if (!allowAggressiveTrim || !hasLargeWhitespaceMargin) {
+    imageDebug(
+      `action=keep reason=no-trim context=${debugContext} canvas=${w}x${h} content=${boundsW}x${boundsH} margins=${marginLeft}/${marginTop}/${marginRight}/${marginBottom}`,
+    );
+    return inputCanvas;
+  }
+
+  const pad = 6;
+  const sx = Math.max(0, minX - pad);
+  const sy = Math.max(0, minY - pad);
+  const ex = Math.min(w - 1, maxX + pad);
+  const ey = Math.min(h - 1, maxY + pad);
+  const sw = ex - sx + 1;
+  const sh = ey - sy + 1;
+  if (sw < 24 || sh < 24) {
+    imageDebugWarn(`action=hide reason=trim-too-small context=${debugContext} from=${w}x${h} to=${sw}x${sh}`);
+    return null;
+  }
+
+  const out = document.createElement('canvas');
+  out.width = sw;
+  out.height = sh;
+  const outCtx = out.getContext('2d');
+  if (!outCtx) {
+    imageDebugWarn(`action=hide reason=no-trim-canvas-context context=${debugContext} from=${w}x${h} to=${sw}x${sh}`);
+    return null;
+  }
+  outCtx.drawImage(inputCanvas, sx, sy, sw, sh, 0, 0, sw, sh);
+  imageDebug(
+    `action=shrink-trim context=${debugContext} from=${w}x${h} to=${sw}x${sh} margins=${marginLeft}/${marginTop}/${marginRight}/${marginBottom}`,
+  );
+  return out;
+}
+
 async function extractNativeImages(
   pdfPage: any,
   renderedCanvas: HTMLCanvasElement,
@@ -490,7 +621,13 @@ async function extractNativeImages(
 
           // Draw from the already-rendered page canvas — pixel-perfect
           cropCtx.drawImage(renderedCanvas, sx, sy, sw, sh, 0, 0, sw, sh);
-          results.push({ dataUrl: cropCanvas.toDataURL('image/jpeg', 0.88), canvasY: sy });
+          const normalizedInline = trimAndValidateCropCanvas(cropCanvas, {
+            rejectTinyContent: true,
+            allowAggressiveTrim: true,
+            debugContext: `native-inline-page-${pageNumber}`,
+          });
+          if (!normalizedInline) continue;
+          results.push({ dataUrl: normalizedInline.toDataURL('image/jpeg', 0.88), canvasY: sy });
         } catch {
           // skip malformed inline image
         }
@@ -601,6 +738,11 @@ async function extractNativeImages(
 
           const willMerge = (hGap < MERGE_TOL && heightSim < 0.25) || (vGap < MERGE_TOL && widthSim < 0.25);
           console.log(`   🔗 [P2] rect[${i}] pos(${a.sx},${a.sy}) ${a.sw}×${a.sh}  ↔  rect[${j}] pos(${b.sx},${b.sy}) ${b.sw}×${b.sh} | hGap=${hGap} heightSim=${heightSim.toFixed(2)} vGap=${vGap} widthSim=${widthSim.toFixed(2)} → ${willMerge ? '✅ MERGE' : '❌ no merge'}`);
+          if (willMerge) {
+            imageDebug(
+              `action=merge page=${pageNumber} rectA=${a.sx},${a.sy},${a.sw},${a.sh} rectB=${b.sx},${b.sy},${b.sw},${b.sh}`,
+            );
+          }
 
           if (willMerge) {
             mergedRects[i] = {
@@ -702,7 +844,7 @@ async function extractNativeImages(
         // Fix 3: Review card images have white background (~98% white).
         // Raised threshold to 0.99 so review cards pass (were filtered at 0.97).
         // Pure blank pages = 100% white → still filtered.
-        const isReviewPage = /customer\s*review|google\s*review|client\s*review|customer\s*feedback/i.test(pageText);
+        const isReviewPage = isReviewLikePage(pageText);
         const blankThreshold = isReviewPage ? 0.99 : 0.90;
         console.log(`      blank filter: ${(blankRatio*100).toFixed(1)}% white (>${(blankThreshold*100).toFixed(0)}% = skip${isReviewPage ? ', review page' : ''})`);
         if (blankRatio > blankThreshold) {
@@ -711,12 +853,24 @@ async function extractNativeImages(
         }
       }
 
+      const isReviewPage = isReviewLikePage(pageText);
+      const normalizedCanvas = trimAndValidateCropCanvas(finalCanvas, {
+        rejectTinyContent: !isReviewPage,
+        allowAggressiveTrim: !isReviewPage,
+        debugContext: `native-final-page-${pageNumber}`,
+      });
+      if (!normalizedCanvas) {
+        console.log(`   🚫 [P3] SKIPPED tiny/invalid crop (${finalCanvas.width}×${finalCanvas.height})`);
+        continue;
+      }
+      finalCanvas = normalizedCanvas;
+
       // Only mark subCropDone AFTER the image passes the blank filter and is stored
       if (didSubCrop) subCropDone = true;
 
-      const areaRatio = (clampedSw * clampedSh) / (pw * ph);
+      const areaRatio = (finalCanvas.width * finalCanvas.height) / (pw * ph);
       results.push({ dataUrl: finalCanvas.toDataURL('image/jpeg', 0.88), canvasY: clampedSy });
-      console.log(`   📷 [P3] OUTPUT #${results.length} — pos(${sx},${sy}) size(${clampedSw}×${clampedSh}) area=${(areaRatio * 100).toFixed(1)}% didSubCrop=${didSubCrop} wasMerged=${sw_wasMerged} canvasY=${clampedSy}`);
+      console.log(`   📷 [P3] OUTPUT #${results.length} — pos(${sx},${sy}) size(${finalCanvas.width}×${finalCanvas.height}) area=${(areaRatio * 100).toFixed(1)}% didSubCrop=${didSubCrop} wasMerged=${sw_wasMerged} canvasY=${clampedSy}`);
     }
   } catch (opErr) {
     console.warn(`   ⚠️ Page ${pageNumber}: getOperatorList failed:`, opErr);
@@ -814,6 +968,7 @@ If no photos or mockup images are found, return exactly: []`;
       const area = ((yMax - yMin) * (xMax - xMin)) / (1000 * 1000);
       return area >= 0.04;
     });
+    imageDebug(`action=detect page=${pageNumber} stage=validated raw=${rawBoxes.length} valid=${validBoxes.length}`);
 
     // IoU deduplication: Gemini often returns multiple overlapping boxes for the same
     // visual element (e.g. 5 nearly-identical bounding boxes for one mockup image).
@@ -841,6 +996,7 @@ If no photos or mockup images are found, return exactly: []`;
       if (!overlaps) deduped.push(box);
     }
     console.log(`📦 Boxes after IoU dedup: ${deduped.length} (was ${validBoxes.length})`);
+    imageDebug(`action=detect page=${pageNumber} stage=dedup valid=${validBoxes.length} deduped=${deduped.length}`);
 
     // ── Phase 1: Wide / tall strip splitter ─────────────────────────────────
     // Gemini sometimes returns 2 full-width horizontal strips (one per row)
@@ -873,6 +1029,7 @@ If no photos or mockup images are found, return exactly: []`;
       }
       if (splitPass.length > working.length) {
         console.log(`✂️ Strip split: ${working.length} → ${splitPass.length} boxes`);
+        imageDebug(`action=split page=${pageNumber} stage=strip from=${working.length} to=${splitPass.length}`);
         working = splitPass;
       }
     }
@@ -898,6 +1055,7 @@ If no photos or mockup images are found, return exactly: []`;
           { box: [midY, midX, yMax, xMax] as [number,number,number,number], label: 'grid-br', noPad: true },
         ];
         console.log(`🔲 Grid fallback: splitting 1 large box (area ${(largestArea*100).toFixed(0)}%) into 4 quadrants`);
+        imageDebug(`action=split page=${pageNumber} stage=grid-fallback areaRatio=${largestArea.toFixed(4)} to=4+others`);
         const others = working.filter(b => b !== largest);
         return [...quadrants, ...others];
       }
@@ -944,6 +1102,7 @@ If no photos or mockup images are found, return exactly: []`;
         }
         if (extra.length > 0 && extra.length < 4) {
           console.log(`🔲 Quadrant fill: adding ${extra.length} uncovered region(s) (seamY=${seamY}, seamX=${seamX})`);
+          imageDebug(`action=split page=${pageNumber} stage=quadrant-fill add=${extra.length} base=${working.length}`);
           return [...working, ...extra];
         }
       }
@@ -956,7 +1115,7 @@ If no photos or mockup images are found, return exactly: []`;
   }
 }
 
-function cropImageRegions(imageDataUrl: string, boxes: ImageBoundingBox[]): Promise<string[]> {
+function cropImageRegions(imageDataUrl: string, boxes: ImageBoundingBox[], pageText: string = ''): Promise<string[]> {
   return new Promise((resolve) => {
     if (boxes.length === 0) {
       resolve([]);
@@ -981,7 +1140,10 @@ function cropImageRegions(imageDataUrl: string, boxes: ImageBoundingBox[]): Prom
           const sw = ex - sx;
           const sh = ey - sy;
 
-          if (sw < 30 || sh < 30) continue;
+          if (sw < 30 || sh < 30) {
+            imageDebugWarn(`action=hide reason=gemini-box-too-small rawCrop=${sw}x${sh}`);
+            continue;
+          }
 
           const cropCanvas = document.createElement('canvas');
           cropCanvas.width = sw;
@@ -990,7 +1152,18 @@ function cropImageRegions(imageDataUrl: string, boxes: ImageBoundingBox[]): Prom
           if (!ctx) continue;
 
           ctx.drawImage(img, sx, sy, sw, sh, 0, 0, sw, sh);
-          croppedImages.push(cropCanvas.toDataURL('image/jpeg', 0.85));
+          const isReviewPage = isReviewLikePage(pageText);
+          const normalizedCanvas = trimAndValidateCropCanvas(cropCanvas, {
+            rejectTinyContent: !isReviewPage,
+            allowAggressiveTrim: !isReviewPage,
+            debugContext: 'gemini-box-crop',
+          });
+          if (!normalizedCanvas) {
+            imageDebugWarn(`action=hide reason=gemini-normalize-rejected rawCrop=${sw}x${sh}`);
+            continue;
+          }
+          imageDebug(`action=keep source=gemini rawCrop=${sw}x${sh} final=${normalizedCanvas.width}x${normalizedCanvas.height}`);
+          croppedImages.push(normalizedCanvas.toDataURL('image/jpeg', 0.85));
         } catch (err) {
           console.warn('⚠️ Failed to crop region:', err);
         }
@@ -1011,7 +1184,7 @@ function cropImageRegions(imageDataUrl: string, boxes: ImageBoundingBox[]): Prom
 export async function cropReferencePageImage(imageDataUrl: string, pageNumber: number, pdfFileName?: string): Promise<string[]> {
   const boxes = await detectImageRegions(imageDataUrl, pageNumber, pdfFileName);
   if (boxes.length === 0) return [];
-  return cropImageRegions(imageDataUrl, boxes);
+  return cropImageRegions(imageDataUrl, boxes, '');
 }
 
 /**
@@ -1500,6 +1673,7 @@ export const extractPDFContent = async (file: File, maxImagePages?: number): Pro
         console.log(`   Mode: ${USE_GEMINI_VISION_ONLY ? 'GEMINI ONLY (testing)' : 'Native + Gemini fallback'}`);
         console.log(`   shouldAttemptCropping: ${shouldAttemptCropping(text)}`);
         console.log(`   Page text preview: "${text.substring(0, 100).replace(/\n/g, ' ')}..."`);
+        imageDebug(`page=${pageNumber} stage=start mode=${USE_GEMINI_VISION_ONLY ? 'gemini-only' : 'native+gemini'} shouldAttemptCropping=${shouldAttemptCropping(text)}`);
         
         // Native extraction (skip if USE_GEMINI_VISION_ONLY = true)
         if (!USE_GEMINI_VISION_ONLY) {
@@ -1521,16 +1695,20 @@ export const extractPDFContent = async (file: File, maxImagePages?: number): Pro
               nativeSuccessCount++;
               console.log(`   ✅ [NATIVE] SUCCESS: ${nativeImgs.length} native image(s) extracted`);
               console.log(`   ⏭️  [GEMINI] SKIPPED (native extraction succeeded)`);
+              imageDebug(`page=${pageNumber} source=native count=${nativeImgs.length} status=success`);
             } else {
               console.log(`   ○  [NATIVE] EMPTY: no embedded images found`);
               console.log(`   ⏩ [GEMINI] Will attempt fallback if shouldAttemptCropping=true`);
+              imageDebug(`page=${pageNumber} source=native count=0 status=empty`);
             }
           } catch (nativeErr) {
             console.log(`   ⚠️ [NATIVE] ERROR:`, nativeErr);
             console.warn(`   ⏩ [GEMINI] Will attempt fallback due to native error`);
+            imageDebugWarn(`page=${pageNumber} source=native status=error`);
           }
         } else {
           console.log(`   ⏭️  [NATIVE] SKIPPED (USE_GEMINI_VISION_ONLY = true)`);
+          imageDebug(`page=${pageNumber} source=native status=skipped mode=gemini-only`);
         }
         
         // 🆕 COORDINATE-BASED TYPE DETECTION: Extract heading positions from PDF text
@@ -1577,8 +1755,9 @@ export const extractPDFContent = async (file: File, maxImagePages?: number): Pro
             const boxes = await detectImageRegions(imageDataUrl, pageNumber, file.name);
             console.log(`   📦 [GEMINI] Detected ${boxes.length} bounding box(es)`);
             if (boxes.length > 0) {
-              const cropped = await cropImageRegions(imageDataUrl, boxes);
+              const cropped = await cropImageRegions(imageDataUrl, boxes, text);
               console.log(`   ✂️  [GEMINI] Cropped ${cropped.length} image(s) from boxes`);
+              imageDebug(`page=${pageNumber} source=gemini boxes=${boxes.length} cropped=${cropped.length}`);
               if (cropped.length > 0) {
                 croppedImages = cropped;
                 
@@ -1595,15 +1774,19 @@ export const extractPDFContent = async (file: File, maxImagePages?: number): Pro
                 console.log(`   ✅ [GEMINI] SUCCESS: ${cropped.length} image(s) extracted`);
               } else {
                 console.log(`   ○  [GEMINI] EMPTY: cropping returned no images`);
+                imageDebugWarn(`page=${pageNumber} source=gemini status=empty-after-crop boxes=${boxes.length}`);
               }
             } else {
               console.log(`   ○  [GEMINI] EMPTY: no bounding boxes detected`);
+              imageDebugWarn(`page=${pageNumber} source=gemini status=no-boxes`);
             }
           } catch (geminiErr) {
             console.log(`   ⚠️ [GEMINI] ERROR:`, geminiErr);
+            imageDebugWarn(`page=${pageNumber} source=gemini status=error`);
           }
         } else if (!croppedImages) {
           console.log(`   ⏭️  [GEMINI] SKIPPED (shouldAttemptCropping=false)`);
+          imageDebug(`page=${pageNumber} source=gemini status=skipped shouldAttemptCropping=false`);
         }
 
         // ── REVIEW PAGE FALLBACK ─────────────────────────────────────────────
@@ -1614,6 +1797,7 @@ export const extractPDFContent = async (file: File, maxImagePages?: number): Pro
         const isReviewPageFallback = /customer\s*review|google\s*review|client\s*review|customer\s*feedback/i.test(text);
         if ((!croppedImages || croppedImages.length === 0) && isReviewPageFallback) {
           console.log(`   📋 [REVIEW-FALLBACK] Review page with no extracted images — using imageDataUrl + header/footer strip`);
+          imageDebug(`page=${pageNumber} action=fallback type=review-strip reason=no-crops`);
           try {
             const stripped = await cropPageStrippingHeaderFooter(imageDataUrl);
             croppedImages = [stripped];
@@ -1625,6 +1809,8 @@ export const extractPDFContent = async (file: File, maxImagePages?: number): Pro
             console.warn(`   ⚠️ [REVIEW-FALLBACK] Strip failed:`, fallbackErr);
           }
         }
+
+        imageDebug(`page=${pageNumber} stage=final croppedImages=${croppedImages?.length || 0}`);
         // ── END REVIEW PAGE FALLBACK ─────────────────────────────────────────
         let croppedImagesWithTypes: Array<{ dataUrl: string; imageType: 'reference' | 'specification' | 'review' }> | undefined;
         let defaultImageType: 'reference' | 'specification' | 'review' = 'reference';

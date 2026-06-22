@@ -470,6 +470,7 @@ OUTPUT FORMAT — return ONLY valid JSON
       "placement": "Mobile van mounted"
     },
     "duration": "30 days",
+    "unit_label": "per Van",
     "locations": ["Bangalore", "Delhi"],
     "category": "Mobile Advertising",
     "min_quantity": 1,
@@ -488,6 +489,7 @@ CRITICAL RULES:
   (e.g. if table says "Metro Train Inside Branding" but heading says "Metro Train Wrap", use "metro-train-wrap")
 - content must be 2-3 complete sentences
 - pricing.structure MUST be "separate", "combined", or "campaign"
+- unit_label: the quantity unit shown under the rate column (e.g. "per bus", "per auto", "per van", "per shelter", "per hoarding", "per board", "per screen", "per lift", "per station", "per train", "per frame", "per piece", "per insertion", "per unit") — derive from the service type
 - Extract ALL pricing components found in PDF (display, production, installation)
 - If material/specifications not found, omit those fields (don't make up data)
 - image_pages helps identify which pages show what type of content
