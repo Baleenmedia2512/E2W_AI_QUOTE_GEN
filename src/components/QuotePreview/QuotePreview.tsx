@@ -32,6 +32,7 @@ import { Quote, QuoteItem, LineItem } from '../../types/quote';
 import {
   durationMultiplier,
   formatDurationLabel,
+  fullPricingMultiplier,
   lineItemPricingMultiplier,
   quoteHasAnyDuration,
   shouldShowDuration,
@@ -77,7 +78,7 @@ const QuotePreview: React.FC<QuotePreviewProps> = ({ quote, onUpdate, onSave }) 
   const showDurationColumn = quoteHasAnyDuration(localQuote.items);
 
   const calculateLineItemTotal = (item: LineItem & { durationIsAuto?: boolean }): number => {
-    return item.quantity * item.unitPrice * lineItemPricingMultiplier(item);
+    return item.quantity * item.unitPrice * fullPricingMultiplier(item);
   };
 
   const calculateItemSubtotal = (item: QuoteItem): number => {
@@ -153,10 +154,10 @@ const QuotePreview: React.FC<QuotePreviewProps> = ({ quote, onUpdate, onSave }) 
         item.description = value;
       } else if (field === 'quantity') {
         item.quantity = value;
-        item.total = value * item.rate * lineItemPricingMultiplier(item);
+        item.total = value * item.rate * fullPricingMultiplier(item);
       } else if (field === 'unitPrice') {
         item.rate = value;
-        item.total = item.quantity * value * lineItemPricingMultiplier(item);
+        item.total = item.quantity * value * fullPricingMultiplier(item);
       } else if (field === 'duration') {
         if (value && value > 0) {
           item.duration = value;
@@ -167,7 +168,7 @@ const QuotePreview: React.FC<QuotePreviewProps> = ({ quote, onUpdate, onSave }) 
           item.duration = 0;
           item.durationIsAuto = undefined;
         }
-        item.total = item.quantity * item.rate * lineItemPricingMultiplier(item);
+        item.total = item.quantity * item.rate * fullPricingMultiplier(item);
       } else if (field === 'remark') {
         item.remark = value;
       } else if (field === 'quantityUnit') {

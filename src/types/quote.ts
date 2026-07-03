@@ -9,6 +9,15 @@ export interface LineItem {
   durationLabel?: string; // Custom duration label e.g. "months", "per month"
   /** True when duration came from DB metadata default (display only; total uses ×1). */
   durationIsAuto?: boolean;
+  /** Minimum booking duration from proposal (e.g. 1 month). Used as divisor in pricing. */
+  minDuration?: number;
+  minDurationUnit?: 'months' | 'days';
+  /** Requested width/height from user chat (for size ratio pricing). */
+  reqWidth?: number;
+  reqHeight?: number;
+  /** Minimum width/height from proposal metadata (denominator for size ratio). */
+  minWidth?: number;
+  minHeight?: number;
   total: number;
   remark?: string; // Optional per-row remark/note
 }
@@ -25,6 +34,15 @@ export interface QuoteItem {
   durationLabel?: string; // Custom duration label e.g. "months", "per month"
   /** True when duration came from DB metadata default (display only; total uses ×1). */
   durationIsAuto?: boolean;
+  /** Minimum booking duration from proposal (e.g. 1 month). Used as divisor in pricing. */
+  minDuration?: number;
+  minDurationUnit?: 'months' | 'days';
+  /** Requested width/height from user chat (for size ratio pricing). */
+  reqWidth?: number;
+  reqHeight?: number;
+  /** Minimum width/height from proposal metadata (denominator for size ratio). */
+  minWidth?: number;
+  minHeight?: number;
   total: number;
   minimumQuantity?: number; // Minimum order quantity from proposal
   remark?: string; // Optional per-row remark/note

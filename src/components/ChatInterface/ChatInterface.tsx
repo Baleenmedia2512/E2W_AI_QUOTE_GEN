@@ -32,7 +32,7 @@ import {
 } from '../../hooks/useCityServiceRegistry';
 import { searchServices } from '../../services/pdfEmbeddingService';
 import { extractCityHint, resolveServiceIdFromCatalog } from '../../utils/serviceResolver';
-import { durationMultiplier, enrichQuoteItemsDurationFromDb, resolveQuoteLineDuration } from '../../utils/durationUtils';
+import { durationMultiplier, enrichQuoteItemsDurationFromDb, resolveQuoteLineDuration, parseSizeWH, fullPricingMultiplier } from '../../utils/durationUtils';
 import {
   buildCityServiceListFromDb,
   buildCloudSegmentCityPlan,
@@ -1832,7 +1832,13 @@ const ChatInterface: React.FC = () => {
               cleanedText,
               svcMeta,
             );
-            return {
+
+            // ── Size ratio: parse req W×H from user message; min W×H from proposal metadata ──
+            const reqSize = parseSizeWH(cleanedText);
+            const minSizeRaw = svcMeta?.size || svcMeta?.specifications?.dimensions;
+            const minSize = parseSizeWH(minSizeRaw);
+
+            const lineItem = {
               id: `${sectionIndex}-${lineIndex}`,
               title: specificTitle, // Store specific service title for T&C display
               description: description,
@@ -1843,11 +1849,20 @@ const ChatInterface: React.FC = () => {
               duration: resolved.duration,
               durationUnit: resolved.durationUnit,
               durationIsAuto: resolved.isAutoFromDb,
-              total: (item.quantity || 1) * (item.unitPrice || 0) * resolved.multiplier,
+              minDuration: resolved.minDuration,
+              minDurationUnit: resolved.minDurationUnit,
+              reqWidth: reqSize?.width,
+              reqHeight: reqSize?.height,
+              minWidth: minSize?.width,
+              minHeight: minSize?.height,
               minimumQuantity: item.minimumQuantity || undefined,
               // Only store terms on the first line item of each section to avoid duplicate textareas
               // For rate card images, clear per-item terms; for proposals, keep them
               termsAndConditions: lineIndex === 0 ? (isRateCardImage ? undefined : (section.termsAndConditions || undefined)) : undefined
+            };
+            return {
+              ...lineItem,
+              total: (item.quantity || 1) * (item.unitPrice || 0) * fullPricingMultiplier(lineItem),
             };
           });
         });
@@ -2517,7 +2532,7 @@ const ChatInterface: React.FC = () => {
       const useDur = violation.requestedDuration !== violation.originalRequested
         ? violation.requestedDuration
         : violation.minimumDuration;
-      return { ...qItem, duration: useDur, total: qItem.quantity * qItem.rate * useDur };
+      return { ...qItem, duration: useDur, total: qItem.quantity * qItem.rate * fullPricingMultiplier({ ...qItem, duration: useDur, durationIsAuto: false }) };
     });
     const newSubtotal = updatedQuote.items.reduce((sum, i) => sum + i.total, 0);
     const newGst = newSubtotal * (updatedQuote.gstPercentage / 100);

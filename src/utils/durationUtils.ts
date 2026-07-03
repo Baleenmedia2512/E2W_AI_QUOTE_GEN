@@ -17,6 +17,13 @@ export function userMentionedDuration(text: string): boolean {
 /** DB metadata shape for duration / pricing period (proposal_chunks.metadata). */
 export interface DbMetadataLike {
   duration?: string;
+  /** Minimum booking duration string e.g. "1 month", "3 months", "30 days" */
+  min_duration?: string;
+  /** Size/dimensions string e.g. "6ft x 4ft", "LED Screen: 6ft x 4ft", "12 sq ft" */
+  size?: string;
+  specifications?: {
+    dimensions?: string;
+  };
   pricing?: {
     period?: string;
     display_period?: string;
@@ -100,15 +107,24 @@ function isRecurringLine(
  * Resolve display duration + pricing multiplier for a quote line.
  * Priority: user chat > DB metadata (auto) > none.
  * Auto-fill from DB uses multiplier 1 (one billing period); user-requested duration multiplies the total.
+ * Also returns minDuration/minDurationUnit from DB metadata for use in fullPricingMultiplier.
  */
 export function resolveQuoteLineDuration(
   geminiLine: GeminiLineDurationInput,
   userMessage: string,
   dbMetadata?: DbMetadataLike | null,
-): { duration?: number; durationUnit?: 'months' | 'days'; multiplier: number; isAutoFromDb?: boolean } {
+): {
+  duration?: number;
+  durationUnit?: 'months' | 'days';
+  multiplier: number;
+  isAutoFromDb?: boolean;
+  minDuration?: number;
+  minDurationUnit?: 'months' | 'days';
+} {
   const userDur = parseDurationFromUserText(userMessage);
   const desc = geminiLine.description || '';
   const dbDur = parseDurationFromDbMetadata(dbMetadata);
+  const minDurParsed = parseMinDurationFromMetadata(dbMetadata);
 
   if (isOneTimeLineDescription(desc)) {
     return { multiplier: 1 };
@@ -124,7 +140,14 @@ export function resolveQuoteLineDuration(
         ? geminiLine.duration
         : userDur.value;
     const unit = geminiLine.durationUnit || userDur.unit;
-    return { duration: value, durationUnit: unit, multiplier: value };
+    // multiplier stays as raw duration; fullPricingMultiplier applies the /minDuration divisor
+    return {
+      duration: value,
+      durationUnit: unit,
+      multiplier: value,
+      minDuration: minDurParsed?.value,
+      minDurationUnit: minDurParsed?.unit,
+    };
   }
 
   if (dbDur) {
@@ -133,10 +156,12 @@ export function resolveQuoteLineDuration(
       durationUnit: dbDur.unit,
       multiplier: 1,
       isAutoFromDb: true,
+      minDuration: minDurParsed?.value,
+      minDurationUnit: minDurParsed?.unit,
     };
   }
 
-  return { multiplier: 1 };
+  return { multiplier: 1, minDuration: minDurParsed?.value, minDurationUnit: minDurParsed?.unit };
 }
 
 /** Multiplier for qty × rate (respects auto-metadata vs user-requested duration). */
@@ -152,6 +177,83 @@ export function lineItemPricingMultiplier(item: {
 /** @deprecated use lineItemPricingMultiplier */
 export function durationMultiplier(item: { duration?: number; durationIsAuto?: boolean }): number {
   return lineItemPricingMultiplier(item);
+}
+
+/**
+ * Parse minimum booking duration from DB metadata.
+ * e.g. "1 month" → { value: 1, unit: 'months' }, "30 days" → { value: 30, unit: 'days' }
+ */
+export function parseMinDurationFromMetadata(
+  metadata: DbMetadataLike | null | undefined,
+): { value: number; unit: 'months' | 'days' } | null {
+  const raw = metadata?.min_duration;
+  if (!raw) return null;
+  const m = raw.match(/(\d+)\s*(months?|days?)/i);
+  if (!m) return null;
+  const value = parseInt(m[1], 10);
+  const unit = m[2].toLowerCase().startsWith('day') ? 'days' as const : 'months' as const;
+  return { value, unit };
+}
+
+/**
+ * Parse width × height from a dimension string like "6ft x 4ft", "10x4", "LED: 6ft x 4ft".
+ * Returns null if pattern not found (e.g. "12 sq ft" area-only strings).
+ */
+export function parseSizeWH(
+  text: string | undefined | null,
+): { width: number; height: number } | null {
+  if (!text) return null;
+  const m = text.match(/(\d+(?:\.\d+)?)\s*(?:ft|feet|\'|m)?\s*[x\u00d7]\s*(\d+(?:\.\d+)?)\s*(?:ft|feet|\'|m)?/i);
+  if (!m) return null;
+  return { width: parseFloat(m[1]), height: parseFloat(m[2]) };
+}
+
+/**
+ * Full pricing multiplier applying all three ratios:
+ *   (reqDuration / minDuration) × (reqWidth / minWidth) × (reqHeight / minHeight)
+ *
+ * Any missing value defaults to 1 so existing behaviour is preserved.
+ * Formula: TOTAL = qty × rate × fullPricingMultiplier(item)
+ */
+export function fullPricingMultiplier(item: {
+  duration?: number;
+  durationUnit?: 'months' | 'days';
+  durationIsAuto?: boolean;
+  minDuration?: number;
+  minDurationUnit?: 'months' | 'days';
+  reqWidth?: number;
+  minWidth?: number;
+  reqHeight?: number;
+  minHeight?: number;
+}): number {
+  // ── Duration ratio ──────────────────────────────────────────────
+  let durationRatio = 1;
+  if (item.duration != null && item.duration > 0 && !item.durationIsAuto) {
+    let reqDur = item.duration;
+    let minDur = (item.minDuration != null && item.minDuration > 0) ? item.minDuration : 1;
+    // Normalise units when they differ (months ↔ days, using 30-day month)
+    const reqUnit = item.durationUnit ?? 'months';
+    const minUnit = item.minDurationUnit ?? reqUnit;
+    if (reqUnit !== minUnit) {
+      if (reqUnit === 'months' && minUnit === 'days') reqDur = reqDur * 30;
+      else if (reqUnit === 'days' && minUnit === 'months') minDur = minDur * 30;
+    }
+    durationRatio = reqDur / minDur;
+  }
+
+  // ── Width ratio ─────────────────────────────────────────────────
+  const widthRatio =
+    item.reqWidth && item.minWidth && item.minWidth > 0
+      ? item.reqWidth / item.minWidth
+      : 1;
+
+  // ── Height ratio ────────────────────────────────────────────────
+  const heightRatio =
+    item.reqHeight && item.minHeight && item.minHeight > 0
+      ? item.reqHeight / item.minHeight
+      : 1;
+
+  return durationRatio * widthRatio * heightRatio;
 }
 
 /** Pricing multiplier: user-requested duration scales total; DB auto-fill does not. */
@@ -192,6 +294,8 @@ export function enrichQuoteItemsDurationFromDb<T extends {
   serviceId?: string;
   serviceName?: string;
   durationIsAuto?: boolean;
+  minDuration?: number;
+  minDurationUnit?: 'months' | 'days';
 }>(
   items: T[],
   userMessage: string,
@@ -221,6 +325,8 @@ export function enrichQuoteItemsDurationFromDb<T extends {
       duration: resolved.duration,
       durationUnit: resolved.durationUnit,
       durationIsAuto: resolved.isAutoFromDb,
+      minDuration: resolved.minDuration,
+      minDurationUnit: resolved.minDurationUnit,
       total: item.quantity * item.rate * resolved.multiplier,
     };
   });
