@@ -519,10 +519,9 @@ const QuotePreview: React.FC<QuotePreviewProps> = ({ quote, onUpdate, onSave }) 
                               borderRadius="4px"
                               h="22px"
                               fontSize="11px"
-                              fontStyle="italic"
                               color="gray.600"
                               fontWeight="500"
-                              _placeholder={{ color: 'gray.400', fontStyle: 'italic' }}
+                              _placeholder={{ color: 'gray.400' }}
                               _hover={{ bg: 'white', borderColor: 'red.400', borderStyle: 'solid' }}
                               _focus={{ bg: 'white', borderColor: 'red.500', borderStyle: 'solid', boxShadow: '0 0 0 3px rgba(201,31,61,0.15)' }}
                             />
@@ -599,10 +598,9 @@ const QuotePreview: React.FC<QuotePreviewProps> = ({ quote, onUpdate, onSave }) 
                                 borderRadius="4px"
                                 h="22px"
                                 fontSize="11px"
-                                fontStyle="italic"
                                 color="gray.600"
                                 fontWeight="500"
-                                _placeholder={{ color: 'gray.400', fontStyle: 'italic' }}
+                                _placeholder={{ color: 'gray.400' }}
                                 _hover={{ bg: 'white', borderColor: 'red.400', borderStyle: 'solid' }}
                                 _focus={{ bg: 'white', borderColor: 'red.500', borderStyle: 'solid', boxShadow: '0 0 0 3px rgba(201,31,61,0.15)' }}
                               />
@@ -661,7 +659,7 @@ const QuotePreview: React.FC<QuotePreviewProps> = ({ quote, onUpdate, onSave }) 
                             Quantity
                           </Th>
                           <Th color="gray.600" fontWeight="600" fontSize="xs" textTransform="uppercase" isNumeric width="15%">
-                            Rate
+                            Unit Rate
                           </Th>
                           {showDurationColumn && (
                           <Th color="gray.600" fontWeight="600" fontSize="xs" textTransform="uppercase" isNumeric width="12%" title="Campaign duration when user requested months/days">
@@ -732,10 +730,9 @@ const QuotePreview: React.FC<QuotePreviewProps> = ({ quote, onUpdate, onSave }) 
                                 borderRadius="4px"
                                 h="22px"
                                 fontSize="11px"
-                                fontStyle="italic"
                                 color="gray.600"
                                 fontWeight="500"
-                                _placeholder={{ color: 'gray.400', fontStyle: 'italic' }}
+                                _placeholder={{ color: 'gray.400' }}
                                 _hover={{ bg: 'white', borderColor: '#750926', borderStyle: 'solid' }}
                                 _focus={{ bg: 'white', borderColor: '#750926', borderStyle: 'solid', boxShadow: '0 0 0 1px #750926' }}
                               />
@@ -803,10 +800,9 @@ const QuotePreview: React.FC<QuotePreviewProps> = ({ quote, onUpdate, onSave }) 
                                   borderRadius="4px"
                                   h="22px"
                                   fontSize="11px"
-                                  fontStyle="italic"
                                   color="gray.600"
                                   fontWeight="500"
-                                  _placeholder={{ color: 'gray.400', fontStyle: 'italic' }}
+                                  _placeholder={{ color: 'gray.400' }}
                                   _hover={{ bg: 'white', borderColor: '#750926', borderStyle: 'solid' }}
                                   _focus={{ bg: 'white', borderColor: '#750926', borderStyle: 'solid', boxShadow: '0 0 0 1px #750926' }}
                                 />

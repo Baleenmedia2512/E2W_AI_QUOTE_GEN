@@ -249,8 +249,8 @@ export const s = StyleSheet.create({
 
   // .smart-section-heading + .smart-heading-bar in ReferenceImages.css
   subHeadingWrap: {
-    marginTop: 12,
-    marginBottom: 11,
+    marginTop: 4,
+    marginBottom: 6,
   },
   subHeadingTopRow: {
     flexDirection: 'row',
@@ -367,11 +367,12 @@ export const s = StyleSheet.create({
     marginTop: 1,
   },
 
-  // .item-unit-label: font-size:0.72em font-style:italic color:#636e72
+  // .item-unit-label: font-size:0.72em color:#636e72
   itemUnitLabel: {
     fontSize: 9,
     color: C.mutedText,
     marginTop: 1,
+    textAlign: 'center',
   },
 
   // .items-table tfoot: bg linear-gradient(135deg,#1a3a5c,#1e4d78) → flat
@@ -434,24 +435,29 @@ export const s = StyleSheet.create({
   colAmount: { width: 92 },
 
   // ── Reference Images ─────────────────────────────────────────────────────
+  imageCenter: {
+  width: '100%',
+  alignItems: 'center',
+},
+  
   refImagesList: {
     width: 529,
-    marginBottom: 10,
+    marginBottom: 4,
   },
   refImageCard: {
     width: 529,
     borderWidth: 0.75,
     borderColor: '#d6e0ec',
     borderRadius: 5,
-    padding: 10,
-    marginBottom: 14,
+    padding: 5,
+    marginBottom: 4,
     backgroundColor: '#ffffff',
   },
   refImageLabel: {
     fontSize: 9,
     color: '#4a5568',
     fontWeight: 700,
-    marginBottom: 6,
+    marginBottom: 4,
     textTransform: 'uppercase',
     letterSpacing: 0.4,
   },
@@ -557,9 +563,9 @@ export const s = StyleSheet.create({
   reviewBox: {
     backgroundColor: '#ffffff',
     borderRadius: 6,             // 8px × 0.75
-    paddingVertical: 12,         // 16px × 0.75
-    paddingHorizontal: 15,       // 20px × 0.75
-    marginBottom: 8,
+    paddingVertical: 8,         // 16px × 0.75
+    paddingHorizontal: 12,       // 20px × 0.75
+    marginBottom: 3,
     borderWidth: 1,
     borderColor: '#e2e8f0',
   },
@@ -609,7 +615,7 @@ export const s = StyleSheet.create({
     fontSize: 10,                // 13px × 0.75 = 9.75 → 10pt
     color: '#4a5568',
     lineHeight: 1.6,
-    marginBottom: 9,             // 12px × 0.75
+    marginBottom: 3,             // 12px × 0.75
   },
   // .review-link: font-size:13px color:#2980b9 underline weight:500
   reviewLink: {
@@ -623,8 +629,8 @@ export const s = StyleSheet.create({
   // .terms-section: margin-top:24px margin-bottom:14px padding:16px 20px
   // bg:#f7f9fc border-radius:6px
   termsSection: {
-    marginTop: 18,           // 24px × 0.75
-    marginBottom: 11,        // 14px × 0.75
+    marginTop: 6,           // 24px × 0.75
+    marginBottom: 6,        // 14px × 0.75
     backgroundColor: C.termsBg,
     borderRadius: 5,
     paddingVertical: 12,     // 16px × 0.75
@@ -635,7 +641,7 @@ export const s = StyleSheet.create({
   // line-height:1.45 gap:12px
   termItem: {
     flexDirection: 'row',
-    marginBottom: 4,         // 5px × 0.75
+    marginBottom: 2,         // 5px × 0.75
     gap: 9,                  // 12px × 0.75
   },
 
@@ -644,14 +650,14 @@ export const s = StyleSheet.create({
     fontSize: 11,
     color: C.blue,
     fontWeight: 700,
-    marginTop: 0.5,
+    marginTop: 0.2,
   },
 
   termText: {
     flex: 1,
     fontSize: 11,            // 14.5px × 0.75 = 10.9pt
     color: C.bodyGrey,
-    lineHeight: 1.45,
+    lineHeight: 1,
   },
 
   // ── Bank Details ──────────────────────────────────────────────────────────
@@ -682,9 +688,9 @@ export const s = StyleSheet.create({
   // border-radius:8px text-align:center
   // p: font-size:16px color:#1a3a5c weight:500 letter-spacing:0.3px line-height:1.6
   systemNotice: {
-    marginTop: 24,           // 32px × 0.75
-    paddingVertical: 15,     // 20px × 0.75
-    paddingHorizontal: 21,   // 28px × 0.75
+    marginTop: 18,           // 32px × 0.75
+    paddingVertical: 10,     // 20px × 0.75
+    paddingHorizontal: 15,   // 28px × 0.75
     backgroundColor: C.noticeBg,
     borderWidth: 1,
     borderColor: C.noticeBorder,

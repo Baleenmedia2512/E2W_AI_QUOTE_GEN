@@ -41,9 +41,9 @@ import { s, C } from './CorporateMinimalPDF.styles';
 Font.register({
   family: 'Calibri',
   fonts: [
-    { src: '/fonts/Calibri.ttf',          fontWeight: 400, fontStyle: 'normal' },
-    { src: '/fonts/Calibri-Bold.ttf',     fontWeight: 700, fontStyle: 'normal' },
-    { src: '/fonts/Calibri-Italic.ttf',   fontWeight: 400, fontStyle: 'italic' },
+    { src: '/fonts/Calibri.ttf', fontWeight: 400, fontStyle: 'normal' },
+    { src: '/fonts/Calibri-Bold.ttf', fontWeight: 700, fontStyle: 'normal' },
+    { src: '/fonts/Calibri-Italic.ttf', fontWeight: 400, fontStyle: 'italic' },
     { src: '/fonts/Calibri-BoldItalic.ttf', fontWeight: 700, fontStyle: 'italic' },
   ],
 });
@@ -275,7 +275,7 @@ const PricingTable: React.FC<{
               <Text>{item.quantity}</Text>
               {item.quantityUnit && (
                 <Text style={s.itemUnitLabel}>
-                  ({cap(item.quantityUnit)})
+                  ({item.quantityUnit})
                 </Text>
               )}
             </View>
@@ -285,7 +285,7 @@ const PricingTable: React.FC<{
                 <Text>{item.duration ?? '\u2014'}</Text>
                 {item.duration && (
                   <Text style={s.itemUnitLabel}>
-                    ({item.durationUnit === 'days' ? 'Day' : 'Mon'})
+                    ({item.durationLabel ? item.durationLabel.toLowerCase() : item.durationUnit === 'days' ? 'day' : 'month'})
                   </Text>
                 )}
               </View>
@@ -323,7 +323,7 @@ const PricingTable: React.FC<{
                 <Text>{item.quantity}</Text>
                 {item.quantityUnit && (
                   <Text style={s.itemUnitLabel}>
-                    ({cap(item.quantityUnit)})
+                    ({item.quantityUnit})
                   </Text>
                 )}
               </View>
@@ -333,7 +333,7 @@ const PricingTable: React.FC<{
                   <Text>{item.duration ?? '\u2014'}</Text>
                   {item.duration && (
                     <Text style={s.itemUnitLabel}>
-                      ({item.durationUnit === 'days' ? 'Day' : 'Mon'})
+                      ({item.durationLabel ? item.durationLabel.toLowerCase() : item.durationUnit === 'days' ? 'day' : 'month'})
                     </Text>
                   )}
                 </View>
@@ -370,8 +370,8 @@ const PricingTable: React.FC<{
  *  allows wrap={false} to correctly move heading+first-image to the next page
  *  instead of clipping them.
  */
-const FULL_IMG_W  = 509;   // 529 - 10 - 10 (single-image card)
-const MAX_IMG_H   = 500;   // cap for portrait images — prevents overflow past page height
+const FULL_IMG_W = 379;   // 529 - 10 - 10 (single-image card)
+const MAX_IMG_H = 300;   // cap for portrait images — prevents overflow past page height
 
 /** Compute rendered {width, height} capped to MAX_IMG_H with aspect ratio preserved */
 const computeImgDims = (
@@ -397,34 +397,54 @@ const RefImages: React.FC<{
   if (validImages.length === 0) return null;
   const title = heading ? `${heading} (${validImages.length})` : undefined;
 
-  const imgStyle = (idx: number): { width: number; height?: number } => {
+  const imgStyle = (idx: number): { width: number; height: number } => {
     const d = computeImgDims(imageDimensions?.[idx]);
-    return d ? { width: d.width, height: d.height } : { width: FULL_IMG_W };
+    // If exact dimensions are missing, you MUST provide a fallback height
+    // otherwise React-PDF thinks the image is 0px tall and only renders the label.
+    return d ? { width: d.width, height: d.height } : { width: FULL_IMG_W, height: 350 };
   };
 
   // Compute minHeight for the heading+first-card group so Yoga evaluates
   // the full block size and wrap={false} correctly moves it to the next page.
-  const HEADING_H   = 46;  // approximate SubHeading height (margins + row + divider)
-  const CARD_CHROME = 40;  // card padding(20) + label(14) + labelMarginBottom(6)
-  const firstDims   = computeImgDims(imageDimensions?.[0]);
-  const groupMinH   = firstDims ? (HEADING_H + CARD_CHROME + firstDims.height) : undefined;
+  const HEADING_H = 32;  // approximate SubHeading height (margins + row + divider)
+  const CARD_CHROME = 10;  // card padding(20) + label(14) + labelMarginBottom(6)
+  const firstDims = computeImgDims(imageDimensions?.[0]);
+  const groupMinH = firstDims ? (HEADING_H + CARD_CHROME + firstDims.height) : undefined;
+
+  // DEBUG — remove after investigation
+  const dbgDims0 = imageDimensions?.[0];
+  const dbgGroupH = groupMinH;
 
   return (
-    <View style={s.refImagesList}>
+    <View style={s.refImagesList} wrap={true}>
+
+      {/* DEBUG — remove after investigation */}
+      <Text style={{ fontSize: 7, color: 'white'}}>
+        {`[DEBUG] dims[0]=${dbgDims0 ? `${dbgDims0.width}×${dbgDims0.height}` : 'NONE'} | imgH=${firstDims?.height.toFixed(1) ?? 'NONE'}pt | groupMinH=${dbgGroupH?.toFixed(1) ?? 'NONE'}pt | totalImgs=${validImages.length}`}
+      </Text>
+
+      {/* Heading + first card grouped with minHeight so Yoga knows the total
+          block size — wrap={false} can then correctly move both to next page */}
       {/* Heading + first card grouped with minHeight so Yoga knows the total
           block size — wrap={false} can then correctly move both to next page */}
       <View wrap={false} style={groupMinH ? { minHeight: groupMinH } : {}}>
         {title && <SubHeading>{title}</SubHeading>}
         <View style={s.refImageCard}>
-          <Text style={s.refImageLabel}>Image 1</Text>
-          <Image style={imgStyle(0)} src={validImages[0]} />
+          {/* <Text style={s.refImageLabel}>Image 1</Text> */}
+          {/* <Image style={imgStyle(0)} src={validImages[0]} /> */}
+          <View style={s.imageCenter}>
+            <Image style={imgStyle(0)} src={validImages[0]} />
+          </View>
         </View>
       </View>
       {/* Remaining images — each card protected individually */}
       {validImages.slice(1).map((src, idx) => (
         <View key={idx + 1} style={s.refImageCard} wrap={false}>
-          <Text style={s.refImageLabel}>{`Image ${idx + 2}`}</Text>
-          <Image style={imgStyle(idx + 1)} src={src} />
+          {/* <Text style={s.refImageLabel}>{`Image ${idx + 2}`}</Text> */}
+          {/* <Image style={imgStyle(idx + 1)} src={src} /> */}
+          <View style={s.imageCenter}>
+            <Image style={imgStyle(idx + 1)} src={src} />
+          </View>
         </View>
       ))}
     </View>
@@ -473,9 +493,9 @@ const SpecSection: React.FC<{ fields: Array<{ label: string; value: string }> }>
 };
 
 /** Display specification diagrams */
-const SPEC_COL_W   = 259;  // (529 - 11 gap) / 2
-const SPEC_IMG_W   = 251;  // SPEC_COL_W - 4 padding left - 4 padding right
-const SPEC_IMG_H   = 138;  // proportional: 251 * (280/509) ≈ 138
+const SPEC_COL_W = 259;  // (529 - 11 gap) / 2
+const SPEC_IMG_W = 251;  // SPEC_COL_W - 4 padding left - 4 padding right
+const SPEC_IMG_H = 138;  // proportional: 251 * (280/509) ≈ 138
 const SPEC_COL_GAP = 11;   // gap between the two column cards
 
 const SpecImages: React.FC<{ images: string[] }> = ({ images }) => {
@@ -546,7 +566,7 @@ const DisplaySpecificationBlock: React.FC<{
   if (!hasFields && validImages.length === 0) return null;
 
   return (
-    <View>
+    <View wrap={true}>
       <View wrap={false}>
         <SubHeading>{heading}</SubHeading>
         {hasFields && <SpecSection fields={fields} />}
@@ -832,7 +852,7 @@ const CorporateMinimalPDF: React.FC<CorporateMinimalPDFProps> = ({ data, pdfData
           const keepPricingTogether = visibleGroupItems.length <= 2;
 
           return (
-            <View key={idx} style={{ width: '100%' }}>
+            <View key={idx} style={{ width: '100%' }} wrap={true}>
               {keepPricingTogether ? (
                 <View wrap={false} style={{ width: '100%' }}>
                   <Text style={s.sectionHeadingGroup}>{heading}</Text>

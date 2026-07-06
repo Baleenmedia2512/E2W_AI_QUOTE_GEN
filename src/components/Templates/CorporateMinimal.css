@@ -591,10 +591,10 @@
 
 .template-corporate-minimal .item-unit-label {
   font-size: 0.72em;
-  font-style: italic;
   color: #636e72;
   margin-top: 1px;
   line-height: 1.2;
+  text-align: center;
 }
 
 .template-corporate-minimal .item-rate,

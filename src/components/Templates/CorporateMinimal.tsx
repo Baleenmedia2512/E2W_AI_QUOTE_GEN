@@ -85,9 +85,9 @@ export const CorporateMinimal: React.FC<TemplateProps> = ({ data, editable: _edi
     const cap = (s: string) => s ? s.charAt(0).toUpperCase() + s.slice(1) : s;
     const abbrevDuration = (s: string) => {
       const lower = s.toLowerCase().trim();
-      if (lower === 'months' || lower === 'month') return 'Mon';
-      if (lower === 'days' || lower === 'day') return 'Day';
-      return cap(s);
+      if (lower === 'months' || lower === 'month') return 'month';
+      if (lower === 'days' || lower === 'day') return 'day';
+      return s.toLowerCase();
     };
     const subtotal = items.reduce((sum, i) => sum + i.total, 0);
     const gstAmt = quote.gstEnabled ? subtotal * gstPct / 100 : 0;
@@ -121,13 +121,13 @@ export const CorporateMinimal: React.FC<TemplateProps> = ({ data, editable: _edi
                 </td>
                 <td className="item-quantity">
                   <div className="item-cell-number">{item.quantity}</div>
-                  {item.quantityUnit && <div className="item-unit-label">({cap(item.quantityUnit)})</div>}
+                  {item.quantityUnit && <div className="item-unit-label">({item.quantityUnit})</div>}
                 </td>
                 <td className="item-rate">{formatRate(item.rate)}</td>
                 {hasDuration && (
                 <td className="item-duration">
                   <div className="item-cell-number">{item.duration ?? '—'}</div>
-                  {item.duration && <div className="item-unit-label">({item.durationLabel ? cap(item.durationLabel) : abbrevDuration(item.durationUnit || 'months')})</div>}
+                  {item.duration && <div className="item-unit-label">({item.durationLabel ? item.durationLabel.toLowerCase() : abbrevDuration(item.durationUnit || 'months')})</div>}
                 </td>
                 )}
                 {!quote.gstEnabled && <td className="item-total">{formatCurrency(item.total)}</td>}
