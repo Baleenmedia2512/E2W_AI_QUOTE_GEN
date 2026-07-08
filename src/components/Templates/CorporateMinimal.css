@@ -92,6 +92,10 @@
 
 .template-corporate-minimal .company-details p {
   margin: 4px 0;
+  display: flex;
+  align-items: flex-start;
+  flex-wrap: nowrap;
+  gap: 4px;
 }
 
 .template-corporate-minimal .company-details a {
@@ -109,6 +113,10 @@
   text-decoration: underline;
   word-break: break-word;
   padding: 2px 0;
+}
+
+.template-corporate-minimal .contact-link[href^="mailto"] {
+  font-size: 18px;
 }
 
 .template-corporate-minimal .contact-link:hover {
@@ -515,6 +523,16 @@
  * desktop rows are captured, causing the tfoot to overflow the usable area. */
 .pdf-export-mode .items-table {
   font-size: 17.5px !important;
+  min-width: unset !important;
+  width: 100% !important;
+}
+.pdf-export-mode .items-table--gst {
+  min-width: unset !important;
+  width: 100% !important;
+}
+.pdf-export-mode .table-scroll-wrap {
+  overflow: visible !important;
+  min-width: unset !important;
 }
 .pdf-export-mode .items-table th {
   padding: 13px 10px !important;

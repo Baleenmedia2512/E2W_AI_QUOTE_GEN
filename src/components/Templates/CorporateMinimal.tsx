@@ -116,7 +116,7 @@ export const CorporateMinimal: React.FC<TemplateProps> = ({ data, editable: _edi
             return (
               <tr key={item.id}>
                 <td className="item-description">
-                  <div className="item-title">{formatQuoteItemDescription(item, prefixCity)}</div>
+                  <div className="item-title">{formatQuoteItemDescription(item, prefixCity).replace(/\s*\([^)]*\)/g, '').trim()}</div>
                   {item.details && <div className="item-details">{item.details}</div>}
                 </td>
                 <td className="item-quantity">
