@@ -15,6 +15,7 @@ import { registerServiceWorker } from './utils/pwa';
 import { PrivateRoute } from './components/PrivateRoute';
 import { useCompanySync } from './hooks/useCompanySync';
 import { useCityServiceRegistry } from './hooks/useCityServiceRegistry';
+import { useMetaNotifications } from './hooks/useMetaNotifications';
 import { useAppStore } from './store';
 
 const App: React.FC = () => {
@@ -22,6 +23,8 @@ const App: React.FC = () => {
   useCompanySync(true); // true = enable real-time updates
   // Build city service registry in background whenever active proposals change
   useCityServiceRegistry();
+  // Subscribe to Meta Business Messaging notifications (Instagram, Facebook, WhatsApp)
+  useMetaNotifications();
 
   const { restoreActiveProposals, loadRecentProposals } = useAppStore();
 
