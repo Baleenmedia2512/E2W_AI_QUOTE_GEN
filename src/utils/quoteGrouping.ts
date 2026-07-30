@@ -1,4 +1,13 @@
 import { QuoteItem } from '../types/quote';
+import {
+  isOneTimeLineDescription,
+  toCampaignDays,
+  toDailyRate,
+  toDisplayDuration,
+  toDisplayRecurringRate,
+  DAYS_PER_MONTH,
+  shouldDisplayAsMonths,
+} from './durationUtils';
 
 export interface ServiceGroup {
   serviceType: string;
@@ -36,6 +45,269 @@ export function formatQuoteItemDescription(item: QuoteItem, showCity: boolean): 
   }
   const cityLabel = item.city.charAt(0).toUpperCase() + item.city.slice(1);
   return `${cityLabel} — ${item.description}`;
+}
+
+/** One row per service for Executive Pricing Summary (Display + P&F collapsed). */
+export interface ExecutiveSummaryRow {
+  id: string;
+  /** Display label (title-cased) */
+  serviceId: string;
+  /** Raw catalog service_id for vendor lookup / grouping */
+  catalogServiceId?: string;
+  quantity: number;
+  quantityUnit?: string;
+  /** Display duration value (months when exact ×30, else days) */
+  duration?: number;
+  durationUnit?: 'months' | 'days';
+  durationLabel?: string;
+  /** Stored campaign length in days (for edits / formulas) */
+  durationDays?: number;
+  /** Display / recurring unit rate (excl. GST) — monthly or daily per ratePeriod */
+  requiringCharge: number;
+  /** Stored daily recurring rate (for edits) */
+  dailyRate?: number;
+  /** How requiringCharge is labeled in UI */
+  ratePeriod?: 'per_day' | 'per_month';
+  /** Printing & Fixing / one-time unit rate (excl. GST) */
+  oneTimeCharge: number;
+  /** Combined line totals excl. GST */
+  amountExclGst: number;
+  remark?: string;
+}
+
+function executiveSummaryGroupKey(item: QuoteItem): string {
+  if (item.serviceId?.trim()) {
+    return item.serviceId.trim().toLowerCase();
+  }
+  return getQuoteItemGroupKey(item);
+}
+
+/** Display service id: apartment-lift-branding-chennai → Apartment lift branding chennai */
+export function formatServiceIdDisplay(serviceId: string): string {
+  const spaced = serviceId.trim().replace(/-/g, ' ').replace(/\s+/g, ' ');
+  if (!spaced) return serviceId;
+  return spaced.charAt(0).toUpperCase() + spaced.slice(1).toLowerCase();
+}
+
+/**
+ * Collapse Display Price + Printing & Fixing lines into one row per service_id.
+ * RECURRING CHARGE = display_price; ONE TIME CHARGE = P&F; amount is excl. GST.
+ */
+export function buildExecutiveSummaryRows(items: QuoteItem[]): ExecutiveSummaryRow[] {
+  const visible = items.filter((i) => i.rate !== 0 || i.total !== 0);
+  const groups = new Map<string, QuoteItem[]>();
+
+  for (const item of visible) {
+    const key = executiveSummaryGroupKey(item);
+    const list = groups.get(key);
+    if (list) list.push(item);
+    else groups.set(key, [item]);
+  }
+
+  const rows: ExecutiveSummaryRow[] = [];
+  for (const group of groups.values()) {
+    const primary = group.find((i) => !isOneTimeLineDescription(i.description)) || group[0];
+    let requiringCharge = 0;
+    let oneTimeCharge = 0;
+    let amountExclGst = 0;
+    let remark: string | undefined;
+
+    for (const item of group) {
+      amountExclGst += item.total;
+      if (item.remark?.trim()) remark = item.remark.trim();
+      if (isOneTimeLineDescription(item.description)) {
+        if (oneTimeCharge <= 0) oneTimeCharge = item.rate;
+      } else if (requiringCharge <= 0) {
+        requiringCharge = item.rate;
+      }
+    }
+
+    const rawServiceId =
+      group.find((i) => i.serviceId?.trim())?.serviceId?.trim() ||
+      group.find((i) => i.serviceName?.trim())?.serviceName?.trim() ||
+      extractServiceType(primary.description);
+    const serviceId = formatServiceIdDisplay(rawServiceId);
+
+    // Exact ×30 days → months + per month; otherwise day-wise (incl. 34, 45)
+    const durationDays = toCampaignDays(primary.duration, primary.durationUnit);
+    const dailyRate =
+      durationDays != null && requiringCharge > 0
+        ? toDailyRate(requiringCharge, primary.durationUnit)
+        : requiringCharge;
+    const displayDur = durationDays != null ? toDisplayDuration(durationDays) : null;
+    const displayRate =
+      dailyRate > 0 ? toDisplayRecurringRate(dailyRate, durationDays) : null;
+
+    rows.push({
+      id: primary.id,
+      serviceId,
+      catalogServiceId: rawServiceId,
+      quantity: primary.quantity,
+      quantityUnit: primary.quantityUnit,
+      duration: displayDur?.value,
+      durationUnit: displayDur?.unit,
+      durationLabel: displayDur?.label,
+      durationDays,
+      requiringCharge: displayRate?.rate ?? 0,
+      dailyRate: dailyRate > 0 ? dailyRate : undefined,
+      ratePeriod: displayRate?.period,
+      oneTimeCharge,
+      amountExclGst,
+      remark,
+    });
+  }
+
+  return rows;
+}
+
+/** Line in the per-service Pricing Breakdown (DESCRIPTION / AMOUNT). */
+export interface PricingBreakdownLine {
+  kind: 'display' | 'onetime' | 'subtotal';
+  descriptionLines: string[];
+  amount: number;
+  /** Executive-summary row for inline edits (display / onetime only). */
+  editRow?: ExecutiveSummaryRow;
+  /** Qty unit label used in the formula (e.g. "buses", "bus"). */
+  formulaQtyUnit?: string;
+}
+
+/** Singular qty unit for formulas (e.g. "bus", "Auto"). */
+function singularQtyUnit(unit: string | undefined): string {
+  const raw = (unit || 'unit').replace(/^per\s+/i, '').trim() || 'unit';
+  // Already-plural common forms → singular
+  if (/^buses$/i.test(raw)) return raw[0] === raw[0].toUpperCase() ? 'Bus' : 'bus';
+  if (/^autos$/i.test(raw)) return raw[0] === raw[0].toUpperCase() ? 'Auto' : 'auto';
+  if (/ies$/i.test(raw) && raw.length > 3) {
+    return `${raw.slice(0, -3)}y`;
+  }
+  if (/s$/i.test(raw) && !/(ss|us|is)$/i.test(raw)) {
+    return raw.slice(0, -1);
+  }
+  return raw;
+}
+
+/** Plural qty unit for description titles (e.g. "buses", "Autos") — all unit types. */
+function pluralizeQtyUnit(unit: string | undefined, qty: number): string {
+  const raw = singularQtyUnit(unit);
+  if (qty === 1) return raw;
+  const lower = raw.toLowerCase();
+  const irregular: Record<string, string> = {
+    bus: 'buses',
+    auto: 'autos',
+  };
+  if (irregular[lower]) {
+    const plural = irregular[lower];
+    // Preserve leading capital (Auto → Autos, bus → buses)
+    if (raw[0] === raw[0].toUpperCase() && raw[0] !== raw[0].toLowerCase()) {
+      return plural.charAt(0).toUpperCase() + plural.slice(1);
+    }
+    return plural;
+  }
+  if (/y$/i.test(raw) && !/[aeiou]y$/i.test(raw)) return `${raw.slice(0, -1)}ies`;
+  if (/s$/i.test(raw)) return raw;
+  return `${raw}s`;
+}
+
+function campaignDays(row: ExecutiveSummaryRow): number {
+  if (row.durationDays != null && row.durationDays > 0) return row.durationDays;
+  return toCampaignDays(row.duration, row.durationUnit) ?? 30;
+}
+
+function fmtBreakdownInr(n: number, maxFrac = 2): string {
+  return new Intl.NumberFormat('en-IN', {
+    style: 'currency',
+    currency: 'INR',
+    minimumFractionDigits: 0,
+    maximumFractionDigits: maxFrac,
+  }).format(n);
+}
+
+/**
+ * Build DESCRIPTION / AMOUNT lines for a service Pricing Breakdown section.
+ * Amounts come from stored item totals so they match the quote.
+ */
+export function buildPricingBreakdownLines(items: QuoteItem[]): {
+  lines: PricingBreakdownLine[];
+  subtotal: number;
+} {
+  const visible = items.filter((i) => i.rate !== 0 || i.total !== 0);
+  const groups = new Map<string, QuoteItem[]>();
+
+  for (const item of visible) {
+    const key = executiveSummaryGroupKey(item);
+    const list = groups.get(key);
+    if (list) list.push(item);
+    else groups.set(key, [item]);
+  }
+
+  const lines: PricingBreakdownLine[] = [];
+  let subtotal = 0;
+
+  for (const group of groups.values()) {
+    const primary = group.find((i) => !isOneTimeLineDescription(i.description)) || group[0];
+    const row = buildExecutiveSummaryRows(group)[0];
+    if (!row) continue;
+
+    const qty = row.quantity;
+    const unitPlural = pluralizeQtyUnit(row.quantityUnit ?? primary.quantityUnit, qty);
+    const unitSingular = singularQtyUnit(row.quantityUnit ?? primary.quantityUnit);
+    const unitForFormula = qty === 1 ? unitSingular : unitPlural;
+    const days = campaignDays(row);
+
+    const displayItem = group.find((i) => !isOneTimeLineDescription(i.description));
+    const pfItem = group.find((i) => isOneTimeLineDescription(i.description));
+
+    if (displayItem && (displayItem.rate > 0 || displayItem.total > 0)) {
+      const rate = displayItem.rate > 0 ? displayItem.rate : (row.dailyRate ?? row.requiringCharge);
+      const perDay = toDailyRate(rate, displayItem.durationUnit);
+      const asMonths = shouldDisplayAsMonths(days);
+
+      let prose: string;
+      let formula: string;
+      if (asMonths) {
+        const months = days / DAYS_PER_MONTH;
+        const perMonth = Math.round(perDay * DAYS_PER_MONTH * 100) / 100;
+        const monthLabel = months === 1 ? 'month' : 'months';
+        prose = `Display rental for ${qty} ${unitPlural} for ${months} ${monthLabel}.`;
+        formula = `${fmtBreakdownInr(perMonth)} (per month) × ${qty} (${unitForFormula}) × ${months} (${monthLabel})`;
+      } else {
+        prose = `Display rental for ${qty} ${unitPlural} for ${days} days.`;
+        formula = `${fmtBreakdownInr(perDay)} (per day) × ${qty} (${unitForFormula}) × ${days} (days)`;
+      }
+
+      lines.push({
+        kind: 'display',
+        descriptionLines: [prose, formula],
+        amount: displayItem.total,
+        editRow: row,
+        formulaQtyUnit: unitForFormula,
+      });
+      subtotal += displayItem.total;
+    }
+
+    if (pfItem && (pfItem.rate > 0 || pfItem.total > 0)) {
+      const unitRate = pfItem.rate > 0 ? pfItem.rate : row.oneTimeCharge;
+      lines.push({
+        kind: 'onetime',
+        descriptionLines: [
+          `Printing & mounting charges for ${qty} ${unitPlural}`,
+          `${fmtBreakdownInr(unitRate)} (per qty) × ${qty} (${unitForFormula})`,
+        ],
+        amount: pfItem.total,
+        editRow: row,
+        formulaQtyUnit: unitForFormula,
+      });
+      subtotal += pfItem.total;
+    }
+  }
+
+  lines.push({
+    kind: 'subtotal',
+    descriptionLines: ['Amount excluding GST'],
+    amount: subtotal,
+  });
+
+  return { lines, subtotal };
 }
 
 /**

@@ -9,6 +9,7 @@
  *   Gradients:      → flat backgroundColor (#1a3a5c)
  *   box-shadow:     → omitted (React-PDF unsupported)
  *   @media:         → omitted (PDF has no viewport)
+ *   fontSize:       → PDF_FONT.* from CorporateMinimalPDF.fontSizes.ts
  *
  * A4 geometry:
  *   Page width:     595.28pt
@@ -17,6 +18,7 @@
  */
 
 import { StyleSheet } from '@react-pdf/renderer';
+import { PDF_FONT } from './CorporateMinimalPDF.fontSizes';
 
 // ── Colour tokens (exact from CorporateMinimal.css) ──────────────────────
 export const C = {
@@ -50,10 +52,10 @@ export const s = StyleSheet.create({
   // .template-corporate-minimal: padding 36px 44px 20px 44px
   page: {
     fontFamily: 'Calibri',
-    fontSize: 10,
+    fontSize: PDF_FONT.page,
     color: C.bodyText,
     paddingTop: 27,          // 36px × 0.75
-    paddingBottom: 64,       // reserve extra safe area above fixed footer to avoid overlap/cut
+    paddingBottom: 32,       // was 64 — 50% less reserve above fixed footer
     paddingLeft: 33,         // 44px × 0.75
     paddingRight: 33,
     backgroundColor: C.white,
@@ -101,14 +103,14 @@ export const s = StyleSheet.create({
   // .quote-title: font-size:27px weight:800 color:#1a3a5c letter-spacing:6px
   // margin: 18px 0 20px 0 text-align:center uppercase
   quoteTitle: {
-    fontSize: 20,            // 27px × 0.75
+    fontSize: PDF_FONT.quoteTitle,            // 27px × 0.75
     fontWeight: 700,
     color: C.navy,
     textAlign: 'center',
     textTransform: 'uppercase',
-    letterSpacing: 4,        // 6px → 4pt
-    marginTop: 14,           // 18px × 0.75
-    marginBottom: 15,        // 20px × 0.75
+    letterSpacing: 3,
+    marginTop: 10,
+    marginBottom: 11,
   },
 
   // .header-info-row: bg:#f0f4f8 border-radius:6px padding:14px 18px
@@ -128,7 +130,7 @@ export const s = StyleSheet.create({
   // Note: textTransform removed — email must stay lowercase, labels uppercased manually
   companyDetails: {
     flex: 1,
-    fontSize: 10,
+    fontSize: PDF_FONT.companyDetails,
     color: C.mutedText,
     fontWeight: 700,
     lineHeight: 1.7,
@@ -149,22 +151,22 @@ export const s = StyleSheet.create({
   metaRow: {
     flexDirection: 'row',
     justifyContent: 'flex-end',
-    marginBottom: 6,         // 8px × 0.75
-    gap: 8,                  // 10px × 0.75
+    marginBottom: 3,
+    gap: 5,
   },
 
   // .meta-label: font-size:18.5px weight:600 color:#636e72 uppercase letter-spacing:0.3px
   metaLabel: {
-    fontSize: 10,            // 18.5px × 0.75 → scaled
+    fontSize: PDF_FONT.metaLabel,
     fontWeight: 700,
     color: C.mutedText,
     textTransform: 'uppercase',
-    letterSpacing: 0.3,
+    letterSpacing: 0.2,
   },
 
   // .meta-value: font-size:20px weight:600 color:#1a3a5c
   metaValue: {
-    fontSize: 11,            // 20px × 0.75 = 15pt → scaled
+    fontSize: PDF_FONT.metaValue,
     fontWeight: 700,
     color: C.navy,
   },
@@ -174,40 +176,48 @@ export const s = StyleSheet.create({
   // border-left:4px solid #2980b9 border-radius:0 6px 6px 0
   clientSection: {
     backgroundColor: C.clientBg,
-    paddingVertical: 14,     // 18px × 0.75
-    paddingHorizontal: 18,   // 24px × 0.75
-    marginBottom: 14,        // 18px × 0.75
+    paddingVertical: 8,
+    paddingHorizontal: 12,
+    marginBottom: 10,
     borderLeftWidth: 4,
     borderLeftColor: C.blue,
     borderTopRightRadius: 5, // 6px × 0.75 — right side only, matches OLD border-radius:0 6px 6px 0
     borderBottomRightRadius: 5,
   },
 
-  // .client-section h3: font-size:20px weight:700 color:#2980b9
-  // uppercase letter-spacing:1.5px margin-bottom:10px
+  clientInlineRow: {
+    fontSize: PDF_FONT.clientDetail,
+    color: C.bodyText,
+    lineHeight: 1.6,
+    textAlign: 'left',
+  } as any,
+
+  clientOverflowRow: {
+    fontSize: PDF_FONT.clientDetail,
+    color: C.bodyText,
+    lineHeight: 1.6,
+    textAlign: 'center',
+    marginTop: 2,
+  } as any,
+
   clientHeading: {
-    fontSize: 11,            // 20px × 0.75 = 15pt → scaled
+    fontSize: PDF_FONT.clientHeading,
     fontWeight: 700,
     color: C.blue,
     textTransform: 'uppercase',
     letterSpacing: 1,
-    marginBottom: 8,         // 10px × 0.75
   },
 
-  // .client-name: font-size:21px weight:700 color:#1a3a5c margin-bottom:5px
   clientName: {
-    fontSize: 14,            // 21px × 0.75 = 15.75pt → 14pt
+    fontSize: PDF_FONT.clientName,
     fontWeight: 700,
     color: C.navy,
-    marginBottom: 4,         // 5px × 0.75
   },
 
-  // .client-details: font-size:20.5px line-height:1.5
-  // .client-details p: margin:5px 0
   clientDetail: {
-    fontSize: 11,            // 20.5px × 0.75 = 15.4pt → scaled
+    fontSize: PDF_FONT.clientDetail,
     color: C.bodyText,
-    marginBottom: 4,         // 5px × 0.75
+    marginBottom: 4,
     lineHeight: 1.5,
   },
 
@@ -217,7 +227,7 @@ export const s = StyleSheet.create({
   // letterSpacing:0.08em margin-bottom:18px padding-bottom:10px
   // border-bottom:2px solid #2980b9
   sectionHeading: {
-    fontSize: 15,            // 20px × 0.75
+    fontSize: PDF_FONT.sectionHeading,            // 20px × 0.75
     fontWeight: 700,
     color: C.darkHeading,
     textAlign: 'center',
@@ -234,7 +244,7 @@ export const s = StyleSheet.create({
   // for multi-service group headings (e.g. "Bus Full Branding", "Auto Semi Branding").
   // Applied in CorporateMinimalPDF.tsx — step 3.1 of the migration plan.
   sectionHeadingGroup: {
-    fontSize: 15,            // 20px × 0.75
+    fontSize: PDF_FONT.sectionHeadingGroup,            // 20px × 0.75
     fontWeight: 700,
     color: C.burgundy,
     textAlign: 'center',
@@ -259,17 +269,20 @@ export const s = StyleSheet.create({
   },
   subHeadingBar: {
     width: 3,
-    height: 12,
+    // Match heading text height so the accent bar looks even
+    height: PDF_FONT.subHeading + 2,
     borderRadius: 2,
     backgroundColor: C.blue,
     marginRight: 8,
+    alignSelf: 'center',
   },
   subHeading: {
-    fontSize: 11,
+    fontSize: PDF_FONT.subHeading,
     fontWeight: 700,
     color: C.darkText,
     textTransform: 'uppercase',
     letterSpacing: 0.6,
+    lineHeight: 1.2,
   },
   subHeadingDivider: {
     height: 1.5,
@@ -281,9 +294,15 @@ export const s = StyleSheet.create({
   table: {
     width: '100%',
     marginBottom: 8,
-    borderWidth: 0.75,
-    borderColor: C.tableBorder,
+    // Keep only vertical outer rails; horizontal row lines come from rows themselves.
+    // This avoids full-width "cut" lines when table content flows across pages.
+    borderLeftWidth: 0.85,
+    borderRightWidth: 0.85,
+    borderLeftColor: '#b8cbe0',
+    borderRightColor: '#b8cbe0',
   },
+
+  /** Split-table segments removed — single `table` only (avoids heading overlap) */
 
   // .items-table thead: bg linear-gradient(135deg,#1a3a5c,#1e4d78) → flat
   thead: {
@@ -296,24 +315,64 @@ export const s = StyleSheet.create({
   // Table scale: 19px × 0.55 = 10.45pt
   theadCell: {
     color: C.white,
-    fontSize: 11.5,
+    fontSize: PDF_FONT.theadCell,
     fontWeight: 700,
     textTransform: 'uppercase',
-    letterSpacing: 0.3,
-    lineHeight: 1.1,
+    letterSpacing: 0.1,
+    lineHeight: 1.2,
     paddingVertical: 12,
-    paddingHorizontal: 7,
+    paddingHorizontal: 4,
     textAlign: 'right',
-    borderRightWidth: 0.6,
-    borderRightColor: '#4a7aab',  // subtle blue-grey on navy bg — approximates rgba(255,255,255,0.2)
+    borderRightWidth: 0.75,
+    borderRightColor: '#6f92b3',
+  },
+
+  /** Second header row: A | B | C | D | (A×B×C)+(A×D) */
+  theadLettersRow: {
+    borderTopWidth: 0.75,
+    borderTopColor: '#6f92b3',
+  },
+  theadLetterCell: {
+    color: C.white,
+    fontSize: 12,
+    fontWeight: 700,
+    paddingVertical: 7,
+    paddingHorizontal: 4,
+    textAlign: 'center',
+    borderRightWidth: 0.75,
+    borderRightColor: '#6f92b3',
+    textTransform: 'none',
+  },
+  theadLetterCellEmpty: {
+    paddingVertical: 7,
+    paddingHorizontal: 4,
+    borderRightWidth: 0.75,
+    borderRightColor: '#6f92b3',
+  },
+  theadFormulaCell: {
+    color: C.white,
+    fontSize: 10.5,
+    fontWeight: 600,
+    paddingVertical: 7,
+    paddingHorizontal: 4,
+    textAlign: 'right',
+    borderRightWidth: 0.75,
+    borderRightColor: '#6f92b3',
+    textTransform: 'none',
+    lineHeight: 1.25,
   },
 
   // .items-table tbody tr: border-bottom:1.5px solid #b8c8d8 min-height via padding
   tbodyRow: {
     flexDirection: 'row',
+    // Row-owned top separator ensures the first row on a new page still has
+    // a visible horizontal line (clean continuation after page breaks).
+    borderTopWidth: 1,
+    borderTopColor: C.tableRowBorder,
+    // Closing edge so the last visible row before footer is clearly ended.
     borderBottomWidth: 1,
     borderBottomColor: C.tableRowBorder,
-    minHeight: 34,
+    minHeight: 38,
   },
 
   // tr:nth-child(even): bg:#fafbfc
@@ -325,19 +384,19 @@ export const s = StyleSheet.create({
   // border-right:1px solid #e8ecf1 border-bottom:1.5px solid #b8c8d8
   // Table scale: 18px × 0.55 = 9.9pt
   tbodyCell: {
-    fontSize: 12,
+    fontSize: PDF_FONT.tbodyCell,
     color: C.bodyText,
     lineHeight: 1.2,
-    paddingVertical: 12,
-    paddingHorizontal: 7,
+    paddingVertical: 8,
+    paddingHorizontal: 4,
     textAlign: 'right',
-    borderRightWidth: 0.35,
-    borderRightColor: C.tableCellBorder,
+    borderRightWidth: 0.6,
+    borderRightColor: '#c1d2e3',
   },
 
   // .item-final: background:#e8f0fb color:#1a3a5c font-weight:700
   tbodyCellFinal: {
-    fontSize: 12.5,
+    fontSize: PDF_FONT.tbodyCellFinal,
     color: C.navy,
     fontWeight: 700,
     lineHeight: 1.2,
@@ -352,7 +411,7 @@ export const s = StyleSheet.create({
   // .item-title: font-size:18px → .items-table--gst .item-title: 18px
   // weight:600 color:#1a3a5c margin-bottom:3px
   itemTitle: {
-    fontSize: 12,
+    fontSize: PDF_FONT.itemTitle,
     fontWeight: 700,
     color: C.navy,
     lineHeight: 1.2,
@@ -361,7 +420,7 @@ export const s = StyleSheet.create({
 
   // .item-details: font-size:17px color:#636e72 line-height:1.5 margin-top:2px
   itemDetails: {
-    fontSize: 11,
+    fontSize: PDF_FONT.itemDetails,
     color: C.mutedText,
     lineHeight: 1.35,
     marginTop: 1,
@@ -369,10 +428,10 @@ export const s = StyleSheet.create({
 
   // .item-unit-label: font-size:0.72em color:#636e72
   itemUnitLabel: {
-    fontSize: 9,
+    fontSize: PDF_FONT.itemUnitLabel,
     color: C.mutedText,
     marginTop: 1,
-    textAlign: 'center',
+    textAlign: 'right',
   },
 
   // .items-table tfoot: bg linear-gradient(135deg,#1a3a5c,#1e4d78) → flat
@@ -380,59 +439,263 @@ export const s = StyleSheet.create({
   tfoot: {
     flexDirection: 'row',
     backgroundColor: C.navy,
+    borderTopWidth: 0,
+  },
+
+  /** Top edge only on first total row (separates from table body) */
+  tfootFirst: {
     borderTopWidth: 2,
     borderTopColor: C.navy,
   },
 
-  // .tfoot-label: padding:13px 16px font-size:14.5px weight:700
-  // color:rgba(255,255,255,0.85) uppercase letter-spacing:0.4px
-  // Table scale: 14.5px × 0.55 = 7.975pt
-  tfootLabel: {
-    color: C.tfootLabelColor,
-    fontSize: 12,
-    fontWeight: 700,
-    lineHeight: 1.15,
-    paddingVertical: 12,
-    paddingHorizontal: 12,   // 16px × 0.75
-    textAlign: 'left',
-    textTransform: 'uppercase',
-    letterSpacing: 0.4,
+  /** No bar line between excl / incl rows */
+  tfootInclRow: {
+    borderTopWidth: 0,
   },
 
-  // .tfoot-incl: padding:12px 16px font-size:21.5px weight:800
-  // color:#ffffff letter-spacing:0.3px
-  // Table scale: 21.5px × 0.55 = 11.825pt
-  tfootAmount: {
-    color: C.white,
-    fontSize: 18,
+  tfootLabelWrap: {
+    flex: 1,
+    alignItems: 'flex-end',
+    justifyContent: 'center',
+    paddingLeft: 4,
+    paddingRight: 8,
+  },
+
+  tfootLabel: {
+    color: C.tfootLabelColor,
+    fontSize: PDF_FONT.tfootLabel,
     fontWeight: 700,
     lineHeight: 1.15,
-    paddingVertical: 12,
-    paddingHorizontal: 12,
+    paddingVertical: 8,
+    paddingHorizontal: 0,
     textAlign: 'right',
-    letterSpacing: 0.3,
+    textTransform: 'none',
+    letterSpacing: 0.2,
+  },
+
+  tfootLabelIncl: {
+    color: C.white,
+    fontSize: PDF_FONT.tfootLabelIncl,
+    fontWeight: 800,
+    lineHeight: 1.15,
+    paddingVertical: 9,
+    paddingHorizontal: 0,
+    textAlign: 'right',
+    textTransform: 'none',
+    letterSpacing: 0.2,
+  },
+
+  tfootAmountExcl: {
+    color: C.white,
+    fontSize: PDF_FONT.tfootAmountExcl,
+    fontWeight: 700,
+    lineHeight: 1.15,
+    paddingVertical: 8,
+    paddingHorizontal: 4,
+    textAlign: 'right',
+    letterSpacing: 0.15,
+  },
+
+  tfootAmount: {
+    color: C.white,
+    fontSize: PDF_FONT.tfootAmount,
+    fontWeight: 800,
+    lineHeight: 1.15,
+    paddingVertical: 9,
+    paddingHorizontal: 0,
+    textAlign: 'right',
+    letterSpacing: 0.1,
+  },
+
+  /** Wider amount cell in exec-summary footer — prevents large INR totals clipping */
+  tfootAmountCol: {
+    width: 125,
+    flexShrink: 0,
+    paddingRight: 6,
+    paddingLeft: 2,
+    alignItems: 'flex-end',
+    justifyContent: 'center',
   },
 
   // Generic tfoot cell (empty cells)
   tfootCell: {
     color: C.white,
-    fontSize: 12,
+    fontSize: PDF_FONT.tfootCell,
     fontWeight: 700,
     lineHeight: 1.15,
-    paddingVertical: 12,
-    paddingHorizontal: 6,
+    paddingVertical: 8,
+    paddingHorizontal: 4,
     textAlign: 'right',
   },
 
-  // ── Column Widths ────────────────────────────────────────────────────────
-  // .items-table--gst CSS percentages applied to 529pt content width
-  // desc:26% qty:9% rate:13% dur:10% gst:7% final:16%
-  colDesc:   { flex: 1, textAlign: 'left' },   // ~208pt (remaining)
-  colQty:    { width: 46 },
+  // ── Column Widths — wider AMOUNT so totals (incl. GST) are not clipped
+  // Total ~529pt
+  colServiceId: { width: 125, textAlign: 'left' },
+  colQty:       { width: 55, textAlign: 'center' },
+  colDur:       { width: 65, paddingRight: 2, textAlign: 'center' },
+  /** Header-only: extra right padding on DURATION label (values unchanged) */
+  colDurHeader: { paddingRight: 14 },
+  colRecurring: { width: 85, textAlign: 'center' },
+  colOnetime:   { width: 74, textAlign: 'center' },
+  colAmount:    { width: 125 },
+  // Pricing Breakdown (per-service) — DESCRIPTION | AMOUNT
+  colBreakdownDesc: { flex: 1, textAlign: 'left' },
+  colBreakdownAmount: { width: 145, textAlign: 'right' },
+  /** Tighter header padding for breakdown only (does not affect Executive Summary) */
+  breakdownTheadCell: {
+    paddingVertical: 7.9, // −1.5% from 8
+  },
+  breakdownDescPrimary: {
+    fontSize: PDF_FONT.cellValue,
+    color: C.bodyText,
+    fontWeight: 700,
+    lineHeight: 1.28,
+    marginBottom: 2,
+  },
+  breakdownDescSecondary: {
+    flex: 1,
+    fontSize: PDF_FONT.breakdownFormula, // ~1% smaller than cellValue
+    color: C.bodyText,
+    fontWeight: 700,
+    lineHeight: 1.28,
+    textAlign: 'left',
+    paddingRight: 8,
+  },
+  breakdownDetailRow: {
+    paddingVertical: 4.9, // −1.5% from 5
+    paddingHorizontal: 4,
+    minHeight: 0, // override tbodyRow minHeight: 34
+  },
+  breakdownDetailBody: {
+    width: '100%',
+    flexDirection: 'column',
+  },
+  /** Formula line + amount on one row so they align straight */
+  breakdownFormulaRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    width: '100%',
+  },
+  breakdownAmountInline: {
+    fontSize: PDF_FONT.cellValue,
+    color: C.bodyText,
+    fontWeight: 700,
+    textAlign: 'right',
+  },
+  breakdownRateUnit: {
+    fontSize: PDF_FONT.itemUnitLabel,
+    fontWeight: 400,
+    color: C.mutedText,
+  },
+  breakdownAmountStack: {
+    width: 120,
+    alignItems: 'flex-end',
+  },
+  breakdownExclGstLabel: {
+    fontSize: PDF_FONT.itemUnitLabel,
+    color: C.mutedText,
+    textAlign: 'right',
+    marginTop: 1,
+  },
+  /** Totals block inside Pricing Breakdown — one row, labels/amounts stacked */
+  breakdownSummaryBlock: {
+    alignItems: 'flex-start',
+    paddingVertical: 4.9, // −1.5% from 5
+    minHeight: 0,
+    backgroundColor: '#eef2f7',
+  },
+  breakdownSummaryLabels: {
+    alignItems: 'flex-end',
+    paddingHorizontal: 4,
+  },
+  breakdownSummaryAmounts: {
+    alignItems: 'flex-end',
+    paddingHorizontal: 4,
+  },
+  breakdownSummaryLabel: {
+    fontSize: 15.5,
+    color: C.navy,
+    fontWeight: 700,
+    textAlign: 'right',
+    lineHeight: 1.35,
+    marginBottom: 1,
+  },
+  breakdownSummaryAmount: {
+    fontSize: 17.5,
+    color: C.bodyText,
+    fontWeight: 700,
+    textAlign: 'right',
+    lineHeight: 1.35,
+    marginBottom: 1,
+  },
+  breakdownSummaryLabelEmph: {
+    fontSize: 24,
+    color: C.navy,
+    fontWeight: 800,
+    textAlign: 'right',
+    lineHeight: 1.35,
+    marginBottom: 0,
+    marginTop: 6,
+  },
+  breakdownSummaryAmountEmph: {
+    fontSize: PDF_FONT.tfootAmount,
+    color: C.navy,
+    fontWeight: 800,
+    textAlign: 'right',
+    lineHeight: 1.35,
+    marginBottom: 0,
+    marginTop: 2,
+  },
+  // Legacy aliases kept for any remaining references
+  colDesc:   { flex: 1, textAlign: 'left' },
   colRate:   { width: 75 },
-  colDur:    { width: 78 },
   colGstPct: { width: 46 },
-  colAmount: { width: 92 },
+
+  /** Service ID cell — allow multi-line wrap (do not clip) */
+  serviceIdCell: {
+    textAlign: 'left',
+    alignItems: 'flex-start',
+    flexShrink: 1,
+  },
+
+  /** Row of kebab segments that wrap inside the column */
+  serviceIdWrap: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    width: '100%',
+    alignItems: 'flex-start',
+  },
+
+  /** One kebab segment (e.g. "bus-", "branding-") — never mid-word split */
+  serviceIdText: {
+    fontSize: PDF_FONT.serviceIdText,
+    fontWeight: 700,
+    color: C.navy,
+    lineHeight: 1.3,
+  },
+
+  /** Numeric cell stack (value + unit) — right-aligned like UI */
+  cellStackRight: {
+    alignItems: 'flex-end',
+    justifyContent: 'flex-start',
+  },
+  cellStackCenter: {
+    alignItems: 'center',
+    justifyContent: 'flex-start',
+  },
+
+  cellValue: {
+    fontSize: PDF_FONT.cellValue,
+    color: C.bodyText,
+    textAlign: 'right',
+    lineHeight: 1.2,
+  },
+  cellValueCenter: {
+    fontSize: PDF_FONT.cellValue,
+    color: C.bodyText,
+    textAlign: 'center',
+    lineHeight: 1.2,
+  },
 
   // ── Reference Images ─────────────────────────────────────────────────────
   imageCenter: {
@@ -454,7 +717,7 @@ export const s = StyleSheet.create({
     backgroundColor: '#ffffff',
   },
   refImageLabel: {
-    fontSize: 9,
+    fontSize: PDF_FONT.refImageLabel,
     color: '#4a5568',
     fontWeight: 700,
     marginBottom: 4,
@@ -527,7 +790,7 @@ export const s = StyleSheet.create({
   },
   specLabel: {
     width: 140,
-    fontSize: 10,
+    fontSize: PDF_FONT.specLabel,
     fontWeight: 700,
     color: '#4a5568',
     paddingRight: 12,
@@ -537,7 +800,7 @@ export const s = StyleSheet.create({
   },
   specValue: {
     flex: 1,
-    fontSize: 10,
+    fontSize: PDF_FONT.specValue,
     color: '#1a202c',
   },
   specSectionHeader: {
@@ -550,11 +813,83 @@ export const s = StyleSheet.create({
     borderBottomColor: '#dce8f5',
   },
   specSectionHeaderText: {
-    fontSize: 8.5,
+    fontSize: PDF_FONT.specSectionHeaderText,
     fontWeight: 700,
     color: C.white,
     letterSpacing: 0.6,
     textTransform: 'uppercase',
+  },
+
+  // ── Metro coach tables (matches ReferenceImages.css spec-data-table) ────────
+  specCoachGroup: {
+    width: '100%',
+    marginBottom: 8,
+    borderWidth: 1,
+    borderColor: '#d0e4f5',
+    borderRadius: 3,
+    overflow: 'hidden',
+  },
+  specCoachHeading: {
+    backgroundColor: '#eef5fb',
+    borderBottomWidth: 1,
+    borderBottomColor: '#d0e4f5',
+    paddingVertical: 5,
+    paddingHorizontal: 9,
+  },
+  specCoachHeadingText: {
+    fontSize: PDF_FONT.specCoachHeading,
+    fontWeight: 700,
+    color: '#1a3a5c',
+    letterSpacing: 0.3,
+    textTransform: 'uppercase',
+  },
+  specDataTableHeader: {
+    flexDirection: 'row',
+    backgroundColor: '#1a3a5c',
+    borderBottomWidth: 1,
+    borderBottomColor: '#1e4d78',
+  },
+  specDataTableHeaderCell: {
+    flex: 1,
+    fontSize: PDF_FONT.specDataTableHeader,
+    fontWeight: 600,
+    color: C.white,
+    paddingVertical: 5,
+    paddingHorizontal: 9,
+    letterSpacing: 0.4,
+    textTransform: 'uppercase',
+    borderRightWidth: 1,
+    borderRightColor: 'rgba(255,255,255,0.2)',
+  },
+  specDataTableHeaderCellLast: {
+    borderRightWidth: 0,
+    textAlign: 'center',
+  },
+  specDataTableRow: {
+    flexDirection: 'row',
+    borderBottomWidth: 0.75,
+    borderBottomColor: '#e4ecf5',
+    backgroundColor: C.white,
+  },
+  specDataTableRowEven: {
+    backgroundColor: '#f7f9fc',
+  },
+  specDataTableRowLast: {
+    borderBottomWidth: 0,
+  },
+  specDataTableCell: {
+    flex: 1,
+    fontSize: PDF_FONT.specDataTableCell,
+    color: '#1a202c',
+    paddingVertical: 4.5,
+    paddingHorizontal: 9,
+    borderRightWidth: 0.75,
+    borderRightColor: '#e4ecf5',
+  },
+  specDataTableCellLast: {
+    borderRightWidth: 0,
+    textAlign: 'center',
+    fontWeight: 600,
   },
 
   // ── Customer Review ───────────────────────────────────────────────────────
@@ -587,7 +922,7 @@ export const s = StyleSheet.create({
     flexShrink: 0,
   },
   reviewAvatarText: {
-    fontSize: 12,                // 16px × 0.75
+    fontSize: PDF_FONT.reviewAvatarText,                // 16px × 0.75
     fontWeight: 700,
     color: '#ffffff',
     textAlign: 'center',
@@ -599,27 +934,27 @@ export const s = StyleSheet.create({
   },
   // .review-name: font-size:14px weight:600 color:#1a202c
   reviewName: {
-    fontSize: 10.5,              // 14px × 0.75
+    fontSize: PDF_FONT.reviewName,              // 14px × 0.75
     fontWeight: 700,
     color: '#1a202c',
     marginBottom: 1,
   },
   // .review-stars: font-size:14px color:#f6ad55 letter-spacing:1px
   reviewStars: {
-    fontSize: 10.5,
+    fontSize: PDF_FONT.reviewStars,
     color: '#f6ad55',
     letterSpacing: 0.75,
   },
   // .review-body: font-size:13px color:#4a5568 line-height:1.6 margin:0 0 12px 0
   reviewText: {
-    fontSize: 10,                // 13px × 0.75 = 9.75 → 10pt
+    fontSize: PDF_FONT.reviewText,                // 13px × 0.75 = 9.75 → 10pt
     color: '#4a5568',
     lineHeight: 1.6,
     marginBottom: 3,             // 12px × 0.75
   },
   // .review-link: font-size:13px color:#2980b9 underline weight:500
   reviewLink: {
-    fontSize: 9,
+    fontSize: PDF_FONT.reviewLink,
     color: '#2980b9',
     textDecoration: 'underline',
     fontWeight: 500,
@@ -647,7 +982,7 @@ export const s = StyleSheet.create({
 
   // .bullet-dot: width:5px height:5px border-radius:50% bg:#2980b9
   termBullet: {
-    fontSize: 11,
+    fontSize: PDF_FONT.termBullet,
     color: C.blue,
     fontWeight: 700,
     marginTop: 0.2,
@@ -655,56 +990,85 @@ export const s = StyleSheet.create({
 
   termText: {
     flex: 1,
-    fontSize: 11,            // 14.5px × 0.75 = 10.9pt
+    fontSize: PDF_FONT.termText,            // 14.5px × 0.75 = 10.9pt
     color: C.bodyGrey,
     lineHeight: 1,
   },
 
-  // ── Bank Details ──────────────────────────────────────────────────────────
-  bankTable: {
+  // ── Bank Details card ─────────────────────────────────────────────────────
+  bankCard: {
     width: '100%',
+    marginTop: 8,
     marginBottom: 10,
+    paddingVertical: 10,
+    paddingHorizontal: 14,
+    backgroundColor: '#f4f7fb',
+    borderWidth: 1,
+    borderColor: '#d6e0ec',
+    borderRadius: 8,
+  },
+  bankCardTitle: {
+    fontSize: PDF_FONT.sectionHeading,
+    fontWeight: 700,
+    color: C.darkHeading,
+    textAlign: 'center',
+    textTransform: 'uppercase',
+    letterSpacing: 1,
+    marginBottom: 6,
+  },
+  bankCardDivider: {
+    height: 2,
+    backgroundColor: C.blue,
+    marginBottom: 8,
   },
   bankRow: {
     flexDirection: 'row',
+    alignItems: 'center',
     marginBottom: 4,
   },
   bankLabel: {
-    width: '35%',
-    fontSize: 11,
+    width: 130,
+    fontSize: PDF_FONT.bankLabel,
     fontWeight: 700,
     color: C.darkText,
+    textAlign: 'left',
+  },
+  bankColon: {
+    width: 12,
+    fontSize: PDF_FONT.bankLabel,
+    fontWeight: 700,
+    color: C.darkText,
+    textAlign: 'left',
   },
   bankValue: {
     flex: 1,
-    fontSize: 11,
+    fontSize: PDF_FONT.bankValue,
     color: C.bodyText,
+    textAlign: 'left',
+    paddingLeft: 84,
+    paddingRight: 6,
   },
 
   // ── System Generated Notice ───────────────────────────────────────────────
-  // .system-generated-notice: margin-top:32px padding:20px 28px
-  // bg:linear-gradient(#f0f7ff,#e8f4f8) → flat
-  // border:1px solid #b8d4e8 border-left:4px solid #1a3a5c
-  // border-radius:8px text-align:center
-  // p: font-size:16px color:#1a3a5c weight:500 letter-spacing:0.3px line-height:1.6
   systemNotice: {
-    marginTop: 18,           // 32px × 0.75
-    paddingVertical: 10,     // 20px × 0.75
-    paddingHorizontal: 15,   // 28px × 0.75
+    alignSelf: 'center',
+    marginTop: 4,
+    marginBottom: 8,
+    paddingVertical: 6,
+    paddingHorizontal: 14,
     backgroundColor: C.noticeBg,
     borderWidth: 1,
     borderColor: C.noticeBorder,
-    borderLeftWidth: 4,
+    borderLeftWidth: 3,
     borderLeftColor: C.navy,
-    borderRadius: 6,
-    textAlign: 'center',
+    borderRadius: 4,
   },
   systemNoticeText: {
-    fontSize: 12,            // 16px × 0.75
+    fontSize: PDF_FONT.systemNoticeText,
     color: C.navy,
     fontWeight: 500,
-    letterSpacing: 0.3,
-    lineHeight: 1.6,
+    letterSpacing: 0.2,
+    lineHeight: 1.2,
     textAlign: 'center',
   },
 
@@ -743,17 +1107,17 @@ export const s = StyleSheet.create({
     height: 9,
   },
   footerText: {
-    fontSize: 7,             // CSS says 7px
+    fontSize: PDF_FONT.footerText,             // CSS says 7px
     color: C.mutedText,
   },
   footerLink: {
-    fontSize: 7,
+    fontSize: PDF_FONT.footerLink,
     color: C.blue,
     textDecoration: 'none',
   },
   footerPageNum: {
     textAlign: 'center',
-    fontSize: 7,             // CSS .footer-page-number: font-size:8px
+    fontSize: PDF_FONT.footerPageNum,             // CSS .footer-page-number: font-size:8px
     fontWeight: 700,
     color: C.mutedText,
   },

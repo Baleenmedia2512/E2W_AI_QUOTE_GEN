@@ -694,16 +694,15 @@ export const useAppStore = create<AppState>((set) => ({
     }
   },
 
-  // ── Cloud Service Pages (PRIMARY DATA SOURCE from proposal_chunks) ──
+  // ── Cloud Service Pages (vendor_rate_chunks rank=1 only; proposal_chunks DISABLED) ──
   cloudServicePages: [],
 
   loadCloudServices: async () => {
     try {
-      console.log('☁️ DEBUG [loadCloudServices]: Loading from proposal_chunks table...');
+      console.log('☁️ DEBUG [loadCloudServices]: Loading from vendor_rate_chunks (rank=1)...');
       
       const { loadAllServicesFromCloud, transformServicesToPages } = await import('../services/supabaseProposalService');
       
-      // Load services from proposal_chunks
       const services = await loadAllServicesFromCloud();
       console.log(`   ✅ Loaded ${services.length} services from cloud`);
       

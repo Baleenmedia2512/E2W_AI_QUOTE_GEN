@@ -3,6 +3,7 @@ import './ReferenceImages.css';
 import { extractReviewViaGemini, cropReferencePageImage, cropPageStrippingHeaderFooter, cropSpecAboveReference, cropSpecDiagram, cropPageHalf, cropPageFromPercent, cropPageSlice } from '../../utils/pdfUtils';
 import { getCityServiceRegistry, canonicalizeServiceName, getPageIndexForCity } from '../../hooks/useCityServiceRegistry';
 import { resolveServiceIdsForItems } from '../../utils/serviceResolver';
+import { extractMetroMultiTableSpec, type PdfSpecGroup } from '../../utils/metroSpecParser';
 
 interface ExtractedPage {
   pageNumber: number;
@@ -44,6 +45,7 @@ interface ReferenceImagesProps {
     refImages: string[];
     specImages: string[];
     specFields: Array<{ label: string; value: string }>;
+    specGroups?: PdfSpecGroup[];
     review: { reviewerName: string; starCount: number; reviewText: string; reviewUrl: string | null } | null;
   }) => void;
   /** Group key for this instance — passed back through onDataReady */
@@ -57,15 +59,7 @@ interface CustomerReviewData {
   reviewUrl: string | null;
 }
 
-interface SpecGroup {
-  heading: string | null;
-  fields: Array<{ label: string; value: string }>;
-  /** Multi-column table headers — used for metro-style multi-table specs */
-  tableHeaders?: string[];
-  /** Multi-column table rows — used for metro-style multi-table specs */
-  tableRows?: string[][];
-}
-
+type SpecGroup = PdfSpecGroup;
 
 /**
  * Returns pages whose text contains the exact heading match.
@@ -1306,210 +1300,6 @@ function filterPagesByQuoteItems(pages: ExtractedPage[], items: QuoteItem[]): Ex
 
 // --- Smart Content Extraction Helpers ---
 
-/**
- * Merges pipe-split parts for dimension/header values that were split by the PDF extractor.
- * e.g. ["Size in Inches", "(", "W x H", ")"] → ["Size in Inches ( W x H )"]
- */
-function mergePipeParts(parts: string[]): string[] {
-  const merged: string[] = [];
-  for (const p of parts) {
-    const isContinuation =
-      merged.length > 0 &&
-      (/^\(/.test(p) || /^(wxh|w\s*x\s*h|wdh|inches|cms?|mm)\b/i.test(p) || /^\)/.test(p));
-    if (isContinuation) {
-      merged[merged.length - 1] = merged[merged.length - 1] + ' ' + p;
-    } else {
-      merged.push(p);
-    }
-  }
-  return merged;
-}
-
-/**
- * Detects and parses metro train inside branding design spec.
- * Activated when the spec section contains coach group headings (Coach-1, Coach-2, …).
- * Returns null if this is not a metro multi-table spec (falls back to generic parser).
- */
-function extractMetroMultiTableSpec(specSection: string): SpecGroup[] | null {
-  const lines = specSection.split('\n').map(l => l.trim()).filter(Boolean);
-  // Only activate if there is at least one coach heading line
-  const COACH_RE = /^coach[-\s]*\d/i;
-  if (!lines.some(l => COACH_RE.test(l))) return null;
-
-  const groups: SpecGroup[] = [];
-  let currentHeading: string | null = null;
-  let currentHeaders: string[] = [];
-  let currentRows: string[][] = [];
-  // Tracks a single-part line that may be the first half of a multi-line cell label
-  // (e.g. "Driver Door -" before "Sticker | 23.5 x 56 | 1" on the next line)
-  let pendingLabel: string | null = null;
-  // After a data row is pushed, a plain-text single-part line may be a continuation
-  // of that row's first cell (e.g. "Sticker" appearing after "Driver Door - | 23.5 x 56 | 1")
-  let lastWasDataRow = false;
-  // Set when "Card Material Area" header is encountered — skip the immediately following
-  // dimensions value line (e.g. "18.75 x 12.75 | 17.75 x 11.75") that belongs to it
-  let skipNextDataRow = false;
-
-  const flushGroup = () => {
-    if (currentRows.length > 0) {
-      // Auto-expand headers when data rows have more columns than detected headers
-      // (happens when the SIZE column header lands on a separate line in PDF extraction)
-      const maxCols = Math.max(...currentRows.map(r => r.length));
-      const headers = [...currentHeaders];
-      if (headers.length > 0 && headers.length < maxCols) {
-        const lastHeader = headers.pop()!;
-        while (headers.length < maxCols - 1) {
-          headers.push('Size (Inches)');
-        }
-        headers.push(lastHeader);
-      }
-      groups.push({
-        heading: currentHeading,
-        fields: [],
-        tableHeaders: headers.length > 0 ? headers : undefined,
-        tableRows: [...currentRows],
-      });
-    }
-    currentHeading = null;
-    currentHeaders = [];
-    currentRows = [];
-    pendingLabel = null;
-    lastWasDataRow = false;
-    skipNextDataRow = false;
-  };
-
-  for (const line of lines) {
-    const parts = line.split(/\t\|\t|\s\|\s|\|/).map(p => p.trim()).filter(p => p.length > 0);
-
-    // Coach heading (Coach-1, Coach-2 Ladies Coach, etc.)
-    if (COACH_RE.test(line)) {
-      pendingLabel = null;
-      lastWasDataRow = false;
-      skipNextDataRow = false;
-      flushGroup();
-      currentHeading = line;
-      continue;
-    }
-
-    // Summary heading (Interior Train Dimensions…)
-    if (/interior\s+train\s+dim/i.test(line) && parts.length === 1) {
-      pendingLabel = null;
-      lastWasDataRow = false;
-      skipNextDataRow = false;
-      flushGroup();
-      currentHeading = line;
-      continue;
-    }
-
-    // "Card Material Area | Card Display Area" header line: flush the current summary group
-    // and start a new mini 2-column group so it renders as its own table block
-    if (/card\s+material\s+area/i.test(line)) {
-      pendingLabel = null;
-      lastWasDataRow = false;
-      flushGroup();
-      // The parts of this line become column headers (e.g. ["Card Material Area", "Card Display Area"])
-      currentHeaders = parts.length >= 2 ? [...parts] : [line];
-      currentHeading = null;
-      skipNextDataRow = false; // next multi-part line is the value row — keep it
-      continue;
-    }
-
-    // Skip orphaned "Card Display Area" if it somehow arrives on its own line
-    if (/^\s*card\s+display\s+area\s*$/i.test(line)) {
-      pendingLabel = null;
-      lastWasDataRow = false;
-      continue;
-    }
-
-    // Skip the dimension value row that follows "Card Material Area" only when flagged
-    // (flag is no longer set for card material area — kept for any future use)
-    if (skipNextDataRow && parts.length >= 2) {
-      skipNextDataRow = false;
-      lastWasDataRow = false;
-      continue;
-    }
-    skipNextDataRow = false;
-
-    // "Total Media" row: keep it in the summary group (Interior Train Dimensions),
-    // skip it in coach groups where it would just repeat the per-coach sub-total
-    const isCoachGroup = currentHeading ? COACH_RE.test(currentHeading) : false;
-    if (isCoachGroup && parts.length > 0 && /^total\s+media/i.test(parts[0])) {
-      pendingLabel = null;
-      lastWasDataRow = false;
-      continue;
-    }
-
-    if (line.length < 2) continue;
-
-    // Column header row: first part matches "type of media" / "material" / generic header
-    if (
-      parts.length >= 2 &&
-      /^(type\s*of\s*media|material|description|item)/i.test(parts[0])
-    ) {
-      currentHeaders = mergePipeParts(parts);
-      pendingLabel = null;
-      lastWasDataRow = false;
-      continue;
-    }
-
-    // Orphaned SIZE column header: "size...inches" on its own line after main headers
-    // (PDF splits "Type of Media | Qty" onto one line, SIZE header onto the next)
-    if (
-      parts.length === 1 &&
-      currentHeaders.length > 0 &&
-      currentRows.length === 0 &&
-      /size.+inch/i.test(line)
-    ) {
-      // Insert as second-to-last column header (before Qty)
-      const lastHeader = currentHeaders.pop()!;
-      currentHeaders.push(line, lastHeader);
-      lastWasDataRow = false;
-      continue;
-    }
-
-    // Data rows: 2+ pipe-separated parts
-    if (parts.length >= 2) {
-      let row = mergePipeParts(parts);
-      // If there's a pending label and the row is short (missing the TYPE OF MEDIA column),
-      // prepend the pending label — handles "Driver Door -\nSticker | 23.5 x 56 | 1" cells
-      if (pendingLabel !== null && row.length < 3) {
-        row = [pendingLabel, ...row];
-      }
-      pendingLabel = null;
-      // "Total Media" rows lose their leading empty cell during PDF extraction
-      // (e.g. "| Total Media | 79" → ["Total Media", "79"]).  Left-pad to 3 cols
-      // so "79" lands in the QTY column, not the SIZE column.
-      if (/^total\s+media/i.test(row[0])) {
-        while (row.length < 3) row = ['', ...row];
-      }
-      currentRows.push(row);
-      lastWasDataRow = true;
-      continue;
-    }
-
-    // Single-part line handling
-    if (parts.length === 1) {
-      // Post-row continuation: the PDF emits the data row first, then the second visual line
-      // of a wrapped cell on the next text line (e.g. "Driver Door - | 23.5x56 | 1" then "Sticker").
-      // Append to the previous row's first cell as long as:
-      //  - it looks like plain text (no leading digit)
-      //  - it does NOT end with '-' (a trailing dash means it's the START of a new multi-line
-      //    label such as "Driver Door -", not a continuation of the previous row)
-      if (lastWasDataRow && currentRows.length > 0 && !/^\d/.test(line) && !line.endsWith('-')) {
-        currentRows[currentRows.length - 1][0] += ' ' + line;
-        // Keep lastWasDataRow true — there could be more continuation lines
-        continue;
-      }
-      lastWasDataRow = false;
-      // Pre-row label accumulation: handles "Driver Door -\nSticker\n23.5x56 | 1" ordering
-      pendingLabel = pendingLabel ? pendingLabel + ' ' + line : line;
-    }
-  }
-
-  flushGroup();
-  return groups.length > 0 ? groups : null;
-}
-
 function extractDesignSpecFields(pages: ExtractedPage[]): SpecGroup[] {
   for (const page of pages) {
     const text = page.text;
@@ -1838,14 +1628,16 @@ function isReviewHeadingFragment(line: string): boolean {
 /** Prefer structured metadata.review saved at upload or after first preview OCR. */
 function reviewFromPageMetadata(pages: ExtractedPage[]): CustomerReviewData | null {
   for (const page of pages) {
-    const r = (page.metadata as { review?: { reviewerName?: string; starCount?: number; reviewText?: string } })?.review;
+    const m = page.metadata as { review?: { reviewerName?: string; starCount?: number; reviewText?: string; reviewUrl?: string }; customer_review?: string } | undefined;
+    const r = m?.review;
     if (!r?.reviewText && !r?.reviewerName) continue;
     console.log(`⭐ [REVIEW-META] Using metadata.review for "${page.serviceName || page.pageNumber}"`);
+    const url = r.reviewUrl || (typeof m?.customer_review === 'string' ? m.customer_review : null);
     return {
       reviewerName: r.reviewerName || 'Customer',
       starCount: Math.min(5, Math.max(1, r.starCount || 5)),
       reviewText: r.reviewText || '',
-      reviewUrl: null,
+      reviewUrl: url || null,
     };
   }
   return null;
@@ -2985,10 +2777,11 @@ export const ReferenceImages: React.FC<ReferenceImagesProps> = (props) => {
           refImages: finalRef,
           specImages: finalSpecImages,
           specFields: flatSpec,
+          specGroups,
           review: finalReview ?? null,
         });
         console.groupCollapsed(`📤 [ReferenceImages->PDF] key="${props.serviceKey}"`);
-        console.log(`finalRef=${finalRef.length}, finalSpecImages=${finalSpecImages.length}, flatSpecFields=${flatSpec.length}, review=${finalReview ? 'yes' : 'no'}`);
+        console.log(`finalRef=${finalRef.length}, finalSpecImages=${finalSpecImages.length}, specGroups=${specGroups.length}, flatSpecFields=${flatSpec.length}, review=${finalReview ? 'yes' : 'no'}`);
         if (finalRef.length > 0) {
           console.log('finalRef[0]=', finalRef[0].startsWith('data:') ? `data-url len=${finalRef[0].length}` : finalRef[0]);
         }

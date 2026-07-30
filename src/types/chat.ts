@@ -2,6 +2,8 @@ export interface ServiceSuggestion {
   name: string;
   category: string;
   similarity?: string;
+  /** Per-service qty when multiple segments share one category group */
+  requestedQuantity?: number;
 }
 
 export interface GroupedServices {

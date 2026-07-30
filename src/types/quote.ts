@@ -2,12 +2,12 @@ export interface LineItem {
   id: string;
   description: string;
   quantity: number;
-  quantityUnit?: string; // Custom unit label e.g. "per bus", "per vehicle"
+  quantityUnit?: string; // Qty column label e.g. "bus", "vehicle" (not "per bus")
   unitPrice: number;
   duration?: number; // Campaign duration (only when user requested months/days)
   durationUnit?: 'months' | 'days';
   durationLabel?: string; // Custom duration label e.g. "months", "per month"
-  /** True when duration came from DB metadata default (display only; total uses ×1). */
+  /** True when duration came from DB metadata default. */
   durationIsAuto?: boolean;
   total: number;
   remark?: string; // Optional per-row remark/note
@@ -18,12 +18,12 @@ export interface QuoteItem {
   description: string;
   details?: string;
   quantity: number;
-  quantityUnit?: string; // Custom unit label e.g. "per bus", "per vehicle"
+  quantityUnit?: string; // Qty column label e.g. "bus", "vehicle" (not "per bus")
   rate: number;
   duration?: number; // Campaign duration (only when user requested months/days)
   durationUnit?: 'months' | 'days';
   durationLabel?: string; // Custom duration label e.g. "months", "per month"
-  /** True when duration came from DB metadata default (display only; total uses ×1). */
+  /** True when duration came from DB metadata default. */
   durationIsAuto?: boolean;
   total: number;
   minimumQuantity?: number; // Minimum order quantity from proposal

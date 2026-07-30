@@ -2,7 +2,7 @@ import { Message } from './chat';
 import { Quote, QuoteItem, LineItem } from './quote';
 import { CompanyInfo } from './company';
 import { ClientInfo } from './client';
-import { TemplateData, TemplateProps, TemplateType, Template, TemplateMetadata } from './template';
+import { TemplateData, TemplateProps, TemplateType, Template, TemplateMetadata, ServiceReadyData } from './template';
 import { Lead, LeadSearchResult } from './lead';
 import { 
   TokenUsageRecord, 
@@ -123,5 +123,5 @@ export interface AppState {
   loadCloudServices: () => Promise<ExtractedPage[]>;
 }
 
-export type { Message, Quote, QuoteItem, LineItem, CompanyInfo, ClientInfo, TemplateData, TemplateProps, TemplateType, Template, TemplateMetadata, Lead, LeadSearchResult, TokenUsageRecord, TokenUsageMetrics, SessionSummary, OperationType, DeltaComparison, GeminiModel };
+export type { Message, Quote, QuoteItem, LineItem, CompanyInfo, ClientInfo, TemplateData, TemplateProps, TemplateType, Template, TemplateMetadata, ServiceReadyData, Lead, LeadSearchResult, TokenUsageRecord, TokenUsageMetrics, SessionSummary, OperationType, DeltaComparison, GeminiModel };
 export { GEMINI_PRICING } from './token';

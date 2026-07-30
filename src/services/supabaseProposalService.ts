@@ -312,12 +312,15 @@ export function cloudProposalToStored(cloud: CloudProposal): StoredProposal {
 
 /**
  * Save Gemini OCR review data back to proposal_chunks metadata.
- * Called once after first OCR — subsequent renders use DB data (no extra API call).
+ * DISABLED: proposal_chunks fetch/update commented out.
  */
 export async function saveReviewToCloud(
-  serviceId: string,
-  reviewData: { reviewerName: string; starCount: number; reviewText: string }
+  _serviceId: string,
+  _reviewData: { reviewerName: string; starCount: number; reviewText: string }
 ): Promise<void> {
+  console.log('⚠️ [saveReviewToCloud] DISABLED — proposal_chunks commented out');
+  return;
+  /*
   try {
     // Fetch current metadata first
     const { data, error: fetchErr } = await supabase
@@ -346,28 +349,24 @@ export async function saveReviewToCloud(
   } catch (err) {
     console.warn(`⚠️ [saveReviewToCloud] Exception:`, err);
   }
+  */
 }
 
 /**
- * Load all services from proposal_chunks table (PRIMARY DATA SOURCE)
- * This is the cloud-first approach for fetching service data with images
+ * Load all services for quotes.
+ * Catalog + pricing from vendor_rate_chunks only (preferred_vendor_rank = 1).
+ * proposal_chunks is NOT used.
  */
 export async function loadAllServicesFromCloud(): Promise<any[]> {
   try {
-    console.log('☁️ Querying proposal_chunks table...');
-    
-    const { data, error } = await supabase
-      .from('proposal_chunks')
-      .select('*')
-      .order('created_at', { ascending: false });
-    
-    if (error) {
-      console.error('❌ Error loading services from proposal_chunks:', error);
-      throw error;
-    }
-    
-    console.log(`✅ Loaded ${data?.length || 0} services from proposal_chunks`);
-    return data || [];
+    console.log('☁️ [loadAllServicesFromCloud] vendor_rate_chunks rank=1 only (proposal_chunks DISABLED)');
+
+    const { loadVendorRatesFromCloud, vendorRatesToDbServices } = await import('./vendorRateService');
+    const vendorRates = await loadVendorRatesFromCloud();
+    const services = vendorRatesToDbServices(vendorRates);
+
+    console.log(`✅ Loaded ${services.length} services from vendor_rate_chunks (rank=1)`);
+    return services;
   } catch (error) {
     console.error('❌ Exception loading services:', error);
     throw error;
@@ -394,7 +393,7 @@ export async function loadAllServicesFromCloud(): Promise<any[]> {
  *
  * Returns null when specs has no coach-entry keys → non-metro services are unaffected.
  */
-function buildMetroSpecText(specs: Record<string, unknown>): string | null {
+export function buildMetroSpecText(specs: Record<string, unknown>): string | null {
   // Detect coach-style: at least one "coach_N..." key that holds an entry object
   const COACH_RE = /^coach_(\d+)/;
   const hasCoachEntries = Object.entries(specs).some(
@@ -621,7 +620,7 @@ function splitSpecString(raw: string, fallbackLabel = 'Size'): string {
 }
 
 /**
- * Transform proposal_chunks data to ExtractedPage format
+ * Transform vendor_rate_chunks (as DbService) data to ExtractedPage format
  * Converts cloud service records into preview-ready page objects
  */
 export function transformServicesToPages(services: any[]): any[] {
@@ -852,7 +851,75 @@ export function transformServicesToPages(services: any[]): any[] {
         }
       }
     } else {
-      console.warn(`⚠️ Service "${service.service_name}" has no images in metadata`);
+      // No images[] — still build pages from vendor metadata fallbacks
+      const m = service.metadata || {};
+      const refUrl = typeof m.reference_image === 'string' ? m.reference_image : '';
+      const reviewUrl = typeof m.customer_review === 'string' ? m.customer_review : '';
+      const specsObj = m.specifications && typeof m.specifications === 'object'
+        ? (m.specifications as Record<string, unknown>)
+        : null;
+
+      if (refUrl) {
+        pages.push({
+          pageNumber: pages.length + 1,
+          text: `REFERENCE IMAGE\n${service.service_name}\n${service.content || ''}`,
+          imageDataUrl: refUrl,
+          croppedImages: [refUrl],
+          croppedImagesWithTypes: [{ dataUrl: refUrl, imageType: 'reference' }],
+          imageType: 'reference',
+          sourceId: service.id,
+          sourceName: service.document_name || 'Cloud Rate Card',
+          serviceName: service.service_name,
+          serviceId: service.service_id,
+          city,
+          metadata: service.metadata,
+        });
+      }
+
+      const metroText = specsObj ? buildMetroSpecText(specsObj) : null;
+      const elevatedText = !metroText && specsObj ? buildElevatedMetroSpecText(specsObj) : null;
+      if (metroText || elevatedText) {
+        pages.push({
+          pageNumber: pages.length + 1,
+          text: metroText || elevatedText,
+          imageDataUrl: '',
+          croppedImages: [],
+          croppedImagesWithTypes: [],
+          imageType: 'specification',
+          sourceId: service.id,
+          sourceName: service.document_name || 'Cloud Rate Card',
+          serviceName: service.service_name,
+          serviceId: service.service_id,
+          city,
+          metadata: service.metadata,
+        });
+        console.log(`🚇 [METRO-SPEC] Created metro spec page (no images[]) for "${service.service_name}"`);
+      }
+
+      if (m.review || reviewUrl) {
+        const r = m.review || {};
+        const reviewText = m.review
+          ? `CUSTOMER REVIEW FEEDBACK FOR OUR SERVICE\n${r.reviewerName || ''}\n${'★'.repeat(Math.min(5, r.starCount || 5))}\n${r.reviewText || ''}`
+          : `CUSTOMER REVIEW FEEDBACK FOR OUR SERVICE\n${service.service_name}`;
+        pages.push({
+          pageNumber: pages.length + 1,
+          text: reviewText,
+          imageDataUrl: reviewUrl || '',
+          croppedImages: reviewUrl ? [reviewUrl] : [],
+          croppedImagesWithTypes: reviewUrl ? [{ dataUrl: reviewUrl, imageType: 'review' }] : [],
+          imageType: 'review',
+          sourceId: service.id,
+          sourceName: service.document_name || 'Cloud Rate Card',
+          serviceName: service.service_name,
+          serviceId: service.service_id,
+          city,
+          metadata: service.metadata,
+        });
+      }
+
+      if (!refUrl && !metroText && !elevatedText && !m.review && !reviewUrl) {
+        console.warn(`⚠️ Service "${service.service_name}" has no images/specs in vendor metadata`);
+      }
     }
   });
   
@@ -861,7 +928,7 @@ export function transformServicesToPages(services: any[]): any[] {
   const specCount = pages.filter(p => p.imageType === 'specification').length;
   const revCount  = pages.filter(p => p.imageType === 'review').length;
   console.log('☁️ ═══════════════════════════════════════════════════');
-  console.log('☁️  DATA SOURCE: CLOUD (Supabase proposal_chunks)');
+  console.log('☁️  DATA SOURCE: CLOUD (vendor_rate_chunks rank=1 only; proposal_chunks DISABLED)');
   console.log(`☁️  Services loaded : ${services.length}`);
   console.log(`☁️  Total pages     : ${pages.length}`);
   console.log(`☁️    Reference     : ${refCount}`);

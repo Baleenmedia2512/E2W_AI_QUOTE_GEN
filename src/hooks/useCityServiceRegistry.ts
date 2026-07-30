@@ -120,6 +120,8 @@ function normalizeSvc(s: string): string {
 const SYNONYMS: Array<[RegExp, string]> = [
   [/\bad\b/g, 'branding'],                 // "lobby screen ad" → "lobby screen branding"
   [/\badvertising\b/g, 'branding'],
+  // Catalog typo: "Awarness Board" must match user "Awareness Board"
+  [/\bawarness\b/g, 'awareness'],
   // NOTE: do NOT collapse "sticker" → "branding". "Auto Back Stickers" is a
   // distinct rate-card row from Auto Full/Semi Branding — collapsing it
   // creates false token overlap.

@@ -1,6 +1,7 @@
 import { CompanyInfo } from './company';
 import { ClientInfo } from './client';
 import { Quote } from './quote';
+import type { PdfSpecGroup } from '../utils/metroSpecParser';
 
 export interface ExtractedPage {
   pageNumber: number;
@@ -16,6 +17,7 @@ export interface ServiceReadyData {
   refImages: string[];
   specImages: string[];
   specFields: Array<{ label: string; value: string }>;
+  specGroups?: PdfSpecGroup[];
   review: { reviewerName: string; starCount: number; reviewText: string; reviewUrl: string | null } | null;
 }
 

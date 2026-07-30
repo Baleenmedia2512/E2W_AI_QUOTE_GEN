@@ -16,14 +16,32 @@ export interface DbService {
   metadata?: {
     locations?: string[];
     duration?: string;
+    unit_label?: string;
     pricing?: {
       min_quantity?: number;
+      min_qty?: number;
       period?: string;
       display_period?: string;
       unit?: string;
       structure?: string;
+      display_price?: number | string;
+      printing_and_mounting_price?: number | string;
+      [key: string]: unknown;
     };
     min_quantity?: number;
+    /** Design / coach specs from vendor_rate_chunks.metadata.specifications */
+    specifications?: Record<string, unknown>;
+    size?: string | Record<string, unknown>;
+    material?: string | Record<string, unknown>;
+    images?: Array<{ url: string; type: string; pageNumber?: number }>;
+    review?: {
+      reviewUrl?: string;
+      starCount?: number;
+      reviewText?: string;
+      reviewerName?: string;
+    };
+    terms?: string;
+    [key: string]: unknown;
   };
   document_name?: string;
 }
@@ -40,6 +58,171 @@ export function toServiceIdKebab(name: string): string {
 
 function normalizeServiceId(id: string): string {
   return id.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '');
+}
+
+function titleCaseToken(token: string): string {
+  if (!token) return '';
+  return token.charAt(0).toUpperCase() + token.slice(1).toLowerCase();
+}
+
+/** Known medium-type tokens encoded in service_id after the base service name. */
+const MEDIUM_TYPE_TOKENS = new Set([
+  'elevated',
+  'underground',
+  'interior',
+  'inside',
+  'outside',
+  'wrap',
+  'platform',
+  'lobby',
+  'full',
+  'semi',
+  'back',
+  'front',
+]);
+
+/**
+ * Extract medium type from service_id (e.g. metro-station-elevated-chennai → "Elevated").
+ * Returns null when the id has no extra medium discriminator beyond name + city.
+ */
+export function extractMediumTypeFromServiceId(
+  serviceId: string,
+  serviceName?: string,
+): string | null {
+  if (!serviceId?.trim()) return null;
+  let rest = normalizeServiceId(serviceId);
+
+  // Strip trailing city slug
+  const citiesByLen = [...CITY_NAMES].sort((a, b) => b.length - a.length);
+  for (const city of citiesByLen) {
+    if (rest.endsWith(`-${city}`)) {
+      rest = rest.slice(0, -(city.length + 1));
+      break;
+    }
+  }
+
+  if (serviceName?.trim()) {
+    const nameKebab = toServiceIdKebab(serviceName);
+    if (rest === nameKebab) return null;
+    if (rest.startsWith(`${nameKebab}-`)) {
+      rest = rest.slice(nameKebab.length + 1);
+    }
+  }
+
+  const tokens = rest.split('-').filter(Boolean);
+  if (tokens.length === 0) return null;
+
+  // Only known discriminators (elevated / underground / …) — never dump leftover junk
+  const known = tokens.filter((t) => MEDIUM_TYPE_TOKENS.has(t));
+  if (known.length === 0) return null;
+  // Skip if leftover is only the whole id still (couldn't strip name)
+  if (known.join('-') === normalizeServiceId(serviceId)) return null;
+
+  return known.map(titleCaseToken).join(' ');
+}
+
+/** Parse medium type from a display label like "Metro Station — Elevated". */
+export function extractMediumTypeFromDisplayName(name: string): string | null {
+  if (!name?.trim()) return null;
+  const m =
+    name.match(/\s+[—–\-]\s+([A-Za-z][A-Za-z\s/]*?)\s*$/) ||
+    name.match(/\(([^)]+)\)\s*$/);
+  if (!m) {
+    const tokens = canonicalizeServiceName(name).split(/\s+/);
+    const hit = tokens.filter((t) => MEDIUM_TYPE_TOKENS.has(t));
+    return hit.length ? hit.map(titleCaseToken).join(' ') : null;
+  }
+  const raw = m[1].trim();
+  if (!raw || CITY_NAMES.includes(raw.toLowerCase())) return null;
+  // Ignore polluted vendor-style suffixes
+  if (/cost|naxna|\bna\b|#\d+/i.test(raw)) return null;
+  return raw
+    .split(/[\s/]+/)
+    .filter(Boolean)
+    .map(titleCaseToken)
+    .join(' ');
+}
+
+/** Base service name without medium-type suffix for catalog matching. */
+export function stripMediumTypeFromDisplayName(name: string): string {
+  if (!name?.trim()) return name;
+  return name
+    .replace(/\s+[—–\-]\s+[A-Za-z][A-Za-z\s/]*?\s*$/, '')
+    .replace(/\s*\((?:elevated|underground|interior|inside|outside|wrap|platform|lobby)\)\s*$/i, '')
+    .trim();
+}
+
+/**
+ * Display label that keeps same-named services distinct when service_id encodes medium type.
+ * Example: METRO STATION + metro-station-elevated-chennai → "Metro Station — Elevated"
+ * Never appends polluted leftovers — only known medium tokens (elevated/underground/…).
+ */
+export function formatServiceDisplayName(svc: Pick<DbService, 'service_id' | 'service_name'>): string {
+  let base = (svc.service_name || '')
+    .split(' ')
+    .map((w) => (w ? w.charAt(0).toUpperCase() + w.slice(1).toLowerCase() : ''))
+    .join(' ')
+    .trim();
+
+  // Strip polluted vendor junk if it somehow landed in service_name
+  if (/\bna\b|cost-|naxna|\s·\s|#\d+/i.test(base) || base.length > 60) {
+    // Rebuild from service_id slug when name is dirty
+    let slug = normalizeServiceId(svc.service_id || '');
+    const citiesByLen = [...CITY_NAMES].sort((a, b) => b.length - a.length);
+    for (const city of citiesByLen) {
+      if (slug.endsWith(`-${city}`)) {
+        slug = slug.slice(0, -(city.length + 1));
+        break;
+      }
+    }
+    base = slug
+      .split('-')
+      .filter(Boolean)
+      .map(titleCaseToken)
+      .join(' ');
+  }
+
+  const medium = extractMediumTypeFromServiceId(svc.service_id, base);
+  if (!medium || !base) return base || svc.service_id;
+  // Avoid "Metro Station Branding — Branding" / "Elevated Metro Station — Elevated"
+  if (canonicalizeServiceName(base).includes(canonicalizeServiceName(medium))) {
+    return base;
+  }
+  return `${base} — ${medium}`;
+}
+
+function mediumTypesCompatible(a: string | null | undefined, b: string | null | undefined): boolean {
+  if (!a || !b) return true;
+  return canonicalizeServiceName(a) === canonicalizeServiceName(b);
+}
+
+function pickAmongMediumCompatible(
+  candidates: DbService[],
+  mediumHint: string | null,
+): DbService | null {
+  if (candidates.length === 0) return null;
+  const filtered = mediumHint
+    ? candidates.filter((s) =>
+        mediumTypesCompatible(
+          extractMediumTypeFromServiceId(s.service_id, s.service_name),
+          mediumHint,
+        ),
+      )
+    : candidates;
+  const pool = filtered.length > 0 ? filtered : candidates;
+
+  // If multiple distinct medium types and no hint, do not guess
+  if (!mediumHint) {
+    const types = new Set(
+      pool
+        .map((s) => extractMediumTypeFromServiceId(s.service_id, s.service_name))
+        .filter(Boolean)
+        .map((t) => canonicalizeServiceName(t!)),
+    );
+    if (types.size > 1) return null;
+  }
+
+  return pickPreferredDbService(pool);
 }
 
 /** Collect unique service_ids for quote items — uses item.serviceId or name match against cloud pages. */
@@ -101,7 +284,7 @@ export function extractCityHint(text: string): string | null {
 
 /**
  * Resolve a human-readable service name to proposal_chunks.service_id.
- * Uses canonical name matching with optional city filtering.
+ * Uses canonical name + optional medium type (from display label or service_id) + city.
  */
 export function resolveServiceIdFromCatalog(
   name: string,
@@ -110,41 +293,70 @@ export function resolveServiceIdFromCatalog(
 ): { serviceId: string; serviceName: string } | null {
   if (!name?.trim() || services.length === 0) return null;
 
-  const canonical = canonicalizeServiceName(name);
-  const kebab = toServiceIdKebab(name);
+  const mediumHint = extractMediumTypeFromDisplayName(name);
+  const baseName = stripMediumTypeFromDisplayName(name);
+  const canonical = canonicalizeServiceName(baseName);
+  const kebab = toServiceIdKebab(baseName);
+  const fullKebab = toServiceIdKebab(name);
 
   let pool = services;
   if (cityHint) {
     const c = cityHint.toLowerCase();
     const cityFiltered = services.filter((s) => {
       const locs: string[] = s.metadata?.locations || [];
+      const sid = (s.service_id || '').toLowerCase();
       return locs.some((l) => l.toLowerCase().includes(c))
-        || (s.document_name || '').toLowerCase().includes(c);
+        || (s.document_name || '').toLowerCase().includes(c)
+        || sid.endsWith(`-${c}`)
+        || sid.includes(`-${c}-`);
     });
     if (cityFiltered.length > 0) pool = cityFiltered;
+  }
+
+  // Exact service_id match (display name may already be a kebab id)
+  const exactId = pool.find((s) => normalizeServiceId(s.service_id) === normalizeServiceId(name));
+  if (exactId) {
+    return { serviceId: exactId.service_id, serviceName: exactId.service_name };
   }
 
   const byIdMatches = pool.filter((s) => {
     const sid = normalizeServiceId(s.service_id);
     const k = normalizeServiceId(kebab);
-    return sid === k || sid.endsWith(`-${k}`);
+    const fk = normalizeServiceId(fullKebab);
+    return sid === k || sid === fk || sid.endsWith(`-${k}`) || sid.includes(`-${k}-`);
   });
-  const byId = pickPreferredDbService(byIdMatches);
+  const byId = pickAmongMediumCompatible(byIdMatches, mediumHint);
   if (byId) return { serviceId: byId.service_id, serviceName: byId.service_name };
 
   const canonicalMatches = pool.filter(
     (s) => canonicalizeServiceName(s.service_name) === canonical,
   );
-  const byCanonical = pickPreferredDbService(canonicalMatches);
+  const byCanonical = pickAmongMediumCompatible(canonicalMatches, mediumHint);
   if (byCanonical) {
     return { serviceId: byCanonical.service_id, serviceName: byCanonical.service_name };
   }
 
+  // Match against formatted display name (name + medium type)
+  const byDisplay = pool.filter(
+    (s) => canonicalizeServiceName(formatServiceDisplayName(s)) === canonicalizeServiceName(name),
+  );
+  if (byDisplay.length === 1) {
+    return { serviceId: byDisplay[0].service_id, serviceName: byDisplay[0].service_name };
+  }
+  const byDisplayPicked = pickAmongMediumCompatible(byDisplay, mediumHint);
+  if (byDisplayPicked) {
+    return {
+      serviceId: byDisplayPicked.service_id,
+      serviceName: byDisplayPicked.service_name,
+    };
+  }
+
   const containsMatches = pool.filter((s) => {
     const sc = canonicalizeServiceName(s.service_name);
-    return sc.includes(canonical) || canonical.includes(sc);
+    const sid = normalizeServiceId(s.service_id);
+    return sc.includes(canonical) || canonical.includes(sc) || sid.includes(kebab);
   });
-  const byContains = pickPreferredDbService(containsMatches);
+  const byContains = pickAmongMediumCompatible(containsMatches, mediumHint);
   if (byContains) {
     return { serviceId: byContains.service_id, serviceName: byContains.service_name };
   }

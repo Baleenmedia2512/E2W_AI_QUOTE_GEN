@@ -1,15 +1,277 @@
-import React from 'react';
+import React, { useState, useCallback } from 'react';
+import { useToast } from '@chakra-ui/react';
 import { TemplateProps } from '../../types';
+import { QuoteItem } from '../../types/quote';
 import { ReferenceImages } from './ReferenceImages';
-import { isMultiServiceQuote, groupItemsByServiceType, DEFAULT_GENERAL_TERMS, getServiceGroupHeading, normalizeTermsList, resolveGeneralTermsList, extractServiceType, formatQuoteItemDescription, quoteHasMultipleCities } from '../../utils/quoteGrouping';
-import { formatDurationLabel, quoteHasAnyDuration } from '../../utils/durationUtils';
+import { isMultiServiceQuote, groupItemsByServiceType, DEFAULT_GENERAL_TERMS, getServiceGroupHeading, normalizeTermsList, resolveGeneralTermsList, extractServiceType, buildExecutiveSummaryRows, buildPricingBreakdownLines, ExecutiveSummaryRow, PricingBreakdownLine } from '../../utils/quoteGrouping';
+import { segmentBreakdownFormula } from '../../utils/breakdownFormulaDisplay';
+import {
+  applyExecutiveSummaryFieldEdit,
+  getVendorEditFloors,
+  recalcQuoteTotals,
+  resolveDbServiceForQuoteItem,
+  uiEditToStorageValue,
+  validateQuoteEdit,
+} from '../../utils/quoteEditValidation';
 import './CorporateMinimal.css';
 
-export const CorporateMinimal: React.FC<TemplateProps> = ({ data, editable: _editable = false, onDataChange: _onDataChange }) => {
+type ExecEditField = 'quantity' | 'duration' | 'requiringCharge' | 'oneTimeCharge';
+
+const ExecNumberCell: React.FC<{
+  value: number | undefined;
+  format?: 'int' | 'rate';
+  editable: boolean;
+  onCommit: (n: number) => void;
+  placeholder?: string;
+  compact?: boolean;
+}> = ({ value, format = 'int', editable, onCommit, placeholder = '—', compact = false }) => {
+  const [draft, setDraft] = useState<string | null>(null);
+  const display =
+    draft != null
+      ? draft
+      : value == null || !Number.isFinite(value)
+        ? ''
+        : format === 'rate'
+          ? (Math.round(value * 100) / 100).toFixed(2)
+          : String(value);
+
+  if (!editable) {
+    if (value == null || !Number.isFinite(value) || value <= 0 && format === 'rate') {
+      return <div className="item-cell-number">{placeholder}</div>;
+    }
+    if (format === 'rate') {
+      return (
+        <div className="item-cell-number">
+          {new Intl.NumberFormat('en-IN', {
+            style: 'currency',
+            currency: 'INR',
+            minimumFractionDigits: 0,
+            maximumFractionDigits: 2,
+          }).format(value)}
+        </div>
+      );
+    }
+    return <div className="item-cell-number">{value}</div>;
+  }
+
+  return (
+    <input
+      className={compact ? 'exec-edit-input exec-edit-input--compact' : 'exec-edit-input'}
+      type="text"
+      inputMode="decimal"
+      value={display}
+      aria-label="Edit value"
+      onChange={(e) => setDraft(e.target.value)}
+      onFocus={(e) => {
+        setDraft(
+          value == null || !Number.isFinite(value)
+            ? ''
+            : format === 'rate'
+              ? (Math.round(value * 100) / 100).toFixed(2)
+              : String(value),
+        );
+        e.target.select();
+      }}
+      onBlur={() => {
+        const raw = draft;
+        setDraft(null);
+        if (raw == null || raw.trim() === '') return;
+        const n = parseFloat(raw.replace(/,/g, ''));
+        if (!Number.isFinite(n)) return;
+        if (value != null && Math.abs(n - value) < 1e-9) return;
+        onCommit(n);
+      }}
+      onKeyDown={(e) => {
+        if (e.key === 'Enter') (e.target as HTMLInputElement).blur();
+        if (e.key === 'Escape') {
+          setDraft(null);
+          (e.target as HTMLInputElement).blur();
+        }
+      }}
+    />
+  );
+};
+
+/** Editable (or read-only segmented) formula for a pricing-breakdown line. */
+const BreakdownFormulaBody: React.FC<{
+  line: PricingBreakdownLine;
+  canEdit: boolean;
+  onCommit: (row: ExecutiveSummaryRow, field: ExecEditField, value: number) => void;
+}> = ({ line, canEdit, onCommit }) => {
+  const formula = line.descriptionLines.slice(1).join(' ') || '';
+  const row = line.editRow;
+
+  if (!canEdit || !row) {
+    return (
+      <div className="breakdown-desc-secondary">
+        {segmentBreakdownFormula(formula).map((seg, i) =>
+          seg.muted ? (
+            <span key={i} className="breakdown-rate-unit">{seg.text}</span>
+          ) : (
+            <span key={i}>{seg.text}</span>
+          ),
+        )}
+      </div>
+    );
+  }
+
+  const qtyUnit = line.formulaQtyUnit || 'unit';
+
+  if (line.kind === 'display') {
+    const rateLabel = row.ratePeriod === 'per_month' ? 'per month' : 'per day';
+    const durLabel =
+      row.durationLabel || (row.durationUnit === 'months' ? 'month' : 'days');
+    return (
+      <div className="breakdown-desc-secondary breakdown-desc-secondary--editable">
+        <span className="breakdown-edit-rupee">₹</span>
+        <ExecNumberCell
+          value={row.requiringCharge}
+          format="rate"
+          editable
+          compact
+          onCommit={(n) => onCommit(row, 'requiringCharge', n)}
+        />
+        <span className="breakdown-rate-unit"> ({rateLabel}) </span>
+        <span>× </span>
+        <ExecNumberCell
+          value={row.quantity}
+          editable
+          compact
+          onCommit={(n) => onCommit(row, 'quantity', n)}
+        />
+        <span className="breakdown-rate-unit"> ({qtyUnit}) </span>
+        {row.duration != null && (
+          <>
+            <span>× </span>
+            <ExecNumberCell
+              value={row.duration}
+              editable
+              compact
+              onCommit={(n) => onCommit(row, 'duration', n)}
+            />
+            <span className="breakdown-rate-unit"> ({durLabel})</span>
+          </>
+        )}
+      </div>
+    );
+  }
+
+  // onetime
+  return (
+    <div className="breakdown-desc-secondary breakdown-desc-secondary--editable">
+      <span className="breakdown-edit-rupee">₹</span>
+      <ExecNumberCell
+        value={row.oneTimeCharge}
+        format="rate"
+        editable
+        compact
+        onCommit={(n) => onCommit(row, 'oneTimeCharge', n)}
+      />
+      <span className="breakdown-rate-unit"> (per qty) </span>
+      <span>× </span>
+      <ExecNumberCell
+        value={row.quantity}
+        editable
+        compact
+        onCommit={(n) => onCommit(row, 'quantity', n)}
+      />
+      <span className="breakdown-rate-unit"> ({qtyUnit})</span>
+    </div>
+  );
+};
+
+export const CorporateMinimal: React.FC<TemplateProps> = ({ data, editable = false, onDataChange }) => {
   const { company, client, quote } = data;
+  const toast = useToast();
 
   // Ensure website URL has a protocol
   const ensureHttps = (url: string) => url.startsWith('http') ? url : `https://${url}`;
+
+  const showFloorToast = useCallback(
+    (message: string) => {
+      toast({
+        title: 'Below minimum',
+        description: message,
+        status: 'warning',
+        duration: 4000,
+        isClosable: true,
+        position: 'top',
+      });
+    },
+    [toast],
+  );
+
+  const commitExecEdit = useCallback(
+    (row: ExecutiveSummaryRow, field: ExecEditField, value: number) => {
+      if (!onDataChange) return;
+
+      const primary =
+        quote.items.find((i) => i.id === row.id) ||
+        quote.items.find(
+          (i) =>
+            (i.serviceId || '').trim().toLowerCase() ===
+            (row.catalogServiceId || '').trim().toLowerCase(),
+        );
+      if (!primary) return;
+
+      const svc = resolveDbServiceForQuoteItem({
+        serviceId: row.catalogServiceId || primary.serviceId,
+        serviceName: primary.serviceName,
+        description: primary.description,
+        city: primary.city,
+      });
+      const floors = svc
+        ? getVendorEditFloors(svc)
+        : {
+            minQty: null,
+            minDuration: null,
+            displayPriceFloor: null,
+            displayPriceIsDaily: true,
+            pfPriceFloor: null,
+          };
+
+      // Convert month UI → days / daily before validate + store
+      let storeValue = value;
+      if (field === 'duration') {
+        storeValue = uiEditToStorageValue('duration', value, row);
+      } else if (field === 'requiringCharge') {
+        storeValue = uiEditToStorageValue('requiringCharge', value, row);
+      }
+
+      let validationField: 'quantity' | 'duration' | 'displayRate' | 'pfRate';
+      if (field === 'quantity') validationField = 'quantity';
+      else if (field === 'duration') validationField = 'duration';
+      else if (field === 'requiringCharge') validationField = 'displayRate';
+      else validationField = 'pfRate';
+
+      const result = validateQuoteEdit({
+        field: validationField,
+        value:
+          field === 'requiringCharge'
+            ? value // validate against UI unit via rateUiMode
+            : field === 'duration'
+              ? storeValue // duration floor is always in days
+              : value,
+        floors,
+        rateUiMode: row.ratePeriod === 'per_month' ? 'per_month' : 'per_day',
+      });
+      if (!result.ok) {
+        showFloorToast(result.message || 'Invalid value');
+        return;
+      }
+
+      const nextItems = applyExecutiveSummaryFieldEdit(
+        quote.items,
+        primary.id,
+        field,
+        field === 'duration' || field === 'requiringCharge' ? storeValue : value,
+        floors,
+      );
+      const nextQuote = recalcQuoteTotals({ ...quote, items: nextItems });
+      onDataChange({ ...data, quote: nextQuote });
+    },
+    [data, onDataChange, quote, showFloorToast],
+  );
 
   // Render a term string with any embedded URLs as clickable links
   const renderTermWithLinks = (term: string): React.ReactNode => {
@@ -30,7 +292,6 @@ export const CorporateMinimal: React.FC<TemplateProps> = ({ data, editable: _edi
   // Check if this is a multi-service quote
   const isMultiService = quote.items.length > 0 && isMultiServiceQuote(quote.items);
   const serviceGroups = isMultiService ? groupItemsByServiceType(quote.items) : [];
-  const showCityInSummary = quoteHasMultipleCities(quote.items);
 
   const formatCurrency = (amount: number) => {
     return new Intl.NumberFormat('en-IN', {
@@ -46,7 +307,7 @@ export const CorporateMinimal: React.FC<TemplateProps> = ({ data, editable: _edi
       style: 'currency',
       currency: 'INR',
       minimumFractionDigits: 0,
-      maximumFractionDigits: 3
+      maximumFractionDigits: 2
     }).format(amount);
   };
 
@@ -54,100 +315,233 @@ export const CorporateMinimal: React.FC<TemplateProps> = ({ data, editable: _edi
     const d = typeof date === 'string' ? new Date(date) : date;
     return d.toLocaleDateString('en-IN', {
       year: 'numeric',
-      month: 'long',
+      month: 'short',
       day: 'numeric'
     });
   };
 
-  // Parse GST % from terms text e.g. "GST 18% Extra" → 18
-  const parseGSTFromTerms = (terms: string): number => {
-    if (terms) {
-      const match = terms.match(/GST\s+(\d+(?:\.\d+)?)\s*%/i) ||
-                    terms.match(/(\d+(?:\.\d+)?)\s*%\s*GST/i);
-      if (match) return parseFloat(match[1]);
-    }
-    return quote.gstPercentage;
-  };
-
-  // GST % sourced from terms & conditions text
-  const gstPct = parseGSTFromTerms(quote.termsAndConditions || '');
-
-  // Filter out GST-related terms since GST is already shown in the table columns
+  // Filter GST lines from T&C (GST amount shown separately in a later phase)
   const filterGSTTerms = (terms: string[]) =>
     terms.filter(t => !/gst|tax\s*%|inclusive\s*of\s*(gst|tax)|exclusive\s*of\s*(gst|tax)|\+\s*gst|\d+\s*%\s*(gst|tax)/i.test(t));
   const normalizeTerms = normalizeTermsList;
 
-  // Reusable items table with per-item GST breakdown columns
-  const renderItemsTable = (items: typeof quote.items, prefixCity = false) => {
-    const hasDuration = quoteHasAnyDuration(items);
-    const hasRemark = items.some(i => i.remark);
-    const formatDuration = (item: typeof quote.items[0]) => formatDurationLabel(item);
-    const cap = (s: string) => s ? s.charAt(0).toUpperCase() + s.slice(1) : s;
-    const abbrevDuration = (s: string) => {
-      const lower = s.toLowerCase().trim();
-      if (lower === 'months' || lower === 'month') return 'month';
-      if (lower === 'days' || lower === 'day') return 'day';
-      return s.toLowerCase();
-    };
-    const subtotal = items.reduce((sum, i) => sum + i.total, 0);
-    const gstAmt = quote.gstEnabled ? subtotal * gstPct / 100 : 0;
-    const inclGST = subtotal + gstAmt;
+  // Executive summary: one row per service_id (Display + P&F collapsed), amounts excl. GST
+  const renderItemsTable = (items: QuoteItem[]) => {
+    const rows = buildExecutiveSummaryRows(items);
+    const hasRemark = rows.some((r) => r.remark);
+    const subtotal = rows.reduce((sum, r) => sum + r.amountExclGst, 0);
+    const gstPct = quote.gstPercentage > 0 ? quote.gstPercentage : 18;
+    const totalInclGst = subtotal + (subtotal * gstPct) / 100;
+    const labelColSpan = 5;
+    const canEdit = Boolean(editable && onDataChange);
     return (
       <div className="table-scroll-wrap">
-      <table className={`items-table${quote.gstEnabled ? ' items-table--gst' : ''}${hasRemark ? ' items-table--has-remark' : ''}`}>
+      <table className={`items-table items-table--exec${hasRemark ? ' items-table--has-remark' : ''}${canEdit ? ' items-table--editable' : ''}`}>
         <thead>
-          <tr>
-            <th className="col-description">Description</th>
-            <th className="col-quantity">QTY</th>
-            <th className="col-rate">UNIT RATE</th>
-            {hasDuration && (
-            <th className="col-duration" title="Campaign duration when requested">Duration</th>
-            )}
-            {!quote.gstEnabled && <th className="col-total"><span className="th-main">AMOUNT</span></th>}
-            {quote.gstEnabled && <th className="col-gst-pct">GST %</th>}
-            {quote.gstEnabled && <th className="col-final"><span className="th-main">AMOUNT</span><span className="th-sub">(incl.GST)</span></th>}
+          <tr className="exec-thead-titles">
+            <th className="col-service-id">SERVICE &amp; LOCATION</th>
+            <th className="col-quantity">REQ QUANTITY</th>
+            <th className="col-duration" title="Campaign duration">REQ DURATION</th>
+            <th className="col-requiring">RECURRING CHARGE</th>
+            <th className="col-onetime">ONE TIME CHARGE</th>
+            <th className="col-amount-excl">AMOUNT</th>
             {hasRemark && <th className="col-remark">Remark</th>}
+          </tr>
+          <tr className="exec-thead-letters">
+            <th className="col-service-id exec-th-empty" aria-hidden="true">&nbsp;</th>
+            <th className="col-quantity exec-th-letter">(A)</th>
+            <th className="col-duration exec-th-letter">(B)</th>
+            <th className="col-requiring exec-th-letter">(C)</th>
+            <th className="col-onetime exec-th-letter">(D)</th>
+            <th className="col-amount-excl exec-th-formula">(A×B×C)+(A×D)</th>
+            {hasRemark && <th className="col-remark exec-th-empty" aria-hidden="true">&nbsp;</th>}
           </tr>
         </thead>
         <tbody>
-          {items.filter(item => item.rate !== 0 || item.total !== 0).map((item) => {
-            const itemGST = quote.gstEnabled ? item.total * gstPct / 100 : 0;
-            const itemFinal = item.total + itemGST;
-            return (
-              <tr key={item.id}>
-                <td className="item-description">
-                  <div className="item-title">{formatQuoteItemDescription(item, prefixCity).replace(/\s*\([^)]*\)/g, '').trim()}</div>
-                  {item.details && <div className="item-details">{item.details}</div>}
-                </td>
-                <td className="item-quantity">
-                  <div className="item-cell-number">{item.quantity}</div>
-                  {item.quantityUnit && <div className="item-unit-label">({item.quantityUnit})</div>}
-                </td>
-                <td className="item-rate">{formatRate(item.rate)}</td>
-                {hasDuration && (
-                <td className="item-duration">
-                  <div className="item-cell-number">{item.duration ?? '—'}</div>
-                  {item.duration && <div className="item-unit-label">({item.durationLabel ? item.durationLabel.toLowerCase() : abbrevDuration(item.durationUnit || 'months')})</div>}
-                </td>
+          {rows.map((row) => (
+            <tr key={row.id}>
+              <td className="item-service-id">
+                <div className="item-title">{row.serviceId}</div>
+              </td>
+              <td className="item-quantity">
+                <ExecNumberCell
+                  value={row.quantity}
+                  editable={canEdit}
+                  onCommit={(n) => commitExecEdit(row, 'quantity', n)}
+                />
+                {row.quantityUnit && (
+                  <div className="item-unit-label">
+                    ({String(row.quantityUnit).replace(/^per\s+/i, '')})
+                  </div>
                 )}
-                {!quote.gstEnabled && <td className="item-total">{formatCurrency(item.total)}</td>}
-                {quote.gstEnabled && <td className="item-gst-pct">{gstPct}%</td>}
-                {quote.gstEnabled && <td className="item-final">{formatCurrency(itemFinal)}</td>}
-                {hasRemark && <td className="item-remark">{item.remark || ''}</td>}
-              </tr>
-            );
-          })}
+              </td>
+              <td className="item-duration">
+                {row.duration != null || canEdit ? (
+                  <>
+                    <ExecNumberCell
+                      value={row.duration}
+                      editable={canEdit && row.duration != null}
+                      onCommit={(n) => commitExecEdit(row, 'duration', n)}
+                      placeholder="—"
+                    />
+                    {row.duration != null && (
+                      <div className="item-unit-label">
+                        ({row.durationLabel || (row.durationUnit === 'months' ? 'month' : 'days')})
+                      </div>
+                    )}
+                  </>
+                ) : (
+                  <div className="item-cell-number">—</div>
+                )}
+              </td>
+              <td className="item-requiring">
+                {row.requiringCharge > 0 ? (
+                  <>
+                    <ExecNumberCell
+                      value={row.requiringCharge}
+                      format="rate"
+                      editable={canEdit}
+                      onCommit={(n) => commitExecEdit(row, 'requiringCharge', n)}
+                    />
+                    {row.duration != null ? (
+                      <div className="item-unit-label">
+                        ({row.ratePeriod === 'per_month' ? 'per month' : 'per day'})
+                      </div>
+                    ) : null}
+                  </>
+                ) : (
+                  <div className="item-cell-number">—</div>
+                )}
+              </td>
+              <td className="item-onetime">
+                {row.oneTimeCharge > 0 ? (
+                  <>
+                    <ExecNumberCell
+                      value={row.oneTimeCharge}
+                      format="rate"
+                      editable={canEdit}
+                      onCommit={(n) => commitExecEdit(row, 'oneTimeCharge', n)}
+                    />
+                    {row.quantityUnit && (
+                      <div className="item-unit-label">
+                        (per {String(row.quantityUnit).replace(/^per\s+/i, '')})
+                      </div>
+                    )}
+                  </>
+                ) : (
+                  <div className="item-cell-number">—</div>
+                )}
+              </td>
+              <td className="item-amount-excl">{formatCurrency(row.amountExclGst)}</td>
+              {hasRemark && <td className="item-remark">{row.remark || ''}</td>}
+            </tr>
+          ))}
         </tbody>
         <tfoot>
           <tr className="tfoot-totals">
-            <td className="tfoot-label" colSpan={hasDuration ? 4 : 3}>Total</td>
-            {!quote.gstEnabled && <td className="tfoot-excl">{formatCurrency(subtotal)}</td>}
-            {quote.gstEnabled && <td className="tfoot-gst-pct"></td>}
-            {quote.gstEnabled && <td className="tfoot-incl">{formatCurrency(inclGST)}</td>}
+            <td className="tfoot-label" colSpan={labelColSpan}>Total (excl. GST)</td>
+            <td className="tfoot-excl">{formatCurrency(subtotal)}</td>
+            {hasRemark && <td></td>}
+          </tr>
+          <tr className="tfoot-totals tfoot-totals--incl">
+            <td className="tfoot-label tfoot-label--incl" colSpan={labelColSpan}>Total (incl. GST)</td>
+            <td className="tfoot-incl">{formatCurrency(totalInclGst)}</td>
             {hasRemark && <td></td>}
           </tr>
         </tfoot>
       </table>
+      </div>
+    );
+  };
+
+  /** Per-service Pricing Breakdown — DESCRIPTION / AMOUNT (not Executive Summary). */
+  const renderPricingBreakdownTable = (items: typeof quote.items) => {
+    const { lines, subtotal } = buildPricingBreakdownLines(items);
+    const gstPct = quote.gstPercentage > 0 ? quote.gstPercentage : 18;
+    const gstAmount = (subtotal * gstPct) / 100;
+    const totalInclGst = subtotal + gstAmount;
+    const detailLines = lines.filter((l) => l.kind !== 'subtotal');
+    const hasDisplay = detailLines.some((l) => l.kind === 'display');
+    const hasPF = detailLines.some((l) => l.kind === 'onetime');
+    const canEdit = Boolean(editable && onDataChange);
+
+    // Show combined Display + P&F total (excl. GST) only when both lines exist
+    const summaryPairs: { label: string; amount: number; emph?: boolean }[] = [
+      ...(hasDisplay && hasPF
+        ? [{ label: 'Total (excl. GST)', amount: subtotal }]
+        : []),
+      { label: `GST @ ${gstPct}%`, amount: gstAmount },
+      { label: 'Total (incl. GST)', amount: totalInclGst, emph: true },
+    ];
+
+    return (
+      <div className="table-scroll-wrap">
+        <table className={`items-table items-table--breakdown${canEdit ? ' items-table--editable' : ''}`}>
+          <thead>
+            <tr>
+              <th className="col-description">DESCRIPTION</th>
+              <th className="col-amount-excl">AMOUNT</th>
+            </tr>
+          </thead>
+          <tbody>
+            {detailLines.map((line, idx) => {
+              const title = line.descriptionLines[0] || '';
+              const formula = line.descriptionLines.slice(1).join(' ') || null;
+              const amountBlock = (
+                <div className="breakdown-amount-stack">
+                  <div className="breakdown-amount-inline">{formatCurrency(line.amount)}</div>
+                  <div className="breakdown-excl-gst">(excl.gst)</div>
+                </div>
+              );
+              return (
+                <tr key={`${line.kind}-${idx}`}>
+                  <td className="item-description breakdown-desc" colSpan={2}>
+                    {formula ? (
+                      <>
+                        <div className="breakdown-desc-primary">{title}</div>
+                        <div className="breakdown-formula-row">
+                          <BreakdownFormulaBody
+                            line={line}
+                            canEdit={canEdit}
+                            onCommit={commitExecEdit}
+                          />
+                          {amountBlock}
+                        </div>
+                      </>
+                    ) : (
+                      <div className="breakdown-formula-row">
+                        <div className="breakdown-desc-primary" style={{ marginBottom: 0, flex: 1 }}>{title}</div>
+                        {amountBlock}
+                      </div>
+                    )}
+                  </td>
+                </tr>
+              );
+            })}
+            <tr className="breakdown-summary-block">
+              <td className="breakdown-summary-labels">
+                {summaryPairs.map((p) => (
+                  <div
+                    key={p.label}
+                    className={p.emph ? 'breakdown-summary-label breakdown-summary-label--emph' : 'breakdown-summary-label'}
+                  >
+                    {p.label}
+                  </div>
+                ))}
+              </td>
+              <td className="breakdown-summary-amounts">
+                {summaryPairs.map((p) => (
+                  <div
+                    key={p.label}
+                    className={p.emph ? 'breakdown-summary-amount breakdown-summary-amount--emph' : 'breakdown-summary-amount'}
+                  >
+                    {formatCurrency(p.amount)}
+                  </div>
+                ))}
+              </td>
+            </tr>
+          </tbody>
+        </table>
       </div>
     );
   };
@@ -176,7 +570,7 @@ export const CorporateMinimal: React.FC<TemplateProps> = ({ data, editable: _edi
                 <span className="meta-value">{quote.quoteNumber}</span>
               </div>
               <div className="meta-row">
-                <span className="meta-label">Date:</span>
+                <span className="meta-label">Prepared Date:</span>
                 <span className="meta-value">{formatDate(quote.date)}</span>
               </div>
               <div className="meta-row">
@@ -191,18 +585,33 @@ export const CorporateMinimal: React.FC<TemplateProps> = ({ data, editable: _edi
   );
 
   // Render client details component (reusable)
-  const renderClientDetails = () => (
-    <div className="client-section">
-      <h3>Quote Prepared For:</h3>
-      <div className="client-details">
-        <p className="client-name">{(client.company || client.name).toUpperCase()}</p>
-        {client.email && <p>Email: <a className="contact-link" href={`mailto:${client.email}`}>{client.email}</a></p>}
-        {client.phone && <p>Phone: <a className="contact-link" href={`tel:${client.phone}`}>{client.phone}</a></p>}
-        {client.address && <p>Address: {client.address}</p>}
-        {client.gst && <p>GST: {client.gst}</p>}
+  const renderClientDetails = () => {
+    const primaryFields: React.ReactNode[] = [];
+    const overflowFields: React.ReactNode[] = [];
+    if (client.phone) primaryFields.push(<span key="ph">PH: <a className="contact-link" href={`tel:${client.phone}`}>{client.phone}</a></span>);
+    if (client.email) overflowFields.push(<span key="em">Email: <a className="contact-link" href={`mailto:${client.email}`}>{client.email}</a></span>);
+    if (client.address) overflowFields.push(<span key="ad">Address: {client.address}</span>);
+    if (client.gst) overflowFields.push(<span key="gst">GST: {client.gst}</span>);
+
+    return (
+      <div className="client-section">
+        <div className="client-inline-row">
+          <span className="client-inline-label">Quote Prepared For: </span>
+          <span className="client-inline-name">{(client.company || client.name).toUpperCase()}</span>
+          {primaryFields.map((f, i) => (
+            <span key={i}><span className="client-inline-sep"> | </span>{f}</span>
+          ))}
+        </div>
+        {overflowFields.length > 0 && (
+          <div className="client-overflow-row">
+            {overflowFields.map((f, i) => (
+              <span key={i}>{i > 0 && <span className="client-inline-sep"> | </span>}{f}</span>
+            ))}
+          </div>
+        )}
       </div>
-    </div>
-  );
+    );
+  };
 
   // Render company contact footer (appears on every page)
   const renderCompanyFooter = (pageNum: number, totalPages: number) => (
@@ -260,11 +669,11 @@ export const CorporateMinimal: React.FC<TemplateProps> = ({ data, editable: _edi
               </h3>
               <h3 className="smart-section-heading" style={{ fontSize: '15px', fontWeight: '700', textTransform: 'uppercase', letterSpacing: '0.06em', color: '#1a1a2e', margin: '16px 0 14px 0', paddingBottom: '8px', borderBottom: '2px solid #2980b9' }}>
                 <span className="smart-heading-bar" />
-                1. Pricing Summary
+                1. Pricing Breakdown
               </h3>
             </div>
             <div data-pdf-block="table">
-              {renderItemsTable(quote.items)}
+              {renderPricingBreakdownTable(quote.items)}
             </div>
             {/* Spec + Reference Images in same section — virtual page engine packs them together */}
             <ReferenceImages
@@ -272,7 +681,12 @@ export const CorporateMinimal: React.FC<TemplateProps> = ({ data, editable: _edi
               proposalPageMap={data.proposalPageMap}
               items={quote.items}
               terms={[]}
-              serviceKey={quote.items[0]?.serviceId || 'single'}
+              serviceKey={(() => {
+                const city = (quote.items[0]?.city || '').trim().toLowerCase();
+                const st = extractServiceType(quote.items[0]?.description || '').toLowerCase();
+                if (city && city !== '\u2014' && st) return `${city}|${st}`;
+                return quote.items[0]?.serviceId || st || 'single';
+              })()}
               onDataReady={data.onServiceDataReady}
             />
           </div>
@@ -301,17 +715,15 @@ export const CorporateMinimal: React.FC<TemplateProps> = ({ data, editable: _edi
           )}
 
           {/* Bank Details */}
-          <div className="terms-section bank-details-section" data-pdf-block="atomic" style={{ marginTop: '24px' }}>
-            <h3 style={{ textAlign: 'center', fontSize: '24px', fontWeight: '700', textTransform: 'uppercase', letterSpacing: '0.08em', color: '#3b0a14', margin: '0 0 18px 0', paddingBottom: '10px', borderBottom: '2px solid #2980b9' }}>
-              Bank Details
-            </h3>
-            <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '16px', color: '#1a1a2e' }}>
+          <div className="bank-details-card" data-pdf-block="atomic">
+            <h3 className="bank-details-card-title">Bank Details</h3>
+            <table className="bank-details-table">
               <tbody>
-                <tr><td style={{ padding: '4px 12px 4px 0', fontWeight: '600', whiteSpace: 'nowrap' }}>Account Holder</td><td style={{ padding: '4px 0' }}>: BALEEN MEDIA</td></tr>
-                <tr><td style={{ padding: '4px 12px 4px 0', fontWeight: '600', whiteSpace: 'nowrap' }}>Account Number</td><td style={{ padding: '4px 0' }}>: 99999566030153</td></tr>
-                <tr><td style={{ padding: '4px 12px 4px 0', fontWeight: '600', whiteSpace: 'nowrap' }}>IFSC</td><td style={{ padding: '4px 0' }}>: HDFC0001866</td></tr>
-                <tr><td style={{ padding: '4px 12px 4px 0', fontWeight: '600', whiteSpace: 'nowrap' }}>Branch</td><td style={{ padding: '4px 0' }}>: ADYAR</td></tr>
-                <tr><td style={{ padding: '4px 12px 4px 0', fontWeight: '600', whiteSpace: 'nowrap' }}>Account Type</td><td style={{ padding: '4px 0' }}>: Current Account</td></tr>
+                <tr><td className="bank-label">Account Holder</td><td className="bank-colon">:</td><td className="bank-value">BALEEN MEDIA</td></tr>
+                <tr><td className="bank-label">Account Number</td><td className="bank-colon">:</td><td className="bank-value">99999566030153</td></tr>
+                <tr><td className="bank-label">IFSC</td><td className="bank-colon">:</td><td className="bank-value">HDFC0001866</td></tr>
+                <tr><td className="bank-label">Branch</td><td className="bank-colon">:</td><td className="bank-value">ADYAR</td></tr>
+                <tr><td className="bank-label">Account Type</td><td className="bank-colon">:</td><td className="bank-value">Current Account</td></tr>
               </tbody>
             </table>
           </div>
@@ -351,7 +763,7 @@ export const CorporateMinimal: React.FC<TemplateProps> = ({ data, editable: _edi
             </h3>
           </div>
             <div data-pdf-block="table">
-              {renderItemsTable(quote.items, showCityInSummary)}
+              {renderItemsTable(quote.items)}
             </div>
         </div>
 
@@ -380,11 +792,11 @@ export const CorporateMinimal: React.FC<TemplateProps> = ({ data, editable: _edi
                   </h3>
                   <h3 className="smart-section-heading" style={{ fontSize: '15px', fontWeight: '700', textTransform: 'uppercase', letterSpacing: '0.06em', color: '#1a1a2e', margin: '24px 0 14px 0', paddingBottom: '8px', borderBottom: '2px solid #2980b9' }}>
                     <span className="smart-heading-bar" />
-                    1. Pricing Summary
+                    1. Pricing Breakdown
                   </h3>
                 </div>
                 <div data-pdf-block="table">
-                  {renderItemsTable(group.items)}
+                  {renderPricingBreakdownTable(group.items)}
                 </div>
               </div>
 
@@ -434,17 +846,15 @@ export const CorporateMinimal: React.FC<TemplateProps> = ({ data, editable: _edi
         })()}
 
         {/* Bank Details */}
-        <div className="terms-section bank-details-section" data-pdf-block="atomic" style={{ marginTop: '24px' }}>
-          <h3 style={{ textAlign: 'center', fontSize: '20px', fontWeight: '700', textTransform: 'uppercase', letterSpacing: '0.08em', color: '#3b0a14', margin: '0 0 18px 0', paddingBottom: '10px', borderBottom: '2px solid #2980b9' }}>
-            Bank Details
-          </h3>
-          <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '11px', color: '#1a1a2e' }}>
+        <div className="bank-details-card" data-pdf-block="atomic">
+          <h3 className="bank-details-card-title">Bank Details</h3>
+          <table className="bank-details-table">
             <tbody>
-              <tr><td style={{ padding: '4px 12px 4px 0', fontWeight: '600', whiteSpace: 'nowrap' }}>Account Holder</td><td style={{ padding: '4px 0' }}>: BALEEN MEDIA</td></tr>
-              <tr><td style={{ padding: '4px 12px 4px 0', fontWeight: '600', whiteSpace: 'nowrap' }}>Account Number</td><td style={{ padding: '4px 0' }}>: 99999566030153</td></tr>
-              <tr><td style={{ padding: '4px 12px 4px 0', fontWeight: '600', whiteSpace: 'nowrap' }}>IFSC</td><td style={{ padding: '4px 0' }}>: HDFC0001866</td></tr>
-              <tr><td style={{ padding: '4px 12px 4px 0', fontWeight: '600', whiteSpace: 'nowrap' }}>Branch</td><td style={{ padding: '4px 0' }}>: ADYAR</td></tr>
-              <tr><td style={{ padding: '4px 12px 4px 0', fontWeight: '600', whiteSpace: 'nowrap' }}>Account Type</td><td style={{ padding: '4px 0' }}>: Current Account</td></tr>
+              <tr><td className="bank-label">Account Holder</td><td className="bank-colon">:</td><td className="bank-value">BALEEN MEDIA</td></tr>
+              <tr><td className="bank-label">Account Number</td><td className="bank-colon">:</td><td className="bank-value">99999566030153</td></tr>
+              <tr><td className="bank-label">IFSC</td><td className="bank-colon">:</td><td className="bank-value">HDFC0001866</td></tr>
+              <tr><td className="bank-label">Branch</td><td className="bank-colon">:</td><td className="bank-value">ADYAR</td></tr>
+              <tr><td className="bank-label">Account Type</td><td className="bank-colon">:</td><td className="bank-value">Current Account</td></tr>
             </tbody>
           </table>
         </div>

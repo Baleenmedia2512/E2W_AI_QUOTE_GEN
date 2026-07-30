@@ -1,9 +1,11 @@
 import { canonicalizeServiceName } from '../hooks/useCityServiceRegistry';
+import type { GroupedServices } from '../types/chat';
 import {
   ConfirmationRow,
   FULL_SERVICE_PATTERNS,
   MinQtyViolation,
   dedupeConfirmationRows,
+  mergeGroupedServicesByCategory,
   validateConfirmationRowsMinQty,
 } from './cloudQuoteValidation';
 import { DbService, resolveServiceIdFromCatalog } from './serviceResolver';
@@ -31,6 +33,121 @@ export function labelsToConfirmRows(labels: string[]): ConfirmationRow[] {
   return dedupeConfirmationRows(
     labels.map(parseConfirmedLabelToRow).filter((r): r is ConfirmationRow => r != null),
   );
+}
+
+/**
+ * Fold "Already confirmed" labels into the multi-match checkbox groups and
+ * return pre-checked selections so they appear as normal checked boxes.
+ * Vague groups with exactly one option are also pre-checked; multi-option
+ * vague groups stay unchecked so the user must choose.
+ */
+export function mergeDirectPartsIntoGroupedServices(
+  groups: GroupedServices[],
+  directParts: string[],
+): { groups: GroupedServices[]; preSelected: Record<string, string[]> } {
+  const working: GroupedServices[] = (groups || []).map((g) => ({
+    ...g,
+    services: [...(g.services || [])],
+  }));
+
+  for (const part of directParts || []) {
+    const row = parseConfirmedLabelToRow(part);
+    if (!row) continue;
+    const serviceName = row.service;
+    const qty = typeof row.qty === 'number' ? row.qty : parseInt(String(row.qty), 10) || 1;
+    const city = row.city && row.city !== '—' ? row.city : '';
+
+    let idx = working.findIndex((g) => {
+      const [, gCity] = g.vehicleType.includes('|')
+        ? g.vehicleType.split('|')
+        : [g.vehicleType, ''];
+      const cityOk = !city || !gCity || gCity.toLowerCase() === city.toLowerCase();
+      return (
+        cityOk &&
+        g.services.some((s) => s.name.toLowerCase() === serviceName.toLowerCase())
+      );
+    });
+
+    if (idx < 0) {
+      const category = serviceName.split(/\s+/)[0] || 'Service';
+      idx = working.findIndex((g) => {
+        const [vehiclePart, gCity] = g.vehicleType.includes('|')
+          ? g.vehicleType.split('|')
+          : [g.vehicleType, ''];
+        const gCat = (vehiclePart.trim().split(/\s+/)[0] || '').toLowerCase();
+        const cityOk = !city || !gCity || gCity.toLowerCase() === city.toLowerCase();
+        return cityOk && gCat === category.toLowerCase();
+      });
+    }
+
+    if (idx < 0) {
+      const category = serviceName.split(/\s+/)[0] || 'Service';
+      const catLabel = category.charAt(0).toUpperCase() + category.slice(1);
+      const vehicleType = city ? `${catLabel}|${city}` : catLabel;
+      working.push({
+        vehicleType,
+        requestedQuantity: qty,
+        services: [
+          {
+            name: serviceName,
+            category: catLabel,
+            requestedQuantity: qty,
+          },
+        ],
+      });
+      idx = working.length - 1;
+    } else {
+      const existing = working[idx].services.find(
+        (s) => s.name.toLowerCase() === serviceName.toLowerCase(),
+      );
+      if (existing) {
+        existing.requestedQuantity = qty;
+      } else {
+        working[idx].services.push({
+          name: serviceName,
+          category: working[idx].vehicleType.split('|')[0],
+          requestedQuantity: qty,
+        });
+      }
+    }
+  }
+
+  const merged = mergeGroupedServicesByCategory(working);
+  const preSelected: Record<string, string[]> = {};
+
+  for (const part of directParts || []) {
+    const row = parseConfirmedLabelToRow(part);
+    if (!row) continue;
+    const city = row.city && row.city !== '—' ? row.city : '';
+    for (const g of merged) {
+      const [, gCity] = g.vehicleType.includes('|')
+        ? g.vehicleType.split('|')
+        : [g.vehicleType, ''];
+      const cityOk = !city || !gCity || gCity.toLowerCase() === city.toLowerCase();
+      const svc = g.services.find(
+        (s) => s.name.toLowerCase() === row.service.toLowerCase(),
+      );
+      if (svc && cityOk) {
+        if (!preSelected[g.vehicleType]) preSelected[g.vehicleType] = [];
+        if (!preSelected[g.vehicleType].includes(svc.name)) {
+          preSelected[g.vehicleType].push(svc.name);
+        }
+      }
+    }
+  }
+
+  // Vague groups: only auto-check when there is exactly one option
+  // (e.g. "auto semi" → 1 match). Multiple options (e.g. Bus Shelter Single/Double)
+  // stay unchecked so the user must choose.
+  for (const g of merged) {
+    if (g.services.length !== 1) continue;
+    if (!preSelected[g.vehicleType]) preSelected[g.vehicleType] = [];
+    if (preSelected[g.vehicleType].length === 0) {
+      preSelected[g.vehicleType].push(g.services[0].name);
+    }
+  }
+
+  return { groups: merged, preSelected };
 }
 
 export type MinQtyGateResult =
@@ -120,6 +237,7 @@ export function buildGeminiContextFromDbServices(
   return services.map((svc) => {
     const m = svc.metadata || {};
     const pricing = (m.pricing || {}) as Record<string, unknown>;
+    const meta = m as Record<string, unknown>;
     const lines = [
       `SERVICE: ${svc.service_name}`,
       `CITY: ${(m.locations || []).join(', ')}`,
@@ -128,20 +246,37 @@ export function buildGeminiContextFromDbServices(
 
     if (pricing.structure === 'separate') {
       if (pricing.display_price) lines.push(`DISPLAY PRICE: ₹${pricing.display_price} ${pricing.display_period || 'per month'}`);
-      if (pricing.production_price) lines.push(`PRINTING & FIXING PRICE: ₹${pricing.production_price} ${pricing.production_unit || 'per unit'}`);
-      if (pricing.min_quantity) lines.push(`MINIMUM: ${pricing.min_quantity}`);
+      if (pricing.production_price || pricing.printing_and_mounting_price) {
+        lines.push(
+          `PRINTING & FIXING PRICE: ₹${pricing.production_price || pricing.printing_and_mounting_price} ${pricing.production_unit || 'per unit'}`,
+        );
+      }
     } else if (pricing.structure === 'campaign') {
       if (pricing.unit_price) lines.push(`UNIT PRICE: ₹${pricing.unit_price} ${pricing.unit || ''}`);
-      if (pricing.min_quantity) lines.push(`MINIMUM QUANTITY: ${pricing.min_quantity}`);
       if (pricing.total_price) lines.push(`TOTAL PRICE: ₹${pricing.total_price}`);
     } else {
-      const price = pricing.price || pricing.unit_price;
+      const price = pricing.display_price || pricing.price || pricing.unit_price;
       if (price) lines.push(`PRICE: ₹${price} ${pricing.period || pricing.display_period || pricing.unit || 'per month'}`);
-      if (pricing.min_quantity) lines.push(`MINIMUM: ${pricing.min_quantity}`);
+      if (pricing.printing_and_mounting_price) {
+        lines.push(`PRINTING & MOUNTING: ₹${pricing.printing_and_mounting_price}`);
+      }
       if (pricing.total_price) lines.push(`TOTAL PRICE: ₹${pricing.total_price}`);
     }
 
-    const meta = m as Record<string, unknown>;
+    // Vendor top-level only — never pricing.min_qty / pricing.min_duration
+    const minQty = meta.min_qty ?? meta.min_quantity;
+    if (minQty != null && String(minQty).trim() !== '' && String(minQty).toUpperCase() !== 'NA') {
+      lines.push(`MINIMUM QUANTITY: ${minQty}`);
+    }
+    if (meta.min_duration != null && meta.duration_measurement_unit) {
+      lines.push(`MINIMUM DURATION: ${meta.min_duration} ${meta.duration_measurement_unit}`);
+    } else if (meta.duration) {
+      lines.push(`DURATION: ${String(meta.duration)}`);
+    }
+    if (meta.qty_measurement_unit) {
+      lines.push(`QTY UNIT: ${String(meta.qty_measurement_unit)}`);
+    }
+
     if (meta.size) lines.push(`SIZE: ${typeof meta.size === 'object' ? JSON.stringify(meta.size) : meta.size}`);
     if (meta.material) lines.push(`MATERIAL: ${String(meta.material)}`);
     if (meta.terms) lines.push(`TERMS: ${String(meta.terms)}`);
@@ -189,6 +324,9 @@ export function validateConfirmedRowsAgainstDb(
   services: DbService[],
 ): ConfirmationRow[] {
   return rows.filter((row) => {
+    if (row.serviceId && services.some((s) => s.service_id === row.serviceId)) {
+      return true;
+    }
     const cityHint = row.city && row.city !== '—' ? row.city : null;
     return resolveServiceIdFromCatalog(row.service, services, cityHint) != null;
   });
@@ -196,7 +334,9 @@ export function validateConfirmedRowsAgainstDb(
 
 export function canonicalRowKey(row: ConfirmationRow): string {
   const qty = typeof row.qty === 'number' ? row.qty : parseInt(String(row.qty), 10) || 1;
-  const svc = canonicalizeServiceName(row.service) || row.service.toLowerCase();
+  const svc = (row.serviceId || '').trim().toLowerCase()
+    || canonicalizeServiceName(row.service)
+    || row.service.toLowerCase();
   const city = (row.city && row.city !== '—' ? row.city : '').toLowerCase();
   return `${svc}|${city}|${qty}`;
 }

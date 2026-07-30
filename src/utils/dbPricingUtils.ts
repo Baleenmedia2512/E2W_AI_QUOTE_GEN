@@ -1,14 +1,97 @@
 import { QuoteItem } from '../types/quote';
-import { DbMetadataLike, resolveQuoteLineDuration } from './durationUtils';
+import {
+  DbMetadataLike,
+  isVendorDailyDisplayRate,
+  resolveQuoteLineDuration,
+} from './durationUtils';
 import type { DbService } from './serviceResolver';
+import { formatServiceDisplayName } from './serviceResolver';
+
+function isNaLike(value: unknown): boolean {
+  if (value == null || value === '') return true;
+  if (typeof value === 'string' && value.trim().toUpperCase() === 'NA') return true;
+  return false;
+}
+
+/** Qty column label: "bus" not "per bus" (rate period uses "per month" separately). */
+function formatQtyUnitLabel(...candidates: Array<string | undefined | null>): string | undefined {
+  for (const raw of candidates) {
+    if (raw == null || String(raw).trim() === '') continue;
+    const cleaned = String(raw).trim().replace(/^per\s+/i, '').trim();
+    if (cleaned && cleaned.toUpperCase() !== 'NA') return cleaned;
+  }
+  return undefined;
+}
 
 function getMinQtyFromService(svc: DbService): number | undefined {
   const m = svc.metadata || {};
-  const pricing = (m.pricing || {}) as { min_quantity?: number };
-  const raw = pricing.min_quantity ?? (m as { min_quantity?: number }).min_quantity;
-  if (raw == null || (typeof raw === 'string' && raw === '')) return undefined;
+  // Vendor top-level only — never pricing.min_qty
+  const raw =
+    (m as { min_qty?: number | string }).min_qty ??
+    (m as { min_quantity?: number | string }).min_quantity;
+  if (isNaLike(raw)) return undefined;
   const n = Number(raw);
   return Number.isFinite(n) && n > 1 ? n : undefined;
+}
+
+function formatPricingPeriod(
+  p: Record<string, unknown>,
+  meta: Record<string, unknown>,
+  serviceName?: string,
+): string {
+  if (p.display_period && !isNaLike(p.display_period)) {
+    const hint = String(p.display_period).trim();
+    // Mobile Van may still say "per month" in display_period while billing is daily × days
+    if (
+      isVendorDailyDisplayRate(
+        { pricing: p as DbMetadataLike['pricing'], medium: meta.medium as string | undefined, min_duration: meta.min_duration as number | string | undefined, duration_measurement_unit: meta.duration_measurement_unit as string | undefined },
+        serviceName,
+      )
+    ) {
+      return 'per day';
+    }
+    return hint;
+  }
+  if (p.period && !isNaLike(p.period)) {
+    return String(p.period).trim();
+  }
+
+  // Vendor top-level duration only — never pricing.min_duration
+  const md = Number(meta.min_duration);
+  const du = String(meta.duration_measurement_unit || '').trim().toLowerCase();
+
+  // Daily unit rate (Mobile Van any min days, or short min like LED Hoardings)
+  if (
+    isVendorDailyDisplayRate(
+      { pricing: p as DbMetadataLike['pricing'], medium: meta.medium as string | undefined, min_duration: meta.min_duration as number | string | undefined, duration_measurement_unit: meta.duration_measurement_unit as string | undefined },
+      serviceName,
+    )
+  ) {
+    return 'per day';
+  }
+
+  // 28–31 day campaign package = one billing month (Apartment Lift, etc.)
+  if (Number.isFinite(md) && md >= 28 && md <= 31 && du.startsWith('day')) {
+    return 'per month';
+  }
+  if (meta.min_duration != null && !isNaLike(meta.min_duration) && du && !isNaLike(du)) {
+    return `per ${meta.min_duration} ${meta.duration_measurement_unit}`.trim();
+  }
+  if (meta.duration && !isNaLike(meta.duration)) {
+    return String(meta.duration).trim();
+  }
+  return 'per month';
+}
+
+function formatProductionUnit(p: Record<string, unknown>): string {
+  if (p.production_unit && !isNaLike(p.production_unit)) {
+    return String(p.production_unit).trim();
+  }
+  const qtyUnit = p.qty_measurement_unit;
+  if (qtyUnit && !isNaLike(qtyUnit)) {
+    return `per ${String(qtyUnit).trim()}`;
+  }
+  return 'per unit';
 }
 
 export interface DbPricingFields {
@@ -30,7 +113,7 @@ export interface DbPricingFields {
 /** Read first positive numeric value from candidates. */
 export function readDbPrice(...values: unknown[]): number {
   for (const v of values) {
-    if (v == null || v === '') continue;
+    if (isNaLike(v)) continue;
     const n = Number(v);
     if (Number.isFinite(n) && n > 0) return n;
   }
@@ -89,62 +172,66 @@ function parsePricesFromContent(content?: string): Partial<DbPricingFields> {
   };
 }
 
-/** Normalize all pricing fields from metadata (+ optional content fallback). */
+/**
+ * One-time add-ons on the Printing & Fixing line:
+ * P&F + official + RTO + freight + recce (skip NA / 0).
+ */
+function sumOneTimeAddOns(p: Record<string, unknown>): number {
+  const pf = readDbPrice(
+    p.printing_and_mounting_price,
+    p.printing_price,
+    p.mounting_price,
+    p.production_price,
+    p.printing_and_fixing_price,
+  );
+  const official = readDbPrice(p.official_and_incidental_price);
+  const rto = readDbPrice(p.rto_price);
+  const freight = readDbPrice(p.freight_price);
+  const recce = readDbPrice(p.recce_price);
+  return pf + official + rto + freight + recce;
+}
+
+/** Normalize quote pricing — raw display_price (never pre-folded) + one-time add-ons.
+ * Duration math (× days vs 1 month) is handled in resolveQuoteLineDuration.
+ */
 export function extractDbPricingFields(svc: DbService): DbPricingFields {
   const m = svc.metadata || {};
   const p = (m.pricing || {}) as Record<string, unknown>;
   const meta = m as Record<string, unknown>;
 
+  const displayPeriod = formatPricingPeriod(p, meta, svc.service_name);
+  const productionUnit = formatProductionUnit({
+    ...p,
+    qty_measurement_unit:
+      p.qty_measurement_unit && !isNaLike(p.qty_measurement_unit)
+        ? p.qty_measurement_unit
+        : meta.qty_measurement_unit,
+  });
+
   const base: DbPricingFields = {
     structure: typeof p.structure === 'string' ? p.structure : undefined,
-    displayPrice: readDbPrice(p.display_price, p.rental_price, p.rental),
-    productionPrice: readDbPrice(p.production_price, p.printing_price, p.printing_and_fixing_price),
-    unitPrice: readDbPrice(p.unit_price, meta.unit_price),
-    rentalPrice: readDbPrice(p.rental_price, p.price, p.rental, p.combined_price),
-    designCost: readDbPrice(p.design_cost, p.design_price, meta.design_cost),
-    combinedPrice: readDbPrice(p.combined_price, p.price),
-    totalPrice: readDbPrice(p.total_price, p.final_total, p.grand_total, p.campaign_total),
-    displayPeriod:
-      String(p.display_period || p.period || meta.duration || 'per month').trim() || 'per month',
-    productionUnit: String(p.production_unit || 'per unit').trim() || 'per unit',
-    period:
-      String(p.period || p.display_period || meta.duration || 'per month').trim() || 'per month',
-    minQuantity: readDbPrice(p.min_quantity, meta.min_quantity) || undefined,
+    displayPrice: readDbPrice(p.display_price),
+    productionPrice: sumOneTimeAddOns(p),
+    unitPrice: 0,
+    rentalPrice: 0,
+    designCost: 0,
+    combinedPrice: 0,
+    totalPrice: 0,
+    displayPeriod,
+    productionUnit,
+    period: displayPeriod,
+    minQuantity: readDbPrice(meta.min_qty, meta.min_quantity) || undefined,
     fromContentFallback: false,
   };
-
-  if (!hasQuotablePricingFromFields(base)) {
-    const fromContent = parsePricesFromContent(svc.content);
-    if (fromContent.fromContentFallback) {
-      return {
-        ...base,
-        displayPrice: fromContent.displayPrice || base.displayPrice,
-        productionPrice: fromContent.productionPrice || base.productionPrice,
-        unitPrice: fromContent.unitPrice || base.unitPrice,
-        rentalPrice: fromContent.rentalPrice || base.rentalPrice,
-        designCost: fromContent.designCost || base.designCost,
-        combinedPrice: fromContent.combinedPrice || base.combinedPrice,
-        totalPrice: fromContent.totalPrice || base.totalPrice,
-        fromContentFallback: true,
-      };
-    }
-  }
 
   return base;
 }
 
 function hasQuotablePricingFromFields(f: DbPricingFields): boolean {
-  if (f.displayPrice > 0 && f.productionPrice > 0) return true;
-  if (f.displayPrice > 0 || f.productionPrice > 0) return true;
-  if (f.unitPrice > 0) return true;
-  if (f.rentalPrice > 0 || f.combinedPrice > 0 || f.totalPrice > 0) return true;
-  if (f.designCost > 0 && (f.rentalPrice > 0 || f.combinedPrice > 0 || f.totalPrice > 0)) {
-    return true;
-  }
-  return false;
+  return f.displayPrice > 0 || f.productionPrice > 0;
 }
 
-/** True when at least one billable rate can be read from this DB row. */
+/** True when display and/or P&F rate can be read from metadata.pricing. */
 export function hasQuotablePricing(svc: DbService): boolean {
   return hasQuotablePricingFromFields(extractDbPricingFields(svc));
 }
@@ -154,11 +241,6 @@ function pricingCompletenessScore(svc: DbService): number {
   let score = 0;
   if (f.displayPrice > 0) score += 3;
   if (f.productionPrice > 0) score += 3;
-  if (f.unitPrice > 0) score += 3;
-  if (f.rentalPrice > 0) score += 3;
-  if (f.combinedPrice > 0) score += 2;
-  if (f.totalPrice > 0) score += 2;
-  if (f.designCost > 0) score += 1;
   if (!f.fromContentFallback) score += 5;
   return score;
 }
@@ -173,7 +255,12 @@ export function pickPreferredDbService(candidates: DbService[]): DbService | nul
   return [...pool].sort((a, b) => pricingCompletenessScore(b) - pricingCompletenessScore(a))[0];
 }
 
-/** Build quote line items from normalized DB pricing (shared by confirm-table quote builder). */
+/**
+ * Build quote line items from vendor pricing:
+ * - Period package (Apartment etc.): raw display × qty × 1 month
+ * - Daily (Mobile Van any min days, or min_duration < 28): raw display × qty × min_duration days
+ * - Printing & Fixing: P&F + official (+ extras), no duration
+ */
 export function buildLineItemsFromDbPricing(
   svc: DbService,
   quantity: number,
@@ -183,18 +270,26 @@ export function buildLineItemsFromDbPricing(
   const f = extractDbPricingFields(svc);
   const m = svc.metadata || {};
   const meta = m as DbMetadataLike;
-  const serviceName = svc.service_name;
+  const serviceName = formatServiceDisplayName(svc);
   const minQty = getMinQtyFromService(svc) ?? undefined;
   const items: QuoteItem[] = [];
   let lineIndex = 0;
 
   const mkId = () => `${sectionIndex}-${lineIndex++}`;
 
-  const unitLabel = (m as Record<string, unknown>).unit_label as string | undefined;
+  const unitLabel = formatQtyUnitLabel(
+    (m as { qty_measurement_unit?: string }).qty_measurement_unit,
+    (m as Record<string, unknown>).unit_label as string | undefined,
+  );
 
   const addLine = (description: string, rate: number, qty: number, isRecurring: boolean) => {
     if (rate <= 0) return;
-    const resolved = resolveQuoteLineDuration({ description }, userMessage, meta);
+    const resolved = resolveQuoteLineDuration(
+      { description },
+      userMessage,
+      meta,
+      serviceName,
+    );
     const mult = isRecurring ? resolved.multiplier : 1;
     items.push({
       id: mkId(),
@@ -213,77 +308,26 @@ export function buildLineItemsFromDbPricing(
     });
   };
 
-  // Type A — separate display + production (both must be > 0)
-  if (f.displayPrice > 0 && f.productionPrice > 0) {
+  if (f.displayPrice > 0) {
     addLine(
-      `${serviceName} - Display Price (${f.displayPeriod})`,
+      `${serviceName} - Display Price`,
       f.displayPrice,
       quantity,
       true,
     );
-    addLine(
-      `${serviceName} - Printing & Fixing Price (${f.productionUnit})`,
-      f.productionPrice,
-      quantity,
-      false,
-    );
-    return items;
-  }
-
-  // Type B — campaign / unit pricing (skip when rental/display already present — avoids duplicate lines)
-  const hasRentalLike =
-    f.rentalPrice > 0 || f.combinedPrice > 0 || f.displayPrice > 0;
-
-  const isCampaign =
-    f.structure === 'campaign' ||
-    (f.unitPrice > 0 && (f.minQuantity ?? 0) > 1 && !hasRentalLike);
-  if (isCampaign && f.unitPrice > 0) {
-    addLine(
-      `${serviceName} - Unit Price${f.period ? ` (${f.period})` : ''}`,
-      f.unitPrice,
-      quantity,
-      true,
-    );
-    return items;
-  }
-
-  // Type C — rental / combined / display-only (printing included in rental)
-  const primaryRental =
-    f.rentalPrice ||
-    f.combinedPrice ||
-    f.displayPrice ||
-    (f.totalPrice > 0 && f.designCost > 0 ? f.totalPrice - f.designCost : f.totalPrice);
-
-  if (primaryRental > 0) {
-    addLine(
-      `${serviceName} - Rental Price (${f.period})`,
-      primaryRental,
-      quantity,
-      true,
-    );
-    if (f.designCost > 0) {
-      addLine(`${serviceName} - Design Cost`, f.designCost, quantity, false);
-    }
-    return items;
   }
 
   if (f.productionPrice > 0) {
     addLine(
-      `${serviceName} - Printing & Fixing Price (${f.productionUnit})`,
+      `${serviceName} - Printing & Fixing Price`,
       f.productionPrice,
       quantity,
       false,
     );
   }
 
-  if (f.unitPrice > 0) {
-    addLine(
-      `${serviceName} - Unit Price${f.period ? ` (${f.period})` : ''}`,
-      f.unitPrice,
-      quantity,
-      true,
-    );
-  }
+  // OLD Type B (campaign/unit) and Type C (rental/design/total) — disabled
+  // Quote pricing is display + P&F from vendor_rate_chunks only.
 
   return items;
 }

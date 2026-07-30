@@ -1,4 +1,4 @@
-﻿import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   Box,
   Button,
@@ -26,16 +26,21 @@ import {
   Card,
   CardBody,
   useBreakpointValue,
+  useToast,
 } from '@chakra-ui/react';
 import { FiTrash2, FiEdit3 } from 'react-icons/fi';
 import { Quote, QuoteItem, LineItem } from '../../types/quote';
 import {
-  durationMultiplier,
-  formatDurationLabel,
   lineItemPricingMultiplier,
+  normalizeDurationToDays,
   quoteHasAnyDuration,
-  shouldShowDuration,
 } from '../../utils/durationUtils';
+import {
+  getVendorEditFloors,
+  rateFieldForLineDescription,
+  resolveDbServiceForQuoteItem,
+  validateQuoteEdit,
+} from '../../utils/quoteEditValidation';
 import './QuotePreview.css';
 
 interface QuotePreviewProps {
@@ -44,14 +49,109 @@ interface QuotePreviewProps {
   onSave?: () => void;
 }
 
+/** Display / store rates with max 2 decimal places (e.g. 56.67 not 56.666666). */
+function roundRate(n: number): number {
+  if (!Number.isFinite(n)) return 0;
+  return Math.round(n * 100) / 100;
+}
+
+function formatRateDisplay(n: number): string {
+  return roundRate(n).toFixed(2);
+}
+
+/** Convert months → days on a quote item (mutates) so edit UI is always day-based. */
+function ensureQuoteItemDays(item: QuoteItem): void {
+  if (item.lineItems && item.lineItems.length > 0) {
+    item.lineItems = item.lineItems.map((li) => {
+      const wasMonths = li.durationUnit === 'months';
+      const n = normalizeDurationToDays(li);
+      if (wasMonths && n.duration) {
+        n.unitPrice = roundRate(n.unitPrice);
+        n.total = n.quantity * n.unitPrice * lineItemPricingMultiplier(n);
+      }
+      return n;
+    });
+    return;
+  }
+  const wasMonths = item.durationUnit === 'months';
+  const n = normalizeDurationToDays(item);
+  if (wasMonths && n.duration) {
+    item.rate = roundRate(n.rate ?? item.rate);
+    item.duration = n.duration;
+    item.durationUnit = 'days';
+    item.durationLabel = 'day';
+    item.total = item.quantity * item.rate * lineItemPricingMultiplier(item);
+  }
+}
+
 const QuotePreview: React.FC<QuotePreviewProps> = ({ quote, onUpdate, onSave }) => {
   const [localQuote, setLocalQuote] = useState<Quote | null>(quote);
   const [rateInputValues, setRateInputValues] = useState<Record<string, string>>({});
+  const [qtyDrafts, setQtyDrafts] = useState<Record<string, string>>({});
+  const [durationDrafts, setDurationDrafts] = useState<Record<string, string>>({});
   const isMobile = useBreakpointValue({ base: true, md: false });
+  const toast = useToast();
 
   useEffect(() => {
     setLocalQuote(quote);
   }, [quote]);
+
+  const showFloorToast = (message: string) => {
+    toast({
+      title: 'Below minimum',
+      description: message,
+      status: 'warning',
+      duration: 4000,
+      isClosable: true,
+      position: 'top',
+    });
+  };
+
+  /** Validate qty / duration / rate against vendor floors before applying. */
+  const assertVendorFloor = (
+    item: QuoteItem,
+    field: 'quantity' | 'duration' | 'unitPrice',
+    value: number,
+    lineDescription?: string,
+  ): boolean => {
+    const svc = resolveDbServiceForQuoteItem(item);
+    if (!svc) return true; // no catalog row → allow edit
+    const floors = getVendorEditFloors(svc);
+    const desc = lineDescription || item.description || '';
+
+    if (field === 'quantity') {
+      const result = validateQuoteEdit({ field: 'quantity', value, floors });
+      if (!result.ok) {
+        showFloorToast(result.message || 'Invalid quantity');
+        return false;
+      }
+      return true;
+    }
+
+    if (field === 'duration') {
+      if (rateFieldForLineDescription(desc) === 'pfRate') return true;
+      const result = validateQuoteEdit({ field: 'duration', value, floors });
+      if (!result.ok) {
+        showFloorToast(result.message || 'Invalid duration');
+        return false;
+      }
+      return true;
+    }
+
+    // unitPrice / rate
+    const rateField = rateFieldForLineDescription(desc);
+    const result = validateQuoteEdit({
+      field: rateField,
+      value,
+      floors,
+      rateUiMode: 'per_day',
+    });
+    if (!result.ok) {
+      showFloorToast(result.message || 'Invalid rate');
+      return false;
+    }
+    return true;
+  };
 
   // Auto-resize all textareas when content changes
   useEffect(() => {
@@ -91,24 +191,53 @@ const QuotePreview: React.FC<QuotePreviewProps> = ({ quote, onUpdate, onSave }) 
 
   // Helper to get line items for rendering - handles both old and new structure
   const getLineItemsForDisplay = (item: QuoteItem): LineItem[] => {
+    const cleanDesc = (d?: string) =>
+      (d || '').replace(/\s*\([^)]*\)\s*$/g, '').trim();
+    const cleanQtyUnit = (u?: string) =>
+      u ? String(u).replace(/^per\s+/i, '').trim() : u;
+
     // If item has lineItems array (old structure), use it
     if (item.lineItems && item.lineItems.length > 0) {
-      return item.lineItems;
+      return item.lineItems.map((li) => {
+        const n = normalizeDurationToDays({
+          ...li,
+          description: cleanDesc(li.description),
+          quantityUnit: cleanQtyUnit(li.quantityUnit),
+        });
+        return {
+          ...n,
+          unitPrice: roundRate(n.unitPrice),
+          durationLabel: n.duration ? 'day' : n.durationLabel,
+        };
+      });
     }
     // Otherwise, treat the item itself as a single line item (new structure)
-    return [{
+    const n = normalizeDurationToDays({
       id: item.id,
-      description: item.description,
+      description: cleanDesc(item.description),
       quantity: item.quantity,
-      quantityUnit: item.quantityUnit,
+      quantityUnit: cleanQtyUnit(item.quantityUnit),
       unitPrice: item.rate,
       duration: item.duration,
       durationUnit: item.durationUnit,
       durationLabel: item.durationLabel,
       durationIsAuto: item.durationIsAuto,
       total: item.total,
-      remark: item.remark
+      remark: item.remark,
+    });
+    return [{
+      ...n,
+      unitPrice: roundRate(n.unitPrice),
+      durationLabel: n.duration ? 'day' : n.durationLabel,
     }];
+  };
+
+  const ratePeriodLabel = (lineItem: LineItem): string => {
+    // Always day-based when campaign duration is present (1 month = 30 days)
+    if (lineItem.duration != null && lineItem.duration > 0) return 'per day';
+    // One-time lines (Printing & Fixing, etc.): "per Auto" / "per bus"
+    const qty = (lineItem.quantityUnit || '').trim().replace(/^per\s+/i, '');
+    return qty ? `per ${qty}` : '';
   };
 
   const calculateQuoteSubtotal = (): number => {
@@ -128,6 +257,18 @@ const QuotePreview: React.FC<QuotePreviewProps> = ({ quote, onUpdate, onSave }) 
 
     const updatedQuote = { ...localQuote };
     const item = updatedQuote.items[itemIndex];
+    ensureQuoteItemDays(item);
+
+    // Vendor floor checks (qty / duration / rate) — no floors stored on quote
+    if (field === 'quantity' || field === 'duration' || field === 'unitPrice') {
+      const lineDesc =
+        item.lineItems && item.lineItems[lineItemIndex]
+          ? item.lineItems[lineItemIndex].description
+          : item.description;
+      if (!assertVendorFloor(item, field, Number(value), lineDesc)) {
+        return;
+      }
+    }
     
     // Handle old structure with lineItems array
     if (item.lineItems && item.lineItems.length > 0) {
@@ -135,8 +276,21 @@ const QuotePreview: React.FC<QuotePreviewProps> = ({ quote, onUpdate, onSave }) 
       if (field === 'duration') {
         (lineItem as LineItem & { durationIsAuto?: boolean }).durationIsAuto =
           value && value > 0 ? false : undefined;
+        if (value && value > 0) {
+          lineItem.duration = value;
+          lineItem.durationUnit = 'days';
+          lineItem.durationLabel = 'day';
+        } else {
+          lineItem.duration = 0;
+          lineItem.durationIsAuto = undefined;
+        }
+      } else {
+        (lineItem as any)[field] = field === 'unitPrice' ? roundRate(value) : value;
+        if (field === 'durationLabel' && lineItem.duration) {
+          lineItem.durationLabel = 'day';
+          lineItem.durationUnit = 'days';
+        }
       }
-      (lineItem as any)[field] = value;
       if (field !== 'remark') {
         lineItem.total = calculateLineItemTotal(lineItem);
       }
@@ -155,12 +309,13 @@ const QuotePreview: React.FC<QuotePreviewProps> = ({ quote, onUpdate, onSave }) 
         item.quantity = value;
         item.total = value * item.rate * lineItemPricingMultiplier(item);
       } else if (field === 'unitPrice') {
-        item.rate = value;
-        item.total = item.quantity * value * lineItemPricingMultiplier(item);
+        item.rate = roundRate(value);
+        item.total = item.quantity * item.rate * lineItemPricingMultiplier(item);
       } else if (field === 'duration') {
         if (value && value > 0) {
           item.duration = value;
-          if (!item.durationUnit) item.durationUnit = 'months';
+          item.durationUnit = 'days';
+          item.durationLabel = 'day';
           item.durationIsAuto = false;
         } else {
           // Keep duration as 0 so the input stays visible; clear unit/auto flags
@@ -173,7 +328,8 @@ const QuotePreview: React.FC<QuotePreviewProps> = ({ quote, onUpdate, onSave }) 
       } else if (field === 'quantityUnit') {
         item.quantityUnit = value;
       } else if (field === 'durationLabel') {
-        item.durationLabel = value;
+        item.durationLabel = 'day';
+        if (item.duration) item.durationUnit = 'days';
       }
     }
     
@@ -488,10 +644,22 @@ const QuotePreview: React.FC<QuotePreviewProps> = ({ quote, onUpdate, onSave }) 
                               Quantity
                             </Text>
                             <NumberInput
-                              value={lineItem.quantity}
-                              onChange={(_, value) =>
-                                updateLineItem(itemIndex, lineItemIndex, 'quantity', value)
+                              value={qtyDrafts[lineItem.id] ?? String(lineItem.quantity)}
+                              onChange={(valueString) =>
+                                setQtyDrafts((prev) => ({ ...prev, [lineItem.id]: valueString }))
                               }
+                              onBlur={() => {
+                                const raw = qtyDrafts[lineItem.id];
+                                const n = raw != null && raw !== '' ? parseFloat(raw) : lineItem.quantity;
+                                if (Number.isFinite(n)) {
+                                  updateLineItem(itemIndex, lineItemIndex, 'quantity', n);
+                                }
+                                setQtyDrafts((prev) => {
+                                  const next = { ...prev };
+                                  delete next[lineItem.id];
+                                  return next;
+                                });
+                              }}
                               min={0}
                               size="sm"
                             >
@@ -531,22 +699,28 @@ const QuotePreview: React.FC<QuotePreviewProps> = ({ quote, onUpdate, onSave }) 
                               Rate
                             </Text>
                             <NumberInput
-                              value={rateInputValues[lineItem.id] ?? String(lineItem.unitPrice)}
-                              onChange={(valueString, valueNumber) => {
-                                setRateInputValues(prev => ({ ...prev, [lineItem.id]: valueString }));
-                                if (!isNaN(valueNumber)) {
-                                  updateLineItem(itemIndex, lineItemIndex, 'unitPrice', valueNumber);
-                                }
+                              value={rateInputValues[lineItem.id] ?? formatRateDisplay(lineItem.unitPrice)}
+                              onChange={(valueString) => {
+                                setRateInputValues((prev) => ({ ...prev, [lineItem.id]: valueString }));
                               }}
-                              onBlur={() =>
-                                setRateInputValues(prev => {
+                              onBlur={() => {
+                                const raw = rateInputValues[lineItem.id];
+                                const n =
+                                  raw != null && raw !== ''
+                                    ? parseFloat(raw)
+                                    : lineItem.unitPrice;
+                                if (Number.isFinite(n)) {
+                                  updateLineItem(itemIndex, lineItemIndex, 'unitPrice', roundRate(n));
+                                }
+                                setRateInputValues((prev) => {
                                   const next = { ...prev };
                                   delete next[lineItem.id];
                                   return next;
-                                })
-                              }
+                                });
+                              }}
                               min={0}
                               step={0.01}
+                              precision={2}
                               size="sm"
                             >
                               <NumberInputField
@@ -560,33 +734,67 @@ const QuotePreview: React.FC<QuotePreviewProps> = ({ quote, onUpdate, onSave }) 
                                 _focus={{ borderColor: '#750926', boxShadow: '0 0 0 1px #750926' }}
                               />
                             </NumberInput>
+                            {ratePeriodLabel(lineItem) && (
+                              <Input
+                                value={ratePeriodLabel(lineItem)}
+                                readOnly
+                                size="xs"
+                                mt="5px"
+                                textAlign="center"
+                                bg="#f4f6f8"
+                                border="1px dashed"
+                                borderColor="gray.300"
+                                borderRadius="4px"
+                                h="22px"
+                                fontSize="11px"
+                                color="gray.600"
+                                fontWeight="500"
+                                cursor="default"
+                                tabIndex={-1}
+                              />
+                            )}
                           </Box>
                           {showDurationColumn && (
                           <Box flex={1}>
-                            <Text fontSize="11px" fontWeight="600" color="gray.500" textTransform="uppercase" letterSpacing="0.5px" mb={1} title="Campaign duration in months or days">
+                            <Text fontSize="11px" fontWeight="600" color="gray.500" textTransform="uppercase" letterSpacing="0.5px" mb={1} title="Campaign duration in days (1 month = 30 days)">
                               Duration
                             </Text>
                             <NumberInput
-                              value={lineItem.duration ?? ''}
-                              onChange={(_, value) =>
-                                updateLineItem(itemIndex, lineItemIndex, 'duration' as keyof LineItem, value)
+                              value={durationDrafts[lineItem.id] ?? (lineItem.duration != null ? String(lineItem.duration) : '')}
+                              onChange={(valueString) =>
+                                setDurationDrafts((prev) => ({ ...prev, [lineItem.id]: valueString }))
                               }
+                              onBlur={() => {
+                                const raw = durationDrafts[lineItem.id];
+                                const n =
+                                  raw != null && raw !== ''
+                                    ? parseFloat(raw)
+                                    : lineItem.duration ?? 0;
+                                if (Number.isFinite(n)) {
+                                  updateLineItem(itemIndex, lineItemIndex, 'duration' as keyof LineItem, n);
+                                }
+                                setDurationDrafts((prev) => {
+                                  const next = { ...prev };
+                                  delete next[lineItem.id];
+                                  return next;
+                                });
+                              }}
                               min={0}
                               size="sm"
                             >
                               <NumberInputField
                                 textAlign="right"
-                                  bg="white"
-                                  borderColor="gray.200"
-                                  borderRadius="6px"
-                                  inputMode="numeric"
-                                  pattern="[0-9]*"
-                                  onFocus={(e) => { const t = e.target; setTimeout(() => t.select(), 300); }}
-                                  _focus={{ borderColor: '#750926', boxShadow: '0 0 0 1px #750926' }}
-                                />
-                              </NumberInput>
-                              <Input
-                                value={lineItem.durationLabel || (lineItem.durationUnit === 'days' ? 'day' : lineItem.durationUnit === 'months' ? 'month' : '')}
+                                bg="white"
+                                borderColor="gray.200"
+                                borderRadius="6px"
+                                inputMode="numeric"
+                                pattern="[0-9]*"
+                                onFocus={(e) => { const t = e.target; setTimeout(() => t.select(), 300); }}
+                                _focus={{ borderColor: '#750926', boxShadow: '0 0 0 1px #750926' }}
+                              />
+                            </NumberInput>
+                            <Input
+                                value={lineItem.duration ? 'day' : (lineItem.durationLabel || '')}
                                 onChange={(e) => updateLineItem(itemIndex, lineItemIndex, 'durationLabel' as keyof LineItem, e.target.value)}
                                 placeholder="unit label"
                                 size="xs"
@@ -619,7 +827,7 @@ const QuotePreview: React.FC<QuotePreviewProps> = ({ quote, onUpdate, onSave }) 
                               updateLineItem(itemIndex, lineItemIndex, 'remark' as keyof LineItem, e.target.value)
                             }
                             onFocus={(e) => { const t = e.target; setTimeout(() => t.select(), 300); }}
-                            placeholder="e.g. Per cab/month, One time fee..."
+                            placeholder="e.g. Per cab/day, One time fee..."
                             size="sm"
                             bg="white"
                             borderColor="gray.200"
@@ -701,10 +909,22 @@ const QuotePreview: React.FC<QuotePreviewProps> = ({ quote, onUpdate, onSave }) 
                             </Td>
                             <Td isNumeric verticalAlign="top">
                               <NumberInput
-                                value={lineItem.quantity}
-                                onChange={(_, value) =>
-                                  updateLineItem(itemIndex, lineItemIndex, 'quantity', value)
+                                value={qtyDrafts[lineItem.id] ?? String(lineItem.quantity)}
+                                onChange={(valueString) =>
+                                  setQtyDrafts((prev) => ({ ...prev, [lineItem.id]: valueString }))
                                 }
+                                onBlur={() => {
+                                  const raw = qtyDrafts[lineItem.id];
+                                  const n = raw != null && raw !== '' ? parseFloat(raw) : lineItem.quantity;
+                                  if (Number.isFinite(n)) {
+                                    updateLineItem(itemIndex, lineItemIndex, 'quantity', n);
+                                  }
+                                  setQtyDrafts((prev) => {
+                                    const next = { ...prev };
+                                    delete next[lineItem.id];
+                                    return next;
+                                  });
+                                }}
                                 min={0}
                                 size="sm"
                               >
@@ -737,24 +957,30 @@ const QuotePreview: React.FC<QuotePreviewProps> = ({ quote, onUpdate, onSave }) 
                                 _focus={{ bg: 'white', borderColor: '#750926', borderStyle: 'solid', boxShadow: '0 0 0 1px #750926' }}
                               />
                             </Td>
-                            <Td isNumeric>
+                            <Td isNumeric verticalAlign="top">
                               <NumberInput
-                                value={rateInputValues[lineItem.id] ?? String(lineItem.unitPrice)}
-                                onChange={(valueString, valueNumber) => {
-                                  setRateInputValues(prev => ({ ...prev, [lineItem.id]: valueString }));
-                                  if (!isNaN(valueNumber)) {
-                                    updateLineItem(itemIndex, lineItemIndex, 'unitPrice', valueNumber);
-                                  }
+                                value={rateInputValues[lineItem.id] ?? formatRateDisplay(lineItem.unitPrice)}
+                                onChange={(valueString) => {
+                                  setRateInputValues((prev) => ({ ...prev, [lineItem.id]: valueString }));
                                 }}
-                                onBlur={() =>
-                                  setRateInputValues(prev => {
+                                onBlur={() => {
+                                  const raw = rateInputValues[lineItem.id];
+                                  const n =
+                                    raw != null && raw !== ''
+                                      ? parseFloat(raw)
+                                      : lineItem.unitPrice;
+                                  if (Number.isFinite(n)) {
+                                    updateLineItem(itemIndex, lineItemIndex, 'unitPrice', roundRate(n));
+                                  }
+                                  setRateInputValues((prev) => {
                                     const next = { ...prev };
                                     delete next[lineItem.id];
                                     return next;
-                                  })
-                                }
+                                  });
+                                }}
                                 min={0}
                                 step={0.01}
+                                precision={2}
                                 size="sm"
                               >
                                 <NumberInputField
@@ -766,14 +992,48 @@ const QuotePreview: React.FC<QuotePreviewProps> = ({ quote, onUpdate, onSave }) 
                                   px={2}
                                 />
                               </NumberInput>
+                              {ratePeriodLabel(lineItem) && (
+                                <Input
+                                  value={ratePeriodLabel(lineItem)}
+                                  readOnly
+                                  size="xs"
+                                  mt="5px"
+                                  textAlign="center"
+                                  bg="#f4f6f8"
+                                  border="1px dashed"
+                                  borderColor="gray.300"
+                                  borderRadius="4px"
+                                  h="22px"
+                                  fontSize="11px"
+                                  color="gray.600"
+                                  fontWeight="500"
+                                  cursor="default"
+                                  tabIndex={-1}
+                                />
+                              )}
                             </Td>
                             {showDurationColumn && (
                             <Td isNumeric verticalAlign="top">
                               <NumberInput
-                                value={lineItem.duration ?? ''}
-                                onChange={(_, value) =>
-                                  updateLineItem(itemIndex, lineItemIndex, 'duration' as keyof LineItem, value)
+                                value={durationDrafts[lineItem.id] ?? (lineItem.duration != null ? String(lineItem.duration) : '')}
+                                onChange={(valueString) =>
+                                  setDurationDrafts((prev) => ({ ...prev, [lineItem.id]: valueString }))
                                 }
+                                onBlur={() => {
+                                  const raw = durationDrafts[lineItem.id];
+                                  const n =
+                                    raw != null && raw !== ''
+                                      ? parseFloat(raw)
+                                      : lineItem.duration ?? 0;
+                                  if (Number.isFinite(n)) {
+                                    updateLineItem(itemIndex, lineItemIndex, 'duration' as keyof LineItem, n);
+                                  }
+                                  setDurationDrafts((prev) => {
+                                    const next = { ...prev };
+                                    delete next[lineItem.id];
+                                    return next;
+                                  });
+                                }}
                                 min={0}
                                 size="sm"
                               >
@@ -784,11 +1044,11 @@ const QuotePreview: React.FC<QuotePreviewProps> = ({ quote, onUpdate, onSave }) 
                                   onFocus={(e) => { const t = e.target; setTimeout(() => t.select(), 300); }}
                                   _focus={{ bg: 'white', border: '1px solid', borderColor: '#750926' }}
                                   px={2}
-                                  title="Campaign months or days"
+                                  title="Campaign duration in days (1 month = 30 days)"
                                   />
                                 </NumberInput>
                                 <Input
-                                  value={lineItem.durationLabel || (lineItem.durationUnit === 'days' ? 'day' : lineItem.durationUnit === 'months' ? 'month' : '')}
+                                  value={lineItem.duration ? 'day' : (lineItem.durationLabel || '')}
                                   onChange={(e) => updateLineItem(itemIndex, lineItemIndex, 'durationLabel' as keyof LineItem, e.target.value)}
                                   placeholder="unit label"
                                   size="xs"

@@ -1441,8 +1441,12 @@ export async function processAndStorePDF(
   // ... 31 more services
 ]/**
  * Search for services using semantic search
+ * DISABLED: proposal_chunks / search_proposals — use vendor_rate_chunks only.
  */
-export async function searchServices(query: string, limit = 10, filters?: any) {
+export async function searchServices(_query: string, _limit = 10, _filters?: any) {
+  console.log('🔍 [SEARCH] DISABLED — proposal_chunks search commented out');
+  return [];
+  /*
   try {
     console.log(`🔍 [SEARCH] Query: "${query}", Limit: ${limit}`);
     
@@ -1470,6 +1474,7 @@ export async function searchServices(query: string, limit = 10, filters?: any) {
     console.error('❌ [SEARCH] Search failed:', error);
     throw error;
   }
+  */
 }
 
 /**
@@ -1534,8 +1539,12 @@ export function parsePricingFromMetadata(metadata: any): {
 
 /**
  * Update embedding for existing service
+ * DISABLED: proposal_chunks writes commented out.
  */
-export async function updateServiceEmbedding(serviceId: string, content: string) {
+export async function updateServiceEmbedding(_serviceId: string, _content: string) {
+  console.log('⚠️ [updateServiceEmbedding] DISABLED — proposal_chunks commented out');
+  return;
+  /*
   try {
     const embedding = await generateEmbedding(content);
     
@@ -1552,6 +1561,7 @@ export async function updateServiceEmbedding(serviceId: string, content: string)
     console.error('Update error:', error);
     throw error;
   }
+  */
 }
 
 /**

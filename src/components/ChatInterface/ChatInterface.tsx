@@ -30,7 +30,8 @@ import {
   KNOWN_CITY_LIST,
   type ServiceQuantity,
 } from '../../hooks/useCityServiceRegistry';
-import { searchServices } from '../../services/pdfEmbeddingService';
+// DISABLED: proposal_chunks RAG search
+// import { searchServices } from '../../services/pdfEmbeddingService';
 import { extractCityHint, resolveServiceIdFromCatalog } from '../../utils/serviceResolver';
 import { durationMultiplier, enrichQuoteItemsDurationFromDb, resolveQuoteLineDuration } from '../../utils/durationUtils';
 import {
@@ -46,6 +47,8 @@ import {
   isMultiSegmentQuoteRequest,
   isVagueCategoryQuery,
   mergeCityLists,
+  mergeGroupedServicesByCategory,
+  MULTI_SVC_DEBUG,
   runCloudPreGeminiValidation,
   validateConfirmationRowsMinQty,
   validateQuoteItemsAgainstDbMinQty,
@@ -56,6 +59,7 @@ import {
   filterDbServicesForConfirmedRows,
   gateMinQtyBeforeConfirm,
   labelsToConfirmRows,
+  mergeDirectPartsIntoGroupedServices,
   parseMessageToConfirmRows,
   rowsFromCloudBelowMin,
 } from '../../utils/confirmedQuotePipeline';
@@ -150,11 +154,49 @@ const ChatInterface: React.FC = () => {
   // Map: messageId -> { groupKey (vehicleType|city) -> string[] of selected service names }
   const [selectedServices, setSelectedServices] = useState<Record<string, Record<string, string[]>>>({});
 
+  /**
+   * Fold "Already confirmed" labels into checkbox groups and pre-check them.
+   * Also pre-checks preferred option in each vague group.
+   * Returns the message ready to append (directParts cleared after merge).
+   */
+  const prepareMultipleMatchMessage = (msg: Message): Message => {
+    const { groups, preSelected } = mergeDirectPartsIntoGroupedServices(
+      msg.groupedServices || [],
+      msg.directParts || [],
+    );
+    if (MULTI_SVC_DEBUG) {
+      console.log('[MultiSvcDebug] prepareMultipleMatchMessage merge', {
+        id: msg.id,
+        directPartsIn: msg.directParts,
+        groupsBefore: msg.groupedServices?.length ?? 0,
+        groupsAfter: groups.length,
+        preSelected,
+        preCheckedCount: Object.values(preSelected).flat().length,
+      });
+    }
+    if (Object.keys(preSelected).length > 0) {
+      setSelectedServices((prev) => ({ ...prev, [msg.id]: preSelected }));
+    }
+    return {
+      ...msg,
+      groupedServices: groups,
+      directParts: undefined,
+    };
+  };
+
   // Confirmation table state: shown after service selection, before final Gemini call
   const [confirmationTable, setConfirmationTable] = useState<{
     messageId: string;
     rows: Array<{ service: string; qty: number | string; city: string }>;
     originalUserInput: string;
+    /** When set, Edit returns to the min-qty modal instead of closing the flow. */
+    minQtySnapshot?: {
+      items: Array<{ description: string; requested: number; originalRequested: number; minimum: number }>;
+      aboveMinItems?: Array<{ description: string; requested: number; minimum: number }>;
+      pendingRows: Array<{ service: string; qty: number | string; city: string }>;
+      messageId: string;
+      originalUserInput: string;
+    };
   } | null>(null);
 
   // City picker state: holds segments awaiting city selection when multiple city PDFs are loaded
@@ -589,6 +631,32 @@ const ChatInterface: React.FC = () => {
   }, [user?.id]);
   // ──────────────────────────────────────────────────────────────────────────
 
+  // Hydrate legacy multiple-match messages that still use locked directParts
+  useEffect(() => {
+    const pending = messages.filter(
+      (m) => m.isMultipleMatch && m.directParts && m.directParts.length > 0,
+    );
+    if (pending.length === 0) return;
+
+    const preSelectUpdates: Record<string, Record<string, string[]>> = {};
+    setMessages((prev) =>
+      prev.map((m) => {
+        if (!m.isMultipleMatch || !m.directParts?.length) return m;
+        const { groups, preSelected } = mergeDirectPartsIntoGroupedServices(
+          m.groupedServices || [],
+          m.directParts,
+        );
+        if (Object.keys(preSelected).length > 0) {
+          preSelectUpdates[m.id] = preSelected;
+        }
+        return { ...m, groupedServices: groups, directParts: undefined };
+      }),
+    );
+    if (Object.keys(preSelectUpdates).length > 0) {
+      setSelectedServices((prev) => ({ ...prev, ...preSelectUpdates }));
+    }
+  }, [messages]);
+
   // ── Shared helper: push any prompt text into the persistent command history ─
   const pushToHistory = (text: string) => {
     if (!user?.id) return;
@@ -748,13 +816,15 @@ const ChatInterface: React.FC = () => {
       timestamp: new Date(),
     };
 
-    // ─── RAG SEARCH GATE ──────────────────────────────────────────────────────
-    // If query looks like a simple search (not quote generation), check RAG database first
+    // Needed by CLOUD CITY GATE (keep outside commented RAG block)
     const isQuoteRequest = /\b(generate|create|quote|price|cost|for)\b/i.test(cleanedText)
-      || /\b\d+\b/.test(cleanedText) // Any number = quantity → quote intent, not search
-      || /\b(branding|advertising|signage|hoarding|banner|sticker|shelter|panel|board|printing|display|wrapping)\b/i.test(cleanedText) // Full service names → quote intent
-      || VEHICLE_CATEGORY_PATTERN.test(cleanedText) // Single-word categories: "bus", "auto", etc.
+      || /\b\d+\b/.test(cleanedText)
+      || /\b(branding|advertising|signage|hoarding|banner|sticker|shelter|panel|board|printing|display|wrapping)\b/i.test(cleanedText)
+      || VEHICLE_CATEGORY_PATTERN.test(cleanedText)
       || isVagueCategoryQuery(cleanedText);
+
+    // ─── RAG SEARCH GATE (DISABLED — proposal_chunks) ─────────────────────────
+    /*
     const isSimpleSearch = !isQuoteRequest && !isQtyOverride && !isCheckboxConfirmedFlag;
     
     if (isSimpleSearch && cleanedText.split(' ').length >= 2) {
@@ -791,6 +861,7 @@ const ChatInterface: React.FC = () => {
         // Continue to normal Gemini flow
       }
     }
+    */
     // ──────────────────────────────────────────────────────────────────────────
 
     // ─── CITY-ONLY QUERY GATE ────────────────────────────────────────────────
@@ -806,26 +877,45 @@ const ChatInterface: React.FC = () => {
       }
       const cityOnlyMatches = detectCityOnlyQuery(cleanedText, cityOnlyDbServices);
       if (cityOnlyMatches.length > 0) {
-        let lists = cityOnlyMatches
-          .map(cityKey => {
-            const entry = cityServiceRegistry.current.get(cityKey);
-            if (!entry || entry.status !== 'ready' || entry.services.length === 0) return null;
-            const services = entry.services.map(svc => ({
-              name: svc.split(' ').map(w => w.charAt(0).toUpperCase() + w.slice(1)).join(' '),
-              minQty: entry.quantities[svc]?.min ?? 1,
-            }));
-            return {
-              city: cityKey.charAt(0).toUpperCase() + cityKey.slice(1),
-              services,
-            };
-          })
-          .filter((x): x is { city: string; services: Array<{ name: string; minQty: number }> } => !!x);
+        // Prefer vendor_rate_chunks catalog (clean medium-id labels). PDF registry is fallback only.
+        let listSource: 'VENDOR_DB' | 'REGISTRY' = 'VENDOR_DB';
+        let lists: Array<{ city: string; services: Array<{ name: string; minQty: number }> }> = [];
 
-        if (lists.length === 0 && USE_CLOUD_DATA && cityOnlyDbServices.length > 0) {
+        if (USE_CLOUD_DATA && cityOnlyDbServices.length > 0) {
           lists = cityOnlyMatches
             .map(cityKey => buildCityServiceListFromDb(cityKey, cityOnlyDbServices))
             .filter((x): x is { city: string; services: Array<{ name: string; minQty: number }> } => !!x);
+          listSource = 'VENDOR_DB';
         }
+
+        if (lists.length === 0) {
+          lists = cityOnlyMatches
+            .map(cityKey => {
+              const entry = cityServiceRegistry.current.get(cityKey);
+              if (!entry || entry.status !== 'ready' || entry.services.length === 0) return null;
+              const services = entry.services.map(svc => ({
+                name: svc.split(' ').map(w => w.charAt(0).toUpperCase() + w.slice(1)).join(' '),
+                minQty: entry.quantities[svc]?.min ?? 1,
+              }));
+              return {
+                city: cityKey.charAt(0).toUpperCase() + cityKey.slice(1),
+                services,
+              };
+            })
+            .filter((x): x is { city: string; services: Array<{ name: string; minQty: number }> } => !!x);
+          if (lists.length > 0) listSource = 'REGISTRY';
+        }
+
+        console.log('🔍 [CityList] source=', listSource, {
+          cities: cityOnlyMatches,
+          vendorDbCount: cityOnlyDbServices.length,
+          sampleVendor: cityOnlyDbServices.slice(0, 5).map(s => ({
+            id: s.service_id,
+            name: s.service_name,
+          })),
+          listCount: lists.reduce((n, l) => n + l.services.length, 0),
+          sampleList: lists[0]?.services.slice(0, 5).map(s => s.name),
+        });
 
         if (lists.length > 0) {
           const assistantMsg: Message = {
@@ -952,14 +1042,97 @@ const ChatInterface: React.FC = () => {
               return { raw: seg.raw, city: seg.detectedCity!, qty };
             });
 
+          if (MULTI_SVC_DEBUG) {
+            console.log('[MultiSvcDebug] ── ChatInterface parse ──', {
+              cleanedText,
+              rawSegmentCount: rawSegments.length,
+              plannedSegmentCount: segments.length,
+              resolvedRowCount: resolvedRows.length,
+              citylessDropped: segments.filter((s) => !s.detectedCity).map((s) => s.raw),
+              resolvedRows,
+            });
+          }
+
           if (resolvedRows.length > 0) {
             const cloudResult = runCloudPreGeminiValidation(resolvedRows, dbList);
 
-            // ── Partial invalid FIRST (when no checkbox UI needed) ──
+            if (MULTI_SVC_DEBUG) {
+              console.log('[MultiSvcDebug] ── ChatInterface branch decision ──', {
+                inputSegments: resolvedRows.length,
+                specific: cloudResult.validSegmentLabels.length,
+                vagueGroups: cloudResult.vagueGroups.length,
+                notFound: cloudResult.preAlerts.length,
+                belowMin: cloudResult.belowMinSegments.length,
+                willShowUnavailableOnly:
+                  cloudResult.preAlerts.length > 0 && cloudResult.vagueGroups.length === 0,
+                willShowMinQtyGate:
+                  cloudResult.belowMinSegments.length > 0 && !isQtyOverride,
+                willShowCheckboxUI: cloudResult.vagueGroups.length > 0,
+                willGoStraightToConfirm:
+                  cloudResult.validSegmentLabels.length > 0 &&
+                  cloudResult.vagueGroups.length === 0 &&
+                  cloudResult.belowMinSegments.length === 0,
+              });
+            }
+
+            // ── Vague checkboxes FIRST (never skip them for min-qty) ──
+            // Min-qty still runs later in applyMinQtyGateOrConfirmTable after Review & Confirm.
+            if (cloudResult.vagueGroups.length > 0) {
+              if (MULTI_SVC_DEBUG) {
+                console.log('[MultiSvcDebug] BRANCH → checkbox UI (vague before min-qty)', {
+                  directParts: cloudResult.validSegmentLabels,
+                  vagueGroups: cloudResult.vagueGroups.map((g) => ({
+                    group: g.vehicleType,
+                    services: g.services.map((s) => s.name),
+                  })),
+                  notFoundAlso: cloudResult.preAlerts,
+                  belowMinDeferred: cloudResult.belowMinSegments.length,
+                });
+              }
+              if (cloudResult.preAlerts.length > 0) {
+                setUnavailableServices(cloudResult.preAlerts);
+              }
+              const assistantId = Date.now().toString();
+              const assistantMsg = prepareMultipleMatchMessage({
+                id: assistantId,
+                role: 'assistant',
+                content: '🔀 Multiple services found. Select all you need:',
+                timestamp: new Date(),
+                isMultipleMatch: true,
+                groupedServices: mergeGroupedServicesByCategory(cloudResult.vagueGroups),
+                originalUserInput: cleanedText,
+                directParts: cloudResult.validSegmentLabels.length > 0
+                  ? cloudResult.validSegmentLabels
+                  : undefined,
+              });
+              if (MULTI_SVC_DEBUG) {
+                const checkboxCount = (assistantMsg.groupedServices || []).reduce(
+                  (n, g) => n + g.services.length,
+                  0,
+                );
+                console.log('[MultiSvcDebug] checkbox message prepared', {
+                  messageId: assistantMsg.id,
+                  groupCount: assistantMsg.groupedServices?.length ?? 0,
+                  checkboxOptionCount: checkboxCount,
+                  directPartsCleared: !assistantMsg.directParts,
+                });
+              }
+              setMessages(prev => [...prev, userMessage, assistantMsg]);
+              setInputValue('');
+              return;
+            }
+
+            // ── Partial invalid (no vague left) ──
             if (
               cloudResult.preAlerts.length > 0 &&
               cloudResult.vagueGroups.length === 0
             ) {
+              if (MULTI_SVC_DEBUG) {
+                console.log('[MultiSvcDebug] BRANCH → unavailable/partial (no checkboxes)', {
+                  alerts: cloudResult.preAlerts,
+                  kept: cloudResult.validSegmentLabels,
+                });
+              }
               setMessages(prev => [...prev, userMessage]);
               setInputValue('');
               setUnavailableServices(cloudResult.preAlerts);
@@ -981,6 +1154,15 @@ const ChatInterface: React.FC = () => {
             }
 
             if (cloudResult.belowMinSegments.length > 0 && !isQtyOverride) {
+              if (MULTI_SVC_DEBUG) {
+                console.log('[MultiSvcDebug] BRANCH → min-qty gate', {
+                  belowMin: cloudResult.belowMinSegments,
+                  specificLabels: cloudResult.validSegmentLabels,
+                });
+              }
+              if (cloudResult.preAlerts.length > 0) {
+                setUnavailableServices(cloudResult.preAlerts);
+              }
               setMessages(prev => [...prev, userMessage]);
               const confirmRows = rowsFromCloudBelowMin(
                 cloudResult.validSegmentLabels,
@@ -1006,39 +1188,6 @@ const ChatInterface: React.FC = () => {
               });
               setPendingValidMessage(null);
               setPendingMinReplacedMessage(null);
-              return;
-            }
-
-            if (cloudResult.vagueGroups.length > 0) {
-              if (cloudResult.preAlerts.length > 0) {
-                setUnavailableServices(cloudResult.preAlerts);
-                if (cloudResult.validSegmentLabels.length > 0) {
-                  const partialRows = labelsToConfirmRows(cloudResult.validSegmentLabels);
-                  if (partialRows.length > 0) {
-                    setPendingValidConfirm({
-                      rows: partialRows,
-                      originalUserInput: cleanedText,
-                      messageId: userMessage.id,
-                    });
-                    setPendingValidMessage(null);
-                  }
-                }
-              }
-              const assistantId = Date.now().toString();
-              const assistantMsg: Message = {
-                id: assistantId,
-                role: 'assistant',
-                content: '🔀 Multiple services found. Select all you need:',
-                timestamp: new Date(),
-                isMultipleMatch: true,
-                groupedServices: cloudResult.vagueGroups,
-                originalUserInput: cleanedText,
-                directParts: cloudResult.validSegmentLabels.length > 0
-                  ? cloudResult.validSegmentLabels
-                  : undefined,
-              };
-              setMessages(prev => [...prev, userMessage, assistantMsg]);
-              setInputValue('');
               return;
             }
 
@@ -1385,6 +1534,7 @@ const ChatInterface: React.FC = () => {
             const relatedServices = matches.map(s => ({
               name: s.split(' ').map(w => w.charAt(0).toUpperCase() + w.slice(1)).join(' '),
               category: groupLabel,
+              requestedQuantity: qty,
             }));
 
             groupedServices.push({
@@ -1394,7 +1544,9 @@ const ChatInterface: React.FC = () => {
             });
           });
 
-          if (groupedServices.length > 0) {
+          const mergedVagueGroups = mergeGroupedServicesByCategory(groupedServices);
+
+          if (mergedVagueGroups.length > 0) {
             if (preAlerts.length > 0) {
               setUnavailableServices(preAlerts);
               if (validSegmentLabels.length > 0) {
@@ -1410,15 +1562,15 @@ const ChatInterface: React.FC = () => {
               }
             }
             const assistantId = Date.now().toString();
-            const assistantMsg: Message = {
+            const assistantMsg = prepareMultipleMatchMessage({
               id: assistantId,
               role: 'assistant',
               content: `🔀 Multiple services found. Select all you need:`,
               timestamp: new Date(),
               isMultipleMatch: true,
-              groupedServices,
+              groupedServices: mergedVagueGroups,
               directParts: validSegmentLabels.length > 0 ? validSegmentLabels : undefined,
-            };
+            });
             setMessages(prev => [...prev, userMessage, assistantMsg]);
             setInputValue('');
             return;
@@ -1594,7 +1746,9 @@ const ChatInterface: React.FC = () => {
         
         // MULTIPLE_MATCH
         isMultipleMatch: response.isMultipleMatch,
-        groupedServices: response.groupedServices,
+        groupedServices: response.groupedServices
+          ? mergeGroupedServicesByCategory(response.groupedServices)
+          : response.groupedServices,
         originalUserInput: userMessage.content, // Preserve original input to carry forward duration/days
         
         // PARTIAL_MATCH
@@ -1799,6 +1953,7 @@ const ChatInterface: React.FC = () => {
               { duration: item.duration, durationUnit: item.durationUnit, description },
               cleanedText,
               svcMeta,
+              sectionServiceName || sectionTitle || specificTitle || description,
             );
             return {
               id: `${sectionIndex}-${lineIndex}`,
@@ -2063,6 +2218,32 @@ const ChatInterface: React.FC = () => {
     });
   };
 
+  /** Select / clear every service across all multi-match groups for a message. */
+  const handleServiceSelectAllGlobal = (
+    messageId: string,
+    groups: Array<{ vehicleType: string; services: Array<{ name: string }> }>,
+  ) => {
+    const allNamesByGroup = groups.map((g) => ({
+      key: g.vehicleType,
+      names: g.services.map((s) => s.name),
+    }));
+    const allNames = allNamesByGroup.flatMap((g) => g.names);
+    setSelectedServices((prev) => {
+      const messageMap = { ...(prev[messageId] || {}) };
+      const currentlySelected = Object.values(messageMap).flat();
+      const allSelected =
+        allNames.length > 0 && allNames.every((n) => currentlySelected.includes(n));
+      if (allSelected) {
+        return { ...prev, [messageId]: {} };
+      }
+      const next: Record<string, string[]> = {};
+      for (const g of allNamesByGroup) {
+        next[g.key] = [...g.names];
+      }
+      return { ...prev, [messageId]: next };
+    });
+  };
+
   // Confirm city selections → show city-scoped service checkboxes → confirm → min qty → Gemini
   const handleCityConfirm = async () => {
     if (!cityPickerState) return;
@@ -2229,32 +2410,34 @@ const ChatInterface: React.FC = () => {
     setCityPickerState(null);
     setInputValue('');
 
+    const mergedGroups = mergeGroupedServicesByCategory(groupedServices);
+
     const cityPickerSnapshot = {
       originalMessage: pickerSnapshot.originalMessage,
       segments: pickerSnapshot.segments,
       availableCities: pickerSnapshot.availableCities,
     };
 
-    if (isVagueFlow && groupedServices.length > 0) {
+    if (isVagueFlow && mergedGroups.length > 0) {
       const msgId = (Date.now() + 1).toString();
-      const assistantMsg: Message = {
+      const assistantMsg = prepareMultipleMatchMessage({
         id: msgId,
         role: 'assistant',
-        content: groupedServices.length === 1
-          ? `🔀 Multiple services found in ${groupedServices[0].vehicleType.split('|')[1] || 'your city'}. Select all you need:`
-          : `🔀 Multiple services found across ${groupedServices.length} groups. Select all you need:`,
+        content: mergedGroups.length === 1
+          ? `🔀 Multiple services found in ${mergedGroups[0].vehicleType.split('|')[1] || 'your city'}. Select all you need:`
+          : `🔀 Multiple services found across ${mergedGroups.length} groups. Select all you need:`,
         timestamp: new Date(),
         isMultipleMatch: true,
-        groupedServices,
+        groupedServices: mergedGroups,
         originalUserInput: pickerSnapshot.originalMessage,
         directParts,
         cityPickerSnapshot,
-      };
+      });
       setMessages(prev => [...prev, assistantMsg]);
       return;
     }
 
-    if (directParts.length > 0 && groupedServices.length === 0 && !needsGemini) {
+    if (directParts.length > 0 && mergedGroups.length === 0 && !needsGemini) {
       const confirmRows = labelsToConfirmRows(directParts as string[]);
       if (confirmRows.length > 0) {
         const msgId = (Date.now() + 1).toString();
@@ -2269,7 +2452,7 @@ const ChatInterface: React.FC = () => {
       return;
     }
 
-    if (needsGemini || (groupedServices.length === 0 && missingServiceAlerts.length === 0 && !isVagueFlow)) {
+    if (needsGemini || (mergedGroups.length === 0 && missingServiceAlerts.length === 0 && !isVagueFlow)) {
       if (USE_CLOUD_DATA && dbServices.length > 0 && pairs.length > 0) {
         const fallbackRows = dedupeConfirmationRows(
           pairs.map((p) => ({
@@ -2286,20 +2469,20 @@ const ChatInterface: React.FC = () => {
       return;
     }
 
-    if (groupedServices.length === 0) return;
+    if (mergedGroups.length === 0) return;
 
     const msgId = (Date.now() + 1).toString();
-    const assistantMsg: Message = {
+    const assistantMsg = prepareMultipleMatchMessage({
       id: msgId,
       role: 'assistant',
-      content: `🔀 Multiple services found across ${groupedServices.length} group${groupedServices.length !== 1 ? 's' : ''}. Select all you need:`,
+      content: `🔀 Multiple services found across ${mergedGroups.length} group${mergedGroups.length !== 1 ? 's' : ''}. Select all you need:`,
       timestamp: new Date(),
       isMultipleMatch: true,
-      groupedServices,
+      groupedServices: mergedGroups,
       originalUserInput: pickerSnapshot.originalMessage,
       directParts,
       cityPickerSnapshot,
-    };
+    });
     setMessages(prev => [...prev, assistantMsg]);
   };
 
@@ -2383,6 +2566,7 @@ const ChatInterface: React.FC = () => {
     if (!minQtyWarning) return;
     const pending = pendingValidMessage;
     const currentItems = minQtyWarning.items;
+    const aboveMinItems = minQtyWarning.aboveMinItems;
     const pendingQuote = minQtyWarning.pendingQuote;
     setMinQtyWarning(null);
     setEditingItemIndex(null);
@@ -2394,7 +2578,13 @@ const ChatInterface: React.FC = () => {
         const gen = pendingConfirmGeneration;
         const updatedRows = applyMinQtyToConfirmRows(gen.rows, currentItems, 'continue');
         setPendingConfirmGeneration(null);
-        openConfirmationTable(gen.messageId, updatedRows, gen.originalUserInput);
+        openConfirmationTable(gen.messageId, updatedRows, gen.originalUserInput, {
+          items: currentItems,
+          aboveMinItems,
+          pendingRows: gen.rows,
+          messageId: gen.messageId,
+          originalUserInput: gen.originalUserInput,
+        });
         return;
       }
       if (pending) {
@@ -2417,7 +2607,14 @@ const ChatInterface: React.FC = () => {
             .replace(/\s*\[User has already specified complete service names from checkboxes\]/g, '')
             .replace(/\s*\[QTY_OVERRIDE\]/g, '')
             .trim();
-          openConfirmationTable(Date.now().toString(), updatedRows, displayText);
+          const messageId = Date.now().toString();
+          openConfirmationTable(messageId, updatedRows, displayText, {
+            items: currentItems,
+            aboveMinItems,
+            pendingRows: parsedRows,
+            messageId,
+            originalUserInput: displayText,
+          });
           return;
         }
         let rewrittenMsg = pending;
@@ -2464,6 +2661,7 @@ const ChatInterface: React.FC = () => {
     if (!minQtyWarning) return;
     const pending = pendingValidMessage;
     const currentItems = minQtyWarning.items;
+    const aboveMinItems = minQtyWarning.aboveMinItems;
     const pendingQuote = minQtyWarning.pendingQuote;
 
     // Pre-Gemini path: pendingQuote is null — rewrite the pending message
@@ -2475,7 +2673,13 @@ const ChatInterface: React.FC = () => {
         const gen = pendingConfirmGeneration;
         const updatedRows = applyMinQtyToConfirmRows(gen.rows, currentItems, 'minimum');
         setPendingConfirmGeneration(null);
-        openConfirmationTable(gen.messageId, updatedRows, gen.originalUserInput);
+        openConfirmationTable(gen.messageId, updatedRows, gen.originalUserInput, {
+          items: currentItems,
+          aboveMinItems,
+          pendingRows: gen.rows,
+          messageId: gen.messageId,
+          originalUserInput: gen.originalUserInput,
+        });
         return;
       }
       if (pending) {
@@ -2498,7 +2702,14 @@ const ChatInterface: React.FC = () => {
             .replace(/\s*\[User has already specified complete service names from checkboxes\]/g, '')
             .replace(/\s*\[QTY_OVERRIDE\]/g, '')
             .trim();
-          openConfirmationTable(Date.now().toString(), updatedRows, displayText);
+          const messageId = Date.now().toString();
+          openConfirmationTable(messageId, updatedRows, displayText, {
+            items: currentItems,
+            aboveMinItems,
+            pendingRows: parsedRows,
+            messageId,
+            originalUserInput: displayText,
+          });
           return;
         }
         let newMsg = pending;
@@ -2609,57 +2820,112 @@ const ChatInterface: React.FC = () => {
   const buildConfirmationRows = (
     messageId: string,
     groupedServices: any[],
-  ): { rows: Array<{ service: string; qty: number | string; city: string }>; originalUserInput: string } | null => {
+  ): { rows: Array<{ service: string; qty: number | string; city: string; serviceId?: string }>; originalUserInput: string } | null => {
     const selected = selectedServices[messageId];
     const assistantMsg = messages.find(m => m.id === messageId);
     const hasSelected = selected && Object.keys(selected).length > 0;
-    const hasDirectParts = !!assistantMsg?.directParts?.length;
-    if (!hasSelected && !hasDirectParts) return null;
+    if (!hasSelected) {
+      if (MULTI_SVC_DEBUG) {
+        console.log('[MultiSvcDebug] buildConfirmationRows: no selection', { messageId });
+      }
+      return null;
+    }
 
     const originalUserMsg = assistantMsg?.originalUserInput || '';
-    const rows: Array<{ service: string; qty: number | string; city: string }> = [];
+    const rows: Array<{ service: string; qty: number | string; city: string; serviceId?: string }> = [];
 
-    groupedServices.forEach((group: { vehicleType: string; requestedQuantity: number }) => {
+    groupedServices.forEach((group: {
+      vehicleType: string;
+      requestedQuantity: number;
+      services?: Array<{ name: string; serviceId?: string; requestedQuantity?: number }>;
+    }) => {
       const services = (selected && selected[group.vehicleType]) || [];
       services.forEach((svcName: string) => {
         const [, city] = group.vehicleType.includes('|')
           ? group.vehicleType.split('|')
           : [group.vehicleType, ''];
-        rows.push({ service: svcName, qty: group.requestedQuantity || '—', city: city || '—' });
+        const svcMeta = group.services?.find(
+          (s) => s.name.toLowerCase() === svcName.toLowerCase(),
+        );
+        const qty = svcMeta?.requestedQuantity ?? group.requestedQuantity ?? '—';
+        rows.push({
+          service: svcName,
+          qty,
+          city: city || '—',
+          serviceId: svcMeta?.serviceId,
+        });
       });
     });
 
-    if (assistantMsg?.directParts?.length) {
-      (assistantMsg.directParts as string[]).forEach(part => {
-        const cleaned = part.replace(/\s*⚠️.*$/u, '').trim();
-        let m = cleaned.match(/^(\d+)\s+(.+?)\s*\(([^)]+)\)\s*$/);
-        if (m) {
-          rows.push({ service: m[2].trim(), qty: parseInt(m[1], 10), city: m[3].trim() });
-          return;
-        }
-        m = cleaned.match(/^(\d+)\s+(.+?)\s+(\w+)$/);
-        if (m) {
-          rows.push({ service: m[2].trim(), qty: parseInt(m[1], 10), city: m[3].trim() });
-          return;
-        }
-        rows.push({ service: cleaned || part, qty: 1, city: '—' });
+    if (rows.length === 0) return null;
+    const deduped = dedupeConfirmationRows(rows);
+    if (MULTI_SVC_DEBUG) {
+      console.log('[MultiSvcDebug] buildConfirmationRows', {
+        messageId,
+        selected,
+        rowCountBeforeDedupe: rows.length,
+        rowCountAfterDedupe: deduped.length,
+        rows: deduped,
+        originalUserInput: originalUserMsg,
       });
     }
-
-    if (rows.length === 0) return null;
-    return { rows: dedupeConfirmationRows(rows), originalUserInput: originalUserMsg };
+    return { rows: deduped, originalUserInput: originalUserMsg };
   };
 
   const openConfirmationTable = (
     messageId: string,
     rows: Array<{ service: string; qty: number | string; city: string }>,
     originalUserInput: string,
+    minQtySnapshot?: {
+      items: Array<{ description: string; requested: number; originalRequested: number; minimum: number }>;
+      aboveMinItems?: Array<{ description: string; requested: number; minimum: number }>;
+      pendingRows: Array<{ service: string; qty: number | string; city: string }>;
+      messageId: string;
+      originalUserInput: string;
+    },
   ) => {
     setConfirmationTable({
       messageId,
       rows: dedupeConfirmationRows(rows),
       originalUserInput,
+      minQtySnapshot,
     });
+  };
+
+  const syncMinQtyItemsFromConfirmRows = (
+    items: Array<{ description: string; requested: number; originalRequested: number; minimum: number }>,
+    confirmRows: Array<{ service: string; qty: number | string; city: string }>,
+  ) => items.map((item) => {
+    const row = confirmRows.find(
+      (r) =>
+        item.description.toLowerCase().includes(r.service.toLowerCase()) &&
+        (r.city === '—' || item.description.toLowerCase().includes(String(r.city).toLowerCase())),
+    );
+    if (!row) return item;
+    const qty = typeof row.qty === 'number' ? row.qty : parseInt(String(row.qty), 10) || item.requested;
+    return { ...item, requested: qty };
+  });
+
+  const handleConfirmTableEdit = () => {
+    if (!confirmationTable) return;
+    const snap = confirmationTable.minQtySnapshot;
+    if (snap) {
+      setPendingConfirmGeneration({
+        rows: snap.pendingRows,
+        originalUserInput: snap.originalUserInput,
+        messageId: snap.messageId,
+      });
+      setMinQtyWarning({
+        items: syncMinQtyItemsFromConfirmRows(snap.items, confirmationTable.rows),
+        aboveMinItems: snap.aboveMinItems,
+        pendingQuote: null as any,
+      });
+      setEditingItemIndex(null);
+      setEditedQuantity('');
+      setConfirmationTable(null);
+      return;
+    }
+    setConfirmationTable(null);
   };
 
   const applyMinQtyToConfirmRows = (
@@ -3168,23 +3434,29 @@ const ChatInterface: React.FC = () => {
                               </Button>
                             )}
 
-                            {/* Already confirmed services (directParts) — shown as locked green items */}
-                            {message.directParts && message.directParts.length > 0 && (
-                              <Box mb={3} p={3} borderRadius="12px" bg="green.50" border="1px solid" borderColor="green.200">
-                                <Text fontSize="12px" fontWeight="700" color="green.700" mb={2}>
-                                  ✅ Already confirmed:
-                                </Text>
-                                <VStack align="stretch" spacing={1}>
-                                  {message.directParts.map((part, pIdx) => (
-                                    <Text key={pIdx} fontSize="13px" color="green.700" fontWeight="500">
-                                      • {part}
-                                    </Text>
-                                  ))}
-                                </VStack>
-                              </Box>
-                            )}
-
                             <VStack align="stretch" spacing={4}>
+                              {(() => {
+                                const groups = message.groupedServices || [];
+                                const allNames = groups.flatMap((g) => g.services.map((s) => s.name));
+                                const selectedFlat = Object.values(selectedServices[message.id] || {}).flat();
+                                const allGlobalSelected =
+                                  allNames.length > 0 &&
+                                  allNames.every((n) => selectedFlat.includes(n));
+                                return (
+                                  <HStack justify="flex-end" px={1}>
+                                    <Button
+                                      size="xs"
+                                      variant="ghost"
+                                      colorScheme="blue"
+                                      onClick={() =>
+                                        handleServiceSelectAllGlobal(message.id, groups)
+                                      }
+                                    >
+                                      {allGlobalSelected ? 'Clear all services' : 'Select all services'}
+                                    </Button>
+                                  </HStack>
+                                );
+                              })()}
                               {message.groupedServices.map((group, gIdx) => {
                                 const selectedForGroup = selectedServices[message.id]?.[group.vehicleType] || [];
                                 const [vehiclePart, cityPart] = group.vehicleType.includes('|')
@@ -3193,7 +3465,7 @@ const ChatInterface: React.FC = () => {
                                 const groupServiceNames = group.services.map(s => s.name);
                                 const allInGroupSelected = groupServiceNames.length > 0 && groupServiceNames.every(n => selectedForGroup.includes(n));
                                 return (
-                                  <Box key={gIdx}>
+                                  <Box key={`${group.vehicleType}-${gIdx}`}>
                                     <HStack mb={2} px={1} spacing={2} align="center" justify="space-between">
                                       <HStack spacing={2} align="center">
                                         <Text fontSize="13px" fontWeight="700" color="gray.700">
@@ -3228,7 +3500,7 @@ const ChatInterface: React.FC = () => {
                                         const isChecked = selectedForGroup.includes(svc.name);
                                         return (
                                           <Box
-                                            key={sIdx}
+                                            key={`${svc.name}-${sIdx}`}
                                             p={3}
                                             borderRadius="12px"
                                             border="2px solid"
@@ -3251,6 +3523,9 @@ const ChatInterface: React.FC = () => {
                                             >
                                               <Text fontSize="13px" fontWeight="500" color={isChecked ? 'blue.700' : 'gray.700'}>
                                                 {svc.name}
+                                                {svc.requestedQuantity != null && svc.requestedQuantity > 0
+                                                  ? ` (qty ${svc.requestedQuantity})`
+                                                  : ''}
                                               </Text>
                                             </Checkbox>
                                           </Box>
@@ -3262,8 +3537,8 @@ const ChatInterface: React.FC = () => {
                               })}
                             </VStack>
 
-                            {/* Review button — show when ≥1 service selected OR directParts exist */}
-                            {(selectedServices[message.id] && Object.keys(selectedServices[message.id]).length > 0) || (message.directParts && message.directParts.length > 0) ? (
+                            {/* Review button — show when ≥1 service selected */}
+                            {selectedServices[message.id] && Object.values(selectedServices[message.id]).flat().length > 0 ? (
                               <Button
                                 mt={4}
                                 w="full"
@@ -3286,8 +3561,8 @@ const ChatInterface: React.FC = () => {
                                 leftIcon={<Icon as={FiCheck} boxSize="18px" />}
                               >
                                 Review & Confirm ({
-                                  Object.values(selectedServices[message.id] || {}).flat().length + (message.directParts?.length || 0)
-                                } service{Object.values(selectedServices[message.id] || {}).flat().length + (message.directParts?.length || 0) !== 1 ? 's' : ''} selected)
+                                  Object.values(selectedServices[message.id] || {}).flat().length
+                                } service{Object.values(selectedServices[message.id] || {}).flat().length !== 1 ? 's' : ''} selected)
                               </Button>
                             ) : null}
                           </Box>
@@ -4435,7 +4710,7 @@ Generate a detailed quote based on the above information.`;
                   borderColor="gray.300"
                   color="gray.600"
                   borderRadius="8px"
-                  onClick={() => setConfirmationTable(null)}
+                  onClick={handleConfirmTableEdit}
                 >
                   ← Edit
                 </Button>

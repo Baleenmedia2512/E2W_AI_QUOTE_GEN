@@ -3,9 +3,10 @@ import { useHistory } from 'react-router-dom';
 import { useAppStore } from '../store';
 import { CorporateMinimal } from '../components/Templates/CorporateMinimal';
 import { exportToPDF } from '../services/pdfExportService';
-import { ExtractedPage } from '../types';
+import { ExtractedPage, ServiceReadyData } from '../types';
 import { resolveServiceIdsForItems } from '../utils/serviceResolver';
-import { ServicePdfData } from '../components/Templates/CorporateMinimalPDF';
+import { ServicePdfData, PdfExportMode } from '../components/Templates/CorporateMinimalPDF';
+import { isMultiServiceQuote } from '../utils/quoteGrouping';
 import './QuotePreviewPage.css';
 
 // ═══════════════════════════════════════════════════════════════════════
@@ -62,16 +63,13 @@ export const QuotePreviewPage: React.FC = () => {
   const [isRestoring, setIsRestoring] = useState(false); // Set to false to avoid blocking
   const [isContentReady, setIsContentReady] = useState(true); // Set to true for immediate display
   const [zoom, setZoom] = useState(100);
+  const [showExportMenu, setShowExportMenu] = useState(false);
+  const exportMenuRef = useRef<HTMLDivElement>(null);
   const previewRef = useRef<HTMLDivElement>(null);
   const pdfDataRef = useRef<ServicePdfData[]>([]);
 
   // Collect resolved image/spec/review data from each ReferenceImages instance
-  const handleServiceDataReady = useCallback((serviceKey: string, data: {
-    refImages: string[];
-    specImages: string[];
-    specFields: Array<{ label: string; value: string }>;
-    review: { reviewerName: string; starCount: number; reviewText: string; reviewUrl: string | null } | null;
-  }) => {
+  const handleServiceDataReady = useCallback((serviceKey: string, data: ServiceReadyData) => {
     const existing = pdfDataRef.current.findIndex((d) => d.serviceKey === serviceKey);
     const entry: ServicePdfData = { serviceKey, ...data };
     if (existing >= 0) {
@@ -88,6 +86,7 @@ export const QuotePreviewPage: React.FC = () => {
     console.groupCollapsed(`🧩 [PDF-BRIDGE] serviceKey="${serviceKey}"`);
     console.log(`refImages=${data.refImages?.length || 0}`);
     console.log(`specImages=${data.specImages?.length || 0}`);
+    console.log(`specGroups=${data.specGroups?.length || 0}`);
     console.log(`specFields=${data.specFields?.length || 0}`);
     console.log(`review=${data.review ? 'yes' : 'no'}`);
     if (data.refImages?.length) {
@@ -311,33 +310,47 @@ export const QuotePreviewPage: React.FC = () => {
   }
 
   const renderTemplate = () => {
-    return <CorporateMinimal data={templateData} />;
+    return (
+      <CorporateMinimal
+        data={templateData}
+        editable
+        onDataChange={(next) => {
+          setCurrentQuote(next.quote);
+        }}
+      />
+    );
   };
 
-  const handleExportPDF = async () => {
-    console.log('📄 Export PDF clicked');
-    console.log('Preview ref current:', previewRef.current);
-    console.log('Current quote:', currentQuote);
-    console.log('Selected template:', selectedTemplate);
+  const isMultiService = currentQuote && currentQuote.items.length > 0 && isMultiServiceQuote(currentQuote.items);
+
+  // Close export menu on outside click
+  useEffect(() => {
+    const handleClickOutside = (e: MouseEvent) => {
+      if (exportMenuRef.current && !exportMenuRef.current.contains(e.target as Node)) {
+        setShowExportMenu(false);
+      }
+    };
+    if (showExportMenu) document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, [showExportMenu]);
+
+  const handleExportPDF = async (mode: PdfExportMode = 'full') => {
+    console.log(`📄 Export PDF clicked (mode: ${mode})`);
+    setShowExportMenu(false);
     
     if (!previewRef.current) {
-      console.error('❌ Preview ref is not available');
       alert('Preview content not loaded. Please refresh and try again.');
       return;
     }
 
     if (!currentQuote) {
-      console.error('❌ No quote available for export');
       alert('No quote data available. Please go back and create a quote.');
       return;
     }
 
     setIsExporting(true);
-    console.log('🔄 Starting PDF export...');
     
     try {
-      // Collect document IDs from active proposals so pdfExportService can
-      // fetch images directly from the DB instead of calling Gemini Vision.
       const docIds = activeProposals
         .map((p) => p.id)
         .filter(Boolean) as string[];
@@ -348,15 +361,14 @@ export const QuotePreviewPage: React.FC = () => {
         selectedTemplate,
         clientInfo?.name,
         docIds.length > 0 ? docIds : undefined,
+        mode,
       );
       console.log('✅ PDF exported successfully');
-      // Success message is shown by the service itself (different for mobile vs web)
     } catch (error) {
       console.error('❌ PDF export error:', error);
       alert(`Failed to export PDF: ${error instanceof Error ? error.message : 'Unknown error'}`);
     } finally {
       setIsExporting(false);
-      console.log('🏁 PDF export process finished');
     }
   };
 
@@ -409,31 +421,64 @@ export const QuotePreviewPage: React.FC = () => {
             </button>
           </div>
 
-          <button
-            onClick={handleExportPDF}
-            className="toolbar-button primary"
-            disabled={isExporting || !isContentReady}
-            title={!isContentReady ? 'Loading content, please wait...' : undefined}
-          >
-            {!isContentReady ? (
-              <>
-                <div className="spinner"></div>
-                Loading...
-              </>
-            ) : isExporting ? (
-              <>
-                <div className="spinner"></div>
-                Exporting...
-              </>
-            ) : (
-              <>
-                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor">
-                  <path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4M7 10l5 5 5-5M12 15V3" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
-                </svg>
-                Export PDF
-              </>
-            )}
-          </button>
+          {isMultiService ? (
+            <div className="export-dropdown-wrap" ref={exportMenuRef}>
+              <button
+                onClick={() => setShowExportMenu((v) => !v)}
+                className="toolbar-button primary"
+                disabled={isExporting || !isContentReady}
+              >
+                {isExporting ? (
+                  <><div className="spinner"></div>Exporting...</>
+                ) : (
+                  <>
+                    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor">
+                      <path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4M7 10l5 5 5-5M12 15V3" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
+                    </svg>
+                    Export PDF
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" style={{ marginLeft: 4 }}>
+                      <path d="M6 9l6 6 6-6" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
+                    </svg>
+                  </>
+                )}
+              </button>
+              {showExportMenu && (
+                <div className="export-dropdown-menu">
+                  <button className="export-dropdown-item" onClick={() => handleExportPDF('summary')}>
+                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor">
+                      <path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
+                      <path d="M14 2v6h6M16 13H8M16 17H8M10 9H8" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
+                    </svg>
+                    Summary Only
+                  </button>
+                  <button className="export-dropdown-item" onClick={() => handleExportPDF('detailed')}>
+                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor">
+                      <path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
+                      <path d="M14 2v6h6M16 13H8M16 17H8M10 9H8" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
+                    </svg>
+                    Detailed Summary
+                  </button>
+                </div>
+              )}
+            </div>
+          ) : (
+            <button
+              onClick={() => handleExportPDF('full')}
+              className="toolbar-button primary"
+              disabled={isExporting || !isContentReady}
+            >
+              {isExporting ? (
+                <><div className="spinner"></div>Exporting...</>
+              ) : (
+                <>
+                  <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor">
+                    <path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4M7 10l5 5 5-5M12 15V3" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
+                  </svg>
+                  Export PDF
+                </>
+              )}
+            </button>
+          )}
         </div>
       </div>
 
@@ -469,9 +514,20 @@ export const QuotePreviewPage: React.FC = () => {
       {/* Mobile Actions */}
       {isContentReady && (
         <div className="mobile-actions">
-          <button onClick={handleExportPDF} className="mobile-action-btn primary" disabled={isExporting}>
-            {isExporting ? 'Exporting...' : 'Export PDF'}
-          </button>
+          {isMultiService ? (
+            <>
+              <button onClick={() => handleExportPDF('summary')} className="mobile-action-btn primary" disabled={isExporting}>
+                {isExporting ? 'Exporting...' : 'Summary PDF'}
+              </button>
+              <button onClick={() => handleExportPDF('detailed')} className="mobile-action-btn primary" disabled={isExporting} style={{ marginLeft: 8 }}>
+                {isExporting ? 'Exporting...' : 'Detailed PDF'}
+              </button>
+            </>
+          ) : (
+            <button onClick={() => handleExportPDF('full')} className="mobile-action-btn primary" disabled={isExporting}>
+              {isExporting ? 'Exporting...' : 'Export PDF'}
+            </button>
+          )}
         </div>
       )}
     </div>

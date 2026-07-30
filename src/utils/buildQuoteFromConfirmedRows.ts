@@ -9,8 +9,10 @@ import {
 } from './dbPricingUtils';
 import { enrichQuoteItemsDurationFromDb } from './durationUtils';
 import { DEFAULT_GENERAL_TERMS } from './quoteGrouping';
-import { DbService, resolveServiceIdFromCatalog } from './serviceResolver';
+import type { DbService } from './serviceResolver';
+import { resolveServiceIdFromCatalog } from './serviceResolver';
 import { hydrateQuoteTermsFromCatalog } from './termsHydration';
+import { applyVendorPricingForQuoteRow, getVendorRatesCache } from '../services/vendorRateService';
 
 export type BuildQuoteFromDbResult =
   | { success: true; quote: Quote }
@@ -21,8 +23,9 @@ function titleCaseCity(city: string): string {
 }
 
 /**
- * Build a complete Quote from confirm-table rows using proposal_chunks DB metadata.
- * No Gemini — service_id, pricing, terms, and city come from the catalog.
+ * Build a complete Quote from confirm-table rows.
+ * Pricing ONLY from vendor_rate_chunks (display_price + printing_and_mounting_price).
+ * If vendor pricing is missing → error (proposal_chunks pricing disabled).
  */
 export function buildQuoteFromConfirmedRows(
   rows: ConfirmationRow[],
@@ -32,6 +35,7 @@ export function buildQuoteFromConfirmedRows(
   const uniqueRows = dedupeConfirmationRows(rows);
   const unresolved: string[] = [];
   const allItems: QuoteItem[] = [];
+  const vendorRates = getVendorRatesCache();
 
   for (let i = 0; i < uniqueRows.length; i++) {
     const row = uniqueRows[i];
@@ -40,20 +44,32 @@ export function buildQuoteFromConfirmedRows(
     const cityHint = row.city && row.city !== '—' ? row.city : null;
     const cityLabel = cityHint ? titleCaseCity(cityHint) : undefined;
 
-    const resolved = resolveServiceIdFromCatalog(row.service, services, cityHint);
-    if (!resolved) {
+    let baseSvc: DbService | undefined;
+    if (row.serviceId) {
+      baseSvc = services.find((s) => s.service_id === row.serviceId);
+    }
+    if (!baseSvc) {
+      const resolved = resolveServiceIdFromCatalog(row.service, services, cityHint);
+      if (resolved) {
+        baseSvc = services.find((s) => s.service_id === resolved.serviceId);
+      }
+    }
+    if (!baseSvc) {
       unresolved.push(`${row.service} (${row.city})`);
       continue;
     }
 
-    const svc = services.find((s) => s.service_id === resolved.serviceId);
-    if (!svc) {
-      unresolved.push(`${row.service} (${row.city})`);
-      continue;
-    }
+    const svc = applyVendorPricingForQuoteRow(
+      baseSvc,
+      row.service,
+      cityHint,
+      vendorRates,
+    );
 
     if (!hasQuotablePricing(svc)) {
-      unresolved.push(`${row.service} (${row.city}) — no pricing in DB`);
+      unresolved.push(
+        `${row.service} (${row.city}) — no pricing in vendor_rate_chunks`,
+      );
       continue;
     }
 
@@ -66,7 +82,9 @@ export function buildQuoteFromConfirmedRows(
 
     const hasPricing = lineItems.some((item) => item.rate > 0);
     if (!hasPricing) {
-      unresolved.push(`${row.service} (${row.city}) — no pricing in DB`);
+      unresolved.push(
+        `${row.service} (${row.city}) — no pricing in vendor_rate_chunks`,
+      );
       continue;
     }
 

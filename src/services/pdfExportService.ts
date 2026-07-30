@@ -5,8 +5,8 @@
  *
  * Flow (NEW — DB-first):
  *  1. QuotePreviewPage calls exportToPDF(..., documentIds)
- *  2. We query proposal_chunks from Supabase for those documentIds
- *  3. Build pdfData[] directly from metadata.images (already uploaded at PDF-upload time)
+ *  2. We query vendor_rate_chunks (rank=1) for images / specs / review
+ *  3. Build pdfData[] directly from metadata.images
  *  4. Falls back to DOM store (ReferenceImages) if DB has no images for a service
  *  5. Render CorporateMinimalPDF to a blob — zero Gemini calls
  *  6. Mobile: save to Documents + open in native viewer
@@ -20,8 +20,10 @@ import { TemplateData } from '../types/template';
 import { Capacitor } from '@capacitor/core';
 import { Filesystem, Directory } from '@capacitor/filesystem';
 import { FileOpener } from '@capacitor-community/file-opener';
-import CorporateMinimalPDF, { ServicePdfData } from '../components/Templates/CorporateMinimalPDF';
-import { supabase } from './supabaseClient';
+import CorporateMinimalPDF, { ServicePdfData, PdfExportMode } from '../components/Templates/CorporateMinimalPDF';
+import { loadAllServicesFromCloud, buildMetroSpecText } from './supabaseProposalService';
+import type { DbService } from '../utils/serviceResolver';
+import { extractMetroMultiTableSpec, type PdfSpecGroup } from '../utils/metroSpecParser';
 
 const isMobile = () => Capacitor.isNativePlatform();
 const DEBUG_PDF_EXPORT = true;
@@ -37,7 +39,7 @@ const debugSummarizePdfData = (pdfData: ServicePdfData[]): void => {
   console.groupCollapsed(`📄 [PDF-DEBUG] pdfData summary (${pdfData.length} service entries)`);
   pdfData.forEach((entry, idx) => {
     console.log(
-      `${idx + 1}. key="${entry.serviceKey}" | ref=${entry.refImages?.length || 0} | specImg=${entry.specImages?.length || 0} | specFields=${entry.specFields?.length || 0} | review=${entry.review ? 'yes' : 'no'}`,
+      `${idx + 1}. key="${entry.serviceKey}" | ref=${entry.refImages?.length || 0} | specImg=${entry.specImages?.length || 0} | specGroups=${entry.specGroups?.length || 0} | specFields=${entry.specFields?.length || 0} | review=${entry.review ? 'yes' : 'no'}`,
     );
     if (entry.refImages?.length) console.log(`   ref[0]: ${compactUrl(entry.refImages[0])}`);
     if (entry.specImages?.length) console.log(`   specImg[0]: ${compactUrl(entry.specImages[0])}`);
@@ -151,68 +153,311 @@ const waitForPdfReady = async (timeoutMs: number = 8000): Promise<void> =>
     poll();
   });
 
-/**
- * Fetch pdfData from Supabase proposal_chunks for the given document IDs.
- * Reads metadata.images (typed reference/specification/review URLs uploaded at PDF-upload time).
- * Returns empty array if DB has no data — caller falls back to DOM store.
- */
-const fetchPdfDataFromDB = async (documentIds: string[]): Promise<ServicePdfData[]> => {
-  if (!documentIds || documentIds.length === 0) return [];
-  try {
-    const { data, error } = await supabase
-      .from('proposal_chunks')
-      .select('service_id, service_name, metadata')
-      .in('document_id', documentIds);
+const formatSpecLabel = (key: string): string =>
+  key.replace(/_/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase());
 
-    if (error || !data || data.length === 0) {
-      console.warn('[PDF-DB] No chunks found for documentIds:', documentIds, error?.message);
+/**
+ * Flatten vendor metadata.specifications into PDF label/value rows.
+ * Handles metro coach objects (nested), elevated footfall nests, and plain strings.
+ * Previously only string values were kept — nested coach specs were silently dropped.
+ */
+const flattenSpecificationsToFields = (
+  specs: Record<string, unknown> | null | undefined,
+): Array<{ label: string; value: string }> => {
+  if (!specs || typeof specs !== 'object' || Array.isArray(specs)) return [];
+
+  const fields: Array<{ label: string; value: string }> = [];
+  const COACH_RE = /^coach[_\s-]*(\d+)/i;
+
+  // ── Metro format A: coach_1_ladies_coach: { type_of_media, size_in_inches, qty } ──
+  const metroItems: Array<{ coachNum: string; key: string; media: string; size: string; qty: string }> = [];
+  for (const [key, val] of Object.entries(specs)) {
+    if (!val || typeof val !== 'object' || Array.isArray(val)) continue;
+    const e = val as Record<string, unknown>;
+    if (!e.type_of_media) continue;
+    const size = e.size_in_inches ?? e.size;
+    if (size == null || String(size).trim() === '') continue;
+    const coachMatch = key.match(COACH_RE);
+    const coachNum = coachMatch
+      ? coachMatch[1]
+      : key === 'driver_door_sticker'
+        ? '4'
+        : '';
+    if (!coachNum && key !== 'driver_door_sticker') continue;
+    metroItems.push({
+      coachNum,
+      key,
+      media: key === 'driver_door_sticker' ? 'Driver Door Sticker' : String(e.type_of_media),
+      size: String(size),
+      qty: e.qty != null ? String(e.qty) : e.quantity != null ? String(e.quantity) : '',
+    });
+  }
+
+  if (metroItems.length > 0) {
+    if (specs.card_material_area != null && String(specs.card_material_area).trim()) {
+      fields.push({ label: 'Card Material Area', value: String(specs.card_material_area) });
+    }
+    if (specs.card_display_area != null && String(specs.card_display_area).trim()) {
+      fields.push({ label: 'Card Display Area', value: String(specs.card_display_area) });
+    }
+    for (const item of metroItems) {
+      const label = item.coachNum ? `Coach ${item.coachNum}: ${item.media}` : item.media;
+      const value = item.qty ? `${item.size} (qty ${item.qty})` : item.size;
+      fields.push({ label, value });
+    }
+    return fields;
+  }
+
+  // ── Metro format B / nested: coach_1: { name, Cards: { size, quantity } } ──
+  for (const [key, val] of Object.entries(specs)) {
+    if (!COACH_RE.test(key) || !val || typeof val !== 'object' || Array.isArray(val)) continue;
+    const coach = val as Record<string, unknown>;
+    const coachNum = key.match(COACH_RE)?.[1] || '';
+    const coachName = typeof coach.name === 'string' ? coach.name.trim() : '';
+    const heading = coachNum
+      ? `Coach ${coachNum}${coachName ? ` — ${coachName}` : ''}`
+      : coachName || formatSpecLabel(key);
+
+    for (const [itemKey, itemVal] of Object.entries(coach)) {
+      if (itemKey === 'name') continue;
+      if (itemVal && typeof itemVal === 'object' && !Array.isArray(itemVal)) {
+        const item = itemVal as Record<string, unknown>;
+        const size = item.size != null ? String(item.size) : item.size_in_inches != null ? String(item.size_in_inches) : '';
+        const qty = item.quantity != null ? String(item.quantity) : item.qty != null ? String(item.qty) : '';
+        const value = [size, qty ? `(qty ${qty})` : ''].filter(Boolean).join(' ').trim();
+        if (value) fields.push({ label: `${heading}: ${formatSpecLabel(itemKey)}`, value });
+      } else if (
+        (typeof itemVal === 'string' || typeof itemVal === 'number') &&
+        String(itemVal).trim() &&
+        String(itemVal).toUpperCase() !== 'NA'
+      ) {
+        fields.push({ label: `${heading}: ${formatSpecLabel(itemKey)}`, value: String(itemVal) });
+      }
+    }
+  }
+  if (fields.length > 0) {
+    // Still include top-level scalar areas if present
+    for (const scalarKey of ['card_material_area', 'card_display_area']) {
+      if (specs[scalarKey] != null && String(specs[scalarKey]).trim()) {
+        fields.unshift({ label: formatSpecLabel(scalarKey), value: String(specs[scalarKey]) });
+      }
+    }
+    return fields;
+  }
+
+  // ── Generic: scalars + one-level nested objects (footfall, size maps, etc.) ──
+  for (const [key, value] of Object.entries(specs)) {
+    if (value == null) continue;
+    if (typeof value === 'string' || typeof value === 'number' || typeof value === 'boolean') {
+      const s = String(value).trim();
+      if (s && s.toUpperCase() !== 'NA') fields.push({ label: formatSpecLabel(key), value: s });
+      continue;
+    }
+    if (typeof value === 'object' && !Array.isArray(value)) {
+      for (const [sk, sv] of Object.entries(value as Record<string, unknown>)) {
+        if (sv == null) continue;
+        if (typeof sv === 'string' || typeof sv === 'number' || typeof sv === 'boolean') {
+          const s = String(sv).trim();
+          if (s && s.toUpperCase() !== 'NA') {
+            fields.push({ label: `${formatSpecLabel(key)}: ${formatSpecLabel(sk)}`, value: s });
+          }
+        }
+      }
+    }
+  }
+  return fields;
+};
+
+/** City slug from vendor metadata / locations / trailing service_id. */
+const cityFromDbService = (row: DbService): string => {
+  const meta = row.metadata || {};
+  const metaCity = typeof (meta as { city?: string }).city === 'string'
+    ? (meta as { city: string }).city.trim().toLowerCase()
+    : '';
+  if (metaCity) return metaCity;
+  const loc = Array.isArray(meta.locations) && meta.locations[0]
+    ? String(meta.locations[0]).trim().toLowerCase()
+    : '';
+  if (loc && loc !== 'general') return loc;
+  const sid = (row.service_id || '').toLowerCase();
+  const cities = [
+    'chennai', 'madurai', 'coimbatore', 'salem', 'trichy', 'bangalore', 'mumbai',
+    'delhi', 'hyderabad', 'pune', 'kolkata',
+  ];
+  for (const c of cities) {
+    if (sid.endsWith(`-${c}`)) return c;
+  }
+  return '';
+};
+
+/**
+ * Lookup key used by CorporateMinimal / CorporateMinimalPDF:
+ *   `${city}|${serviceName.toLowerCase()}` or just service name.
+ */
+const pdfServiceKey = (city: string, serviceName: string, fallbackId: string): string => {
+  const name = (serviceName || '').trim().toLowerCase();
+  if (city && name) return `${city}|${name}`;
+  if (name) return name;
+  return fallbackId;
+};
+
+/**
+ * Fetch pdfData from vendor_rate_chunks (rank=1) via loadAllServicesFromCloud.
+ * Builds ref/spec images + flattened string spec fields for CorporateMinimalPDF.
+ */
+const fetchPdfDataFromDB = async (_documentIds: string[]): Promise<ServicePdfData[]> => {
+  try {
+    console.log('[PDF-DB] Loading from vendor_rate_chunks (rank=1)...');
+    const services: DbService[] = (await loadAllServicesFromCloud()) || [];
+    if (!services.length) {
+      console.warn('[PDF-DB] No vendor_rate_chunks services loaded');
       return [];
     }
 
-    console.log(`[PDF-DB] Loaded ${data.length} chunks from DB for ${documentIds.length} document(s)`);
+    const pdfData: ServicePdfData[] = [];
 
-    return data.map((row: any): ServicePdfData => {
+    for (const row of services) {
       const images: Array<{ url: string; type: string }> = row.metadata?.images || [];
       const refImages = images.filter((img) => img.type === 'reference').map((img) => img.url);
       const specImages = images.filter((img) => img.type === 'specification').map((img) => img.url);
-      const review = row.metadata?.review ?? null;
+      // Fallbacks when images[] lacks typed entries
+      if (refImages.length === 0 && typeof row.metadata?.reference_image === 'string') {
+        refImages.push(row.metadata.reference_image);
+      }
+      const reviewRaw = row.metadata?.review;
+      const customerReviewUrl = typeof row.metadata?.customer_review === 'string' ? row.metadata.customer_review : null;
+      const review =
+        reviewRaw &&
+        typeof reviewRaw.reviewerName === 'string' &&
+        typeof reviewRaw.reviewText === 'string'
+          ? {
+              reviewerName: reviewRaw.reviewerName,
+              starCount: reviewRaw.starCount ?? 5,
+              reviewText: reviewRaw.reviewText,
+              reviewUrl: reviewRaw.reviewUrl ?? customerReviewUrl ?? null,
+            }
+          : null;
 
-      // Flatten specification fields from metadata
-      const specFields: Array<{ label: string; value: string }> = [];
-      const specs = row.metadata?.specifications;
-      if (specs && typeof specs === 'object') {
-        for (const [label, value] of Object.entries(specs)) {
-          if (typeof value === 'string' && value) {
-            specFields.push({ label, value });
+      const specsObj =
+        row.metadata?.specifications && typeof row.metadata.specifications === 'object'
+          ? (row.metadata.specifications as Record<string, unknown>)
+          : null;
+
+      let specGroups: PdfSpecGroup[] | undefined;
+      if (specsObj) {
+        const metroText = buildMetroSpecText(specsObj);
+        if (metroText) {
+          const groups = extractMetroMultiTableSpec(metroText);
+          if (groups?.length) specGroups = groups;
+        }
+      }
+
+      let specFields: Array<{ label: string; value: string }> = [];
+      if (!specGroups?.length) {
+        specFields = flattenSpecificationsToFields(specsObj);
+        if (specFields.length === 0 && typeof row.metadata?.size === 'string' && row.metadata.size.trim()) {
+          specFields.push({ label: 'Size', value: row.metadata.size });
+        }
+        if (typeof row.metadata?.material === 'string' && row.metadata.material.trim()) {
+          if (!specFields.some((f) => /material/i.test(f.label))) {
+            specFields.push({ label: 'Material', value: row.metadata.material });
           }
         }
       }
 
-      // serviceKey must match the key used in CorporateMinimalPDF grouping:
-      // city|serviceType or just serviceType (all lowercase)
-      const serviceKey = row.service_id as string;
+      const city = cityFromDbService(row);
+      const serviceKey = pdfServiceKey(city, row.service_name, row.service_id);
+      console.log(
+        `[PDF-DB] ${serviceKey} (id=${row.service_id}): ref=${refImages.length} specImg=${specImages.length} specGroups=${specGroups?.length || 0} specFields=${specFields.length} review=${review ? 'yes' : 'no'}`,
+      );
 
-      console.log(`[PDF-DB] ${serviceKey}: ref=${refImages.length} spec=${specImages.length} review=${review ? 'yes' : 'no'}`);
-      if (refImages.length > 0) {
-        console.log(`[PDF-DB]   refImages[0] URL: ${refImages[0]}`);
-        // Probe actual pixel dimensions (fire-and-forget, non-blocking)
-        const img = new window.Image();
-        img.onload = () => {
-          console.log(`[PDF-DB]   ✅ refImages[0] actual dimensions: ${img.naturalWidth}×${img.naturalHeight}px  aspect=${(img.naturalWidth/img.naturalHeight).toFixed(2)}:1`);
-          if (img.naturalHeight < 100) {
-            console.warn(`[PDF-DB]   ⚠️ IMAGE IS A THIN STRIP — height only ${img.naturalHeight}px! Source crop saved at upload time is wrong.`);
-          }
-        };
-        img.onerror = () => console.error(`[PDF-DB]   ❌ Failed to load image: ${refImages[0]}`);
-        img.src = refImages[0];
+      const entry: ServicePdfData = { serviceKey, refImages, specImages, specFields, specGroups, review };
+      pdfData.push(entry);
+
+      // Alias under service_id so single-service preview keys (item.serviceId) still merge
+      if (row.service_id && row.service_id !== serviceKey) {
+        pdfData.push({ ...entry, serviceKey: row.service_id });
       }
+    }
 
-      return { serviceKey, refImages, specImages, specFields, review };
-    });
+    console.log(`[PDF-DB] Built ${pdfData.length} entries from vendor_rate_chunks`);
+    return pdfData;
   } catch (err) {
     console.error('[PDF-DB] fetchPdfDataFromDB failed:', err);
     return [];
   }
+};
+
+/** Fuzzy-match DOM bridge entry to a DB entry (keys often differ: service_id vs city|name). */
+const findDomMatch = (dbEntry: ServicePdfData, domData: ServicePdfData[]): ServicePdfData | undefined => {
+  const exact = domData.find((d) => d.serviceKey === dbEntry.serviceKey);
+  if (exact) return exact;
+
+  const dbKey = dbEntry.serviceKey.toLowerCase();
+  const dbName = dbKey.includes('|') ? dbKey.split('|').slice(1).join('|') : dbKey.replace(/-/g, ' ');
+
+  return domData.find((d) => {
+    const dk = d.serviceKey.toLowerCase();
+    if (dk === dbKey) return true;
+    if (dk.includes('|') && dbKey.includes('|') && dk.split('|')[1] === dbKey.split('|')[1]) return true;
+    const dName = dk.includes('|') ? dk.split('|').slice(1).join('|') : dk.replace(/-/g, ' ');
+    return Boolean(dbName) && (dName === dbName || dk.includes(dbName.replace(/\s+/g, '-')) || dbKey.includes(dName.replace(/\s+/g, '-')));
+  });
+};
+
+/** Merge DB + DOM: prefer richer specs/images; keep unmatched DOM entries (quote services). */
+const mergePdfData = (dbData: ServicePdfData[], domData: ServicePdfData[]): ServicePdfData[] => {
+  if (!domData.length) return dbData;
+  if (!dbData.length) return domData;
+
+  const usedDom = new Set<string>();
+  const merged = dbData.map((dbEntry) => {
+    const domEntry = findDomMatch(dbEntry, domData);
+    if (!domEntry) return dbEntry;
+    usedDom.add(domEntry.serviceKey);
+
+    const useDomRefs = (domEntry.refImages?.length ?? 0) > 0;
+    const useDomSpecImgs = (domEntry.specImages?.length ?? 0) > 0;
+    const domHasTables = domEntry.specGroups?.some((g) => (g.tableRows?.length ?? 0) > 0) ?? false;
+    const dbHasTables = dbEntry.specGroups?.some((g) => (g.tableRows?.length ?? 0) > 0) ?? false;
+    const useDomSpecGroups =
+      domHasTables ||
+      ((domEntry.specGroups?.length ?? 0) > 0 && !dbHasTables);
+    const useDomFields =
+      !useDomSpecGroups &&
+      (domEntry.specFields?.length ?? 0) > (dbEntry.specFields?.length ?? 0);
+
+    console.log(
+      `[PDF-EXPORT] Merge ${dbEntry.serviceKey}↔${domEntry.serviceKey}: refs=${useDomRefs ? 'DOM' : 'DB'} specGroups=${useDomSpecGroups ? 'DOM' : 'DB'} fields=${useDomFields ? 'DOM' : 'DB'}`,
+    );
+
+    return {
+      ...dbEntry,
+      refImages: useDomRefs ? domEntry.refImages : dbEntry.refImages,
+      specImages: useDomSpecImgs ? domEntry.specImages : dbEntry.specImages,
+      specGroups: useDomSpecGroups
+        ? domEntry.specGroups
+        : dbEntry.specGroups?.length
+          ? dbEntry.specGroups
+          : domEntry.specGroups,
+      specFields: useDomSpecGroups
+        ? []
+        : useDomFields
+          ? domEntry.specFields
+          : dbEntry.specFields?.length
+            ? dbEntry.specFields
+            : domEntry.specFields,
+      review: domEntry.review ?? dbEntry.review,
+    };
+  });
+
+  for (const dom of domData) {
+    if (!usedDom.has(dom.serviceKey)) {
+      console.log(`[PDF-EXPORT] Keeping unmatched DOM entry: ${dom.serviceKey} (groups=${dom.specGroups?.length || 0}, fields=${dom.specFields?.length || 0})`);
+      merged.push(dom);
+    }
+  }
+  return merged;
 };
 
 /**
@@ -293,7 +538,8 @@ export const exportToPDF = async (
   quoteNumber: string,
   _templateType: TemplateType, // future: switch on template type
   clientName?: string,
-  documentIds?: string[],      // NEW: proposal document IDs to load images from DB
+  documentIds?: string[],      // proposal document IDs to load images from DB
+  exportMode: PdfExportMode = 'full',
 ): Promise<void> => {
   const originalCursor = document.body.style.cursor;
   document.body.style.cursor = 'wait';
@@ -304,47 +550,28 @@ export const exportToPDF = async (
       throw new Error('Template data not found. Please wait for the preview to load.');
     }
 
-    // Try DB first (fast, no Gemini calls)
+    // Always load vendor catalog for images/specs (documentIds kept for API compat).
+    // Rank-1 vendor_rate_chunks is the source of truth — not proposal_chunks.
     let pdfData: ServicePdfData[] = [];
-    if (documentIds && documentIds.length > 0) {
-      console.log('[PDF-EXPORT] Fetching images from DB for documentIds:', documentIds);
-      pdfData = await fetchPdfDataFromDB(documentIds);
-    }
+    console.log('[PDF-EXPORT] Fetching images/specs from vendor_rate_chunks...', documentIds?.length ? `docIds=${documentIds.length}` : '(no proposal docIds)');
+    pdfData = await fetchPdfDataFromDB(documentIds || []);
 
-    // Fall back to DOM store (ReferenceImages) if DB had no data.
-    // When DB has data, still let the DOM bridge override images because it can
-    // reject bad/tight stored reference crops at preview time.
+    // Always wait for preview bridge, then merge. DOM often has richer metro
+    // specFields (parsed tables); DB keys were historically service_id-only.
+    await waitForPdfReady();
+    await new Promise((r) => setTimeout(r, 80));
+    const domData = readPdfDataFromDom();
+
     if (pdfData.length === 0) {
-      console.log('[PDF-EXPORT] DB empty — falling back to DOM store (waitForPdfReady)');
-      await waitForPdfReady();
-      await new Promise((r) => setTimeout(r, 80));
-      pdfData = readPdfDataFromDom();
+      console.log('[PDF-EXPORT] DB empty — using DOM store');
+      pdfData = domData;
+    } else if (domData.length > 0) {
+      console.log(
+        `[PDF-EXPORT] Merging DB (${pdfData.length}) with DOM bridge (${domData.length})`,
+      );
+      pdfData = mergePdfData(pdfData, domData);
     } else {
-      console.log(`[PDF-EXPORT] DB returned ${pdfData.length} service(s) — checking DOM bridge for corrected images`);
-      await waitForPdfReady();
-      await new Promise((r) => setTimeout(r, 80));
-      const domData = readPdfDataFromDom();
-      if (domData.length > 0) {
-        const domByKey = new Map(domData.map((entry) => [entry.serviceKey, entry]));
-        pdfData = pdfData.map((dbEntry) => {
-          const domEntry = domByKey.get(dbEntry.serviceKey);
-          if (!domEntry) return dbEntry;
-          const useDomRefs = (domEntry.refImages?.length ?? 0) > 0;
-          const useDomSpecs = (domEntry.specImages?.length ?? 0) > 0;
-          console.log(
-            `[PDF-EXPORT] Merge ${dbEntry.serviceKey}: refs=${useDomRefs ? 'DOM' : 'DB'} specs=${useDomSpecs ? 'DOM' : 'DB'}`,
-          );
-          return {
-            ...dbEntry,
-            refImages: useDomRefs ? domEntry.refImages : dbEntry.refImages,
-            specImages: useDomSpecs ? domEntry.specImages : dbEntry.specImages,
-            specFields: domEntry.specFields?.length ? domEntry.specFields : dbEntry.specFields,
-            review: domEntry.review ?? dbEntry.review,
-          };
-        });
-      } else {
-        console.log('[PDF-EXPORT] DOM bridge empty — using DB images');
-      }
+      console.log('[PDF-EXPORT] DOM bridge empty — using DB images/specs');
     }
 
     debugSummarizePdfData(pdfData);
@@ -357,13 +584,14 @@ export const exportToPDF = async (
     console.log('[PDF-EXPORT] Pre-fetch complete. Rendering PDF...');
 
     // Render to blob using React-PDF
-    const doc = React.createElement(CorporateMinimalPDF, { data: templateData, pdfData }) as any;
+    const doc = React.createElement(CorporateMinimalPDF, { data: templateData, pdfData, exportMode }) as any;
     const blob = await pdf(doc).toBlob();
 
     // Generate filename
     const dateStr = new Date().toISOString().slice(0, 10).replace(/-/g, '');
     const clientStr = (clientName || '').replace(/\s+/g, '');
-    const filename = `${dateStr}_${clientStr}_${quoteNumber}.pdf`;
+    const suffix = exportMode === 'summary' ? '_Summary' : exportMode === 'detailed' ? '_Detailed Summary' : '';
+    const filename = `${dateStr}_${clientStr}_${quoteNumber}${suffix}.pdf`;
 
     if (isMobile()) {
       // ── Mobile: save to Documents folder and open ──────────────────
