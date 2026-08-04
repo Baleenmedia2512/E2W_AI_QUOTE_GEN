@@ -3,6 +3,7 @@ import { BrowserRouter as Router, Route, Switch, Redirect } from 'react-router-d
 import { Box } from '@chakra-ui/react';
 import HomePage from './pages/HomePage';
 import DocumentsPage from './pages/DocumentsPage';
+import VendorManagementPage from './pages/VendorManagementPage';
 import QuotePage from './pages/QuotePage';
 import { QuotePreviewPage } from './pages/QuotePreviewPage';
 import LoginPage from './pages/LoginPage';
@@ -61,6 +62,7 @@ const App: React.FC = () => {
                     {/* Protected Routes - Requires Authentication */}
                     <PrivateRoute exact path="/" component={HomePage} />
                     <PrivateRoute exact path="/documents" component={DocumentsPage} />
+                    <PrivateRoute exact path="/vendors" component={VendorManagementPage} />
                     <PrivateRoute exact path="/quote" component={QuotePage} />
                     <PrivateRoute exact path="/preview" component={QuotePreviewPage} />
                     

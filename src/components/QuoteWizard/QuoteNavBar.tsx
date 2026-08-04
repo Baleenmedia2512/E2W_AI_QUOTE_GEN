@@ -14,15 +14,18 @@ import {
   DrawerCloseButton,
   useDisclosure,
 } from '@chakra-ui/react';
-import { FiHome, FiFileText, FiEye } from 'react-icons/fi';
-import { useHistory } from 'react-router-dom';
+import { FiHome, FiFileText, FiEye, FiFolder, FiUsers } from 'react-icons/fi';
+import { useHistory, useLocation } from 'react-router-dom';
 
 const QuoteNavBar: React.FC = () => {
   const history = useHistory();
+  const location = useLocation();
   const { isOpen, onClose } = useDisclosure();
 
   const navItems = [
     { label: 'Home', icon: FiHome, path: '/' },
+    { label: 'Docs', icon: FiFolder, path: '/documents' },
+    { label: 'Vendors', icon: FiUsers, path: '/vendors' },
     { label: 'Quote', icon: FiFileText, path: '/quote' },
     { label: 'Preview', icon: FiEye, path: '/preview' },
   ];
@@ -105,20 +108,24 @@ const QuoteNavBar: React.FC = () => {
 
           {/* Desktop Navigation Links */}
           <HStack spacing={1}>
-            {navItems.map((item) => (
+            {navItems.map((item) => {
+              const isActive = location.pathname === item.path;
+              return (
               <Button
                 key={item.label}
                 variant="ghost"
                 leftIcon={<Icon as={item.icon} />}
                 onClick={() => handleNavigate(item.path)}
-                fontWeight="500"
-                color="gray.700"
+                fontWeight={isActive ? '600' : '500'}
+                color={isActive ? 'brand.600' : 'gray.700'}
+                bg={isActive ? 'brand.50' : 'transparent'}
                 borderRadius="12px"
                 _hover={{ bg: 'brand.50', color: 'brand.600' }}
               >
                 {item.label}
               </Button>
-            ))}
+            );
+            })}
           </HStack>
         </Flex>
       </Container>

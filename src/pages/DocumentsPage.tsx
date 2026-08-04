@@ -8,16 +8,15 @@ import {
   Icon,
   Badge,
 } from '@chakra-ui/react';
-import { FiFolder, FiHome, FiFileText, FiEye } from 'react-icons/fi';
-import { useHistory } from 'react-router-dom';
+import { FiFolder } from 'react-icons/fi';
 import ProposalUpload from '../components/ProposalUpload/ProposalUpload';
 import MultiProposalViewer from '../components/MultiProposalViewer/MultiProposalViewer';
 import { UserProfile } from '../components/UserProfile';
 import { PDFUploader } from '../components/PDFUploader';
+import ManualServiceEntry from '../components/ManualServiceEntry/ManualServiceEntry';
+import DesktopNavLinks from '../components/DesktopNavLinks/DesktopNavLinks';
 
 const DocumentsPage: React.FC = () => {
-  const history = useHistory();
-
   return (
     <Box minH="100vh" bg="#F8FAFC">
       {/* Mobile Header with Logo */}
@@ -91,67 +90,7 @@ const DocumentsPage: React.FC = () => {
           </HStack>
 
           <HStack spacing={2}>
-            <HStack
-              spacing={2}
-              cursor="pointer"
-              onClick={() => history.push('/')}
-              px={4}
-              py={2}
-              borderRadius="12px"
-              _hover={{ bg: 'brand.50', color: 'brand.600' }}
-              color="gray.700"
-              fontWeight="500"
-              transition="all 0.2s"
-            >
-              <Icon as={FiHome} boxSize={5} />
-              <Box>Home</Box>
-            </HStack>
-            <HStack
-              spacing={2}
-              cursor="pointer"
-              onClick={() => history.push('/documents')}
-              px={4}
-              py={2}
-              borderRadius="12px"
-              _hover={{ bg: 'brand.50', color: 'brand.600' }}
-              color="gray.700"
-              fontWeight="500"
-              transition="all 0.2s"
-            >
-              <Icon as={FiFolder} boxSize={5} />
-              <Box>Docs</Box>
-            </HStack>
-            <HStack
-              spacing={2}
-              cursor="pointer"
-              onClick={() => history.push('/quote')}
-              px={4}
-              py={2}
-              borderRadius="12px"
-              _hover={{ bg: 'brand.50', color: 'brand.600' }}
-              color="gray.700"
-              fontWeight="500"
-              transition="all 0.2s"
-            >
-              <Icon as={FiFileText} boxSize={5} />
-              <Box>Quote</Box>
-            </HStack>
-            <HStack
-              spacing={2}
-              cursor="pointer"
-              onClick={() => history.push('/preview')}
-              px={4}
-              py={2}
-              borderRadius="12px"
-              _hover={{ bg: 'brand.50', color: 'brand.600' }}
-              color="gray.700"
-              fontWeight="500"
-              transition="all 0.2s"
-            >
-              <Icon as={FiEye} boxSize={5} />
-              <Box>Preview</Box>
-            </HStack>
-            {/* User Profile - Desktop */}
+            <DesktopNavLinks />
             <Box ml={4}>
               <UserProfile />
             </Box>
@@ -223,6 +162,9 @@ const DocumentsPage: React.FC = () => {
 
           {/* Upload Proposal */}
           <ProposalUpload />
+
+          {/* Manual service insert - does not affect upload flow */}
+          <ManualServiceEntry />
           
           {/* RAG PDF Upload - Extract & Embed Services */}
           <Box

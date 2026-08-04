@@ -1,6 +1,6 @@
 import React from 'react';
 import { Box, HStack, VStack, Text, Icon } from '@chakra-ui/react';
-import { FiHome, FiFileText, FiFolder, FiEye } from 'react-icons/fi';
+import { FiHome, FiFileText, FiFolder, FiEye, FiUsers } from 'react-icons/fi';
 import { useHistory, useLocation } from 'react-router-dom';
 import './BottomNav.css';
 
@@ -13,6 +13,7 @@ interface NavItem {
 const navItems: NavItem[] = [
   { path: '/', icon: FiHome, label: 'Home' },
   { path: '/documents', icon: FiFolder, label: 'Docs' },
+  { path: '/vendors', icon: FiUsers, label: 'Vendors' },
   { path: '/quote', icon: FiFileText, label: 'Quote' },
   { path: '/preview', icon: FiEye, label: 'Preview' },
 ];
@@ -48,7 +49,7 @@ const BottomNav: React.FC = () => {
       pb="env(safe-area-inset-bottom)"
       display={{ base: 'block', md: 'none' }} // Only show on mobile
     >
-      <HStack spacing={0} justify="space-around" h="64px" px={2}>
+      <HStack spacing={0} justify="space-around" h="64px" px={1}>
         {navItems.map((item) => {
           const isActive = location.pathname === item.path;
           return (
@@ -56,6 +57,7 @@ const BottomNav: React.FC = () => {
               key={item.path}
               spacing={0}
               flex={1}
+              minW={0}
               h="full"
               justify="center"
               cursor="pointer"
@@ -63,6 +65,7 @@ const BottomNav: React.FC = () => {
               transition="all 0.2s cubic-bezier(0.4, 0, 0.2, 1)"
               role="button"
               aria-label={item.label}
+              px={0.5}
               _active={{
                 transform: 'scale(0.92)',
               }}
@@ -72,7 +75,7 @@ const BottomNav: React.FC = () => {
                 display="flex"
                 alignItems="center"
                 justifyContent="center"
-                w="56px"
+                w="48px"
                 h="32px"
                 borderRadius="16px"
                 bg={isActive ? 'brand.500' : 'transparent'}
@@ -81,16 +84,19 @@ const BottomNav: React.FC = () => {
               >
                 <Icon
                   as={item.icon}
-                  boxSize={isActive ? '22px' : '24px'}
+                  boxSize={isActive ? '20px' : '22px'}
                   color={isActive ? 'white' : 'gray.500'}
                   transition="all 0.3s cubic-bezier(0.4, 0, 0.2, 1)"
                 />
               </Box>
               <Text
-                fontSize="11px"
+                fontSize="10px"
                 fontWeight={isActive ? '600' : '500'}
                 color={isActive ? 'brand.500' : 'gray.600'}
                 transition="all 0.3s cubic-bezier(0.4, 0, 0.2, 1)"
+                noOfLines={1}
+                textAlign="center"
+                w="full"
               >
                 {item.label}
               </Text>

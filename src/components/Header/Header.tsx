@@ -1,6 +1,7 @@
 import React from 'react';
 import { Box, Container, HStack, Heading, Spacer } from '@chakra-ui/react';
 import { UserProfile } from '../UserProfile';
+import DesktopNavLinks from '../DesktopNavLinks/DesktopNavLinks';
 
 export const Header: React.FC = () => {
   return (
@@ -11,7 +12,7 @@ export const Header: React.FC = () => {
       position="sticky"
       top={0}
       zIndex={999}
-      display={{ base: 'none', md: 'block' }} // Only show on desktop
+      display={{ base: 'none', md: 'block' }}
     >
       <Container maxW="container.xl" py={3}>
         <HStack spacing={4}>
@@ -19,6 +20,7 @@ export const Header: React.FC = () => {
             Quote Buddy
           </Heading>
           <Spacer />
+          <DesktopNavLinks />
           <UserProfile />
         </HStack>
       </Container>
