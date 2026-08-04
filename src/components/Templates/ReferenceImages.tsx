@@ -28,6 +28,8 @@ interface QuoteItem {
   description: string;
   serviceId?: string;
   serviceName?: string;
+  remark?: string;
+  lineItems?: Array<{ remark?: string }>;
   [key: string]: any;
 }
 

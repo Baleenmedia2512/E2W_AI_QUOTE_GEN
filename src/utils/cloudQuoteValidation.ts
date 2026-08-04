@@ -249,6 +249,10 @@ const QUERY_FILLER_WORDS = new Set([
 const WORD_VARIANTS: Record<string, string[]> = {
   awareness: ['awareness', 'awarness'],
   awarness: ['awarness', 'awareness'],
+  apartment: ['apartment', 'appartment'],
+  appartment: ['appartment', 'apartment'],
+  apartments: ['apartments', 'appartments', 'apartment', 'appartment'],
+  appartments: ['appartments', 'apartments', 'appartment', 'apartment'],
 };
 
 function expandQueryWord(word: string): string[] {

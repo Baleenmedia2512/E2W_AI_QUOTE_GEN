@@ -122,6 +122,8 @@ const SYNONYMS: Array<[RegExp, string]> = [
   [/\badvertising\b/g, 'branding'],
   // Catalog typo: "Awarness Board" must match user "Awareness Board"
   [/\bawarness\b/g, 'awareness'],
+  // Catalog typo: "APPARTMENT DEMO" must match user "apartment"
+  [/\bappartment\b/g, 'apartment'],
   // NOTE: do NOT collapse "sticker" → "branding". "Auto Back Stickers" is a
   // distinct rate-card row from Auto Full/Semi Branding — collapsing it
   // creates false token overlap.

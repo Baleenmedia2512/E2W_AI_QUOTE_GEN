@@ -153,6 +153,11 @@ const ChatInterface: React.FC = () => {
   // Multi-select state for MULTIPLE_MATCH scenarios
   // Map: messageId -> { groupKey (vehicleType|city) -> string[] of selected service names }
   const [selectedServices, setSelectedServices] = useState<Record<string, Record<string, string[]>>>({});
+  /** How many services are visible per multi-match group (paginated for large catalogs). */
+  const [multiMatchVisibleCount, setMultiMatchVisibleCount] = useState<
+    Record<string, Record<string, number>>
+  >({});
+  const MULTI_MATCH_PAGE_SIZE = 35;
 
   /**
    * Fold "Already confirmed" labels into checkbox groups and pre-check them.
@@ -2228,44 +2233,70 @@ const ChatInterface: React.FC = () => {
     });
   };
 
-  // Select-all / Clear-all toggle for a service group inside the multi-match UI
+  const getMultiMatchVisibleLimit = (messageId: string, groupKey: string): number =>
+    multiMatchVisibleCount[messageId]?.[groupKey] ?? MULTI_MATCH_PAGE_SIZE;
+
+  const handleShowMoreMultiMatch = (messageId: string, groupKey: string, total: number) => {
+    setMultiMatchVisibleCount((prev) => {
+      const msgMap = { ...(prev[messageId] || {}) };
+      const current = msgMap[groupKey] ?? MULTI_MATCH_PAGE_SIZE;
+      msgMap[groupKey] = Math.min(current + MULTI_MATCH_PAGE_SIZE, total);
+      return { ...prev, [messageId]: msgMap };
+    });
+  };
+
+  // Select-all / Clear-all toggle for a service group (operates on currently loaded / shown names)
   const handleServiceSelectAll = (messageId: string, groupKey: string, serviceNames: string[]) => {
     setSelectedServices(prev => {
       const messageMap = { ...(prev[messageId] || {}) };
       const current = messageMap[groupKey] || [];
       const allSelected = serviceNames.length > 0 && serviceNames.every(n => current.includes(n));
       if (allSelected) {
-        // Clear all in this group
+        // Clear only the shown names; keep selections outside the loaded page
+        const remaining = current.filter((n) => !serviceNames.includes(n));
         const next = { ...messageMap };
-        delete next[groupKey];
+        if (remaining.length === 0) delete next[groupKey];
+        else next[groupKey] = remaining;
         return { ...prev, [messageId]: next };
       }
-      messageMap[groupKey] = [...serviceNames];
+      const merged = Array.from(new Set([...current, ...serviceNames]));
+      messageMap[groupKey] = merged;
       return { ...prev, [messageId]: messageMap };
     });
   };
 
-  /** Select / clear every service across all multi-match groups for a message. */
+  /** Select / clear currently loaded services across all multi-match groups. */
   const handleServiceSelectAllGlobal = (
     messageId: string,
     groups: Array<{ vehicleType: string; services: Array<{ name: string }> }>,
   ) => {
-    const allNamesByGroup = groups.map((g) => ({
-      key: g.vehicleType,
-      names: g.services.map((s) => s.name),
-    }));
-    const allNames = allNamesByGroup.flatMap((g) => g.names);
+    const shownByGroup = groups.map((g) => {
+      const limit = getMultiMatchVisibleLimit(messageId, g.vehicleType);
+      return {
+        key: g.vehicleType,
+        names: g.services.slice(0, limit).map((s) => s.name),
+      };
+    });
+    const shownNames = shownByGroup.flatMap((g) => g.names);
     setSelectedServices((prev) => {
       const messageMap = { ...(prev[messageId] || {}) };
       const currentlySelected = Object.values(messageMap).flat();
-      const allSelected =
-        allNames.length > 0 && allNames.every((n) => currentlySelected.includes(n));
-      if (allSelected) {
-        return { ...prev, [messageId]: {} };
+      const allShownSelected =
+        shownNames.length > 0 && shownNames.every((n) => currentlySelected.includes(n));
+      if (allShownSelected) {
+        const next: Record<string, string[]> = {};
+        for (const [key, names] of Object.entries(messageMap)) {
+          const shownSet = new Set(
+            shownByGroup.find((g) => g.key === key)?.names || [],
+          );
+          const remaining = names.filter((n) => !shownSet.has(n));
+          if (remaining.length > 0) next[key] = remaining;
+        }
+        return { ...prev, [messageId]: next };
       }
-      const next: Record<string, string[]> = {};
-      for (const g of allNamesByGroup) {
-        next[g.key] = [...g.names];
+      const next = { ...messageMap };
+      for (const g of shownByGroup) {
+        next[g.key] = Array.from(new Set([...(next[g.key] || []), ...g.names]));
       }
       return { ...prev, [messageId]: next };
     });
@@ -3478,13 +3509,20 @@ const ChatInterface: React.FC = () => {
                             <VStack align="stretch" spacing={4}>
                               {(() => {
                                 const groups = message.groupedServices || [];
-                                const allNames = groups.flatMap((g) => g.services.map((s) => s.name));
+                                const shownNames = groups.flatMap((g) => {
+                                  const limit = getMultiMatchVisibleLimit(message.id, g.vehicleType);
+                                  return g.services.slice(0, limit).map((s) => s.name);
+                                });
                                 const selectedFlat = Object.values(selectedServices[message.id] || {}).flat();
-                                const allGlobalSelected =
-                                  allNames.length > 0 &&
-                                  allNames.every((n) => selectedFlat.includes(n));
+                                const allShownSelected =
+                                  shownNames.length > 0 &&
+                                  shownNames.every((n) => selectedFlat.includes(n));
+                                const totalCount = groups.reduce((n, g) => n + g.services.length, 0);
                                 return (
-                                  <HStack justify="flex-end" px={1}>
+                                  <HStack justify="space-between" px={1}>
+                                    <Text fontSize="11px" color="gray.500">
+                                      Showing loaded items · {totalCount} total
+                                    </Text>
                                     <Button
                                       size="xs"
                                       variant="ghost"
@@ -3493,7 +3531,7 @@ const ChatInterface: React.FC = () => {
                                         handleServiceSelectAllGlobal(message.id, groups)
                                       }
                                     >
-                                      {allGlobalSelected ? 'Clear all services' : 'Select all services'}
+                                      {allShownSelected ? 'Clear shown' : 'Select shown'}
                                     </Button>
                                   </HStack>
                                 );
@@ -3503,8 +3541,13 @@ const ChatInterface: React.FC = () => {
                                 const [vehiclePart, cityPart] = group.vehicleType.includes('|')
                                   ? group.vehicleType.split('|')
                                   : [group.vehicleType, null];
-                                const groupServiceNames = group.services.map(s => s.name);
-                                const allInGroupSelected = groupServiceNames.length > 0 && groupServiceNames.every(n => selectedForGroup.includes(n));
+                                const visibleLimit = getMultiMatchVisibleLimit(message.id, group.vehicleType);
+                                const visibleServices = group.services.slice(0, visibleLimit);
+                                const shownNames = visibleServices.map((s) => s.name);
+                                const remaining = group.services.length - visibleServices.length;
+                                const allShownSelected =
+                                  shownNames.length > 0 &&
+                                  shownNames.every((n) => selectedForGroup.includes(n));
                                 return (
                                   <Box key={`${group.vehicleType}-${gIdx}`}>
                                     <HStack mb={2} px={1} spacing={2} align="center" justify="space-between">
@@ -3526,18 +3569,27 @@ const ChatInterface: React.FC = () => {
                                             </Text>
                                           </Box>
                                         )}
+                                        <Text fontSize="11px" color="gray.500">
+                                          {Math.min(visibleLimit, group.services.length)}/{group.services.length}
+                                        </Text>
                                       </HStack>
                                       <Button
                                         size="xs"
                                         variant="ghost"
                                         colorScheme="blue"
-                                        onClick={() => handleServiceSelectAll(message.id, group.vehicleType, groupServiceNames)}
+                                        onClick={() =>
+                                          handleServiceSelectAll(
+                                            message.id,
+                                            group.vehicleType,
+                                            shownNames,
+                                          )
+                                        }
                                       >
-                                        {allInGroupSelected ? 'Clear all' : 'Select all'}
+                                        {allShownSelected ? 'Clear shown' : 'Select shown'}
                                       </Button>
                                     </HStack>
                                     <VStack align="stretch" spacing={2}>
-                                      {group.services.map((svc, sIdx) => {
+                                      {visibleServices.map((svc, sIdx) => {
                                         const isChecked = selectedForGroup.includes(svc.name);
                                         return (
                                           <Box
@@ -3547,12 +3599,6 @@ const ChatInterface: React.FC = () => {
                                             border="2px solid"
                                             borderColor={isChecked ? 'blue.400' : 'gray.200'}
                                             bg={isChecked ? 'blue.50' : 'white'}
-                                            _hover={{
-                                              borderColor: isChecked ? 'blue.500' : 'blue.300',
-                                              bg: isChecked ? 'blue.100' : 'blue.25',
-                                              transform: 'translateX(2px)',
-                                            }}
-                                            transition="all 0.2s ease"
                                           >
                                             <Checkbox
                                               isChecked={isChecked}
@@ -3573,6 +3619,27 @@ const ChatInterface: React.FC = () => {
                                         );
                                       })}
                                     </VStack>
+                                    {remaining > 0 && (
+                                      <Button
+                                        mt={2}
+                                        size="sm"
+                                        variant="outline"
+                                        colorScheme="blue"
+                                        w="full"
+                                        onClick={() =>
+                                          handleShowMoreMultiMatch(
+                                            message.id,
+                                            group.vehicleType,
+                                            group.services.length,
+                                          )
+                                        }
+                                      >
+                                        Show {Math.min(MULTI_MATCH_PAGE_SIZE, remaining)} more
+                                        {remaining > MULTI_MATCH_PAGE_SIZE
+                                          ? ` (${remaining} left)`
+                                          : ''}
+                                      </Button>
+                                    )}
                                   </Box>
                                 );
                               })}
