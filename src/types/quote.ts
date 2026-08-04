@@ -40,6 +40,17 @@ export interface QuoteItem {
   serviceName?: string;
   /** Campaign city (e.g. Chennai) — used for multi-location PDF sections */
   city?: string;
+  /**
+   * Per-unit one-time add-on breakdown (Printing & Mounting, RTO, …).
+   * When set, pricing-breakdown formula/edit uses these instead of a single bundled rate.
+   */
+  oneTimeComponents?: { label: string; amount: number }[];
+  /**
+   * Vendor P&F unit cost stamped at quote build (margin checks if catalog cache misses).
+   */
+  vendorPfUnitCost?: number;
+  /** Vendor display unit cost per day stamped at quote build. */
+  vendorDisplayUnitCostPerDay?: number;
 }
 
 export interface Quote {

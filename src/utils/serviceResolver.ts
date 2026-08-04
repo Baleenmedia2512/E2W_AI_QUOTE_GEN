@@ -62,6 +62,21 @@ function normalizeServiceId(id: string): string {
 
 function titleCaseToken(token: string): string {
   if (!token) return '';
+  const lower = token.toLowerCase();
+  // Keep media / tax acronyms fully uppercase (led → LED, not Led)
+  if (
+    lower === 'led' ||
+    lower === 'lcd' ||
+    lower === 'oled' ||
+    lower === 'gst' ||
+    lower === 'ifsc' ||
+    lower === 'abn' ||
+    lower === 'atm' ||
+    lower === 'tv' ||
+    lower === 'ac'
+  ) {
+    return lower.toUpperCase();
+  }
   return token.charAt(0).toUpperCase() + token.slice(1).toLowerCase();
 }
 
@@ -160,7 +175,7 @@ export function stripMediumTypeFromDisplayName(name: string): string {
 export function formatServiceDisplayName(svc: Pick<DbService, 'service_id' | 'service_name'>): string {
   let base = (svc.service_name || '')
     .split(' ')
-    .map((w) => (w ? w.charAt(0).toUpperCase() + w.slice(1).toLowerCase() : ''))
+    .map((w) => titleCaseToken(w))
     .join(' ')
     .trim();
 

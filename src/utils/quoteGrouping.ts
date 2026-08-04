@@ -1,6 +1,7 @@
 import { QuoteItem } from '../types/quote';
 import {
   isOneTimeLineDescription,
+  computeQuoteItemTotal,
   toCampaignDays,
   toDailyRate,
   toDisplayDuration,
@@ -8,6 +9,9 @@ import {
   DAYS_PER_MONTH,
   shouldDisplayAsMonths,
 } from './durationUtils';
+import { formatUnitRateInr } from './rateDisplay';
+import { listOneTimeAddOnComponents } from './dbPricingUtils';
+import { resolveDbServiceForQuoteItem } from './quoteEditValidation';
 
 export interface ServiceGroup {
   serviceType: string;
@@ -82,11 +86,38 @@ function executiveSummaryGroupKey(item: QuoteItem): string {
   return getQuoteItemGroupKey(item);
 }
 
-/** Display service id: apartment-lift-branding-chennai → Apartment lift branding chennai */
+/** Display tokens that must stay fully uppercase (from kebab service_id). */
+const SERVICE_ID_ACRONYMS = new Set([
+  'led',
+  'lcd',
+  'oled',
+  'gst',
+  'ifsc',
+  'abn',
+  'atm',
+  'tv',
+  'ac',
+]);
+
+function titleCaseServiceIdWord(word: string): string {
+  if (!word) return word;
+  const lower = word.toLowerCase();
+  if (SERVICE_ID_ACRONYMS.has(lower)) return lower.toUpperCase();
+  return word.charAt(0).toUpperCase() + word.slice(1).toLowerCase();
+}
+
+/** Display service id: apartment-lift-branding-chennai → Apartment Lift Branding Chennai */
 export function formatServiceIdDisplay(serviceId: string): string {
-  const spaced = serviceId.trim().replace(/-/g, ' ').replace(/\s+/g, ' ');
+  const spaced = serviceId
+    .trim()
+    .replace(/[-_]+/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
   if (!spaced) return serviceId;
-  return spaced.charAt(0).toUpperCase() + spaced.slice(1).toLowerCase();
+  return spaced
+    .split(' ')
+    .map(titleCaseServiceIdWord)
+    .join(' ');
 }
 
 /**
@@ -110,11 +141,10 @@ export function buildExecutiveSummaryRows(items: QuoteItem[]): ExecutiveSummaryR
     let requiringCharge = 0;
     let oneTimeCharge = 0;
     let amountExclGst = 0;
-    let remark: string | undefined;
 
     for (const item of group) {
-      amountExclGst += item.total;
-      if (item.remark?.trim()) remark = item.remark.trim();
+      // Recompute so month-display formulas match amounts (not stale daily×days drift)
+      amountExclGst += computeQuoteItemTotal(item);
       if (isOneTimeLineDescription(item.description)) {
         if (oneTimeCharge <= 0) oneTimeCharge = item.rate;
       } else if (requiringCharge <= 0) {
@@ -147,13 +177,14 @@ export function buildExecutiveSummaryRows(items: QuoteItem[]): ExecutiveSummaryR
       duration: displayDur?.value,
       durationUnit: displayDur?.unit,
       durationLabel: displayDur?.label,
-      durationDays,
+      durationDays: durationDays ?? undefined,
       requiringCharge: displayRate?.rate ?? 0,
       dailyRate: dailyRate > 0 ? dailyRate : undefined,
       ratePeriod: displayRate?.period,
       oneTimeCharge,
       amountExclGst,
-      remark,
+      // Remarks belong in the Specification section only — never on this summary table
+      remark: undefined,
     });
   }
 
@@ -169,6 +200,8 @@ export interface PricingBreakdownLine {
   editRow?: ExecutiveSummaryRow;
   /** Qty unit label used in the formula (e.g. "buses", "bus"). */
   formulaQtyUnit?: string;
+  /** Per-unit one-time parts for separate edit fields (onetime only). */
+  oneTimeComponents?: { label: string; amount: number }[];
 }
 
 /** Singular qty unit for formulas (e.g. "bus", "Auto"). */
@@ -213,13 +246,60 @@ function campaignDays(row: ExecutiveSummaryRow): number {
   return toCampaignDays(row.duration, row.durationUnit) ?? 30;
 }
 
-function fmtBreakdownInr(n: number, maxFrac = 2): string {
-  return new Intl.NumberFormat('en-IN', {
-    style: 'currency',
-    currency: 'INR',
-    minimumFractionDigits: 0,
-    maximumFractionDigits: maxFrac,
-  }).format(n);
+function fmtBreakdownInr(n: number): string {
+  return formatUnitRateInr(n);
+}
+
+/** "A, B & C" for prose titles. */
+function formatComponentTitleList(labels: string[]): string {
+  if (labels.length === 0) return 'One-time charges';
+  if (labels.length === 1) return labels[0];
+  if (labels.length === 2) return `${labels[0]} & ${labels[1]}`;
+  return `${labels.slice(0, -1).join(', ')} & ${labels[labels.length - 1]}`;
+}
+
+/**
+ * One-time formula using actual component names when they match the unit rate.
+ * Prefers item-stored oneTimeComponents (after per-part edits).
+ */
+function buildOneTimeFormula(
+  unitRate: number,
+  qty: number,
+  unitForFormula: string,
+  pricing: Record<string, unknown> | undefined,
+  storedComponents?: { label: string; amount: number }[],
+): {
+  titlePrefix: string;
+  formula: string;
+  components?: { label: string; amount: number }[];
+} {
+  const fromStore =
+    storedComponents && storedComponents.length > 0
+      ? storedComponents.filter((c) => c.amount > 0 && c.label.trim())
+      : [];
+  const fromDb = listOneTimeAddOnComponents(pricing);
+  const components = fromStore.length > 0 ? fromStore : fromDb;
+  const componentSum = components.reduce((s, c) => s + c.amount, 0);
+  const matchesRate =
+    components.length > 0 &&
+    Number.isFinite(unitRate) &&
+    Math.abs(componentSum - unitRate) < 0.02;
+
+  if (matchesRate) {
+    const formula =
+      components.map((c) => `${fmtBreakdownInr(c.amount)} (${c.label})`).join(' + ') +
+      ` × ${qty} (${unitForFormula})`;
+    return {
+      titlePrefix: formatComponentTitleList(components.map((c) => c.label)),
+      formula,
+      components,
+    };
+  }
+
+  return {
+    titlePrefix: 'Printing & Mounting',
+    formula: `${fmtBreakdownInr(unitRate)} (per qty) × ${qty} (${unitForFormula})`,
+  };
 }
 
 /**
@@ -264,40 +344,57 @@ export function buildPricingBreakdownLines(items: QuoteItem[]): {
 
       let prose: string;
       let formula: string;
+      const displayAmount = computeQuoteItemTotal(displayItem);
       if (asMonths) {
         const months = days / DAYS_PER_MONTH;
-        const perMonth = Math.round(perDay * DAYS_PER_MONTH * 100) / 100;
+        const perMonth = toDisplayRecurringRate(perDay, days).rate;
         const monthLabel = months === 1 ? 'month' : 'months';
         prose = `Display rental for ${qty} ${unitPlural} for ${months} ${monthLabel}.`;
-        formula = `${fmtBreakdownInr(perMonth)} (per month) × ${qty} (${unitForFormula}) × ${months} (${monthLabel})`;
+        formula = `${fmtBreakdownInr(perMonth)} (per month per ${unitSingular}) × ${qty} (${unitForFormula}) × ${months} (${monthLabel})`;
       } else {
         prose = `Display rental for ${qty} ${unitPlural} for ${days} days.`;
-        formula = `${fmtBreakdownInr(perDay)} (per day) × ${qty} (${unitForFormula}) × ${days} (days)`;
+        formula = `${fmtBreakdownInr(perDay)} (per day per ${unitSingular}) × ${qty} (${unitForFormula}) × ${days} (days)`;
       }
 
       lines.push({
         kind: 'display',
         descriptionLines: [prose, formula],
-        amount: displayItem.total,
+        amount: displayAmount,
         editRow: row,
         formulaQtyUnit: unitForFormula,
       });
-      subtotal += displayItem.total;
+      subtotal += displayAmount;
     }
 
     if (pfItem && (pfItem.rate > 0 || pfItem.total > 0)) {
       const unitRate = pfItem.rate > 0 ? pfItem.rate : row.oneTimeCharge;
+      const svc = resolveDbServiceForQuoteItem({
+        serviceId: row.catalogServiceId || primary.serviceId || pfItem.serviceId,
+        serviceName: primary.serviceName || pfItem.serviceName,
+        description: pfItem.description || primary.description,
+        city: primary.city || pfItem.city,
+      });
+      const pricing = (svc?.metadata?.pricing || undefined) as Record<string, unknown> | undefined;
+      const { titlePrefix, formula, components } = buildOneTimeFormula(
+        unitRate,
+        qty,
+        unitForFormula,
+        pricing,
+        pfItem.oneTimeComponents,
+      );
+
       lines.push({
         kind: 'onetime',
         descriptionLines: [
-          `Printing & mounting charges for ${qty} ${unitPlural}`,
-          `${fmtBreakdownInr(unitRate)} (per qty) × ${qty} (${unitForFormula})`,
+          `${titlePrefix} for ${qty} ${unitPlural}`,
+          formula,
         ],
-        amount: pfItem.total,
+        amount: computeQuoteItemTotal(pfItem),
         editRow: row,
         formulaQtyUnit: unitForFormula,
+        oneTimeComponents: components,
       });
-      subtotal += pfItem.total;
+      subtotal += computeQuoteItemTotal(pfItem);
     }
   }
 
@@ -411,7 +508,7 @@ export function groupItemsByServiceType(items: QuoteItem[]): ServiceGroup[] {
       ? groupItems[0].city
       : undefined,
     items: groupItems,
-    subtotal: groupItems.reduce((sum, item) => sum + item.total, 0),
+    subtotal: groupItems.reduce((sum, item) => sum + computeQuoteItemTotal(item), 0),
     termsAndConditions: groupItems[0]?.termsAndConditions,
   }));
 }

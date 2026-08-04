@@ -7,6 +7,10 @@ import { ExtractedPage, ServiceReadyData } from '../types';
 import { resolveServiceIdsForItems } from '../utils/serviceResolver';
 import { ServicePdfData, PdfExportMode } from '../components/Templates/CorporateMinimalPDF';
 import { isMultiServiceQuote } from '../utils/quoteGrouping';
+import {
+  buildPreviewTocItems,
+  scrollToPreviewSection,
+} from '../utils/previewNavigation';
 import './QuotePreviewPage.css';
 
 // ═══════════════════════════════════════════════════════════════════════
@@ -64,9 +68,15 @@ export const QuotePreviewPage: React.FC = () => {
   const [isContentReady, setIsContentReady] = useState(true); // Set to true for immediate display
   const [zoom, setZoom] = useState(100);
   const [showExportMenu, setShowExportMenu] = useState(false);
+  const [showToc, setShowToc] = useState(
+    () => (typeof window !== 'undefined' ? window.innerWidth > 900 : true),
+  );
+  const [activeTocId, setActiveTocId] = useState<string | null>(null);
   const exportMenuRef = useRef<HTMLDivElement>(null);
   const previewRef = useRef<HTMLDivElement>(null);
+  const previewContainerRef = useRef<HTMLDivElement>(null);
   const pdfDataRef = useRef<ServicePdfData[]>([]);
+  const tocClickLockRef = useRef(false);
 
   // Collect resolved image/spec/review data from each ReferenceImages instance
   const handleServiceDataReady = useCallback((serviceKey: string, data: ServiceReadyData) => {
@@ -219,6 +229,83 @@ export const QuotePreviewPage: React.FC = () => {
     }
   }, [currentQuote, cloudServicePages, setCurrentQuote]);
 
+  // Fill missing quantityUnit via isolated AI — preview page only (no RAG)
+  const qtyUnitAiQuoteIdRef = useRef<string | null>(null);
+  useEffect(() => {
+    if (!currentQuote?.items?.length) return;
+
+    const quoteId = currentQuote.id;
+    const needsAi = currentQuote.items.some((i) => {
+      const u = (i.quantityUnit || '').trim();
+      return !u || u.toUpperCase() === 'NA';
+    });
+
+    console.warn('🏷️ [QtyUnit-AI-EXACT] preview effect', {
+      quoteId,
+      needsAi,
+      alreadyDone: qtyUnitAiQuoteIdRef.current === quoteId,
+      itemCount: currentQuote.items.length,
+    });
+
+    if (!needsAi) {
+      qtyUnitAiQuoteIdRef.current = quoteId;
+      return;
+    }
+    if (qtyUnitAiQuoteIdRef.current === quoteId) return;
+
+    const itemsSnapshot = currentQuote.items;
+    (async () => {
+      try {
+        const { enrichMissingQtyUnitsWithAi } = await import('../services/qtyUnitAiService');
+        const enriched = await enrichMissingQtyUnitsWithAi(itemsSnapshot);
+        const unitById = new Map(
+          enriched
+            .filter((i) => (i.quantityUnit || '').trim() && (i.quantityUnit || '').trim().toUpperCase() !== 'NA')
+            .map((i) => [i.id, String(i.quantityUnit).trim()]),
+        );
+
+        // Always merge into latest store quote (do not discard on effect cleanup)
+        const { currentQuote: latest, setCurrentQuote: setQuote } = useAppStore.getState();
+        if (!latest || latest.id !== quoteId) {
+          console.warn('🏷️ [QtyUnit-AI-EXACT] quote changed before apply', {
+            expected: quoteId,
+            latest: latest?.id,
+          });
+          return;
+        }
+
+        let filled = 0;
+        const mergedItems = latest.items.map((item) => {
+          const existing = (item.quantityUnit || '').trim();
+          if (existing && existing.toUpperCase() !== 'NA') return item;
+          const unit = unitById.get(item.id);
+          if (!unit) return item;
+          filled += 1;
+          return { ...item, quantityUnit: unit };
+        });
+
+        console.warn('🏷️ [QtyUnit-AI-EXACT] apply merge', {
+          filled,
+          mapSize: unitById.size,
+        });
+
+        if (filled === 0) {
+          console.warn('🏷️ [QtyUnit-AI-EXACT] filled=0 — check REST_RESPONSE / REST_TEXT');
+          return;
+        }
+
+        qtyUnitAiQuoteIdRef.current = quoteId;
+        setQuote({
+          ...latest,
+          items: mergedItems,
+          updatedAt: new Date(),
+        });
+      } catch (err) {
+        console.error('🏷️ [QtyUnit-AI-EXACT] preview apply failed:', err);
+      }
+    })();
+  }, [currentQuote, setCurrentQuote]);
+
   // Add sample item if quote has no items
   React.useEffect(() => {
     console.log('📄 QuotePreviewPage mounted');
@@ -249,6 +336,60 @@ export const QuotePreviewPage: React.FC = () => {
       setCurrentQuote(updatedQuote);
     }
   }, [currentQuote?.items?.length]);
+
+  const tocItems = useMemo(
+    () => buildPreviewTocItems(currentQuote?.items || []),
+    [currentQuote?.items],
+  );
+
+  const handleNavigateToSection = useCallback(
+    (sectionId: string) => {
+      tocClickLockRef.current = true;
+      setActiveTocId(sectionId);
+      scrollToPreviewSection(sectionId, {
+        zoom,
+        container: previewContainerRef.current,
+      });
+      if (typeof window !== 'undefined' && window.innerWidth <= 900) {
+        setShowToc(false);
+      }
+      window.setTimeout(() => {
+        tocClickLockRef.current = false;
+      }, 700);
+    },
+    [zoom],
+  );
+
+  // Highlight TOC item based on which section is in view
+  useEffect(() => {
+    const container = previewContainerRef.current;
+    if (!container || tocItems.length === 0) return;
+
+    const elements = tocItems
+      .map((item) => document.getElementById(item.id))
+      .filter((el): el is HTMLElement => Boolean(el));
+
+    if (elements.length === 0) return;
+
+    const observer = new IntersectionObserver(
+      (entries) => {
+        if (tocClickLockRef.current) return;
+        const visible = entries
+          .filter((e) => e.isIntersecting)
+          .sort((a, b) => b.intersectionRatio - a.intersectionRatio);
+        const top = visible[0]?.target as HTMLElement | undefined;
+        if (top?.id) setActiveTocId(top.id);
+      },
+      {
+        root: container,
+        rootMargin: '-10% 0px -55% 0px',
+        threshold: [0.05, 0.2, 0.4],
+      },
+    );
+
+    elements.forEach((el) => observer.observe(el));
+    return () => observer.disconnect();
+  }, [tocItems, isContentReady, zoom]);
 
   // Debug logging
   console.log('Current Quote:', currentQuote);
@@ -317,6 +458,7 @@ export const QuotePreviewPage: React.FC = () => {
         onDataChange={(next) => {
           setCurrentQuote(next.quote);
         }}
+        onNavigateToSection={handleNavigateToSection}
       />
     );
   };
@@ -397,6 +539,18 @@ export const QuotePreviewPage: React.FC = () => {
               <path d="M19 12H5M12 19l-7-7 7-7" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
             </svg>
             Back
+          </button>
+          <button
+            type="button"
+            className={`toolbar-button toc-toggle-btn${showToc ? ' is-active' : ''}`}
+            onClick={() => setShowToc((v) => !v)}
+            aria-pressed={showToc}
+            aria-label={showToc ? 'Hide table of contents' : 'Show table of contents'}
+          >
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor">
+              <path d="M4 6h16M4 12h10M4 18h14" strokeWidth="2" strokeLinecap="round"/>
+            </svg>
+            Contents
           </button>
           <h1 className="toolbar-title">Quote Preview</h1>
         </div>
@@ -483,30 +637,78 @@ export const QuotePreviewPage: React.FC = () => {
       </div>
 
       {/* Preview Area */}
-      <div className="preview-container">
-        {(!isContentReady) && (
-          <div className="preview-loading-overlay">
-            <div className="hourglass-container">
-              <svg className="hourglass-svg" width="72" height="72" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
-                <path d="M5 2H19" stroke="#C91F3D" strokeWidth="2" strokeLinecap="round"/>
-                <path d="M5 22H19" stroke="#C91F3D" strokeWidth="2" strokeLinecap="round"/>
-                <path d="M7 2L17 2L12 10.5L7 2Z" fill="#C91F3D" fillOpacity="0.25"/>
-                <path d="M7 22L17 22L12 13.5L7 22Z" fill="#C91F3D"/>
-                <line x1="12" y1="10.5" x2="12" y2="13.5" stroke="#C91F3D" strokeWidth="1.5" strokeLinecap="round"/>
-              </svg>
-              <p className="overlay-title">Loading your quote...</p>
-            </div>
-          </div>
+      <div className={`preview-body${showToc ? ' preview-body--toc-open' : ''}`}>
+        {showToc && (
+          <>
+            <button
+              type="button"
+              className="preview-toc-backdrop"
+              aria-label="Close table of contents"
+              onClick={() => setShowToc(false)}
+            />
+            <aside className="preview-toc" aria-label="Table of Contents">
+              <div className="preview-toc-header">
+                <h2>Table of Contents</h2>
+                <button
+                  type="button"
+                  className="preview-toc-close"
+                  onClick={() => setShowToc(false)}
+                  aria-label="Close"
+                >
+                  <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor">
+                    <path d="M18 6L6 18M6 6l12 12" strokeWidth="2" strokeLinecap="round"/>
+                  </svg>
+                </button>
+              </div>
+              <nav className="preview-toc-list">
+                {tocItems.map((item, index) => (
+                  <button
+                    key={item.id}
+                    type="button"
+                    className={`preview-toc-item${activeTocId === item.id ? ' is-active' : ''}`}
+                    onClick={() => handleNavigateToSection(item.id)}
+                  >
+                    <span className="preview-toc-index">
+                      {item.kind === 'summary'
+                        ? 'Sum'
+                        : item.kind === 'terms'
+                          ? 'T&C'
+                          : item.kind === 'bank'
+                            ? 'Bank'
+                            : index}
+                    </span>
+                    <span className="preview-toc-label">{item.label}</span>
+                  </button>
+                ))}
+              </nav>
+            </aside>
+          </>
         )}
-        <div className="preview-wrapper" style={{ transform: `scale(${zoom / 100})` }}>
-          {/* Hidden DOM store — pdfExportService reads templateData + pdfData from here */}
-          <div
-            id="pdf-data-store"
-            data-template-store={JSON.stringify(templateData)}
-            style={{ display: 'none' }}
-          />
-          <div ref={previewRef} className="preview-content">
-            {renderTemplate()}
+        <div className="preview-container" ref={previewContainerRef}>
+          {(!isContentReady) && (
+            <div className="preview-loading-overlay">
+              <div className="hourglass-container">
+                <svg className="hourglass-svg" width="72" height="72" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+                  <path d="M5 2H19" stroke="#C91F3D" strokeWidth="2" strokeLinecap="round"/>
+                  <path d="M5 22H19" stroke="#C91F3D" strokeWidth="2" strokeLinecap="round"/>
+                  <path d="M7 2L17 2L12 10.5L7 2Z" fill="#C91F3D" fillOpacity="0.25"/>
+                  <path d="M7 22L17 22L12 13.5L7 22Z" fill="#C91F3D"/>
+                  <line x1="12" y1="10.5" x2="12" y2="13.5" stroke="#C91F3D" strokeWidth="1.5" strokeLinecap="round"/>
+                </svg>
+                <p className="overlay-title">Loading your quote...</p>
+              </div>
+            </div>
+          )}
+          <div className="preview-wrapper" style={{ transform: `scale(${zoom / 100})` }}>
+            {/* Hidden DOM store — pdfExportService reads templateData + pdfData from here */}
+            <div
+              id="pdf-data-store"
+              data-template-store={JSON.stringify(templateData)}
+              style={{ display: 'none' }}
+            />
+            <div ref={previewRef} className="preview-content">
+              {renderTemplate()}
+            </div>
           </div>
         </div>
       </div>

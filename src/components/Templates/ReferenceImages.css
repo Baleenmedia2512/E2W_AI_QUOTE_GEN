@@ -466,6 +466,53 @@
   white-space: pre-line; /* preserve \n line breaks for multi-line values */
 }
 
+.spec-row--remark {
+  align-items: flex-start;
+  background: #f0f6fc;
+}
+
+.spec-value--remark {
+  flex: 1;
+  min-width: 0;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  word-break: break-word;
+  line-height: 1.45;
+}
+
+.spec-remark-input {
+  flex: 1;
+  min-width: 0;
+  width: 100%;
+  box-sizing: border-box;
+  font-size: 13px;
+  font-family: inherit;
+  color: #1a202c;
+  font-weight: 400;
+  line-height: 1.45;
+  border: 1px dashed #a0aec0;
+  border-radius: 4px;
+  padding: 6px 8px;
+  background: #fff;
+  outline: none;
+  resize: none;
+  overflow: hidden;
+  min-height: 32px;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  word-break: break-word;
+}
+
+.spec-remark-input:focus {
+  border-color: #2980b9;
+  border-style: solid;
+  box-shadow: 0 0 0 2px rgba(41, 128, 185, 0.15);
+}
+
+.spec-remark-input::placeholder {
+  color: #a0aec0;
+}
+
 .spec-group-heading {
   font-size: 12px;
   font-weight: 700;

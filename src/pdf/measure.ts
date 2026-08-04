@@ -17,6 +17,7 @@ import {
   atLeast,
   contentHeight,
   contentWidth,
+  countServiceIdWrappedLines,
   countWrappedLines,
   measureStackedCellHeight,
   textBlockHeight,
@@ -234,4 +235,4 @@ export function measurePageContentWidth(geometry: PageGeometry): number {
   return contentWidth(geometry);
 }
 
-export { contentHeight, contentWidth, measureStackedCellHeight, countWrappedLines };
+export { contentHeight, contentWidth, measureStackedCellHeight, countWrappedLines, countServiceIdWrappedLines };

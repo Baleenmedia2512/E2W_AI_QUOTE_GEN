@@ -26,6 +26,7 @@ function titleCaseCity(city: string): string {
  * Build a complete Quote from confirm-table rows.
  * Pricing ONLY from vendor_rate_chunks (display_price + printing_and_mounting_price).
  * If vendor pricing is missing → error (proposal_chunks pricing disabled).
+ * Qty unit AI runs on Quote Preview only (not here).
  */
 export function buildQuoteFromConfirmedRows(
   rows: ConfirmationRow[],
@@ -122,7 +123,7 @@ export function buildQuoteFromConfirmedRows(
 
   const finalTerms = hydrated.hydratedFromDb
     ? hydrated.termsAndConditions
-    : DEFAULT_GENERAL_TERMS.join('\n');
+    : DEFAULT_GENERAL_TERMS.map((t) => `• ${t}`).join('\n');
 
   const subtotal = quoteItems.reduce((sum, item) => sum + item.total, 0);
   const gstPercentage = 18;

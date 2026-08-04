@@ -19,6 +19,7 @@ import {
   extractMediumTypeFromServiceId,
   stripMediumTypeFromDisplayName,
 } from '../utils/serviceResolver';
+import { pickMaterialFromMeta, hasMeaningfulScalar } from '../utils/specMaterial';
 
 const FILLER_TOKENS = new Set([
   'branding',
@@ -176,11 +177,16 @@ export function normalizeVendorRateRow(row: Record<string, unknown>): VendorRate
 
   const pricing = pricingRaw as VendorPricingBlock;
   // Accept both snake_case and camelCase price fields from vendor metadata
+  const displayUnitPricePerDay =
+    pricing.display_unit_price_per_day ??
+    meta.display_unit_price_per_day ??
+    (pricing as { displayUnitPricePerDay?: unknown }).displayUnitPricePerDay;
   const displayPrice = pricing.display_price ?? (pricing as { displayPrice?: unknown }).displayPrice;
   const pfPrice =
     pricing.printing_and_mounting_price ??
     (pricing as { printingAndMountingPrice?: unknown }).printingAndMountingPrice;
   const hasPrice =
+    hasUsableAmount(displayUnitPricePerDay) ||
     hasUsableAmount(displayPrice) ||
     hasUsableAmount(pfPrice) ||
     hasUsableAmount(pricing.printing_price) ||
@@ -193,6 +199,9 @@ export function normalizeVendorRateRow(row: Record<string, unknown>): VendorRate
   if (!hasPrice) return null;
 
   // Normalize camelCase into snake_case for downstream quote builders
+  if (displayUnitPricePerDay != null && pricing.display_unit_price_per_day == null) {
+    pricing.display_unit_price_per_day = displayUnitPricePerDay as number | string;
+  }
   if (displayPrice != null && pricing.display_price == null) {
     pricing.display_price = displayPrice as number | string;
   }
@@ -207,19 +216,21 @@ export function normalizeVendorRateRow(row: Record<string, unknown>): VendorRate
   const images = parseImages(meta);
   const review = parseReview(meta);
 
-  // Qty + duration: vendor top-level ONLY (never pricing.min_qty / pricing.min_duration)
+  // Qty + duration: vendor top-level ONLY (never pricing.min_qty / pricing.min_days)
   const vendorMinQty = !isNaLike(meta.min_qty)
     ? (meta.min_qty as number | string)
     : !isNaLike(row.min_qty)
       ? (row.min_qty as number | string)
       : undefined;
-  const vendorMinDuration = !isNaLike(meta.min_duration)
-    ? (meta.min_duration as number | string)
-    : !isNaLike(row.min_duration)
-      ? (row.min_duration as number | string)
-      : undefined;
-  const vendorDurUnit =
-    pickString(meta.duration_measurement_unit, row.duration_measurement_unit) || undefined;
+  const vendorMinDays = !isNaLike(meta.min_days)
+    ? (meta.min_days as number | string)
+    : !isNaLike(row.min_days)
+      ? (row.min_days as number | string)
+      : !isNaLike(meta.min_duration)
+        ? (meta.min_duration as number | string)
+        : !isNaLike(row.min_duration)
+          ? (row.min_duration as number | string)
+          : undefined;
   const vendorQtyUnit =
     pickString(meta.qty_measurement_unit, row.qty_measurement_unit) || undefined;
 
@@ -248,10 +259,20 @@ export function normalizeVendorRateRow(row: Record<string, unknown>): VendorRate
     meta.size != null && String(meta.size).trim() !== '' && String(meta.size).toUpperCase() !== 'NA'
       ? (meta.size as string | Record<string, unknown>)
       : undefined;
-  const material =
-    meta.material != null && String(meta.material).trim() !== '' && String(meta.material).toUpperCase() !== 'NA'
-      ? (meta.material as string | Record<string, unknown>)
-      : undefined;
+  // Prefer material / materials from DB; omit when missing, empty, or NA
+  const material = pickMaterialFromMeta(meta as Record<string, unknown>);
+  const pickDim = (...keys: string[]): string | number | undefined => {
+    for (const k of keys) {
+      const v = meta[k] ?? row[k];
+      if (hasMeaningfulScalar(v) && (typeof v === 'string' || typeof v === 'number')) {
+        return typeof v === 'string' ? v.trim() : v;
+      }
+    }
+    return undefined;
+  };
+  const displayWidth = pickDim('display_width', 'width');
+  const displayHeight = pickDim('display_height', 'height');
+  const displayLength = pickDim('display_length', 'length');
   const referenceImage = pickString(meta.reference_image) || undefined;
   const customerReview = pickString(meta.customer_review) || undefined;
   // Unique site id from DB column / metadata (keeps each hoarding area separate)
@@ -260,6 +281,26 @@ export function normalizeVendorRateRow(row: Record<string, unknown>): VendorRate
   const directionRemarks =
     pickString(meta.direction_remarks, row.direction_remarks) || undefined;
   const areaName = pickString(meta.area_name, row.area_name) || undefined;
+
+  const pickCost = (...keys: string[]): number | string | undefined => {
+    for (const k of keys) {
+      const v = meta[k] ?? row[k] ?? (pricing as Record<string, unknown>)[k];
+      if (isNaLike(v)) continue;
+      if (typeof v === 'number' && Number.isFinite(v) && v > 0) return v;
+      if (typeof v === 'string') {
+        const cleaned = v
+          .trim()
+          .replace(/,/g, '')
+          .replace(/^₹\s*/u, '')
+          .replace(/^Rs\.?\s*/i, '')
+          .trim();
+        if (isNaLike(cleaned)) continue;
+        const n = Number(cleaned);
+        if (Number.isFinite(n) && n > 0) return n;
+      }
+    }
+    return undefined;
+  };
 
   return {
     medium: pickString(meta.medium, row.medium, meta.medium_name, row.medium_name),
@@ -279,15 +320,35 @@ export function normalizeVendorRateRow(row: Record<string, unknown>): VendorRate
     lead_time_days: isNaLike(meta.lead_time_days) ? undefined : meta.lead_time_days as number | string,
     qty_measurement_unit: vendorQtyUnit,
     min_qty: vendorMinQty,
-    min_duration: vendorMinDuration,
-    duration_measurement_unit: vendorDurUnit,
+    min_days: vendorMinDays,
+    // Legacy alias for older readers while rows migrate
+    min_duration: vendorMinDays,
     direction_remarks: directionRemarks,
     area_name: areaName,
     specifications,
     size,
     material,
+    display_width: displayWidth,
+    display_height: displayHeight,
+    display_length: displayLength,
     reference_image: referenceImage,
     customer_review: customerReview,
+    display_unit_cost_per_day: pickCost('display_unit_cost_per_day'),
+    display_cost: pickCost('display_cost'),
+    display_cost_measurement_unit:
+      pickString(meta.display_cost_measurement_unit, row.display_cost_measurement_unit) || undefined,
+    printing_cost: pickCost('printing_cost', 'printingCost'),
+    mounting_cost: pickCost('mounting_cost', 'fixing_cost', 'mountingCost', 'fixingCost'),
+    printing_and_mounting_cost: pickCost(
+      'printing_and_mounting_cost',
+      'printingAndMountingCost',
+      'printing_mounting_cost',
+      'production_cost',
+      'pf_cost',
+      'unit_cost',
+      'total_unit_cost',
+    ),
+    display_unit_price_per_day: pickCost('display_unit_price_per_day'),
   };
 }
 
@@ -523,11 +584,12 @@ export function resolveVendorPricing(
 const DB_VENDOR = 'vendor_rate_chunks';
 const DB_PROPOSAL = 'proposal_chunks';
 
-/** Strip qty/duration from pricing so quote logic never reads pricing.min_qty / min_duration. */
+/** Strip qty/duration from pricing so quote logic never reads pricing.min_qty / min_days. */
 function pricingRatesOnly(pricing: VendorPricingBlock): VendorPricingBlock {
   const {
     min_qty: _mq,
     min_duration: _md,
+    min_days: _mdays,
     duration_measurement_unit: _du,
     qty_measurement_unit: _qu,
     ...rates
@@ -539,7 +601,7 @@ function pricingRatesOnly(pricing: VendorPricingBlock): VendorPricingBlock {
 /**
  * Apply vendor quote fields onto a service.
  * - pricing rates: display + P&F from vendor_rate_chunks
- * - min_qty / min_duration: vendor top-level ONLY (never pricing.*)
+ * - min_qty / min_days: vendor top-level ONLY (never pricing.*)
  * - cost fields: never copied
  */
 export function applyVendorDetailsToService(svc: DbService, vendor: VendorRateRow): DbService {
@@ -549,7 +611,7 @@ export function applyVendorDetailsToService(svc: DbService, vendor: VendorRateRo
   const meta = { ...(svc.metadata || {}) } as Record<string, unknown>;
   const sources: Record<string, string> = {};
 
-  // Rates only — strip pricing.min_qty / pricing.min_duration
+  // Rates only — strip pricing.min_qty / pricing.min_days
   meta.pricing = pricingRatesOnly(pricing);
   if (vendor.medium) {
     meta.medium = vendor.medium;
@@ -570,23 +632,21 @@ export function applyVendorDetailsToService(svc: DbService, vendor: VendorRateRo
     sources.min_qty = 'none (vendor top-level only)';
   }
 
-  // Duration: vendor top-level only — no pricing fallback
-  if (vendor.min_duration != null && !isNaLike(vendor.min_duration)) {
-    meta.min_duration = vendor.min_duration;
-    sources.min_duration = `${DB_VENDOR} vendor (${vendor.min_duration})`;
+  // Duration days: vendor top-level only — no pricing / duration_measurement_unit
+  const minDays = vendor.min_days ?? vendor.min_duration;
+  if (minDays != null && !isNaLike(minDays)) {
+    meta.min_days = minDays;
+    meta.min_duration = minDays; // legacy alias
+    meta.duration = `${minDays} days`;
+    sources.min_days = `${DB_VENDOR} vendor (${minDays})`;
   } else {
+    delete meta.min_days;
     delete meta.min_duration;
-    sources.min_duration = 'none (vendor top-level only)';
+    delete meta.duration;
+    sources.min_days = 'none (vendor top-level only)';
   }
-
-  if (vendor.duration_measurement_unit && !isNaLike(vendor.duration_measurement_unit)) {
-    meta.duration_measurement_unit = String(vendor.duration_measurement_unit).trim();
-    meta.duration = `${vendor.min_duration ?? ''} ${vendor.duration_measurement_unit}`.trim();
-    sources.duration_unit = DB_VENDOR;
-  } else {
-    delete meta.duration_measurement_unit;
-    sources.duration_unit = 'none (vendor top-level only)';
-  }
+  delete meta.duration_measurement_unit;
+  sources.duration_unit = 'days (fixed)';
 
   // Qty unit: vendor top-level only (raw unit for Qty column, e.g. "bus" not "per bus")
   if (vendor.qty_measurement_unit && !isNaLike(vendor.qty_measurement_unit)) {
@@ -772,7 +832,11 @@ function titleCaseMediumType(raw: string): string {
   return raw
     .split(/[\s\-_/]+/)
     .filter(Boolean)
-    .map((w) => w.charAt(0).toUpperCase() + w.slice(1).toLowerCase())
+    .map((w) => {
+      const lower = w.toLowerCase();
+      if (lower === 'led' || lower === 'lcd' || lower === 'oled') return lower.toUpperCase();
+      return w.charAt(0).toUpperCase() + w.slice(1).toLowerCase();
+    })
     .join(' ');
 }
 
@@ -823,9 +887,9 @@ function sanitizeVendorPipeFields(v: VendorRateRow): VendorRateRow {
     city: v.city || parsed.city || '',
     vendor_name: v.vendor_name || parsed.vendorName,
     min_qty: v.min_qty ?? parsed.minQty,
-    qty_measurement_unit: v.qty_measurement_unit || parsed.qtyUnit,
-    min_duration: v.min_duration ?? parsed.minDuration,
-    duration_measurement_unit: v.duration_measurement_unit || parsed.durationUnit,
+    qty_measurement_unit: v.qty_measurement_unit,
+    min_days: v.min_days ?? v.min_duration ?? parsed.minDuration,
+    min_duration: v.min_days ?? v.min_duration ?? parsed.minDuration,
   };
 }
 
@@ -937,7 +1001,11 @@ function isPollutedMediumLabel(raw: string): boolean {
 function titleCaseWords(parts: string[]): string {
   return parts
     .filter(Boolean)
-    .map((w) => w.charAt(0).toUpperCase() + w.slice(1).toLowerCase())
+    .map((w) => {
+      const lower = w.toLowerCase();
+      if (lower === 'led' || lower === 'lcd' || lower === 'oled') return lower.toUpperCase();
+      return w.charAt(0).toUpperCase() + w.slice(1).toLowerCase();
+    })
     .join(' ');
 }
 
@@ -1033,10 +1101,11 @@ export function vendorRatesToDbServices(
       `${mediumSlug}-${citySlug}-${idx}` ||
       `vendor-${idx}`;
 
-    // Rates only — strip pricing.min_qty / pricing.min_duration
+    // Rates only — strip pricing.min_qty / pricing.min_days
     const {
       min_qty: _pq,
       min_duration: _pd,
+      min_days: _pdays,
       duration_measurement_unit: _pdu,
       qty_measurement_unit: _pqu,
       ...pricingRates
@@ -1049,6 +1118,8 @@ export function vendorRatesToDbServices(
       cleaned.min_qty != null && !Number.isNaN(Number(cleaned.min_qty))
         ? Number(cleaned.min_qty)
         : undefined;
+
+    const minDays = cleaned.min_days ?? cleaned.min_duration;
 
     const svc: DbService = {
       service_id: serviceId,
@@ -1068,12 +1139,10 @@ export function vendorRatesToDbServices(
         preferred_vendor_rank: cleaned.preferred_vendor_rank ?? 1,
         min_quantity: minQtyNum,
         min_qty: cleaned.min_qty,
-        min_duration: cleaned.min_duration,
-        duration_measurement_unit: cleaned.duration_measurement_unit,
+        min_days: minDays,
+        min_duration: minDays,
         duration:
-          cleaned.min_duration != null && cleaned.duration_measurement_unit
-            ? `${cleaned.min_duration} ${cleaned.duration_measurement_unit}`
-            : undefined,
+          minDays != null ? `${minDays} days` : undefined,
         qty_measurement_unit: cleaned.qty_measurement_unit,
         lead_time_days: cleaned.lead_time_days,
         unit_label: cleaned.qty_measurement_unit
@@ -1085,8 +1154,19 @@ export function vendorRatesToDbServices(
         specifications: cleaned.specifications,
         size: cleaned.size,
         material: cleaned.material,
+        display_width: cleaned.display_width,
+        display_height: cleaned.display_height,
+        display_length: cleaned.display_length,
         reference_image: cleaned.reference_image,
         customer_review: cleaned.customer_review,
+        // Cost fields for 4% margin checks
+        display_unit_cost_per_day: cleaned.display_unit_cost_per_day,
+        display_cost: cleaned.display_cost,
+        display_cost_measurement_unit: cleaned.display_cost_measurement_unit,
+        printing_cost: cleaned.printing_cost,
+        mounting_cost: cleaned.mounting_cost,
+        printing_and_mounting_cost: cleaned.printing_and_mounting_cost,
+        display_unit_price_per_day: cleaned.display_unit_price_per_day,
       } as DbService['metadata'],
     };
 
@@ -1097,9 +1177,21 @@ export function vendorRatesToDbServices(
       byKey.set(mapKey, svc);
       return;
     }
-    // Prefer row with usable display price if duplicate service_id somehow appears
-    const prevPrice = Number(existing.metadata?.pricing?.display_price) || 0;
-    const nextPrice = Number(svc.metadata?.pricing?.display_price) || 0;
+    // Prefer row with usable day-wise display rate if duplicate service_id somehow appears
+    const prevPricing = (existing.metadata?.pricing || {}) as Record<string, unknown>;
+    const nextPricing = (svc.metadata?.pricing || {}) as Record<string, unknown>;
+    const prevMeta = (existing.metadata || {}) as Record<string, unknown>;
+    const nextMeta = (svc.metadata || {}) as Record<string, unknown>;
+    const prevPrice =
+      Number(prevPricing.display_unit_price_per_day) ||
+      Number(prevMeta.display_unit_price_per_day) ||
+      Number(prevPricing.display_price) ||
+      0;
+    const nextPrice =
+      Number(nextPricing.display_unit_price_per_day) ||
+      Number(nextMeta.display_unit_price_per_day) ||
+      Number(nextPricing.display_price) ||
+      0;
     if (nextPrice > 0 && prevPrice <= 0) {
       byKey.set(mapKey, svc);
     }

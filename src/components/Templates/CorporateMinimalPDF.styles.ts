@@ -55,7 +55,9 @@ export const s = StyleSheet.create({
     fontSize: PDF_FONT.page,
     color: C.bodyText,
     paddingTop: 27,          // 36px × 0.75
-    paddingBottom: 32,       // was 64 — 50% less reserve above fixed footer
+    // Must clear fixed PageFooter (divider + contact row + page # ≈ 50–56pt).
+    // 32pt was too tight — last body lines overlapped the footer.
+    paddingBottom: 58,
     paddingLeft: 33,         // 44px × 0.75
     paddingRight: 33,
     backgroundColor: C.white,
@@ -351,8 +353,8 @@ export const s = StyleSheet.create({
   },
   theadFormulaCell: {
     color: C.white,
-    fontSize: 10.5,
-    fontWeight: 600,
+    fontSize: PDF_FONT.theadFormula,
+    fontWeight: 700,
     paddingVertical: 7,
     paddingHorizontal: 4,
     textAlign: 'right',
@@ -392,6 +394,7 @@ export const s = StyleSheet.create({
     textAlign: 'right',
     borderRightWidth: 0.6,
     borderRightColor: '#c1d2e3',
+    justifyContent: 'center',
   },
 
   // .item-final: background:#e8f0fb color:#1a3a5c font-weight:700
@@ -431,6 +434,7 @@ export const s = StyleSheet.create({
     fontSize: PDF_FONT.itemUnitLabel,
     color: C.mutedText,
     marginTop: 1,
+    lineHeight: 1.05,
     textAlign: 'right',
   },
 
@@ -440,6 +444,7 @@ export const s = StyleSheet.create({
     flexDirection: 'row',
     backgroundColor: C.navy,
     borderTopWidth: 0,
+    width: '100%',
   },
 
   /** Top edge only on first total row (separates from table body) */
@@ -453,12 +458,26 @@ export const s = StyleSheet.create({
     borderTopWidth: 0,
   },
 
+  /** Label + amount on one row, right-aligned — avoids fixed-width clip of large INR totals */
+  tfootInner: {
+    flex: 1,
+    flexDirection: 'row',
+    justifyContent: 'flex-end',
+    alignItems: 'center',
+    paddingLeft: 8,
+    paddingRight: 10,
+  },
+
   tfootLabelWrap: {
     flex: 1,
     alignItems: 'flex-end',
     justifyContent: 'center',
     paddingLeft: 4,
     paddingRight: 8,
+  },
+
+  tfootLabelGap: {
+    marginRight: 16,
   },
 
   tfootLabel: {
@@ -491,7 +510,7 @@ export const s = StyleSheet.create({
     fontWeight: 700,
     lineHeight: 1.15,
     paddingVertical: 8,
-    paddingHorizontal: 4,
+    paddingHorizontal: 0,
     textAlign: 'right',
     letterSpacing: 0.15,
   },
@@ -507,11 +526,10 @@ export const s = StyleSheet.create({
     letterSpacing: 0.1,
   },
 
-  /** Wider amount cell in exec-summary footer — prevents large INR totals clipping */
+  /** @deprecated Prefer tfootInner — kept for any leftover refs */
   tfootAmountCol: {
-    width: 125,
     flexShrink: 0,
-    paddingRight: 6,
+    paddingRight: 10,
     paddingLeft: 2,
     alignItems: 'flex-end',
     justifyContent: 'center',
@@ -528,19 +546,18 @@ export const s = StyleSheet.create({
     textAlign: 'right',
   },
 
-  // ── Column Widths — wider AMOUNT so totals (incl. GST) are not clipped
-  // Total ~529pt
-  colServiceId: { width: 125, textAlign: 'left' },
-  colQty:       { width: 55, textAlign: 'center' },
-  colDur:       { width: 65, paddingRight: 2, textAlign: 'center' },
-  /** Header-only: extra right padding on DURATION label (values unchanged) */
-  colDurHeader: { paddingRight: 14 },
-  colRecurring: { width: 85, textAlign: 'center' },
-  colOnetime:   { width: 74, textAlign: 'center' },
-  colAmount:    { width: 125 },
+  // ── Column Widths — give A–D room; service/amount share remaining (total ~529pt)
+  colServiceId: { width: 100, textAlign: 'left' },
+  colQty:       { width: 70, textAlign: 'center' },
+  colDur:       { width: 74, textAlign: 'center' },
+  /** Header-only: slight padding on DURATION label (values unchanged) */
+  colDurHeader: { paddingRight: 2 },
+  colRecurring: { width: 86, textAlign: 'right' },
+  colOnetime:   { width: 80, textAlign: 'right' },
+  colAmount:    { width: 119, textAlign: 'right', paddingRight: 10 },
   // Pricing Breakdown (per-service) — DESCRIPTION | AMOUNT
   colBreakdownDesc: { flex: 1, textAlign: 'left' },
-  colBreakdownAmount: { width: 145, textAlign: 'right' },
+  colBreakdownAmount: { width: 175, textAlign: 'right', paddingRight: 8 },
   /** Tighter header padding for breakdown only (does not affect Executive Summary) */
   breakdownTheadCell: {
     paddingVertical: 7.9, // −1.5% from 8
@@ -597,12 +614,12 @@ export const s = StyleSheet.create({
     textAlign: 'right',
     marginTop: 1,
   },
-  /** Totals block inside Pricing Breakdown — one row, labels/amounts stacked */
+  /** Totals block inside Pricing Breakdown — match Executive Summary navy footer */
   breakdownSummaryBlock: {
     alignItems: 'flex-start',
-    paddingVertical: 4.9, // −1.5% from 5
+    paddingVertical: 8,
     minHeight: 0,
-    backgroundColor: '#eef2f7',
+    backgroundColor: C.navy,
   },
   breakdownSummaryLabels: {
     alignItems: 'flex-end',
@@ -614,7 +631,7 @@ export const s = StyleSheet.create({
   },
   breakdownSummaryLabel: {
     fontSize: 15.5,
-    color: C.navy,
+    color: C.tfootLabelColor,
     fontWeight: 700,
     textAlign: 'right',
     lineHeight: 1.35,
@@ -622,7 +639,7 @@ export const s = StyleSheet.create({
   },
   breakdownSummaryAmount: {
     fontSize: 17.5,
-    color: C.bodyText,
+    color: C.white,
     fontWeight: 700,
     textAlign: 'right',
     lineHeight: 1.35,
@@ -630,7 +647,7 @@ export const s = StyleSheet.create({
   },
   breakdownSummaryLabelEmph: {
     fontSize: 24,
-    color: C.navy,
+    color: C.white,
     fontWeight: 800,
     textAlign: 'right',
     lineHeight: 1.35,
@@ -639,7 +656,7 @@ export const s = StyleSheet.create({
   },
   breakdownSummaryAmountEmph: {
     fontSize: PDF_FONT.tfootAmount,
-    color: C.navy,
+    color: C.white,
     fontWeight: 800,
     textAlign: 'right',
     lineHeight: 1.35,
@@ -651,10 +668,11 @@ export const s = StyleSheet.create({
   colRate:   { width: 75 },
   colGstPct: { width: 46 },
 
-  /** Service ID cell — allow multi-line wrap (do not clip) */
+  /** Service ID cell — multi-line wrap, vertically centered in row */
   serviceIdCell: {
     textAlign: 'left',
     alignItems: 'flex-start',
+    justifyContent: 'center',
     flexShrink: 1,
   },
 
@@ -671,27 +689,30 @@ export const s = StyleSheet.create({
     fontSize: PDF_FONT.serviceIdText,
     fontWeight: 700,
     color: C.navy,
-    lineHeight: 1.3,
+    lineHeight: 1.05,
   },
 
-  /** Numeric cell stack (value + unit) — right-aligned like UI */
+  /** Numeric cell stack (value + unit) — horizontally right, vertically centered */
   cellStackRight: {
     alignItems: 'flex-end',
-    justifyContent: 'flex-start',
+    justifyContent: 'center',
   },
+  /** Numeric cell stack — horizontally + vertically centered */
   cellStackCenter: {
     alignItems: 'center',
-    justifyContent: 'flex-start',
+    justifyContent: 'center',
   },
 
   cellValue: {
     fontSize: PDF_FONT.cellValue,
+    fontWeight: 700,
     color: C.bodyText,
     textAlign: 'right',
     lineHeight: 1.2,
   },
   cellValueCenter: {
     fontSize: PDF_FONT.cellValue,
+    fontWeight: 700,
     color: C.bodyText,
     textAlign: 'center',
     lineHeight: 1.2,
@@ -802,6 +823,21 @@ export const s = StyleSheet.create({
     flex: 1,
     fontSize: PDF_FONT.specValue,
     color: '#1a202c',
+  },
+  /** Multi-line remark value — wraps long / unbroken text */
+  specRemarkValue: {
+    flex: 1,
+    fontSize: PDF_FONT.specValue,
+    color: '#1a202c',
+    lineHeight: 1.4,
+  },
+  specRemarkRow: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    borderBottomWidth: 0.75,
+    borderBottomColor: '#e4ecf5',
+    paddingVertical: 7,
+    paddingHorizontal: 12,
   },
   specSectionHeader: {
     flexDirection: 'row',
@@ -964,35 +1000,77 @@ export const s = StyleSheet.create({
   // .terms-section: margin-top:24px margin-bottom:14px padding:16px 20px
   // bg:#f7f9fc border-radius:6px
   termsSection: {
-    marginTop: 6,           // 24px × 0.75
-    marginBottom: 6,        // 14px × 0.75
+    marginTop: 4,
+    marginBottom: 4,
     backgroundColor: C.termsBg,
     borderRadius: 5,
-    paddingVertical: 12,     // 16px × 0.75
-    paddingHorizontal: 15,   // 20px × 0.75
+    paddingVertical: 8,
+    paddingHorizontal: 12,
   },
 
-  // .terms-section li: font-size:14.5px color:#555 padding:5px 0
-  // line-height:1.45 gap:12px
+  /** First chunk (with heading) — flat bottom so it joins the continuation box. */
+  termsSectionStart: {
+    marginTop: 4,
+    marginBottom: 0,
+    backgroundColor: C.termsBg,
+    borderTopLeftRadius: 5,
+    borderTopRightRadius: 5,
+    borderBottomLeftRadius: 0,
+    borderBottomRightRadius: 0,
+    paddingTop: 8,
+    paddingBottom: 2,
+    paddingHorizontal: 12,
+  },
+
+  /** Remaining bullets — flat top, same fill (reads as one container). */
+  termsSectionContinued: {
+    marginTop: 0,
+    marginBottom: 4,
+    backgroundColor: C.termsBg,
+    borderTopLeftRadius: 0,
+    borderTopRightRadius: 0,
+    borderBottomLeftRadius: 5,
+    borderBottomRightRadius: 5,
+    paddingTop: 2,
+    paddingBottom: 8,
+    paddingHorizontal: 12,
+  },
+
+  // Pack like table rows — tight vertical rhythm
   termItem: {
     flexDirection: 'row',
-    marginBottom: 2,         // 5px × 0.75
-    gap: 9,                  // 12px × 0.75
+    alignItems: 'flex-start',
+    marginBottom: 1,
+    paddingVertical: 1,
   },
 
-  // .bullet-dot: width:5px height:5px border-radius:50% bg:#2980b9
   termBullet: {
+    width: 10,
     fontSize: PDF_FONT.termBullet,
     color: C.blue,
     fontWeight: 700,
-    marginTop: 0.2,
+    marginTop: 1,
   },
 
   termText: {
     flex: 1,
-    fontSize: PDF_FONT.termText,            // 14.5px × 0.75 = 10.9pt
+    fontSize: PDF_FONT.termText,
     color: C.bodyGrey,
-    lineHeight: 1,
+    lineHeight: 1.25,
+  },
+
+  termServiceLabel: {
+    fontSize: PDF_FONT.termText,
+    color: C.burgundy,
+    fontWeight: 700,
+    lineHeight: 1.25,
+  },
+
+  termBody: {
+    fontSize: PDF_FONT.termText,
+    color: C.bodyGrey,
+    fontWeight: 500,
+    lineHeight: 1.25,
   },
 
   // ── Bank Details card ─────────────────────────────────────────────────────

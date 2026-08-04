@@ -48,8 +48,9 @@ const App: React.FC = () => {
         <Router>
           <Route
             render={({ location }) => {
-              // Don't show header on login page
-              const hideHeader = location.pathname === '/login';
+              // Don't show app header on login or quote preview (preview has its own toolbar)
+              const hideHeader =
+                location.pathname === '/login' || location.pathname === '/preview';
               return (
                 <>
                   {!hideHeader && <Header />}

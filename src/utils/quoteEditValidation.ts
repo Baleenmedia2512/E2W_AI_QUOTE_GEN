@@ -1,11 +1,8 @@
 /**
- * Validate quote edits against vendor floors (no floors stored on quote items).
- * Qty / duration: vendor top-level only (never pricing.min_qty / min_duration).
- * Rates: pricing.display_price and P&F price fields only.
- *
- * Display rate floor unit follows isVendorDailyDisplayRate:
- * - daily vendor → display_price is per day
- * - package / monthly vendor → display_price is per month (do not ×30)
+ * Validate quote edits against vendor floors / cost margin.
+ * Qty / duration: vendor top-level only (never pricing.min_qty / min_days).
+ * Display rate: 4% margin vs display_unit_cost_per_day (fallback: display_cost).
+ * P&F rate: margin only when service is P&F-only (no display); otherwise free edit.
  */
 
 import {
@@ -13,17 +10,45 @@ import {
   vendorRatesToDbServices,
 } from '../services/vendorRateService';
 import { getMinQuantityFromDbService } from './cloudQuoteValidation';
-import { readDbPrice } from './dbPricingUtils';
+import {
+  listOneTimeAddOnComponents,
+} from './dbPricingUtils';
+import {
+  MIN_MARGIN_PERCENT,
+  minSellingForMargin,
+  computePackageCost,
+  computePackageSell,
+  isPackageMarginOk,
+  resolveDisplayUnitCostPerDay,
+  resolveDisplayUnitPricePerDay,
+  resolvePfCostFloor,
+  resolvePfComponentCostFloors,
+  type PackageMarginInput,
+} from './marginUtils';
 import {
   isOneTimeLineDescription,
   isVendorDailyDisplayRate,
   DAYS_PER_MONTH,
-  lineItemPricingMultiplier,
+  computeQuoteItemTotal,
+  vendorMinDays,
   type DbMetadataLike,
 } from './durationUtils';
 import type { DbService } from './serviceResolver';
 import { resolveServiceIdFromCatalog } from './serviceResolver';
 import type { QuoteItem } from '../types/quote';
+
+export {
+  MIN_MARGIN_PERCENT,
+  minSellingForMargin,
+  computePackageCost,
+  computePackageSell,
+  isPackageMarginOk,
+  resolveDisplayUnitCostPerDay,
+  resolveDisplayUnitPricePerDay,
+  resolvePfCostFloor,
+  resolvePfComponentCostFloors,
+} from './marginUtils';
+export type { PackageMarginInput } from './marginUtils';
 
 function isNaLike(value: unknown): boolean {
   if (value == null || value === '') return true;
@@ -38,11 +63,26 @@ export type RateUiMode = 'per_day' | 'per_month';
 export interface VendorEditFloors {
   minQty: number | null;
   minDuration: number | null;
-  /** Raw pricing.display_price (daily or monthly per displayPriceIsDaily). */
+  /**
+   * Catalog day-wise display selling rate (unit price per day, else old display_price).
+   * Used for package repair only — edit floor uses displayUnitCostPerDay + margin.
+   */
   displayPriceFloor: number | null;
-  /** True when display_price is a per-day unit rate. */
+  /** True when display rate is treated as per-day. */
   displayPriceIsDaily: boolean;
+  /** Display vendor cost per unit per day (margin floor source). */
+  displayUnitCostPerDay: number | null;
+  /** True when service has a display/rental selling line. */
+  hasDisplayPricing: boolean;
+  /**
+   * P&F cost floor (printing + mounting cost).
+   * Enforced with 4% margin only when hasDisplayPricing is false (P&F-only).
+   */
+  pfCostFloor: number | null;
+  /** Legacy selling P&F sum — not used when hasDisplayPricing. */
   pfPriceFloor: number | null;
+  /** Per-component cost floors keyed by label (Printing, Mounting, …). */
+  pfComponentCostFloors: Record<string, number>;
   qtyUnit?: string;
   durationUnitLabel?: string;
 }
@@ -52,22 +92,25 @@ export interface ValidateQuoteEditResult {
   message?: string;
 }
 
-/** P&F floor = printing/mounting/production (+ add-ons), same as quote build. */
+/** P&F floor = sum of named one-time add-ons (Printing, RTO, …), same as quote build. */
 export function getPfPriceFloorFromPricing(pricing: Record<string, unknown> | undefined): number | null {
   if (!pricing) return null;
-  const pf = readDbPrice(
-    pricing.printing_and_mounting_price,
-    pricing.printing_price,
-    pricing.mounting_price,
-    pricing.production_price,
-    pricing.printing_and_fixing_price,
-  );
-  const official = readDbPrice(pricing.official_and_incidental_price);
-  const rto = readDbPrice(pricing.rto_price);
-  const freight = readDbPrice(pricing.freight_price);
-  const recce = readDbPrice(pricing.recce_price);
-  const total = pf + official + rto + freight + recce;
+  const total = listOneTimeAddOnComponents(pricing).reduce((sum, c) => sum + c.amount, 0);
   return total > 0 ? total : null;
+}
+
+/** Per-component selling floor for a named one-time add-on (from vendor pricing). */
+export function getOneTimeComponentFloor(
+  pricing: Record<string, unknown> | undefined,
+  label: string,
+): number | null {
+  if (!pricing) return null;
+  const match = listOneTimeAddOnComponents(pricing).find((c) => c.label === label);
+  return match && match.amount > 0 ? match.amount : null;
+}
+
+function hasDisplaySelling(meta: Record<string, unknown>, pricing: Record<string, unknown>): boolean {
+  return resolveDisplayUnitPricePerDay(pricing, meta) > 0;
 }
 
 export function getVendorEditFloors(svc: DbService): VendorEditFloors {
@@ -76,14 +119,10 @@ export function getVendorEditFloors(svc: DbService): VendorEditFloors {
 
   const minQty = getMinQuantityFromDbService(svc);
 
-  let minDuration: number | null = null;
-  const mdRaw = m.min_duration;
-  if (!isNaLike(mdRaw)) {
-    const n = Number(mdRaw);
-    if (Number.isFinite(n) && n > 0) minDuration = n;
-  }
+  const days = vendorMinDays(svc.metadata as DbMetadataLike);
+  const minDuration = Number.isFinite(days) && days > 0 ? days : null;
 
-  const displayRaw = readDbPrice(pricing.display_price);
+  const displayRaw = resolveDisplayUnitPricePerDay(pricing, m);
   const displayPriceFloor = displayRaw > 0 ? displayRaw : null;
   const pfPriceFloor = getPfPriceFloorFromPricing(pricing);
   const displayPriceIsDaily = isVendorDailyDisplayRate(
@@ -91,22 +130,122 @@ export function getVendorEditFloors(svc: DbService): VendorEditFloors {
     svc.service_name,
   );
 
+  const displayUnitCostPerDay = resolveDisplayUnitCostPerDay(m);
+  const hasDisplayPricing = hasDisplaySelling(m, pricing);
+  let pfCostFloor = resolvePfCostFloor(m);
+  let pfComponentCostFloors = resolvePfComponentCostFloors(m);
+
+  // P&F-only catalogs (e.g. Auto Full) often store unit cost in display_unit_cost_per_day
+  // even when there is no display selling price — treat it as P&F cost.
+  if (
+    (pfCostFloor == null || pfCostFloor <= 0) &&
+    !hasDisplayPricing &&
+    displayUnitCostPerDay != null &&
+    displayUnitCostPerDay > 0
+  ) {
+    pfCostFloor = displayUnitCostPerDay;
+    if (!pfComponentCostFloors['Printing & Mounting']) {
+      pfComponentCostFloors = {
+        ...pfComponentCostFloors,
+        'Printing & Mounting': displayUnitCostPerDay,
+      };
+    }
+    marginDebug('getVendorEditFloors: P&F-only — using displayUnitCostPerDay as pfCostFloor', {
+      serviceId: svc.service_id,
+      pfCostFloor,
+    });
+  }
+
   const qtyUnit = !isNaLike(m.qty_measurement_unit)
     ? String(m.qty_measurement_unit).trim().replace(/^per\s+/i, '')
     : undefined;
-  const durationUnitLabel = !isNaLike(m.duration_measurement_unit)
-    ? String(m.duration_measurement_unit).trim()
-    : undefined;
 
-  return {
+  const floors: VendorEditFloors = {
     minQty,
     minDuration,
     displayPriceFloor,
     displayPriceIsDaily,
+    // Don't double-count as display cost when we remapped it to P&F for P&F-only
+    displayUnitCostPerDay: hasDisplayPricing ? displayUnitCostPerDay : null,
+    hasDisplayPricing,
+    pfCostFloor,
     pfPriceFloor,
+    pfComponentCostFloors,
     qtyUnit,
-    durationUnitLabel,
+    durationUnitLabel: 'days',
   };
+
+  marginDebug('getVendorEditFloors', {
+    serviceId: svc.service_id,
+    serviceName: svc.service_name,
+    pfCostFloor,
+    pfPriceFloor,
+    displayUnitCostPerDay: floors.displayUnitCostPerDay,
+    rawDisplayUnitCostPerDay: displayUnitCostPerDay,
+    hasDisplayPricing,
+    pfComponentCostFloors,
+    costFieldsInMeta: costFieldSnapshot(m),
+  });
+
+  return floors;
+}
+
+/** Prefer catalog floors; fill gaps from costs stamped on the quote line at build time. */
+export function mergeFloorsWithQuoteItem(
+  floors: VendorEditFloors,
+  item?: Pick<QuoteItem, 'vendorPfUnitCost' | 'vendorDisplayUnitCostPerDay' | 'serviceId'> | null,
+  allItems?: Array<Pick<QuoteItem, 'vendorPfUnitCost' | 'vendorDisplayUnitCostPerDay' | 'serviceId'>>,
+): VendorEditFloors {
+  let pfFromItem =
+    item?.vendorPfUnitCost != null && item.vendorPfUnitCost > 0
+      ? item.vendorPfUnitCost
+      : null;
+  let displayFromItem =
+    item?.vendorDisplayUnitCostPerDay != null && item.vendorDisplayUnitCostPerDay > 0
+      ? item.vendorDisplayUnitCostPerDay
+      : null;
+
+  // Sibling lines in the same service (Display + P&F) may hold the stamp
+  if ((!pfFromItem || !displayFromItem) && item?.serviceId && allItems?.length) {
+    const sid = item.serviceId.trim().toLowerCase();
+    for (const other of allItems) {
+      if ((other.serviceId || '').trim().toLowerCase() !== sid) continue;
+      if (!pfFromItem && other.vendorPfUnitCost != null && other.vendorPfUnitCost > 0) {
+        pfFromItem = other.vendorPfUnitCost;
+      }
+      if (
+        !displayFromItem &&
+        other.vendorDisplayUnitCostPerDay != null &&
+        other.vendorDisplayUnitCostPerDay > 0
+      ) {
+        displayFromItem = other.vendorDisplayUnitCostPerDay;
+      }
+    }
+  }
+
+  const merged: VendorEditFloors = {
+    ...floors,
+    pfCostFloor:
+      floors.pfCostFloor != null && floors.pfCostFloor > 0
+        ? floors.pfCostFloor
+        : pfFromItem ?? floors.pfCostFloor,
+    displayUnitCostPerDay:
+      floors.displayUnitCostPerDay != null && floors.displayUnitCostPerDay > 0
+        ? floors.displayUnitCostPerDay
+        : displayFromItem ?? floors.displayUnitCostPerDay,
+  };
+
+  marginDebug('mergeFloorsWithQuoteItem', {
+    catalogPfCostFloor: floors.pfCostFloor,
+    itemVendorPfUnitCost: item?.vendorPfUnitCost ?? null,
+    siblingPfFromItem: pfFromItem,
+    mergedPfCostFloor: merged.pfCostFloor,
+    catalogDisplayCost: floors.displayUnitCostPerDay,
+    mergedDisplayCost: merged.displayUnitCostPerDay,
+    serviceId: item?.serviceId ?? null,
+  });
+
+  return merged;
 }
 
 /** Resolve catalog row for a quote line (cache → optional service list). */
@@ -124,33 +263,227 @@ export function resolveDbServiceForQuoteItem(
       ? services
       : vendorRatesToDbServices(getVendorRatesCache());
 
-  if (!catalog.length) return null;
+  if (!catalog.length) {
+    marginDebug('resolveDbServiceForQuoteItem: empty catalog', {
+      cacheLen: getVendorRatesCache().length,
+      lookup: item,
+    });
+    return null;
+  }
 
   if (item.serviceId?.trim()) {
     const id = item.serviceId.trim().toLowerCase();
     const byId = catalog.find((s) => s.service_id.toLowerCase() === id);
-    if (byId) return byId;
+    if (byId) {
+      marginDebug('resolveDbServiceForQuoteItem: by serviceId', {
+        serviceId: byId.service_id,
+        serviceName: byId.service_name,
+      });
+      return byId;
+    }
   }
 
   const lookupName = item.serviceName || item.description || '';
   const cityHint = item.city?.trim() && item.city !== '—' ? item.city.toLowerCase() : undefined;
   const resolved = resolveServiceIdFromCatalog(lookupName, catalog, cityHint);
-  if (!resolved) return null;
-  return catalog.find((s) => s.service_id === resolved.serviceId) || null;
+  if (!resolved) {
+    marginDebug('resolveDbServiceForQuoteItem: NOT FOUND', {
+      lookupName,
+      cityHint,
+      serviceId: item.serviceId ?? null,
+      catalogSize: catalog.length,
+    });
+    return null;
+  }
+  const svc = catalog.find((s) => s.service_id === resolved.serviceId) || null;
+  marginDebug('resolveDbServiceForQuoteItem: by name', {
+    lookupName,
+    resolvedId: resolved.serviceId,
+    found: !!svc,
+  });
+  return svc;
+}
+
+const MARGIN_DEBUG = true; // set false to silence [MarginDebug] logs
+
+function marginDebug(label: string, payload?: Record<string, unknown>): void {
+  if (!MARGIN_DEBUG) return;
+  if (payload) console.log(`[MarginDebug] ${label}`, payload);
+  else console.log(`[MarginDebug] ${label}`);
+}
+
+function marginFailMessage(): string {
+  return `Margin below ${MIN_MARGIN_PERCENT}%`;
+}
+
+/** Snapshot cost-related keys from vendor metadata for debug. */
+function costFieldSnapshot(meta: Record<string, unknown> | undefined): Record<string, unknown> {
+  if (!meta) return {};
+  const pricing = (meta.pricing || {}) as Record<string, unknown>;
+  const costs =
+    meta.costs && typeof meta.costs === 'object' && !Array.isArray(meta.costs)
+      ? (meta.costs as Record<string, unknown>)
+      : {};
+  const pick = (obj: Record<string, unknown>, keys: string[]) => {
+    const out: Record<string, unknown> = {};
+    for (const k of keys) {
+      if (obj[k] != null && obj[k] !== '') out[k] = obj[k];
+    }
+    return out;
+  };
+  const keys = [
+    'printing_and_mounting_cost',
+    'printingAndMountingCost',
+    'printing_cost',
+    'mounting_cost',
+    'fixing_cost',
+    'production_cost',
+    'pf_cost',
+    'unit_cost',
+    'total_cost',
+    'total_unit_cost',
+    'display_unit_cost_per_day',
+    'display_cost',
+  ];
+  return {
+    meta: pick(meta, keys),
+    pricing: pick(pricing, keys),
+    costs: Object.keys(costs).length ? costs : undefined,
+  };
+}
+
+/** Build package margin input from floors + live qty/days/rates. */
+export function buildPackageMarginInput(params: {
+  floors: VendorEditFloors;
+  quantity: number;
+  durationDays: number;
+  displayDailyRate: number;
+  pfUnitRate: number;
+}): PackageMarginInput {
+  return {
+    quantity: params.quantity,
+    durationDays: params.durationDays,
+    displayDailyRate: params.displayDailyRate,
+    pfUnitRate: params.pfUnitRate,
+    displayUnitCostPerDay: params.floors.displayUnitCostPerDay,
+    pfUnitCost: params.floors.pfCostFloor,
+  };
+}
+
+function checkPackageMargin(input: PackageMarginInput): ValidateQuoteEditResult {
+  const cost = computePackageCost(input);
+  const sell = computePackageSell(input);
+  if (!(cost > 0)) {
+    marginDebug('checkPackageMargin: cost unknown/0 → skip (ok)', { input, cost, sell });
+    return { ok: true };
+  }
+  const ok = isPackageMarginOk(sell, cost);
+  const marginPct = sell > 0 ? ((sell - cost) / sell) * 100 : null;
+  marginDebug('checkPackageMargin', {
+    cost,
+    sell,
+    marginPct,
+    minPercent: MIN_MARGIN_PERCENT,
+    ok,
+  });
+  if (!ok) {
+    return { ok: false, message: marginFailMessage() };
+  }
+  return { ok: true };
+}
+
+/** True when this edit is on a P&F-only quote line (no live display rental). */
+function isPfOnlyEditContext(
+  floors: VendorEditFloors,
+  packageContext?: { displayDailyRate: number; durationDays: number },
+): boolean {
+  if (!floors.hasDisplayPricing) return true;
+  if (!packageContext) return false;
+  return !(packageContext.displayDailyRate > 0 && packageContext.durationDays > 0);
+}
+
+/** P&F-only: enforce 4% margin vs vendor cost (not catalog selling price). */
+function validatePfOnlyRate(params: {
+  floors: VendorEditFloors;
+  /** Edited component amount (or bundled P&F unit rate). */
+  value: number;
+  /** Full P&F unit rate after edit (sum of components or bundled). */
+  pfUnitRate: number;
+  label?: string;
+}): ValidateQuoteEditResult {
+  const { floors, value, pfUnitRate, label } = params;
+
+  if (label) {
+    const costForLabel = floors.pfComponentCostFloors[label];
+    if (costForLabel != null && costForLabel > 0) {
+      const minSell = minSellingForMargin(costForLabel);
+      const blocked = value + 1e-9 < minSell;
+      marginDebug('validatePfOnlyRate: component cost', {
+        label,
+        value,
+        costForLabel,
+        minSell,
+        blocked,
+      });
+      if (blocked) {
+        return { ok: false, message: marginFailMessage() };
+      }
+    } else {
+      marginDebug('validatePfOnlyRate: no component cost for label', {
+        label,
+        pfComponentCostFloors: floors.pfComponentCostFloors,
+      });
+    }
+  }
+
+  if (floors.pfCostFloor != null && floors.pfCostFloor > 0) {
+    const minSell = minSellingForMargin(floors.pfCostFloor);
+    const blocked = pfUnitRate + 1e-9 < minSell;
+    marginDebug('validatePfOnlyRate: pfCostFloor', {
+      pfUnitRate,
+      pfCostFloor: floors.pfCostFloor,
+      minSell,
+      blocked,
+    });
+    if (blocked) {
+      return { ok: false, message: marginFailMessage() };
+    }
+    return { ok: true };
+  }
+
+  marginDebug('validatePfOnlyRate: NO pfCostFloor → allow edit', {
+    value,
+    pfUnitRate,
+    pfPriceFloor: floors.pfPriceFloor,
+    hasDisplayPricing: floors.hasDisplayPricing,
+  });
+  // Do NOT fall back to catalog selling (pfPriceFloor) — that locked edits at list
+  // price (e.g. ₹999) even when cost+4% would allow a lower rate (~₹885 for cost 850).
+  return { ok: true };
 }
 
 /**
- * Validate a single edit against vendor floors.
- * displayRate: UI value; compared in the same unit as vendor display_price
- * (daily vs monthly package via displayPriceIsDaily).
+ * Validate a single edit against vendor floors / package cost margin.
+ * Margin uses DB unit costs vs live sell total:
+ *   cost = display_unit_cost_per_day×qty×days + (printing+mounting)×qty
+ *   sell = displayDaily×qty×days + pfUnit×qty
+ *
+ * Pass `packageContext` for display/P&F/qty/duration edits so package margin is checked.
  */
 export function validateQuoteEdit(params: {
   field: QuoteEditField;
   value: number;
   floors: VendorEditFloors;
   rateUiMode?: RateUiMode;
+  /** When set, rate/qty/duration edits also enforce package 4% margin. */
+  packageContext?: {
+    quantity: number;
+    durationDays: number;
+    displayDailyRate: number;
+    pfUnitRate: number;
+  };
 }): ValidateQuoteEditResult {
-  const { field, value, floors, rateUiMode = 'per_day' } = params;
+  const { field, value, floors, rateUiMode = 'per_day', packageContext } = params;
 
   if (!Number.isFinite(value)) {
     return { ok: false, message: 'Enter a valid number' };
@@ -165,6 +498,17 @@ export function validateQuoteEdit(params: {
         message: `Minimum quantity is ${floors.minQty}${unit}`,
       };
     }
+    if (packageContext) {
+      return checkPackageMargin(
+        buildPackageMarginInput({
+          floors,
+          quantity: value,
+          durationDays: packageContext.durationDays,
+          displayDailyRate: packageContext.displayDailyRate,
+          pfUnitRate: packageContext.pfUnitRate,
+        }),
+      );
+    }
     return { ok: true };
   }
 
@@ -177,65 +521,147 @@ export function validateQuoteEdit(params: {
         message: `Minimum duration is ${floors.minDuration} ${unit}`,
       };
     }
+    if (packageContext) {
+      return checkPackageMargin(
+        buildPackageMarginInput({
+          floors,
+          quantity: packageContext.quantity,
+          durationDays: value,
+          displayDailyRate: packageContext.displayDailyRate,
+          pfUnitRate: packageContext.pfUnitRate,
+        }),
+      );
+    }
     return { ok: true };
   }
 
   if (field === 'displayRate') {
     if (value <= 0) return { ok: false, message: 'Rate must be greater than 0' };
-    if (floors.displayPriceFloor == null) return { ok: true };
 
-    const floor = floors.displayPriceFloor;
+    const dailyEquivalent =
+      rateUiMode === 'per_month' ? value / DAYS_PER_MONTH : value;
 
-    if (floors.displayPriceIsDaily) {
-      const dailyEquivalent =
-        rateUiMode === 'per_month' ? value / DAYS_PER_MONTH : value;
-
-      if (dailyEquivalent + 1e-9 < floor) {
-        if (rateUiMode === 'per_month') {
-          const monthFloor = Math.round(floor * DAYS_PER_MONTH * 100) / 100;
-          return {
-            ok: false,
-            message: `Rate cannot be below ₹${monthFloor.toLocaleString('en-IN')} per month`,
-          };
-        }
-        return {
-          ok: false,
-          message: `Rate cannot be below ₹${floor.toLocaleString('en-IN')} per day`,
-        };
+    if (packageContext) {
+      const pkg = buildPackageMarginInput({
+        floors,
+        quantity: packageContext.quantity,
+        durationDays: packageContext.durationDays,
+        displayDailyRate: dailyEquivalent,
+        pfUnitRate: packageContext.pfUnitRate,
+      });
+      const cost = computePackageCost(pkg);
+      if (cost > 0) {
+        return checkPackageMargin(pkg);
       }
-      return { ok: true };
     }
 
-    // Package / monthly display_price — compare in month units
-    const monthEquivalent =
-      rateUiMode === 'per_month' ? value : value * DAYS_PER_MONTH;
-
-    if (monthEquivalent + 1e-9 < floor) {
-      if (rateUiMode === 'per_month') {
-        return {
-          ok: false,
-          message: `Rate cannot be below ₹${floor.toLocaleString('en-IN')} per month`,
-        };
-      }
-      const dayFloor = Math.round((floor / DAYS_PER_MONTH) * 100) / 100;
-      return {
-        ok: false,
-        message: `Rate cannot be below ₹${dayFloor.toLocaleString('en-IN')} per day`,
-      };
+    // Fallback: display unit cost only (package cost unknown)
+    const costPerDay = floors.displayUnitCostPerDay;
+    if (costPerDay == null || costPerDay <= 0) return { ok: true };
+    const minSell = minSellingForMargin(costPerDay);
+    if (dailyEquivalent + 1e-9 < minSell) {
+      return { ok: false, message: marginFailMessage() };
     }
     return { ok: true };
   }
 
   // pfRate
   if (value <= 0) return { ok: false, message: 'Rate must be greater than 0' };
-  if (floors.pfPriceFloor != null && value + 1e-9 < floors.pfPriceFloor) {
-    const unit = floors.qtyUnit ? ` per ${floors.qtyUnit}` : '';
-    return {
-      ok: false,
-      message: `Rate cannot be below ₹${floors.pfPriceFloor.toLocaleString('en-IN')}${unit}`,
-    };
+
+  if (packageContext) {
+    const pkg = buildPackageMarginInput({
+      floors,
+      quantity: packageContext.quantity,
+      durationDays: packageContext.durationDays,
+      displayDailyRate: packageContext.displayDailyRate,
+      pfUnitRate: value,
+    });
+    const cost = computePackageCost(pkg);
+    if (cost > 0) {
+      return checkPackageMargin(pkg);
+    }
   }
-  return { ok: true };
+
+  // Display+P&F services: P&F edits are free when package cost unknown
+  if (!isPfOnlyEditContext(floors, packageContext)) {
+    return { ok: true };
+  }
+
+  return validatePfOnlyRate({ floors, value, pfUnitRate: value });
+}
+
+/**
+ * Validate one P&F component edit.
+ * 1) Package margin when cost > 0
+ * 2) P&F-only cost margin (block e.g. ₹200 when cost is ₹850)
+ * 3) Display+P&F with unknown cost → allow (P&F free edit per product rule)
+ */
+export function validateOneTimeComponentEdit(params: {
+  floors: VendorEditFloors;
+  label: string;
+  value: number;
+  nextComponents?: { label: string; amount: number }[];
+  packageContext?: {
+    quantity: number;
+    durationDays: number;
+    displayDailyRate: number;
+  };
+}): ValidateQuoteEditResult {
+  const { floors, label, value, nextComponents, packageContext } = params;
+
+  if (!Number.isFinite(value) || value < 0) {
+    return { ok: false, message: 'Enter a valid number' };
+  }
+
+  const pfUnitRate = nextComponents
+    ? nextComponents.reduce((s, c) => s + c.amount, 0)
+    : value;
+
+  const pfOnly = isPfOnlyEditContext(floors, packageContext);
+  marginDebug('validateOneTimeComponentEdit: start', {
+    label,
+    value,
+    pfUnitRate,
+    nextComponents,
+    packageContext,
+    pfOnly,
+    floors: {
+      pfCostFloor: floors.pfCostFloor,
+      pfPriceFloor: floors.pfPriceFloor,
+      hasDisplayPricing: floors.hasDisplayPricing,
+      displayUnitCostPerDay: floors.displayUnitCostPerDay,
+      pfComponentCostFloors: floors.pfComponentCostFloors,
+    },
+  });
+
+  if (packageContext && nextComponents) {
+    const pkg = buildPackageMarginInput({
+      floors,
+      quantity: packageContext.quantity,
+      durationDays: packageContext.durationDays,
+      displayDailyRate: packageContext.displayDailyRate,
+      pfUnitRate,
+    });
+    const cost = computePackageCost(pkg);
+    marginDebug('validateOneTimeComponentEdit: package attempt', {
+      pkg,
+      packageCost: cost,
+    });
+    if (cost > 0) {
+      const result = checkPackageMargin(pkg);
+      marginDebug('validateOneTimeComponentEdit: package result', result as unknown as Record<string, unknown>);
+      return result;
+    }
+  }
+
+  if (!pfOnly) {
+    marginDebug('validateOneTimeComponentEdit: display+P&F free P&F edit → allow');
+    return { ok: true };
+  }
+
+  const result = validatePfOnlyRate({ floors, value, pfUnitRate, label });
+  marginDebug('validateOneTimeComponentEdit: pf-only result', result as unknown as Record<string, unknown>);
+  return result;
 }
 
 /** Infer display vs P&F from line description. */
@@ -249,16 +675,33 @@ function roundRate(n: number): number {
 }
 
 function recalcItemTotal(item: QuoteItem): QuoteItem {
-  const mult = lineItemPricingMultiplier(item);
   return {
     ...item,
-    total: item.quantity * item.rate * mult,
+    total: computeQuoteItemTotal(item),
   };
 }
 
+/**
+ * Scope for executive-summary / P&F edits.
+ * Prefer serviceId+serviceName(+city) so Auto Full vs Auto Semi stay distinct even when
+ * catalog service_id is missing or wrongly duplicated across medium types.
+ */
 function groupKey(item: QuoteItem): string {
-  if (item.serviceId?.trim()) return item.serviceId.trim().toLowerCase();
-  return (item.serviceName || item.description || item.id).toLowerCase();
+  const sid = item.serviceId?.trim().toLowerCase() || '';
+  const name = item.serviceName?.trim().toLowerCase() || '';
+  const city = item.city?.trim().toLowerCase();
+  const cityPart = city && city !== '—' ? city : '';
+
+  if (sid && name) {
+    return cityPart ? `${sid}|${cityPart}|${name}` : `${sid}|${name}`;
+  }
+  if (sid) {
+    return cityPart ? `${sid}|${cityPart}` : sid;
+  }
+  if (name) {
+    return cityPart ? `${cityPart}|${name}` : name;
+  }
+  return (item.description || item.id).toLowerCase();
 }
 
 /**
@@ -355,7 +798,54 @@ export function applyExecutiveSummaryFieldEdit(
 
     // oneTimeCharge
     if (!isOneTime) return item;
-    return recalcItemTotal({ ...item, rate: roundRate(value) });
+    // When primary is P&F-only, only patch that line (same as applyOneTimeComponentEdit)
+    if (isOneTimeLineDescription(primary.description) && item.id !== primary.id) {
+      return item;
+    }
+    return recalcItemTotal({ ...item, rate: roundRate(value), oneTimeComponents: undefined });
+  });
+}
+
+/**
+ * Update one named one-time add-on (Printing & Mounting, RTO, …) and recompute
+ * the bundled P&F line rate as the sum of components.
+ *
+ * When the primary row is itself a P&F line (P&F-only services), update only that
+ * item by id so Auto Full / Auto Semi never cross-update.
+ * When primary is a Display line, update one-time siblings in the same groupKey.
+ */
+export function applyOneTimeComponentEdit(
+  items: QuoteItem[],
+  primaryItemId: string,
+  components: { label: string; amount: number }[],
+  editedLabel: string,
+  newAmount: number,
+): QuoteItem[] {
+  const primary = items.find((i) => i.id === primaryItemId);
+  if (!primary || components.length === 0) return items;
+
+  const updatedComponents = components.map((c) =>
+    c.label === editedLabel ? { ...c, amount: roundRate(Math.max(0, newAmount)) } : c,
+  );
+  const newSum = roundRate(updatedComponents.reduce((s, c) => s + c.amount, 0));
+
+  const patchOneTime = (item: QuoteItem): QuoteItem =>
+    recalcItemTotal({
+      ...item,
+      rate: newSum,
+      oneTimeComponents: updatedComponents,
+    });
+
+  // P&F-only primary → pin to this line only (avoids shared serviceId collisions)
+  if (isOneTimeLineDescription(primary.description)) {
+    return items.map((item) => (item.id === primary.id ? patchOneTime(item) : item));
+  }
+
+  const key = groupKey(primary);
+  return items.map((item) => {
+    if (groupKey(item) !== key) return item;
+    if (!isOneTimeLineDescription(item.description)) return item;
+    return patchOneTime(item);
   });
 }
 

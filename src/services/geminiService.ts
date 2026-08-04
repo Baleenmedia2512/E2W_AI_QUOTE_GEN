@@ -261,8 +261,8 @@ export const sendMessageToGemini = async ({
 
     const apiKey = getApiKey();
     const genAI = new GoogleGenerativeAI(apiKey);
-    // Using gemini-2.5-flash-lite model
-    const model = genAI.getGenerativeModel({ model: 'gemini-2.5-flash-lite' });
+    // Using gemini-3.1-flash-lite model
+    const model = genAI.getGenerativeModel({ model: 'gemini-3.1-flash-lite' });
 
     // Build context
     let contextPrompt = CHAT_SYSTEM_PROMPT + '\n\n';
@@ -537,7 +537,7 @@ export const sendMessageToGemini = async ({
     // Handle model not found errors
     if (error.message?.includes('not found') || error.message?.includes('models/gemini')) {
       throw new Error(
-        'Gemini model not available. Please verify your API key has access to the gemini-2.5-flash-lite model. ' +
+        'Gemini model not available. Please verify your API key has access to the gemini-3.1-flash-lite model. ' +
         'Visit https://aistudio.google.com to check your API key permissions.'
       );
     }

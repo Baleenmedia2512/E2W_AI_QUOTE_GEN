@@ -182,21 +182,39 @@ export function detectCityOnlyInList(text: string, cityListLower: string[]): str
   if (cityListLower.length === 0) return [];
   if (/\d/.test(text)) return [];
 
+  // If the user mentioned a service/medium, this is not a city-only list query
+  if (
+    /\b(bus|auto|van|cab|taxi|hoarding|booth|shelter|gantry|pole|branding|display|printing|mounting|qty|quantity|units?)\b/i.test(
+      text,
+    )
+  ) {
+    return [];
+  }
+
   const cleaned = text
     .toLowerCase()
     .replace(/[?!.,;:]/g, ' ')
-    .replace(/\b(show|me|all|list|services?|in|for|of|the|a|an|please|what|whats|which|available|need|want|i|about|tell|give)\b/g, ' ')
+    .replace(/\b(show|me|all|list|services?|in|for|of|the|a|an|please|what|whats|which|available|need|want|i|about|tell|give|and|&)\b/g, ' ')
     .replace(/\s+/g, ' ')
     .trim();
   if (!cleaned) return [];
 
-  const tokens = cleaned.split(/\s+/).filter(Boolean);
+  // Longest city names first so "tiruchirappalli" wins over shorter overlaps
+  const sortedCities = [...cityListLower].sort((a, b) => b.length - a.length);
   const cities: string[] = [];
-  for (const t of tokens) {
-    const match = cityListLower.find((c) => c === t);
-    if (!match) return [];
-    if (!cities.includes(match)) cities.push(match);
+  let rest = ` ${cleaned} `;
+  for (const c of sortedCities) {
+    const re = new RegExp(`\\b${c.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\b`, 'i');
+    if (re.test(rest)) {
+      if (!cities.includes(c)) cities.push(c);
+      rest = rest.replace(re, ' ');
+    }
   }
+
+  // Leftover tokens (typos like "rotn") are ignored when at least one city matched
+  // and nothing service-like remains
+  rest = rest.replace(/\s+/g, ' ').trim();
+  if (cities.length === 0) return [];
   return cities;
 }
 

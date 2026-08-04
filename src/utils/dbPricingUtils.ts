@@ -1,9 +1,10 @@
 import { QuoteItem } from '../types/quote';
 import {
   DbMetadataLike,
-  isVendorDailyDisplayRate,
+  computeQuoteItemTotal,
   resolveQuoteLineDuration,
 } from './durationUtils';
+import { resolveDisplayUnitPricePerDay, resolveDisplayUnitCostPerDay, resolvePfCostFloor } from './marginUtils';
 import type { DbService } from './serviceResolver';
 import { formatServiceDisplayName } from './serviceResolver';
 
@@ -34,53 +35,13 @@ function getMinQtyFromService(svc: DbService): number | undefined {
   return Number.isFinite(n) && n > 1 ? n : undefined;
 }
 
+/** All vendor display_price values are day-wise — ignore display_period / duration unit. */
 function formatPricingPeriod(
-  p: Record<string, unknown>,
-  meta: Record<string, unknown>,
-  serviceName?: string,
+  _p: Record<string, unknown>,
+  _meta: Record<string, unknown>,
+  _serviceName?: string,
 ): string {
-  if (p.display_period && !isNaLike(p.display_period)) {
-    const hint = String(p.display_period).trim();
-    // Mobile Van may still say "per month" in display_period while billing is daily × days
-    if (
-      isVendorDailyDisplayRate(
-        { pricing: p as DbMetadataLike['pricing'], medium: meta.medium as string | undefined, min_duration: meta.min_duration as number | string | undefined, duration_measurement_unit: meta.duration_measurement_unit as string | undefined },
-        serviceName,
-      )
-    ) {
-      return 'per day';
-    }
-    return hint;
-  }
-  if (p.period && !isNaLike(p.period)) {
-    return String(p.period).trim();
-  }
-
-  // Vendor top-level duration only — never pricing.min_duration
-  const md = Number(meta.min_duration);
-  const du = String(meta.duration_measurement_unit || '').trim().toLowerCase();
-
-  // Daily unit rate (Mobile Van any min days, or short min like LED Hoardings)
-  if (
-    isVendorDailyDisplayRate(
-      { pricing: p as DbMetadataLike['pricing'], medium: meta.medium as string | undefined, min_duration: meta.min_duration as number | string | undefined, duration_measurement_unit: meta.duration_measurement_unit as string | undefined },
-      serviceName,
-    )
-  ) {
-    return 'per day';
-  }
-
-  // 28–31 day campaign package = one billing month (Apartment Lift, etc.)
-  if (Number.isFinite(md) && md >= 28 && md <= 31 && du.startsWith('day')) {
-    return 'per month';
-  }
-  if (meta.min_duration != null && !isNaLike(meta.min_duration) && du && !isNaLike(du)) {
-    return `per ${meta.min_duration} ${meta.duration_measurement_unit}`.trim();
-  }
-  if (meta.duration && !isNaLike(meta.duration)) {
-    return String(meta.duration).trim();
-  }
-  return 'per month';
+  return 'per day';
 }
 
 function formatProductionUnit(p: Record<string, unknown>): string {
@@ -173,25 +134,70 @@ function parsePricesFromContent(content?: string): Partial<DbPricingFields> {
 }
 
 /**
- * One-time add-ons on the Printing & Fixing line:
- * P&F + official + RTO + freight + recce (skip NA / 0).
+ * One-time add-on parts with display names (skip NA / 0).
+ * Prefer combined Printing & Mounting / Fixing; else separate Printing + Mounting.
  */
-function sumOneTimeAddOns(p: Record<string, unknown>): number {
-  const pf = readDbPrice(
-    p.printing_and_mounting_price,
-    p.printing_price,
-    p.mounting_price,
-    p.production_price,
-    p.printing_and_fixing_price,
-  );
-  const official = readDbPrice(p.official_and_incidental_price);
-  const rto = readDbPrice(p.rto_price);
-  const freight = readDbPrice(p.freight_price);
-  const recce = readDbPrice(p.recce_price);
-  return pf + official + rto + freight + recce;
+export interface OneTimeAddOnComponent {
+  label: string;
+  amount: number;
 }
 
-/** Normalize quote pricing — raw display_price (never pre-folded) + one-time add-ons.
+export function listOneTimeAddOnComponents(
+  p: Record<string, unknown> | undefined | null,
+): OneTimeAddOnComponent[] {
+  if (!p) return [];
+  const parts: OneTimeAddOnComponent[] = [];
+
+  const printingAndMounting = readDbPrice(p.printing_and_mounting_price);
+  const printingAndFixing = readDbPrice(p.printing_and_fixing_price);
+  const printing = readDbPrice(p.printing_price);
+  const mounting = readDbPrice(p.mounting_price);
+  const production = readDbPrice(p.production_price);
+
+  if (printingAndMounting > 0) {
+    parts.push({ label: 'Printing & Mounting', amount: printingAndMounting });
+  } else if (printingAndFixing > 0) {
+    parts.push({ label: 'Printing & Fixing', amount: printingAndFixing });
+  } else {
+    if (printing > 0) parts.push({ label: 'Printing', amount: printing });
+    if (mounting > 0) parts.push({ label: 'Mounting', amount: mounting });
+    if (printing <= 0 && mounting <= 0 && production > 0) {
+      parts.push({ label: 'Production', amount: production });
+    }
+  }
+
+  const official = readDbPrice(p.official_and_incidental_price);
+  if (official > 0) parts.push({ label: 'Official & Incidental', amount: official });
+
+  const rto = readDbPrice(p.rto_price);
+  if (rto > 0) parts.push({ label: 'RTO', amount: rto });
+
+  const freight = readDbPrice(p.freight_price);
+  if (freight > 0) parts.push({ label: 'Freight', amount: freight });
+
+  const recce = readDbPrice(p.recce_price);
+  if (recce > 0) parts.push({ label: 'Recce', amount: recce });
+
+  return parts;
+}
+
+/**
+ * One-time add-ons on the Printing & Fixing line:
+ * named components only (Printing / Mounting / RTO / …), skip NA / 0.
+ */
+export function sumOneTimeAddOns(p: Record<string, unknown>): number {
+  return listOneTimeAddOnComponents(p).reduce((sum, c) => sum + c.amount, 0);
+}
+
+/**
+ * Day-wise display selling rate:
+ * 1) display_unit_price_per_day (new)
+ * 2) pricing.display_price (old fallback)
+ * @deprecated Prefer importing from marginUtils — re-exported for callers.
+ */
+export { resolveDisplayUnitPricePerDay } from './marginUtils';
+
+/** Normalize quote pricing — day-wise display rate + one-time add-ons.
  * Duration math (× days vs 1 month) is handled in resolveQuoteLineDuration.
  */
 export function extractDbPricingFields(svc: DbService): DbPricingFields {
@@ -210,7 +216,7 @@ export function extractDbPricingFields(svc: DbService): DbPricingFields {
 
   const base: DbPricingFields = {
     structure: typeof p.structure === 'string' ? p.structure : undefined,
-    displayPrice: readDbPrice(p.display_price),
+    displayPrice: resolveDisplayUnitPricePerDay(p, meta),
     productionPrice: sumOneTimeAddOns(p),
     unitPrice: 0,
     rentalPrice: 0,
@@ -257,9 +263,8 @@ export function pickPreferredDbService(candidates: DbService[]): DbService | nul
 
 /**
  * Build quote line items from vendor pricing:
- * - Period package (Apartment etc.): raw display × qty × 1 month
- * - Daily (Mobile Van any min days, or min_duration < 28): raw display × qty × min_duration days
- * - Printing & Fixing: P&F + official (+ extras), no duration
+ * - Display: raw display_price × qty × days (days from min_days / user)
+ * - Printing & Fixing: one-time add-ons, no duration
  */
 export function buildLineItemsFromDbPricing(
   svc: DbService,
@@ -282,6 +287,14 @@ export function buildLineItemsFromDbPricing(
     (m as Record<string, unknown>).unit_label as string | undefined,
   );
 
+  const hasDisplayPrice = f.displayPrice > 0;
+  let pfUnitCost = resolvePfCostFloor(m as Record<string, unknown>);
+  const displayUnitCostPerDay = resolveDisplayUnitCostPerDay(m as Record<string, unknown>);
+  // P&F-only: cost often lives in display_unit_cost_per_day (Auto Full etc.)
+  if ((pfUnitCost == null || pfUnitCost <= 0) && !hasDisplayPrice && displayUnitCostPerDay != null) {
+    pfUnitCost = displayUnitCostPerDay;
+  }
+
   const addLine = (description: string, rate: number, qty: number, isRecurring: boolean) => {
     if (rate <= 0) return;
     const resolved = resolveQuoteLineDuration(
@@ -290,8 +303,7 @@ export function buildLineItemsFromDbPricing(
       meta,
       serviceName,
     );
-    const mult = isRecurring ? resolved.multiplier : 1;
-    items.push({
+    const line: QuoteItem = {
       id: mkId(),
       title: serviceName,
       description,
@@ -303,9 +315,15 @@ export function buildLineItemsFromDbPricing(
       duration: isRecurring ? resolved.duration : undefined,
       durationUnit: isRecurring ? resolved.durationUnit : undefined,
       durationIsAuto: isRecurring ? resolved.isAutoFromDb : undefined,
-      total: qty * rate * mult,
       minimumQuantity: minQty,
-    });
+      total: 0,
+      vendorPfUnitCost: pfUnitCost ?? undefined,
+      vendorDisplayUnitCostPerDay: hasDisplayPrice
+        ? displayUnitCostPerDay ?? undefined
+        : undefined,
+    };
+    line.total = computeQuoteItemTotal(line);
+    items.push(line);
   };
 
   if (f.displayPrice > 0) {

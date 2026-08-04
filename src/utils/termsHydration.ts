@@ -1,4 +1,11 @@
 import { QuoteItem } from '../types/quote';
+import { DEFAULT_GENERAL_TERMS, normalizeTermsList } from './quoteGrouping';
+import {
+  formatMergedTermsAsBullets,
+  mergeTermsWithServiceTags,
+  termsLabelFromItem,
+  type ServiceTermsEntry,
+} from './termsMerge';
 
 export interface DbServiceRecord {
   service_id: string;
@@ -9,6 +16,19 @@ export interface DbServiceRecord {
     [key: string]: unknown;
   };
 }
+
+export {
+  buildMergedTermsAndConditions,
+  formatServiceAttribution,
+  formatServiceLabelPrefix,
+  mergeTermsWithServiceTags,
+  normalizeTermKey,
+  normalizeTermsServiceLabel,
+  resolveMergedDisplayTerms,
+  resolveMergedDisplayTermEntries,
+  shortServiceLabel,
+  termsLabelFromItem,
+} from './termsMerge';
 
 /** Detect Gemini rate-card footnotes masquerading as T&C */
 export function isRateCardFootnoteText(terms: string): boolean {
@@ -84,8 +104,9 @@ export interface HydratedQuoteTerms {
 
 /**
  * Replace Gemini-extracted T&C with proposal_chunks.metadata.terms (source of truth).
- * - Single service: all terms → top-level, item terms cleared
- * - Multi service: per-service terms → first item of each serviceId group
+ * Always produces ONE merged list: DEFAULT_GENERAL_TERMS + unique service extras
+ * tagged with service name(s), e.g. "Minimum 10 units (Bus and Auto)".
+ * Per-item termsAndConditions are cleared.
  */
 export function hydrateQuoteTermsFromCatalog(
   items: QuoteItem[],
@@ -118,35 +139,33 @@ export function hydrateQuoteTermsFromCatalog(
     `📋 [T&C-Hydrate] Loaded DB terms for ${termsByServiceId.size}/${uniqueServiceIds.length} service(s)`,
   );
 
-  if (uniqueServiceIds.length === 1) {
-    const dbTerms = termsByServiceId.get(uniqueServiceIds[0])!;
-    return {
-      items: items.map((item) => ({ ...item, termsAndConditions: undefined })),
-      termsAndConditions: dbTerms,
-      hydratedFromDb: true,
-    };
+  const entries: ServiceTermsEntry[] = [];
+  const seenServiceIds = new Set<string>();
+
+  for (const item of items) {
+    if (!item.serviceId || !termsByServiceId.has(item.serviceId)) continue;
+    if (seenServiceIds.has(item.serviceId)) continue;
+    seenServiceIds.add(item.serviceId);
+
+    const raw = termsByServiceId.get(item.serviceId)!;
+    const terms = normalizeTermsList(raw);
+    if (terms.length === 0) continue;
+
+    entries.push({
+      label: termsLabelFromItem(item),
+      terms,
+    });
   }
 
-  const seenServiceIds = new Set<string>();
-  const hydratedItems = items.map((item) => {
-    if (!item.serviceId || !termsByServiceId.has(item.serviceId)) {
-      return item;
-    }
-    if (seenServiceIds.has(item.serviceId)) {
-      return { ...item, termsAndConditions: undefined };
-    }
-    seenServiceIds.add(item.serviceId);
-    return { ...item, termsAndConditions: termsByServiceId.get(item.serviceId) };
-  });
+  const merged = mergeTermsWithServiceTags([...DEFAULT_GENERAL_TERMS], entries);
 
-  const generalTerms =
-    topLevelTerms.trim() && !isRateCardFootnoteText(topLevelTerms)
-      ? topLevelTerms
-      : '';
+  console.log(
+    `📋 [T&C-Hydrate] Merged ${merged.length} term(s) from ${entries.length} service(s)`,
+  );
 
   return {
-    items: hydratedItems,
-    termsAndConditions: generalTerms,
+    items: items.map((item) => ({ ...item, termsAndConditions: undefined })),
+    termsAndConditions: formatMergedTermsAsBullets(merged),
     hydratedFromDb: true,
   };
 }

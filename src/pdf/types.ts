@@ -125,6 +125,8 @@ export interface StackedCellMeasure {
   /** Vertical padding inside the cell. */
   paddingVertical: number;
   columnWidth: number;
+  /** Use kebab-segment wrap for SERVICE & LOCATION cells. */
+  primaryWrap?: 'default' | 'serviceId';
 }
 
 export interface MeasureContext {

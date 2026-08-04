@@ -3,9 +3,9 @@
  * Run: npx tsx src/pdf/pagination.engine.test.ts
  */
 
-import { paginateTableRows, classifyFit } from './pagination';
-import { DEFAULT_PAGE_GEOMETRY } from './constants';
-import { dynamicSafetyMargin } from './utils';
+import { paginateTableRows, classifyFit, packOverfillSlack } from './pagination';
+import { DEFAULT_PAGE_GEOMETRY, PACK_OVERFILL_SLACK_PT } from './constants';
+import { dynamicSafetyMargin, countServiceIdWrappedLines } from './utils';
 import type { MeasuredUnit, PageChromeHeights } from './types';
 
 function assert(cond: boolean, msg: string): void {
@@ -29,12 +29,58 @@ function makeRows(count: number, height: number): MeasuredUnit<number>[] {
   }));
 }
 
-assert(dynamicSafetyMargin(38) === 6, 'small safety');
-assert(dynamicSafetyMargin(50) === 9, 'medium safety');
-assert(dynamicSafetyMargin(70) === 12, 'large safety');
+assert(dynamicSafetyMargin(38) === 2, 'small safety');
+assert(dynamicSafetyMargin(50) === 4, 'medium safety');
+assert(dynamicSafetyMargin(58) === 4, 'medium safety 2-line unit');
+assert(dynamicSafetyMargin(70) === 6, 'large safety');
 assert(classifyFit(40, 50, 40) === 'Fits', 'soft fit');
-assert(classifyFit(40, 44, 40) === 'NewPage', 'must break inside safety');
-assert(classifyFit(40, 39, 40) === 'NewPage', 'must break');
+assert(classifyFit(40, 44, 40) === 'Fits', 'soft pack leftover gap');
+assert(classifyFit(40, 28, 40) === 'Fits', 'overfill slack allows near miss');
+assert(classifyFit(40, 27, 40) === 'NewPage', 'must break');
+
+assert(packOverfillSlack(40) === PACK_OVERFILL_SLACK_PT, 'short slack fixed');
+assert(packOverfillSlack(100) === PACK_OVERFILL_SLACK_PT, 'tall slack same (no over-pack)');
+assert(classifyFit(100, 88, 100) === 'Fits', 'tall row packs when leftover is real');
+assert(classifyFit(100, 80, 100) === 'NewPage', 'tall row moves when truly cannot fit');
+
+// Tall rows on page 1 must pack a second tall row when body room exists
+{
+  const tallChrome: PageChromeHeights = {
+    footerReserve: 0,
+    companyHeader: 200,
+    clientDetails: 60,
+    sectionHeading: 50,
+    tableHeader: 70,
+    totals: 80,
+  };
+  const tall = makeRows(4, 150);
+  const tallPages = paginateTableRows({
+    geometry: DEFAULT_PAGE_GEOMETRY,
+    chrome: tallChrome,
+    continuationChrome: { companyHeader: 0, clientDetails: 0, sectionHeading: 0 },
+    rows: tall,
+    options: { minRowsPerPage: 2, repeatCompanyHeaderOnContinuation: false },
+  });
+  assert(tallPages[0].rows.length >= 2, `tall page1 should pack ≥2 rows, got ${tallPages[0].rows.length}`);
+  console.log('tall-row pack: OK', {
+    pages: tallPages.length,
+    rowsPerPage: tallPages.map((p) => p.rows.length),
+  });
+}
+
+assert(
+  countServiceIdWrappedLines(
+    'Police-Booth-Chennai',
+    92,
+    { fontSize: 14, avgCharWidthFactor: 0.5 },
+  ) <=
+    countServiceIdWrappedLines(
+      'Police Booth Chennai',
+      92,
+      { fontSize: 14, avgCharWidthFactor: 0.5 },
+    ) + 2,
+  'kebab wrap sane',
+);
 
 // Page body ≈ 841.89 - 27 - 32 = 782.89
 // First page available ≈ 782.89 - 200 - 60 - 50 - 70 = 402.89 → 10×40

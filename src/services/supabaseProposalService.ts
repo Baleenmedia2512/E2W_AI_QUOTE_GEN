@@ -5,6 +5,7 @@
 
 import { supabase } from './supabaseClient';
 import { StoredProposal } from '../types';
+import { formatMaterialSpecLines, formatDisplayDimensionSpecLines, pickMaterialFromMeta } from '../utils/specMaterial';
 
 export interface CloudProposal {
   id: string;
@@ -682,11 +683,13 @@ export function transformServicesToPages(services: any[]): any[] {
                 ? Object.entries(m2.size).map(([k, v]) => `${k.replace(/_/g, ' ')}: ${v}`).join('\n')
                 : splitSpecString(String(m2.size), 'Size')
               : '';
-            const materialLines = m2.material
-              ? splitSpecString(String(m2.material), 'Material')
+            const materialVal = pickMaterialFromMeta(m2 as Record<string, unknown>);
+            const materialLines = materialVal
+              ? formatMaterialSpecLines(materialVal, splitSpecString)
               : '';
-            // Flat specifications fallback when size+material are both absent
-            const flatSpecLines = (!sizeLines && !materialLines &&
+            const dimensionLines = formatDisplayDimensionSpecLines(m2 as Record<string, unknown>);
+            // Flat specifications fallback when size+material+dimensions are all absent
+            const flatSpecLines = (!sizeLines && !materialLines && !dimensionLines &&
               m2.specifications && typeof m2.specifications === 'object' &&
               !Array.isArray(m2.specifications))
               ? Object.entries(m2.specifications as Record<string, unknown>)
@@ -701,7 +704,7 @@ export function transformServicesToPages(services: any[]): any[] {
               : '';
             // Do NOT include service.service_name in the spec body — short word-only
             // lines are orphan-merged into the first dimension label by the parser.
-            pageText = [headingPrefix, sizeLines, materialLines, flatSpecLines]
+            pageText = [headingPrefix, dimensionLines, sizeLines, materialLines, flatSpecLines]
               .filter(Boolean).join('\n');
           }
         } else {
@@ -806,16 +809,18 @@ export function transformServicesToPages(services: any[]): any[] {
               ? Object.entries(m.size).map(([k, v]) => `${k.replace(/_/g, ' ')}: ${v}`).join('\n')
               : splitSpecString(String(m.size), 'Size')
             : '';
-          const materialLines = m.material
-            ? splitSpecString(String(m.material), 'Material')
+          const materialVal = pickMaterialFromMeta(m as Record<string, unknown>);
+          const materialLines = materialVal
+            ? formatMaterialSpecLines(materialVal, splitSpecString)
             : '';
+          const dimensionLines = formatDisplayDimensionSpecLines(m as Record<string, unknown>);
 
           // ── Flat specifications object fallback (e.g. LED Hoardings) ─────────
-          // When size AND material are both absent, convert metadata.specifications
+          // When size AND material AND dimensions are all absent, convert metadata.specifications
           // (a plain key→value map) into "Label: value" lines so the spec section
           // still renders for services like LED Hoardings that store operational
           // data (creative_duration, operations_timing, etc.) only in specifications.
-          const flatSpecLines = (!sizeLines && !materialLines &&
+          const flatSpecLines = (!sizeLines && !materialLines && !dimensionLines &&
             m.specifications && typeof m.specifications === 'object' &&
             !Array.isArray(m.specifications))
             ? Object.entries(m.specifications as Record<string, unknown>)
@@ -829,7 +834,7 @@ export function transformServicesToPages(services: any[]): any[] {
                 .join('\n')
             : '';
 
-          const specBody = [sizeLines, materialLines, flatSpecLines].filter(Boolean).join('\n');
+          const specBody = [dimensionLines, sizeLines, materialLines, flatSpecLines].filter(Boolean).join('\n');
           if (specBody.trim()) {
             const syntheticText = ['DESIGN SPECIFICATION', specBody].join('\n');
             pages.push({

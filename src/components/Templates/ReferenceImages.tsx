@@ -4,6 +4,10 @@ import { extractReviewViaGemini, cropReferencePageImage, cropPageStrippingHeader
 import { getCityServiceRegistry, canonicalizeServiceName, getPageIndexForCity } from '../../hooks/useCityServiceRegistry';
 import { resolveServiceIdsForItems } from '../../utils/serviceResolver';
 import { extractMetroMultiTableSpec, type PdfSpecGroup } from '../../utils/metroSpecParser';
+import {
+  collectServiceRemarks,
+  hasMeaningfulMaterial,
+} from '../../utils/specMaterial';
 
 interface ExtractedPage {
   pageNumber: number;
@@ -32,9 +36,9 @@ interface ReferenceImagesProps {
   proposalPageMap?: Record<string, ExtractedPage[]>; // fileName.toLowerCase() → pages
   items?: QuoteItem[];
   terms?: string[];
-  /** Render ONLY the Display Specification block (for embedding inside pdf-service-N) */
+  /** Render ONLY the Specification block (for embedding inside pdf-service-N) */
   specOnly?: boolean;
-  /** Skip the Display Specification block (use in pdf-service-ref-N when specOnly is used above) */
+  /** Skip the Specification block (use in pdf-service-ref-N when specOnly is used above) */
   noSpec?: boolean;
   /**
    * Called when all async work is done (images cropped, review resolved).
@@ -50,6 +54,16 @@ interface ReferenceImagesProps {
   }) => void;
   /** Group key for this instance — passed back through onDataReady */
   serviceKey?: string;
+  /**
+   * When true, still resolve/report review via onDataReady but do not render the
+   * Customer Review card (parent shows one shared review above bank details).
+   */
+  hideReview?: boolean;
+  /** Optional remark shown inside the Specification section */
+  remark?: string;
+  /** When set with onRemarkChange, remark is editable in preview */
+  remarkEditable?: boolean;
+  onRemarkChange?: (remark: string) => void;
 }
 
 interface CustomerReviewData {
@@ -60,6 +74,33 @@ interface CustomerReviewData {
 }
 
 type SpecGroup = PdfSpecGroup;
+
+/** Editable multi-line remark that grows with content */
+const SpecRemarkTextarea: React.FC<{
+  value: string;
+  onChange: (value: string) => void;
+}> = ({ value, onChange }) => {
+  const areaRef = useRef<HTMLTextAreaElement>(null);
+
+  useEffect(() => {
+    const el = areaRef.current;
+    if (!el) return;
+    el.style.height = 'auto';
+    el.style.height = `${Math.max(el.scrollHeight, 32)}px`;
+  }, [value]);
+
+  return (
+    <textarea
+      ref={areaRef}
+      className="spec-remark-input"
+      value={value}
+      placeholder="Add remark (shown on PDF)…"
+      rows={1}
+      onChange={(e) => onChange(e.target.value)}
+      aria-label="Specification remark"
+    />
+  );
+};
 
 /**
  * Returns pages whose text contains the exact heading match.
@@ -1301,6 +1342,31 @@ function filterPagesByQuoteItems(pages: ExtractedPage[], items: QuoteItem[]): Ex
 // --- Smart Content Extraction Helpers ---
 
 function extractDesignSpecFields(pages: ExtractedPage[]): SpecGroup[] {
+  // When pages carry DB metadata, only show a MATERIAL section header if
+  // metadata.material / metadata.materials has real values. Other fields still render.
+  const pagesWithMeta = pages.filter((p) => p.metadata && Object.keys(p.metadata).length > 0);
+  const dbControlsMaterial = pagesWithMeta.length > 0;
+  const dbHasMaterial = pagesWithMeta.some((p) => {
+    const m = p.metadata as Record<string, unknown>;
+    return hasMeaningfulMaterial(m?.material ?? m?.materials);
+  });
+  const allowMaterialHeading = !dbControlsMaterial || dbHasMaterial;
+
+  const appendMaterialFields = (
+    groups: SpecGroup[],
+    materialFields: Array<{ label: string; value: string }>,
+    hasDimensions: boolean,
+  ) => {
+    if (materialFields.length === 0) return;
+    if (allowMaterialHeading) {
+      // Only attach the "Material" heading when dimensions also exist (two-section spec).
+      groups.push({ heading: hasDimensions ? 'Material' : null, fields: materialFields });
+    } else {
+      // DB has no material field/values — show fields without MATERIAL header
+      groups.push({ heading: null, fields: materialFields });
+    }
+  };
+
   for (const page of pages) {
     const text = page.text;
     const specMatch = text.match(/display area[^\n]*design spec[^\n]*/i)
@@ -1571,7 +1637,7 @@ function extractDesignSpecFields(pages: ExtractedPage[]): SpecGroup[] {
         const remainingDimFields = dimensionFields.filter((_, i) => !consumed.has(i));
         groups.push({ heading: containerField.label, fields: sizeGroupFields });
         if (remainingDimFields.length > 0) groups.push({ heading: null, fields: remainingDimFields });
-        if (materialFields.length > 0) groups.push({ heading: 'Material', fields: materialFields });
+        appendMaterialFields(groups, materialFields, true);
         // Prepend context fields if they exist as SEPARATE group
         if (contextFields.length > 0) {
           return [{ heading: contextHeading, fields: contextFields }, ...groups];
@@ -1585,7 +1651,7 @@ function extractDesignSpecFields(pages: ExtractedPage[]): SpecGroup[] {
       const remainingDimFields = dimensionFields.filter((_, i) => i !== containerIdx);
       groups.push({ heading: containerField.label, fields: [{ label: containerField.label, value: containerField.value }] });
       if (remainingDimFields.length > 0) groups.push({ heading: null, fields: remainingDimFields });
-      if (materialFields.length > 0) groups.push({ heading: 'Material', fields: materialFields });
+      appendMaterialFields(groups, materialFields, true);
       // Prepend context fields if they exist as SEPARATE group
       if (contextFields.length > 0) {
         return [{ heading: contextHeading, fields: contextFields }, ...groups];
@@ -1594,12 +1660,7 @@ function extractDesignSpecFields(pages: ExtractedPage[]): SpecGroup[] {
     }
 
     if (dimensionFields.length > 0) groups.push({ heading: null, fields: dimensionFields });
-    if (materialFields.length > 0) {
-      // Only attach the "Material" heading when dimensions also exist (i.e. it's a real
-      // two-section spec). For pure operational/info spec blocks the heading is misleading.
-      const matHeading = dimensionFields.length > 0 ? 'Material' : null;
-      groups.push({ heading: matHeading, fields: materialFields });
-    }
+    appendMaterialFields(groups, materialFields, dimensionFields.length > 0);
     // Prepend context fields if they exist as SEPARATE group
     if (contextFields.length > 0) {
       return [{ heading: contextHeading, fields: contextFields }, ...groups];
@@ -2158,7 +2219,20 @@ function getDirectLookupReviewPages(pages: ExtractedPage[]): ExtractedPage[] {
 }
 
 export const ReferenceImages: React.FC<ReferenceImagesProps> = (props) => {
-  const { proposalPages, proposalPageMap, items, terms = [], specOnly = false, noSpec = false } = props;
+  const {
+    proposalPages,
+    proposalPageMap,
+    items,
+    terms = [],
+    specOnly = false,
+    noSpec = false,
+    hideReview = false,
+    remark: remarkProp,
+    remarkEditable = false,
+    onRemarkChange,
+  } = props;
+  const serviceRemark = (remarkProp ?? collectServiceRemarks(items)).trim();
+  const showRemarkRow = Boolean(serviceRemark || (remarkEditable && onRemarkChange));
   // DEBUG: Log incoming props
   console.log('═══════════════════════════════════════════════════════════');
   console.log('🎬 DEBUG [ReferenceImages]: Component mounted/updated');
@@ -2805,7 +2879,7 @@ export const ReferenceImages: React.FC<ReferenceImagesProps> = (props) => {
   }
 
   // specOnly: if there is no spec to display, return null so waitForPdfReady finds no element and proceeds immediately
-  if (specOnly && !hasSpecContent && specImageUrl.length === 0) return null;
+  if (specOnly && !hasSpecContent && specImageUrl.length === 0 && !showRemarkRow) return null;
 
   // While Gemini lazy crop is in-flight, suppress the full-page fallback (refImageUrls would
   // contain the raw PDF page with header/watermark). Show nothing until the clean crop arrives.
@@ -2857,6 +2931,23 @@ export const ReferenceImages: React.FC<ReferenceImagesProps> = (props) => {
   // When true, each coach group gets its own data-pdf-block="atomic" so the page engine can break
   // between groups instead of forcing every coach table onto the same page.
   const hasMetroStyleTables = specGroups.some(g => g.tableRows && g.tableRows.length > 0);
+
+  const renderSpecRemarkRow = () => {
+    if (!showRemarkRow) return null;
+    return (
+      <div className="spec-row spec-row--remark" data-pdf-block="atomic">
+        <span className="spec-label">Remark</span>
+        {remarkEditable && onRemarkChange ? (
+          <SpecRemarkTextarea
+            value={serviceRemark}
+            onChange={onRemarkChange}
+          />
+        ) : (
+          <span className="spec-value spec-value--remark">{serviceRemark}</span>
+        )}
+      </div>
+    );
+  };
 
   // Renders the inner content of a single spec group (shared between metro and non-metro paths).
   const renderSingleSpecGroup = (group: SpecGroup, gi: number) => {
@@ -2920,20 +3011,30 @@ export const ReferenceImages: React.FC<ReferenceImagesProps> = (props) => {
     );
   };
 
-  // specOnly: render ONLY the Display Specification block (no spacer, no images, no review, no terms)
+  // specOnly: render ONLY the Specification block (no spacer, no images, no review, no terms)
+  const showSpecSection = hasSpecContent || specImgSrcs.length > 0 || showRemarkRow;
   if (specOnly) {
     return (
       <div className="smart-reference-page" ref={containerRef}>
-        {(hasSpecContent || specImgSrcs.length > 0) && (
+        {showSpecSection && (
           hasMetroStyleTables ? (
             <>
-              {/* Heading travels with the first coach group — prevents orphan heading at page bottom */}
+              {/* Heading + Remark first, then coach groups */}
+              {showRemarkRow && (
+                <div className="smart-section spec-table" data-pdf-block="atomic">
+                  <h3 className="smart-section-heading">
+                    <span className="smart-heading-bar" />
+                    2. Specification
+                  </h3>
+                  {renderSpecRemarkRow()}
+                </div>
+              )}
               {specGroups.map((group, gi) => (
                 <div key={gi} className={`smart-section${group.tableRows ? '' : ' spec-table'}`} data-pdf-block="atomic">
-                  {gi === 0 && (
+                  {gi === 0 && !showRemarkRow && (
                     <h3 className="smart-section-heading">
                       <span className="smart-heading-bar" />
-                      2. Display Specification
+                      2. Specification
                     </h3>
                   )}
                   {renderSingleSpecGroup(group, gi)}
@@ -2957,10 +3058,11 @@ export const ReferenceImages: React.FC<ReferenceImagesProps> = (props) => {
             <div className="smart-section" data-pdf-block="atomic">
               <h3 className="smart-section-heading">
                 <span className="smart-heading-bar" />
-                2. Display Specification
+                2. Specification
               </h3>
-              {hasSpecContent && (
+              {(hasSpecContent || showRemarkRow) && (
                 <div className="spec-table">
+                  {renderSpecRemarkRow()}
                   {specGroups.map((group, gi) => renderSingleSpecGroup(group, gi))}
                 </div>
               )}
@@ -2984,11 +3086,11 @@ export const ReferenceImages: React.FC<ReferenceImagesProps> = (props) => {
 
   // Dynamic section numbering — only count sections that will actually render.
   // "1. Pricing Summary" is always rendered by the parent; we start after it.
-  // Order: Pricing → Reference Images → Display Specification → Review → T&C
+  // Order: Pricing → Reference Images → Specification → Review → T&C
   let _sn = 1;
   const refSectionNum    = refImageUrls.length > 0                                 ? ++_sn : 0;
-  const specSectionNum   = (!noSpec && (hasSpecContent || specImgSrcs.length > 0)) ? ++_sn : 0;
-  const reviewSectionNum = !!finalReview                                           ? ++_sn : 0;
+  const specSectionNum   = (!noSpec && showSpecSection)                           ? ++_sn : 0;
+  const reviewSectionNum = !!finalReview && !hideReview                            ? ++_sn : 0;
   const termsSectionNum  = terms.length > 0                                        ? ++_sn : 0;
 
   return (
@@ -3017,16 +3119,25 @@ export const ReferenceImages: React.FC<ReferenceImagesProps> = (props) => {
         </div>
       ))}
 
-      {!noSpec && (hasSpecContent || specImgSrcs.length > 0) && (
+      {!noSpec && showSpecSection && (
         hasMetroStyleTables ? (
           <>
-            {/* Heading travels with the first coach group — prevents orphan heading at page bottom */}
+            {/* Remark first under heading, then coach groups */}
+            {showRemarkRow && (
+              <div className="smart-section spec-table" data-pdf-block="atomic">
+                <h3 className="smart-section-heading">
+                  <span className="smart-heading-bar" />
+                  {specSectionNum}. Specification
+                </h3>
+                {renderSpecRemarkRow()}
+              </div>
+            )}
             {specGroups.map((group, gi) => (
               <div key={gi} className={`smart-section${group.tableRows ? '' : ' spec-table'}`} data-pdf-block="atomic">
-                {gi === 0 && (
+                {gi === 0 && !showRemarkRow && (
                   <h3 className="smart-section-heading">
                     <span className="smart-heading-bar" />
-                    {specSectionNum}. Display Specification
+                    {specSectionNum}. Specification
                   </h3>
                 )}
                 {renderSingleSpecGroup(group, gi)}
@@ -3051,13 +3162,14 @@ export const ReferenceImages: React.FC<ReferenceImagesProps> = (props) => {
           <>
             {/* Spec text + spec diagram merged into ONE atomic when both exist so they
                 never split across pages. When only one is present, kept as a single atomic. */}
-            {hasSpecContent && specImgSrcs.length > 0 ? (
+            {(hasSpecContent || showRemarkRow) && specImgSrcs.length > 0 ? (
               <div className="smart-section" data-pdf-block="atomic">
                 <h3 className="smart-section-heading">
                   <span className="smart-heading-bar" />
-                  {specSectionNum}. Display Specification
+                  {specSectionNum}. Specification
                 </h3>
                 <div className="spec-table">
+                  {renderSpecRemarkRow()}
                   {specGroups.map((group, gi) => renderSingleSpecGroup(group, gi))}
                 </div>
                 <div className="ref-img-container spec-img-container">
@@ -3070,13 +3182,14 @@ export const ReferenceImages: React.FC<ReferenceImagesProps> = (props) => {
                   )}
                 </div>
               </div>
-            ) : hasSpecContent ? (
+            ) : (hasSpecContent || showRemarkRow) ? (
               <div className="smart-section" data-pdf-block="atomic">
                 <h3 className="smart-section-heading">
                   <span className="smart-heading-bar" />
-                  {specSectionNum}. Display Specification
+                  {specSectionNum}. Specification
                 </h3>
                 <div className="spec-table">
+                  {renderSpecRemarkRow()}
                   {specGroups.map((group, gi) => renderSingleSpecGroup(group, gi))}
                 </div>
               </div>
@@ -3084,7 +3197,7 @@ export const ReferenceImages: React.FC<ReferenceImagesProps> = (props) => {
               <div className="smart-section" data-pdf-block="atomic">
                 <h3 className="smart-section-heading">
                   <span className="smart-heading-bar" />
-                  {specSectionNum}. Display Specification
+                  {specSectionNum}. Specification
                 </h3>
                 <div className="ref-img-container spec-img-container">
                   {specImgSrcs.length >= 2 ? (
@@ -3100,7 +3213,7 @@ export const ReferenceImages: React.FC<ReferenceImagesProps> = (props) => {
               <div className="smart-section" data-pdf-block="atomic">
                 <h3 className="smart-section-heading">
                   <span className="smart-heading-bar" />
-                  {specSectionNum}. Display Specification
+                  {specSectionNum}. Specification
                 </h3>
               </div>
             )}
@@ -3108,8 +3221,8 @@ export const ReferenceImages: React.FC<ReferenceImagesProps> = (props) => {
         )
       )}
 
-      {/* Customer Review */}
-      {finalReview && (
+      {/* Customer Review — hidden when parent groups identical reviews above bank details */}
+      {finalReview && !hideReview && (
         <div className="smart-section" data-pdf-block="atomic">
           <h3 className="smart-section-heading">
             <span className="smart-heading-bar" />

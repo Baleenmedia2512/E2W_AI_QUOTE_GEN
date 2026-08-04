@@ -13,7 +13,11 @@ export interface VendorPricingBlock {
   space_rental_price?: number | string;
   total_price?: number | string;
   min_qty?: number | string;
+  /** @deprecated Prefer vendor top-level min_days — not used for billing. */
   min_duration?: number | string;
+  /** @deprecated Prefer vendor top-level min_days — unused for billing. */
+  min_days?: number | string;
+  /** @deprecated Unused — display_price is always day-wise. */
   duration_measurement_unit?: string;
   qty_measurement_unit?: string;
   production_unit?: string;
@@ -36,8 +40,9 @@ export interface VendorReview {
 
 /**
  * Normalized vendor row for quotes.
- * Cost fields are never stored here.
- * min_qty / min_duration come from vendor top-level only (never pricing.*).
+ * Cost fields kept for margin checks (display_unit_cost_per_day, printing/mounting cost).
+ * min_qty / min_days come from vendor top-level only (never pricing.*).
+ * All display_price values are day-wise; duration_measurement_unit is unused for billing.
  */
 export interface VendorRateRow {
   medium: string;
@@ -58,17 +63,32 @@ export interface VendorRateRow {
   qty_measurement_unit?: string;
   /** Vendor-level only — never from pricing.min_qty */
   min_qty?: number | string;
-  /** Vendor-level only — never from pricing.min_duration */
+  /** Vendor-level minimum campaign days — never from pricing.* */
+  min_days?: number | string;
+  /** @deprecated Prefer min_days — legacy alias while old rows migrate. */
   min_duration?: number | string;
-  /** Vendor-level only — never from pricing.duration_measurement_unit */
+  /** @deprecated Unused for billing — display prices are always day-wise. */
   duration_measurement_unit?: string;
   /** Site location label (e.g. "100 feet Road towards Power house") */
   direction_remarks?: string;
   area_name?: string;
-  /** Design / coach specs for PDF Display Specification section */
+  /** Design / coach specs for PDF Specification section */
   specifications?: Record<string, unknown>;
   size?: string | Record<string, unknown>;
+  /** Optional — omit / empty / NA → Material section hidden on PDF */
   material?: string | Record<string, unknown>;
+  /** Display dimensions from DB — omit when NA / empty */
+  display_width?: string | number;
+  display_height?: string | number;
+  display_length?: string | number;
   reference_image?: string;
   customer_review?: string;
+  /** Vendor cost — display per unit per day (margin checks). */
+  display_unit_cost_per_day?: number | string;
+  display_cost?: number | string;
+  display_cost_measurement_unit?: string;
+  printing_cost?: number | string;
+  mounting_cost?: number | string;
+  printing_and_mounting_cost?: number | string;
+  display_unit_price_per_day?: number | string;
 }

@@ -14,37 +14,40 @@ export function userMentionedDuration(text: string): boolean {
   return parseDurationFromUserText(text) !== null;
 }
 
-/** DB metadata shape for duration (vendor top-level min_duration preferred). */
+/**
+ * DB metadata for duration.
+ * Source of truth: vendor top-level `min_days` only.
+ * Do not use duration_measurement_unit or pricing.display_period for billing.
+ * `min_duration` is legacy read-only fallback while old rows migrate.
+ */
 export interface DbMetadataLike {
   duration?: string;
   medium?: string;
-  /** Vendor-level only — never use pricing.min_duration */
+  /** Vendor-level minimum campaign days (preferred). */
+  min_days?: number | string;
+  /** @deprecated Prefer min_days — legacy alias only. */
   min_duration?: number | string;
-  /** Vendor-level only — never use pricing.duration_measurement_unit */
+  /** @deprecated Unused for billing — display prices are always day-wise. */
   duration_measurement_unit?: string;
   pricing?: {
     period?: string;
     display_period?: string;
     unit?: string;
     structure?: string;
+    min_days?: number | string;
     min_duration?: number | string;
     duration_measurement_unit?: string;
   };
 }
 
-const MONTH_DAY_PACKAGE_MIN = 28;
-const MONTH_DAY_PACKAGE_MAX = 31;
-
-function vendorMinDuration(metadata: DbMetadataLike | undefined | null): number {
-  const md = Number(metadata?.min_duration);
-  return Number.isFinite(md) && md > 0 ? md : NaN;
+/** Read vendor min campaign days (min_days, else legacy min_duration). Never from pricing.*. */
+export function vendorMinDays(metadata: DbMetadataLike | undefined | null): number {
+  const raw = metadata?.min_days ?? metadata?.min_duration;
+  const n = Number(raw);
+  return Number.isFinite(n) && n > 0 ? n : NaN;
 }
 
-function vendorDurationUnit(metadata: DbMetadataLike | undefined | null): string {
-  return String(metadata?.duration_measurement_unit || '').trim().toLowerCase();
-}
-
-/** Mobile Van (LED / Non LED) — daily display even when min_duration is 30. */
+/** Mobile Van (LED / Non LED) — kept for name heuristics elsewhere. */
 export function isMobileVanService(
   serviceName?: string | null,
   metadata?: DbMetadataLike | null,
@@ -56,134 +59,28 @@ export function isMobileVanService(
 }
 
 /**
- * True when display_price is a per-day unit rate (multiply by days).
- * False for period packages like Apartment Lift (min_duration ≈ 30 days = 1 month bill).
- * Exception: Mobile Van is always daily when duration unit is days (even min=30).
- * Duration fields: vendor top-level only (never pricing.min_duration).
+ * All vendor display_price values are day-wise.
+ * Always multiply: qty × display_price × days.
+ * Does not use duration_measurement_unit or display_period.
  */
 export function isVendorDailyDisplayRate(
-  metadata: DbMetadataLike | undefined | null,
-  serviceName?: string | null,
+  _metadata?: DbMetadataLike | null,
+  _serviceName?: string | null,
 ): boolean {
-  if (!metadata) return false;
-  const du = vendorDurationUnit(metadata);
-  const md = vendorMinDuration(metadata);
-
-  // Long-term rule: explicit vendor day unit means day-wise billing.
-  // This avoids legacy 30-day package heuristics when DB has been migrated.
-  if (du.startsWith('day') && Number.isFinite(md) && md > 0) {
-    return true;
-  }
-
-  const p = metadata.pricing || {};
-  const periodHint = [p.display_period, p.period, p.unit]
-    .filter((x) => x != null && String(x).trim() !== '' && String(x).trim().toUpperCase() !== 'NA')
-    .join(' ')
-    .toLowerCase();
-
-  if (/per\s*day|\/\s*days?|daily\b/i.test(periodHint)) return true;
-  if (/per\s*\w*\s*month|\/\s*month|monthly/i.test(periodHint)) {
-    // Mobile Van overrides "per month" label if unit is still days in DB
-    if (!isMobileVanService(serviceName, metadata)) return false;
-  }
-  if (!du.startsWith('day')) return false;
-  if (!Number.isFinite(md) || md <= 0) return false;
-
-  // Mobile Van: display × min_duration days (e.g. 3167 × 30) — do not collapse to 1 month
-  if (isMobileVanService(serviceName, metadata)) return true;
-
-  // Full-month package in days (28–31) → period price, NOT daily (Apartment Lift, etc.)
-  if (md >= MONTH_DAY_PACKAGE_MIN && md <= MONTH_DAY_PACKAGE_MAX) return false;
-
-  // Short min duration in days (e.g. LED Hoardings 10) → daily unit rate
-  return md < MONTH_DAY_PACKAGE_MIN;
-}
-
-/** Days to bill for a daily display rate = vendor min_duration (top-level only). */
-function dailyRateDurationDays(
-  metadata: DbMetadataLike,
-): number {
-  const md = vendorMinDuration(metadata);
-  if (Number.isFinite(md) && md > 0) return md;
-  return 1;
+  return true;
 }
 
 /**
- * Parse rate/campaign period from DB metadata (e.g. "1 month", "30 days", "per month").
- * Used as default Duration column when the user did not type a campaign length.
- * Duration: vendor top-level min_duration only (never pricing.min_duration).
+ * Default Duration column from DB = min_days (always stored/billed as days).
  */
 export function parseDurationFromDbMetadata(
   metadata: DbMetadataLike | undefined | null,
-  serviceName?: string | null,
+  _serviceName?: string | null,
 ): { value: number; unit: 'months' | 'days' } | null {
   if (!metadata) return null;
-  const du = vendorDurationUnit(metadata);
-  const md = vendorMinDuration(metadata);
-
-  // Long-term rule: when vendor explicitly sets day unit, keep days as-is.
-  if (du.startsWith('day') && Number.isFinite(md) && md > 0) {
-    return { value: md, unit: 'days' };
-  }
-
-  // Daily display rate → Duration = vendor min_duration days
-  if (isVendorDailyDisplayRate(metadata, serviceName)) {
-    return { value: dailyRateDurationDays(metadata), unit: 'days' };
-  }
-
-  const pricing = metadata.pricing || {};
-  const durationRaw = String(metadata.duration || '').trim();
-  const minDur = metadata.min_duration;
-  const durUnit = metadata.duration_measurement_unit;
-  const vendorPeriod =
-    minDur != null &&
-    String(minDur).trim() !== '' &&
-    durUnit &&
-    String(durUnit).trim().toUpperCase() !== 'NA'
-      ? `${minDur} ${durUnit}`
-      : '';
-  const periodStr = [
-    durationRaw,
-    vendorPeriod,
-    pricing.period,
-    pricing.display_period,
-    pricing.unit,
-  ]
-    .filter(Boolean)
-    .join(' ')
-    .toLowerCase();
-
-  if (!periodStr) return null;
-
-  const isPerDay = /per\s*day|\/\s*day|daily\b|per van day/i.test(periodStr);
-  const isPerMonth = /per\s*\w*\s*month|\/\s*month|monthly|per frame month|per bus month/i.test(periodStr);
-
-  const m = periodStr.match(/(\d+)\s*(days?|months?)/i);
-  if (m) {
-    const value = parseInt(m[1], 10);
-    const unit = m[2].toLowerCase().startsWith('day') ? 'days' as const : 'months' as const;
-    // "30 days" campaign package = one billing month (unit rate is NOT × days)
-    if (unit === 'days' && value >= MONTH_DAY_PACKAGE_MIN && value <= MONTH_DAY_PACKAGE_MAX && (isPerMonth || !isPerDay)) {
-      return { value: 1, unit: 'months' };
-    }
-    // Longer day mins with monthly rate (e.g. 90 days) → bill N months
-    if (unit === 'days' && value > MONTH_DAY_PACKAGE_MAX && (isPerMonth || !isPerDay)) {
-      const months = Math.max(1, Math.round(value / 30));
-      return { value: months, unit: 'months' };
-    }
-    if (unit === 'days' && isPerDay) {
-      return { value: 1, unit: 'days' };
-    }
-    if (unit === 'months') {
-      return { value, unit: 'months' };
-    }
-    return { value, unit };
-  }
-
-  if (isPerDay) return { value: 1, unit: 'days' };
-  if (isPerMonth) return { value: 1, unit: 'months' };
-
-  return null;
+  const days = vendorMinDays(metadata);
+  if (!Number.isFinite(days) || days <= 0) return null;
+  return { value: days, unit: 'days' };
 }
 
 /** One-time charges (printing, fixing, etc.) — never show campaign duration. */
@@ -218,9 +115,8 @@ function isRecurringLine(
 
 /**
  * Resolve display duration + pricing multiplier for a quote line.
- * Priority: user chat > DB metadata (auto) > none.
- * - Monthly rates: qty × rate × months (e.g. 10 × 16200 × 3)
- * - Daily rates: qty × rate × days (Mobile Van / short min days)
+ * Priority: user chat > DB min_days (auto) > none.
+ * Display prices are always daily: qty × rate × days.
  * - One-time (P&F): multiplier 1
  */
 export function resolveQuoteLineDuration(
@@ -232,7 +128,6 @@ export function resolveQuoteLineDuration(
   const userDur = parseDurationFromUserText(userMessage);
   const desc = geminiLine.description || '';
   const nameHint = serviceName || desc;
-  const dailyRate = isVendorDailyDisplayRate(dbMetadata, nameHint);
   const dbDur = parseDurationFromDbMetadata(dbMetadata, nameHint);
 
   if (isOneTimeLineDescription(desc)) {
@@ -243,49 +138,31 @@ export function resolveQuoteLineDuration(
     return { multiplier: 1 };
   }
 
-  // Daily rates: prefer DB min_duration days over a vague "1 month" in chat,
-  // unless the user explicitly asked for days (or months > 1).
-  if (dailyRate && dbDur?.unit === 'days') {
-    const userAskedDays = userDur?.unit === 'days';
-    const userAskedMultiMonth =
-      userDur?.unit === 'months' && (userDur.value ?? 0) > 1;
+  // Always day-wise billing from DB / user
+  const userAskedDays = userDur?.unit === 'days';
+  const userAskedMonths = userDur?.unit === 'months';
 
-    if (userAskedDays) {
-      const value =
-        geminiLine.duration != null && geminiLine.duration >= 1
-          ? geminiLine.duration
-          : userDur!.value;
-      return { duration: value, durationUnit: 'days', multiplier: value };
-    }
-    if (userAskedMultiMonth) {
-      const months = userDur!.value;
-      const days = months * dbDur.value; // e.g. 2 × 30-day blocks
-      return { duration: days, durationUnit: 'days', multiplier: days };
-    }
-
-    // Default / "1 month" in chat → use DB min days (Mobile Van 30, Hoardings 10)
-    return {
-      duration: dbDur.value,
-      durationUnit: 'days',
-      multiplier: dbDur.value,
-      isAutoFromDb: true,
-    };
-  }
-
-  if (userDur) {
+  if (userAskedDays) {
     const value =
       geminiLine.duration != null && geminiLine.duration >= 1
         ? geminiLine.duration
-        : userDur.value;
-    const unit = geminiLine.durationUnit || userDur.unit;
-    return { duration: value, durationUnit: unit, multiplier: value };
+        : userDur!.value;
+    return { duration: value, durationUnit: 'days', multiplier: value };
+  }
+
+  if (userAskedMonths) {
+    const months = userDur!.value;
+    const blockDays =
+      dbDur?.unit === 'days' && dbDur.value > 0 ? dbDur.value : DAYS_PER_MONTH;
+    // "2 months" with min_days=30 → 60 days; with min_days=15 → 30 days (2× block)
+    const days = months * blockDays;
+    return { duration: days, durationUnit: 'days', multiplier: days };
   }
 
   if (dbDur) {
-    // Monthly / period rates: amount = qty × rate × duration months
     return {
       duration: dbDur.value,
-      durationUnit: dbDur.unit,
+      durationUnit: 'days',
       multiplier: dbDur.value,
       isAutoFromDb: true,
     };
@@ -301,6 +178,59 @@ export function lineItemPricingMultiplier(item: {
 }): number {
   if (item.duration == null || item.duration <= 0) return 1;
   return item.duration;
+}
+
+/**
+ * Recurring line total aligned with the pricing-breakdown formula.
+ * Exact ×30-day campaigns show a rounded monthly rate — use that for the amount
+ * so ₹14,000 × 10 × 1 month = ₹1,40,000 (not a daily×days off-by-one).
+ * Non-month campaigns stay qty × daily × days.
+ */
+export function computeRecurringLineTotal(
+  quantity: number,
+  dailyRate: number,
+  durationDays: number | undefined | null,
+): number {
+  const qty = Number.isFinite(quantity) ? quantity : 0;
+  const rate = Number.isFinite(dailyRate) ? dailyRate : 0;
+  if (durationDays == null || !Number.isFinite(durationDays) || durationDays <= 0) {
+    return qty * rate;
+  }
+  if (shouldDisplayAsMonths(durationDays)) {
+    const months = durationDays / DAYS_PER_MONTH;
+    const perMonth = Math.round(rate * DAYS_PER_MONTH);
+    return qty * perMonth * months;
+  }
+  return qty * rate * durationDays;
+}
+
+/**
+ * Line total from stored quote fields (daily or legacy monthly rate + duration).
+ * One-time / no-duration lines: qty × rate.
+ */
+export function computeQuoteItemTotal(item: {
+  quantity: number;
+  rate?: number;
+  unitPrice?: number;
+  duration?: number;
+  durationUnit?: 'months' | 'days' | string | null;
+  description?: string;
+}): number {
+  const qty = Number.isFinite(item.quantity) ? item.quantity : 0;
+  const rawRate = item.rate ?? item.unitPrice ?? 0;
+  const rate = Number.isFinite(rawRate) ? rawRate : 0;
+
+  if (item.description && isOneTimeLineDescription(item.description)) {
+    return qty * rate;
+  }
+
+  const days = toCampaignDays(item.duration, item.durationUnit);
+  if (days == null || days <= 0) {
+    return qty * rate;
+  }
+
+  const daily = toDailyRate(rate, item.durationUnit);
+  return computeRecurringLineTotal(qty, daily, days);
 }
 
 /** @deprecated use lineItemPricingMultiplier */
@@ -356,135 +286,153 @@ export function toDisplayDuration(durationDays: number): {
   };
 }
 
-/** UI recurring rate: monthly (= daily × 30) only when duration shows as months. */
+/** UI recurring rate: monthly (= daily × 30) only when duration shows as months.
+ * Monthly display is rounded to the nearest rupee (1699.8 → 1700).
+ * One-time charges are not handled here.
+ */
 export function toDisplayRecurringRate(
   dailyRate: number,
   durationDays: number | undefined | null,
-): { rate: number; period: 'per_month' | 'per_day' } {
+): { rate: number; period: 'per_day' | 'per_month' } {
   if (shouldDisplayAsMonths(durationDays)) {
     return {
-      rate: Math.round(dailyRate * DAYS_PER_MONTH * 100) / 100,
+      rate: Math.round(dailyRate * DAYS_PER_MONTH),
       period: 'per_month',
     };
   }
-  return {
-    rate: Math.round(dailyRate * 100) / 100,
-    period: 'per_day',
-  };
+  return { rate: dailyRate, period: 'per_day' };
 }
 
-/**
- * Campaign length in days (1 month → 30).
- * Returns undefined when duration is missing / not positive.
- */
-export function toCampaignDays(
-  duration?: number,
-  durationUnit?: 'months' | 'days',
-): number | undefined {
-  if (duration == null || duration <= 0) return undefined;
-  if (durationUnit === 'days') return duration;
-  // months (or legacy unspecified with a duration value)
-  return duration * DAYS_PER_MONTH;
-}
-
-/**
- * Unit rate as a per-day amount when the stored rate is monthly.
- * Daily / one-time rates are returned unchanged.
- */
+/** Convert stored rate to daily when item was saved with month unit. */
 export function toDailyRate(
   rate: number,
-  durationUnit?: 'months' | 'days',
+  durationUnit?: 'months' | 'days' | string | null,
 ): number {
-  if (!Number.isFinite(rate)) return 0;
-  if (durationUnit === 'months') return rate / DAYS_PER_MONTH;
+  if (durationUnit === 'months') {
+    return rate / DAYS_PER_MONTH;
+  }
   return rate;
 }
 
+/** Campaign length in days from a quote line / exec row. */
+export function toCampaignDays(
+  duration: number | undefined | null,
+  durationUnit?: 'months' | 'days' | string | null,
+): number | null {
+  if (duration == null || !Number.isFinite(duration) || duration <= 0) return null;
+  if (durationUnit === 'months') return duration * DAYS_PER_MONTH;
+  return duration;
+}
+
+export function campaignDays(row: {
+  duration?: number;
+  durationUnit?: 'months' | 'days';
+  durationDays?: number;
+}): number {
+  if (row.durationDays != null && Number.isFinite(row.durationDays)) {
+    return row.durationDays;
+  }
+  return toCampaignDays(row.duration, row.durationUnit) ?? 0;
+}
+
 /**
- * Convert a stored months-based line to days + daily rate (totals unchanged).
- * No-op when already days or when there is no duration.
+ * Convert month-based duration/rate on a quote line to day-based storage.
+ * Leaves already-day items unchanged (sets durationUnit to 'days' when duration present).
  */
 export function normalizeDurationToDays<T extends {
   duration?: number;
-  durationUnit?: 'months' | 'days';
+  durationUnit?: 'months' | 'days' | string | null;
   durationLabel?: string;
-  rate?: number;
   unitPrice?: number;
+  rate?: number;
 }>(item: T): T {
-  if (item.durationUnit !== 'months' || item.duration == null || item.duration <= 0) {
+  if (item.duration == null || !Number.isFinite(item.duration) || item.duration <= 0) {
     return item;
   }
-  const days = item.duration * DAYS_PER_MONTH;
-  const next: T = {
+  if (item.durationUnit === 'months') {
+    const days = item.duration * DAYS_PER_MONTH;
+    const next: T = {
+      ...item,
+      duration: days,
+      durationUnit: 'days',
+      durationLabel: 'day',
+    };
+    if (typeof item.unitPrice === 'number') {
+      next.unitPrice = toDailyRate(item.unitPrice, 'months');
+    }
+    if (typeof item.rate === 'number') {
+      next.rate = toDailyRate(item.rate, 'months');
+    }
+    return next;
+  }
+  return {
     ...item,
-    duration: days,
     durationUnit: 'days',
-    durationLabel: 'day',
+    durationLabel: item.durationLabel || (item.duration === 1 ? 'day' : 'days'),
   };
-  if (typeof item.rate === 'number') {
-    next.rate = item.rate / DAYS_PER_MONTH;
-  }
-  if (typeof item.unitPrice === 'number') {
-    next.unitPrice = item.unitPrice / DAYS_PER_MONTH;
-  }
-  return next;
 }
 
-export function formatDurationLabel(item: {
-  duration?: number;
-  durationUnit?: 'months' | 'days';
-}): string {
-  if (!shouldShowDuration(item)) return '—';
-  const days = toCampaignDays(item.duration, item.durationUnit);
-  return days != null ? `${days} day` : '—';
+/** True when any quote item (or nested line) has a campaign duration. */
+export function quoteHasAnyDuration(
+  items: Array<{
+    duration?: number;
+    lineItems?: Array<{ duration?: number }>;
+  }>,
+): boolean {
+  return items.some((item) => {
+    if (item.duration != null && item.duration > 0) return true;
+    return item.lineItems?.some((li) => li.duration != null && li.duration > 0) ?? false;
+  });
 }
 
-export function quoteHasAnyDuration(items: Array<{ duration?: number }>): boolean {
-  return items.some(shouldShowDuration);
-}
-
-/** Fill duration from DB for quote lines that don't have it yet (after service_id attach). */
+/**
+ * After DB quote build, ensure recurring lines have duration from min_days when missing.
+ */
 export function enrichQuoteItemsDurationFromDb<T extends {
   description: string;
   duration?: number;
   durationUnit?: 'months' | 'days';
-  quantity: number;
-  rate: number;
-  total: number;
+  durationIsAuto?: boolean;
   serviceId?: string;
   serviceName?: string;
-  durationIsAuto?: boolean;
+  rate: number;
+  quantity: number;
+  total: number;
 }>(
   items: T[],
   userMessage: string,
-  dbServices: Array<{ service_id: string; metadata?: DbMetadataLike }>,
+  services: Array<{ service_id: string; service_name?: string; metadata?: DbMetadataLike }>,
 ): T[] {
   return items.map((item) => {
-    if (shouldShowDuration(item)) return item;
+    if (isOneTimeLineDescription(item.description)) return item;
+    if (item.duration != null && item.duration > 0) return item;
 
-    const meta = item.serviceId
-      ? dbServices.find((s) => s.service_id === item.serviceId)?.metadata
-      : undefined;
+    const svc =
+      (item.serviceId && services.find((s) => s.service_id === item.serviceId)) ||
+      services.find(
+        (s) =>
+          (s.service_name || '').toLowerCase() ===
+          (item.serviceName || '').toLowerCase(),
+      );
+    if (!svc?.metadata) return item;
 
     const resolved = resolveQuoteLineDuration(
-      {
-        description: item.description,
-        duration: item.duration,
-        durationUnit: item.durationUnit,
-      },
+      { description: item.description, duration: item.duration, durationUnit: item.durationUnit },
       userMessage,
-      meta,
-      item.serviceName || item.description,
+      svc.metadata,
+      item.serviceName || svc.service_name,
     );
+    if (!resolved.duration || resolved.duration <= 0) return item;
 
-    if (!resolved.duration) return item;
-
-    return {
+    const next = {
       ...item,
       duration: resolved.duration,
-      durationUnit: resolved.durationUnit,
+      durationUnit: 'days' as const,
       durationIsAuto: resolved.isAutoFromDb,
-      total: item.quantity * item.rate * resolved.multiplier,
+    };
+    return {
+      ...next,
+      total: computeQuoteItemTotal(next),
     };
   });
 }

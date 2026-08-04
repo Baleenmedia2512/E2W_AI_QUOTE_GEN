@@ -245,7 +245,7 @@ export function buildGeminiContextFromDbServices(
     ];
 
     if (pricing.structure === 'separate') {
-      if (pricing.display_price) lines.push(`DISPLAY PRICE: ₹${pricing.display_price} ${pricing.display_period || 'per month'}`);
+      if (pricing.display_price) lines.push(`DISPLAY PRICE: ₹${pricing.display_price} ${pricing.display_period || 'per day'}`);
       if (pricing.production_price || pricing.printing_and_mounting_price) {
         lines.push(
           `PRINTING & FIXING PRICE: ₹${pricing.production_price || pricing.printing_and_mounting_price} ${pricing.production_unit || 'per unit'}`,
@@ -256,22 +256,21 @@ export function buildGeminiContextFromDbServices(
       if (pricing.total_price) lines.push(`TOTAL PRICE: ₹${pricing.total_price}`);
     } else {
       const price = pricing.display_price || pricing.price || pricing.unit_price;
-      if (price) lines.push(`PRICE: ₹${price} ${pricing.period || pricing.display_period || pricing.unit || 'per month'}`);
+      if (price) lines.push(`PRICE: ₹${price} ${pricing.period || pricing.display_period || pricing.unit || 'per day'}`);
       if (pricing.printing_and_mounting_price) {
         lines.push(`PRINTING & MOUNTING: ₹${pricing.printing_and_mounting_price}`);
       }
       if (pricing.total_price) lines.push(`TOTAL PRICE: ₹${pricing.total_price}`);
     }
 
-    // Vendor top-level only — never pricing.min_qty / pricing.min_duration
+    // Vendor top-level only — never pricing.min_qty / pricing.min_days
     const minQty = meta.min_qty ?? meta.min_quantity;
     if (minQty != null && String(minQty).trim() !== '' && String(minQty).toUpperCase() !== 'NA') {
       lines.push(`MINIMUM QUANTITY: ${minQty}`);
     }
-    if (meta.min_duration != null && meta.duration_measurement_unit) {
-      lines.push(`MINIMUM DURATION: ${meta.min_duration} ${meta.duration_measurement_unit}`);
-    } else if (meta.duration) {
-      lines.push(`DURATION: ${String(meta.duration)}`);
+    const minDays = meta.min_days ?? meta.min_duration;
+    if (minDays != null && String(minDays).trim() !== '' && String(minDays).toUpperCase() !== 'NA') {
+      lines.push(`MINIMUM DAYS: ${minDays}`);
     }
     if (meta.qty_measurement_unit) {
       lines.push(`QTY UNIT: ${String(meta.qty_measurement_unit)}`);

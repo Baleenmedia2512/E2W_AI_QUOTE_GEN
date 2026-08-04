@@ -9,9 +9,14 @@
 
 import type { TemplateData } from '../../types/template';
 import type { ExecutiveSummaryRow } from '../../utils/quoteGrouping';
+import {
+  formatRecurringRateUnitLabel,
+  formatUnitRateDisplay,
+} from '../../utils/rateDisplay';
 import { PDF_FONT } from '../../components/Templates/CorporateMinimalPDF.fontSizes';
 import {
   CALIBRI_AVG_CHAR_FACTOR,
+  CALIBRI_BOLD_AVG_CHAR_FACTOR,
   DEFAULT_PAGE_GEOMETRY,
   TYPICAL_LOGO_HEIGHT_PT,
 } from '../constants';
@@ -34,20 +39,20 @@ import type {
 import { buildTablePages } from '../pageBuilder';
 import type { BuiltTablePage } from '../types';
 
-/** Column widths from CorporateMinimalPDF.styles (pt). */
+/** Column widths — must match CorporateMinimalPDF.styles col* (pt). */
 export const CM_COL = {
-  serviceId: 125,
-  qty: 55,
-  dur: 65,
-  recurring: 85,
-  onetime: 74,
-  amount: 125,
+  serviceId: 100,
+  qty: 70,
+  dur: 74,
+  recurring: 86,
+  onetime: 80,
+  amount: 119,
   remark: 40,
 } as const;
 
 const cellValueStyle = (): TextMeasureStyle => ({
   fontSize: PDF_FONT.cellValue,
-  avgCharWidthFactor: CALIBRI_AVG_CHAR_FACTOR,
+  avgCharWidthFactor: CALIBRI_BOLD_AVG_CHAR_FACTOR,
   lineHeight: 1.2,
   paddingHorizontal: 4,
 });
@@ -55,14 +60,16 @@ const cellValueStyle = (): TextMeasureStyle => ({
 const unitLabelStyle = (): TextMeasureStyle => ({
   fontSize: PDF_FONT.itemUnitLabel,
   avgCharWidthFactor: CALIBRI_AVG_CHAR_FACTOR,
-  lineHeight: 1.15,
+  lineHeight: 1.05,
   paddingHorizontal: 4,
 });
 
 const serviceIdStyle = (): TextMeasureStyle => ({
   fontSize: PDF_FONT.serviceIdText,
-  avgCharWidthFactor: CALIBRI_AVG_CHAR_FACTOR,
-  lineHeight: 1.2,
+  // Calibri bold ~0.48–0.50; slightly under 0.5 so long locations don’t
+  // over-count lines (under-pack). Do not go much lower — under-measure clips.
+  avgCharWidthFactor: 0.48,
+  lineHeight: 1.05,
   paddingHorizontal: 4,
 });
 
@@ -82,7 +89,7 @@ function durUnitLabel(row: ExecutiveSummaryRow): string | null {
 function rateUnitLabel(row: ExecutiveSummaryRow): string | null {
   if (row.requiringCharge <= 0) return null;
   if (row.duration != null) {
-    return row.ratePeriod === 'per_month' ? '(per month)' : '(per day)';
+    return formatRecurringRateUnitLabel(row.ratePeriod, row.quantityUnit);
   }
   return row.quantityUnit ? `(per ${stripPer(row.quantityUnit)})` : null;
 }
@@ -100,14 +107,6 @@ function formatAmountApprox(n: number): string {
   }).format(n);
 }
 
-function formatRateApprox(n: number): string {
-  return new Intl.NumberFormat('en-IN', {
-    style: 'currency',
-    currency: 'INR',
-    maximumFractionDigits: 2,
-  }).format(n);
-}
-
 export function measureExecutiveSummaryRowHeight(
   row: ExecutiveSummaryRow,
   hasRemark: boolean,
@@ -119,6 +118,7 @@ export function measureExecutiveSummaryRowHeight(
       primaryStyle: serviceIdStyle(),
       paddingVertical: padV,
       columnWidth: CM_COL.serviceId,
+      primaryWrap: 'serviceId',
     },
     {
       primaryText: String(row.quantity),
@@ -138,7 +138,7 @@ export function measureExecutiveSummaryRowHeight(
     },
     {
       primaryText:
-        row.requiringCharge > 0 ? formatRateApprox(row.requiringCharge) : '—',
+        row.requiringCharge > 0 ? formatUnitRateDisplay(row.requiringCharge) : '—',
       primaryStyle: cellValueStyle(),
       secondaryText: rateUnitLabel(row),
       secondaryStyle: unitLabelStyle(),
@@ -147,7 +147,7 @@ export function measureExecutiveSummaryRowHeight(
     },
     {
       primaryText:
-        row.oneTimeCharge > 0 ? formatRateApprox(row.oneTimeCharge) : '—',
+        row.oneTimeCharge > 0 ? formatUnitRateDisplay(row.oneTimeCharge) : '—',
       primaryStyle: cellValueStyle(),
       secondaryText: oneTimeUnitLabel(row),
       secondaryStyle: unitLabelStyle(),
@@ -158,7 +158,8 @@ export function measureExecutiveSummaryRowHeight(
       primaryText: formatAmountApprox(row.amountExclGst),
       primaryStyle: cellValueStyle(),
       paddingVertical: padV,
-      columnWidth: CM_COL.amount,
+      // colAmount also has paddingRight: 10 in styles
+      columnWidth: CM_COL.amount - 6,
     },
   ];
 
@@ -172,11 +173,16 @@ export function measureExecutiveSummaryRowHeight(
   }
 
   // Rows own top+bottom borders in styles; both consume Yoga space.
-  return measureRowHeightFromCells(cells, {
-    minHeight: 38,
-    borderTop: 1,
-    borderBottom: 1,
-  });
+  // −3pt: wrap measure stays slightly high after SERVICE & LOCATION font shrink.
+  // Do NOT scale tall heights down — under-measure packs too many rows, then
+  // React-PDF bounces the whole wrap={false} table and leaves heading-only page 1.
+  return (
+    measureRowHeightFromCells(cells, {
+      minHeight: 38,
+      borderTop: 1,
+      borderBottom: 1,
+    }) - 3
+  );
 }
 
 export function measureCorporateMinimalChrome(args: {
@@ -261,10 +267,15 @@ export function measureCorporateMinimalChrome(args: {
     letterRowBorderTop: 0.75,
   });
 
-  // Excl + incl measured separately (was overestimating both at incl size).
+  // Excl + GST + incl measured separately (was overestimating both at incl size).
   const totals = measureTotalsHeight({
     borderTop: 2,
     rows: [
+      {
+        fontSize: PDF_FONT.tfootLabel,
+        lineHeight: 1.15,
+        paddingVertical: 8,
+      },
       {
         fontSize: PDF_FONT.tfootLabel,
         lineHeight: 1.15,

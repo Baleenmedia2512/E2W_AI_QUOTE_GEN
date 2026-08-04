@@ -24,6 +24,7 @@ import CorporateMinimalPDF, { ServicePdfData, PdfExportMode } from '../component
 import { loadAllServicesFromCloud, buildMetroSpecText } from './supabaseProposalService';
 import type { DbService } from '../utils/serviceResolver';
 import { extractMetroMultiTableSpec, type PdfSpecGroup } from '../utils/metroSpecParser';
+import { pickMaterialFromMeta, pickDisplayDimensionFields } from '../utils/specMaterial';
 
 const isMobile = () => Capacitor.isNativePlatform();
 const DEBUG_PDF_EXPORT = true;
@@ -354,13 +355,40 @@ const fetchPdfDataFromDB = async (_documentIds: string[]): Promise<ServicePdfDat
 
       let specFields: Array<{ label: string; value: string }> = [];
       if (!specGroups?.length) {
-        specFields = flattenSpecificationsToFields(specsObj);
-        if (specFields.length === 0 && typeof row.metadata?.size === 'string' && row.metadata.size.trim()) {
+        // DB display dimensions first (Width / Height / Length), then other specs
+        const dimFields = pickDisplayDimensionFields(
+          (row.metadata || {}) as Record<string, unknown>,
+        );
+        specFields = [...dimFields];
+
+        const flat = flattenSpecificationsToFields(specsObj);
+        for (const f of flat) {
+          if (!specFields.some((x) => x.label.toLowerCase() === f.label.toLowerCase())) {
+            specFields.push(f);
+          }
+        }
+        if (
+          specFields.length === dimFields.length &&
+          typeof row.metadata?.size === 'string' &&
+          row.metadata.size.trim()
+        ) {
           specFields.push({ label: 'Size', value: row.metadata.size });
         }
-        if (typeof row.metadata?.material === 'string' && row.metadata.material.trim()) {
+        const materialVal = pickMaterialFromMeta(
+          (row.metadata || {}) as Record<string, unknown>,
+        );
+        if (materialVal != null) {
           if (!specFields.some((f) => /material/i.test(f.label))) {
-            specFields.push({ label: 'Material', value: row.metadata.material });
+            if (typeof materialVal === 'string') {
+              specFields.push({ label: 'Material', value: materialVal });
+            } else {
+              const joined = Object.entries(materialVal)
+                .map(([k, v]) => `${k.replace(/_/g, ' ')}: ${v}`)
+                .join('\n');
+              if (joined.trim()) {
+                specFields.push({ label: 'Material', value: joined });
+              }
+            }
           }
         }
       }

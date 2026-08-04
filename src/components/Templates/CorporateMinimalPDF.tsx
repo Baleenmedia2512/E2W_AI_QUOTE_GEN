@@ -21,21 +21,24 @@ import {
   Path,
 } from '@react-pdf/renderer';
 import { TemplateData } from '../../types/template';
+import { formatRecurringRateUnitLabel, formatUnitRateDisplay } from '../../utils/rateDisplay';
+import { hyphenateLongWords } from '../../utils/hyphenateLongWords';
+import { getSharedReviewIfAllSame } from '../../utils/reviewGrouping';
 import {
   isMultiServiceQuote,
   groupItemsByServiceType,
   DEFAULT_GENERAL_TERMS,
   getServiceGroupHeading,
-  normalizeTermsList,
-  resolveGeneralTermsList,
   extractServiceType,
   buildExecutiveSummaryRows,
   buildPricingBreakdownLines,
   type ExecutiveSummaryRow,
 } from '../../utils/quoteGrouping';
+import { resolveMergedDisplayTermEntries, formatServiceLabelPrefix, type DisplayTerm } from '../../utils/termsMerge';
 import { s, C } from './CorporateMinimalPDF.styles';
 import type { PdfSpecGroup } from '../../utils/metroSpecParser';
 import { segmentBreakdownFormula } from '../../utils/breakdownFormulaDisplay';
+import { collectServiceRemarks } from '../../utils/specMaterial';
 import { buildCorporateMinimalSummaryPages } from '../../pdf/templates/corporateMinimalSummary';
 import type { BuiltTablePage } from '../../pdf/types';
 
@@ -100,13 +103,7 @@ const formatCurrency = (amount: number) =>
     maximumFractionDigits: 0,
   }).format(amount);
 
-const formatRate = (amount: number) =>
-  new Intl.NumberFormat('en-IN', {
-    style: 'currency',
-    currency: 'INR',
-    minimumFractionDigits: 0,
-    maximumFractionDigits: 2,
-  }).format(amount);
+const formatRate = (amount: number) => formatUnitRateDisplay(amount);
 
 const formatDate = (date: Date | string) => {
   const d = typeof date === 'string' ? new Date(date) : date;
@@ -115,35 +112,67 @@ const formatDate = (date: Date | string) => {
 
 const ensureHttps = (url: string) => (url.startsWith('http') ? url : `https://${url}`);
 
-const filterGSTTerms = (terms: string[]) =>
+const filterGSTDisplayTerms = (terms: DisplayTerm[]) =>
   terms.filter(
     (t) =>
-      !/gst|tax\s*%|inclusive\s*of\s*(gst|tax)|exclusive\s*of\s*(gst|tax)|\+\s*gst|\d+\s*%\s*(gst|tax)/i.test(t),
+      !/gst|tax\s*%|inclusive\s*of\s*(gst|tax)|exclusive\s*of\s*(gst|tax)|\+\s*gst|\d+\s*%\s*(gst|tax)/i.test(
+        t.text,
+      ),
   );
 
 const cap = (s: string) => (s ? s.charAt(0).toUpperCase() + s.slice(1) : s);
 const noHyphen = (word: string) => [word];
 
 /**
- * SERVICE ID: wrap only after real kebab hyphens (never mid-word like brand-ing).
- * flexWrap + one Text per segment so React-PDF wraps between hyphens without clipping.
+ * SERVICE ID: wrap after kebab hyphens; also hyphen-break any segment longer than 13 chars
+ * (e.g. Periyanayakanpalayam → Periyanayakan- / -palayam) so it never overflows the column.
  */
 const ServiceIdText: React.FC<{ id: string }> = ({ id }) => {
-  const parts = id.split('-').filter(Boolean);
-  if (parts.length === 0) {
-    return (
-      <Text style={s.serviceIdText} hyphenationCallback={noHyphen}>
-        {id}
-      </Text>
-    );
-  }
-  return (
-    <View style={s.serviceIdWrap}>
-      {parts.map((part, i) => (
-        <Text key={`${part}-${i}`} style={s.serviceIdText} hyphenationCallback={noHyphen}>
-          {i < parts.length - 1 ? `${part}-` : part}
+  const prepared = hyphenateLongWords(id);
+  const lines = prepared.split('\n');
+
+  const renderKebabLine = (line: string, key: string | number) => {
+    const rawParts = line.split('-');
+    const segments: string[] = [];
+    for (let i = 0; i < rawParts.length; i++) {
+      const part = rawParts[i];
+      if (part === '') continue;
+      const prefix = i > 0 ? '-' : '';
+      const suffix = i < rawParts.length - 1 ? '-' : '';
+      segments.push(`${prefix}${part}${suffix}`);
+    }
+    if (segments.length === 0) {
+      return (
+        <Text key={key} style={s.serviceIdText} hyphenationCallback={noHyphen}>
+          {line}
         </Text>
-      ))}
+      );
+    }
+    if (segments.length === 1 && !line.includes('-')) {
+      return (
+        <Text key={key} style={s.serviceIdText} hyphenationCallback={noHyphen}>
+          {segments[0]}
+        </Text>
+      );
+    }
+    return (
+      <View key={key} style={s.serviceIdWrap}>
+        {segments.map((seg, i) => (
+          <Text key={`${seg}-${i}`} style={s.serviceIdText} hyphenationCallback={noHyphen}>
+            {seg}
+          </Text>
+        ))}
+      </View>
+    );
+  };
+
+  if (lines.length === 1) {
+    return renderKebabLine(lines[0], 'sid');
+  }
+
+  return (
+    <View style={{ width: '100%', flexDirection: 'column', alignItems: 'flex-start' }}>
+      {lines.map((line, i) => renderKebabLine(line, i))}
     </View>
   );
 };
@@ -298,14 +327,18 @@ const ClientDetails: React.FC<{ client: TemplateData['client'] }> = ({ client })
 /**
  * Executive summary table for one pre-built page from the pagination engine.
  * Header repeats only because each logical page is its own React-PDF <Page>.
+ * One atomic wrap={false} table per page — never split rows onto headerless
+ * overflow pages (that caused missing thead + one-row blanks).
  */
 const ExecutiveSummaryTablePage: React.FC<{
   page: BuiltTablePage<ExecutiveSummaryRow>;
   hasRemark: boolean;
   subtotal: number;
+  gstAmount: number;
+  gstPct: number;
   totalInclGst: number;
   globalRowOffset: number;
-}> = ({ page, hasRemark, subtotal, totalInclGst, globalRowOffset }) => {
+}> = ({ page, hasRemark, subtotal, gstAmount, gstPct, totalInclGst, globalRowOffset }) => {
   const thead = (
     <>
       <View style={s.thead} wrap={false}>
@@ -351,11 +384,9 @@ const ExecutiveSummaryTablePage: React.FC<{
     const rateUnit =
       row.requiringCharge > 0
         ? row.duration != null
-          ? row.ratePeriod === 'per_month'
-            ? '(per\u00A0month)'
-            : '(per\u00A0day)'
+          ? formatRecurringRateUnitLabel(row.ratePeriod, row.quantityUnit)
           : row.quantityUnit
-            ? `(per\u00A0${String(row.quantityUnit).replace(/^per\s+/i, '')})`
+            ? `(per ${String(row.quantityUnit).replace(/^per\s+/i, '')})`
             : null
         : null;
     const oneTimeUnit =
@@ -380,33 +411,35 @@ const ExecutiveSummaryTablePage: React.FC<{
             <Text style={[s.itemUnitLabel, { textAlign: 'center' }]} hyphenationCallback={noHyphen}>{durUnit}</Text>
           )}
         </View>
-        <View style={[s.tbodyCell, s.colRecurring, s.cellStackCenter]}>
+        <View style={[s.tbodyCell, s.colRecurring, s.cellStackRight]}>
           {row.requiringCharge > 0 ? (
             <>
-              <Text style={s.cellValueCenter} hyphenationCallback={noHyphen}>{formatRate(row.requiringCharge)}</Text>
+              <Text style={s.cellValue} hyphenationCallback={noHyphen}>{formatRate(row.requiringCharge)}</Text>
               {rateUnit && (
-                <Text style={[s.itemUnitLabel, { textAlign: 'center' }]} hyphenationCallback={noHyphen}>{rateUnit}</Text>
+                <Text style={[s.itemUnitLabel, { textAlign: 'right' }]} hyphenationCallback={noHyphen}>{rateUnit}</Text>
               )}
             </>
           ) : (
-            <Text style={s.cellValueCenter} hyphenationCallback={noHyphen}>{'\u2014'}</Text>
+            <Text style={s.cellValue} hyphenationCallback={noHyphen}>{'\u2014'}</Text>
           )}
         </View>
-        <View style={[s.tbodyCell, s.colOnetime, s.cellStackCenter]}>
+        <View style={[s.tbodyCell, s.colOnetime, s.cellStackRight]}>
           {row.oneTimeCharge > 0 ? (
             <>
-              <Text style={s.cellValueCenter} hyphenationCallback={noHyphen}>{formatRate(row.oneTimeCharge)}</Text>
+              <Text style={s.cellValue} hyphenationCallback={noHyphen}>{formatRate(row.oneTimeCharge)}</Text>
               {oneTimeUnit && (
-                <Text style={[s.itemUnitLabel, { textAlign: 'center' }]} hyphenationCallback={noHyphen}>{oneTimeUnit}</Text>
+                <Text style={[s.itemUnitLabel, { textAlign: 'right' }]} hyphenationCallback={noHyphen}>{oneTimeUnit}</Text>
               )}
             </>
           ) : (
-            <Text style={s.cellValueCenter} hyphenationCallback={noHyphen}>{'\u2014'}</Text>
+            <Text style={s.cellValue} hyphenationCallback={noHyphen}>{'\u2014'}</Text>
           )}
         </View>
-        <Text style={[s.tbodyCell, s.colAmount, s.cellValue]} hyphenationCallback={noHyphen}>
-          {formatCurrency(row.amountExclGst)}
-        </Text>
+        <View style={[s.tbodyCell, s.colAmount, s.cellStackRight]}>
+          <Text style={s.cellValue} hyphenationCallback={noHyphen}>
+            {formatCurrency(row.amountExclGst)}
+          </Text>
+        </View>
         {hasRemark && (
           <Text style={[s.tbodyCell, { width: 40 }]} hyphenationCallback={noHyphen}>{row.remark || ''}</Text>
         )}
@@ -417,18 +450,24 @@ const ExecutiveSummaryTablePage: React.FC<{
   const renderTotalRow = (
     label: string,
     amount: number,
-    opts?: { incl?: boolean },
+    opts?: { incl?: boolean; first?: boolean },
   ) => (
-    <View style={opts?.incl ? [s.tfoot, s.tfootInclRow] : [s.tfoot, s.tfootFirst]}>
-      <View style={s.tfootLabelWrap}>
+    <View
+      style={
+        opts?.incl
+          ? [s.tfoot, s.tfootInclRow]
+          : opts?.first
+            ? [s.tfoot, s.tfootFirst]
+            : [s.tfoot, s.tfootInclRow]
+      }
+    >
+      <View style={s.tfootInner}>
         <Text
-          style={opts?.incl ? s.tfootLabelIncl : s.tfootLabel}
+          style={opts?.incl ? [s.tfootLabelIncl, s.tfootLabelGap] : [s.tfootLabel, s.tfootLabelGap]}
           hyphenationCallback={noHyphen}
         >
           {label}
         </Text>
-      </View>
-      <View style={s.tfootAmountCol}>
         <Text
           style={opts?.incl ? s.tfootAmount : s.tfootAmountExcl}
           hyphenationCallback={noHyphen}
@@ -448,7 +487,8 @@ const ExecutiveSummaryTablePage: React.FC<{
       )}
       {page.showTotals ? (
         <>
-          {renderTotalRow('Total (excl. GST)', subtotal)}
+          {renderTotalRow('Total (excl. GST)', subtotal, { first: true })}
+          {renderTotalRow(`GST @ ${gstPct}%`, gstAmount)}
           {renderTotalRow('Total (incl. GST)', totalInclGst, { incl: true })}
         </>
       ) : null}
@@ -652,15 +692,19 @@ const RefImages: React.FC<{
   );
 };
 
-/** Display specification fields */
-const SpecSection: React.FC<{ fields: Array<{ label: string; value: string }> }> = ({ fields }) => {
-  if (!fields || fields.length === 0) return null;
+/** Specification fields — Material subgroup only when label is Material */
+const SpecSection: React.FC<{
+  fields: Array<{ label: string; value: string }>;
+  remark?: string;
+}> = ({ fields, remark }) => {
+  const trimmedRemark = remark?.trim() || '';
+  if ((!fields || fields.length === 0) && !trimmedRemark) return null;
 
   const materialStartIndex = fields.findIndex((f) => isMaterialLabel(f.label));
   const hasMaterialGroup = materialStartIndex >= 0;
   const topFields = hasMaterialGroup ? fields.slice(0, materialStartIndex) : fields;
   const materialFields = hasMaterialGroup ? fields.slice(materialStartIndex) : [];
-  const totalRows = topFields.length + materialFields.length;
+  const totalRows = topFields.length + materialFields.length + (trimmedRemark ? 1 : 0);
   let rowIndex = 0;
 
   const rowStyle = () => {
@@ -668,8 +712,23 @@ const SpecSection: React.FC<{ fields: Array<{ label: string; value: string }> }>
     return rowIndex === totalRows ? [s.specRow, s.specRowLast] : s.specRow;
   };
 
+  const remarkRowStyle = () => {
+    rowIndex += 1;
+    const base = rowIndex === totalRows ? [s.specRemarkRow, s.specRowLast] : s.specRemarkRow;
+    return base;
+  };
+
   return (
     <View style={s.specTable}>
+      {trimmedRemark ? (
+        <View style={remarkRowStyle()}>
+          <Text style={s.specLabel}>Remark</Text>
+          <Text style={s.specRemarkValue}>
+            {hyphenateLongWords(trimmedRemark, 36)}
+          </Text>
+        </View>
+      ) : null}
+
       {topFields.map((f, i) => (
         <View key={`top-${i}`} style={rowStyle()}>
           <Text style={s.specLabel}>{f.label}</Text>
@@ -869,7 +928,7 @@ const SpecImages: React.FC<{ images: string[] }> = ({ images }) => {
   );
 };
 
-/** Display specification block: heading + table + images.
+/** Specification block: heading + table + images.
  *  Each coach table is an independent wrap={false} unit so tables flow onto
  *  leftover space after reference images instead of jumping as one giant block.
  */
@@ -878,11 +937,13 @@ const DisplaySpecificationBlock: React.FC<{
   fields: Array<{ label: string; value: string }>;
   specGroups?: PdfSpecGroup[];
   images: string[];
-}> = ({ heading, fields, specGroups, images }) => {
+  remark?: string;
+}> = ({ heading, fields, specGroups, images, remark }) => {
   const validImages = normalizeImageSrcs(images);
   const hasGroups = hasSpecGroupContent(specGroups);
   const hasFields = !hasGroups && fields.length > 0;
-  if (!hasGroups && !hasFields && validImages.length === 0) return null;
+  const trimmedRemark = remark?.trim() || '';
+  if (!hasGroups && !hasFields && validImages.length === 0 && !trimmedRemark) return null;
 
   const groups = specGroups ?? [];
   const leadGroup = hasGroups && groups.length > 0 ? groups[0] : null;
@@ -892,17 +953,32 @@ const DisplaySpecificationBlock: React.FC<{
     validImages.length <= 1 ? validImages : validImages.slice(0, 2);
   const restImages =
     validImages.length <= 1 ? [] : validImages.slice(2);
-  const specImagesAfterTables = (leadGroup || hasFields) && firstBatch.length > 0;
+  const specImagesAfterTables = (leadGroup || hasFields || trimmedRemark) && firstBatch.length > 0;
+
+  const remarkRow = trimmedRemark ? (
+    <View style={s.specTable}>
+      <View style={[s.specRemarkRow, !(leadGroup || hasFields) ? s.specRowLast : {}]}>
+        <Text style={s.specLabel}>Remark</Text>
+        <Text style={s.specRemarkValue}>
+          {hyphenateLongWords(trimmedRemark, 36)}
+        </Text>
+      </View>
+    </View>
+  ) : null;
 
   return (
     <View wrap={true}>
-      {/* Heading stays with the first table/field block only */}
+      {/* Heading stays with remark + first table/field block */}
       <View wrap={false}>
         <SubHeading>{heading}</SubHeading>
+        {/* Remark first, then Width / Height / Length / other specs */}
+        {hasGroups && trimmedRemark ? remarkRow : null}
         {leadGroup ? (
           <SpecGroupBlock group={leadGroup} />
         ) : hasFields ? (
-          <SpecSection fields={fields} />
+          <SpecSection fields={fields} remark={trimmedRemark} />
+        ) : trimmedRemark && !hasGroups ? (
+          remarkRow
         ) : firstBatch.length > 0 ? (
           <SpecImages images={firstBatch} />
         ) : null}
@@ -977,23 +1053,58 @@ const ReviewBox: React.FC<{ review: ServicePdfData['review'] }> = ({ review }) =
   );
 };
 
-/** Terms & conditions bullet list */
-const TermsList: React.FC<{ terms: string[] }> = ({ terms }) => {
-  if (!terms || terms.length === 0) return null;
+/** One T&C bullet — packs like a table row and may flow page-to-page. */
+const TermRow: React.FC<{ term: DisplayTerm }> = ({ term }) => {
+  const prefix =
+    term.labels.length === 0
+      ? 'General T&C'
+      : formatServiceLabelPrefix(term.labels);
   return (
-    <View style={s.termsSection}>
-      {terms.map((term, i) => (
-        <View key={i} style={s.termItem} wrap={false}>
-          <Text style={s.termBullet}>{'•'}</Text>
-          <Text style={s.termText}>{term}</Text>
-        </View>
-      ))}
+    <View style={s.termItem} wrap={false} minPresenceAhead={14}>
+      <Text style={s.termBullet}>{'•'}</Text>
+      <Text style={s.termText}>
+        {prefix ? (
+          <Text style={s.termServiceLabel}>{`${prefix}: `}</Text>
+        ) : null}
+        <Text style={s.termBody}>{term.text}</Text>
+      </Text>
     </View>
   );
 };
 
-/** Bank details table */
-/** Bank details card — matches screen UI (title + rows in light card) */
+/**
+ * Terms & Conditions — heading never orphans alone.
+ * wrap={false} keeps heading + first bullet together (minPresenceAhead on Text
+ * alone is unreliable in React-PDF). Continuation uses a seamless joined box
+ * so it still reads as one container.
+ */
+const TermsBlock: React.FC<{ terms: DisplayTerm[] }> = ({ terms }) => {
+  if (!terms || terms.length === 0) return null;
+  const [first, ...rest] = terms;
+  const hasMore = rest.length > 0;
+
+  return (
+    <View>
+      <View wrap={false}>
+        <Text style={s.sectionHeading}>Terms & Conditions</Text>
+        <View style={hasMore ? s.termsSectionStart : s.termsSection}>
+          <TermRow term={first} />
+        </View>
+      </View>
+      {hasMore ? (
+        <View style={s.termsSectionContinued}>
+          {rest.map((term, i) => (
+            <TermRow key={i + 1} term={term} />
+          ))}
+        </View>
+      ) : null}
+    </View>
+  );
+};
+
+/** Bank details card — matches screen UI (title + rows in light card).
+ *  wrap controlled by parent so Bank + system notice stay one atomic block.
+ */
 const BankDetails: React.FC = () => {
   const rows: { label: string; value: string }[] = [
     { label: 'Account Holder', value: 'BALEEN MEDIA' },
@@ -1004,7 +1115,7 @@ const BankDetails: React.FC = () => {
   ];
 
   return (
-    <View style={s.bankCard} wrap={false}>
+    <View style={s.bankCard}>
       <Text style={s.bankCardTitle}>BANK DETAILS</Text>
       <View style={s.bankCardDivider} />
       {rows.map((row) => (
@@ -1026,7 +1137,9 @@ const CorporateMinimalPDF: React.FC<CorporateMinimalPDFProps> = ({ data, pdfData
 
   const isMultiService = quote.items.length > 0 && isMultiServiceQuote(quote.items);
   const serviceGroups = isMultiService ? groupItemsByServiceType(quote.items) : [];
-  const generalTermsList = filterGSTTerms(DEFAULT_GENERAL_TERMS);
+  const mergedTermsList = filterGSTDisplayTerms(
+    resolveMergedDisplayTermEntries(quote.termsAndConditions, quote.items, DEFAULT_GENERAL_TERMS),
+  );
 
   /**
    * Resolve pdfData for a quote service. Keys may be city|name, service_id, or
@@ -1068,19 +1181,8 @@ const CorporateMinimalPDF: React.FC<CorporateMinimalPDFProps> = ({ data, pdfData
     return null;
   };
 
-  // â”€â”€ SINGLE SERVICE â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+  // ― SINGLE SERVICE ―
   if (!isMultiService) {
-    const allServiceTermsRaw = quote.items[0]?.termsAndConditions || quote.termsAndConditions || '';
-    const rawTerms = allServiceTermsRaw.trim()
-      ? filterGSTTerms(normalizeTermsList(allServiceTermsRaw))
-      : [];
-    const defaultFiltered = filterGSTTerms(DEFAULT_GENERAL_TERMS);
-    const isDefault =
-      rawTerms.length > 0 &&
-      rawTerms.length === defaultFiltered.length &&
-      rawTerms.every((t, i) => t === defaultFiltered[i]);
-    const serviceTerms = isDefault ? [] : rawTerms;
-
     const item0 = quote.items[0];
     const serviceType = extractServiceType(item0?.description || '');
     const city0 = (item0?.city || '').trim().toLowerCase();
@@ -1130,10 +1232,11 @@ const CorporateMinimalPDF: React.FC<CorporateMinimalPDFProps> = ({ data, pdfData
                 />
               )}
               <DisplaySpecificationBlock
-                heading="3. Display Specification"
+                heading="3. Specification"
                 fields={singlePdf.specFields}
                 specGroups={singlePdf.specGroups}
                 images={singlePdf.specImages || []}
+                remark={collectServiceRemarks(quote.items)}
               />
             </View>
           )}
@@ -1146,29 +1249,17 @@ const CorporateMinimalPDF: React.FC<CorporateMinimalPDFProps> = ({ data, pdfData
             </View>
           )}
 
-          {/* Service terms */}
-          {serviceTerms.length > 0 && (
-            <View wrap={false}>
-              <Text style={s.sectionHeading}>Service Terms & Conditions</Text>
-              <TermsList terms={serviceTerms} />
+          {/* One merged T&C — heading stays with at least the first bullet */}
+          {mergedTermsList.length > 0 && <TermsBlock terms={mergedTermsList} />}
+
+          {/* Bank + notice stay together (no orphan notice page) */}
+          <View wrap={false}>
+            <BankDetails />
+            <View style={s.systemNotice}>
+              <Text style={s.systemNoticeText}>
+                This is a system-generated quotation and does not require a signature.
+              </Text>
             </View>
-          )}
-
-          {/* General terms */}
-          {generalTermsList.length > 0 && (
-            <View wrap={false}>
-              <Text style={s.sectionHeading}>General Terms & Conditions</Text>
-              <TermsList terms={generalTermsList} />
-            </View>
-          )}
-
-          {/* Bank details + system notice */}
-          <BankDetails />
-
-          <View style={s.systemNotice}>
-            <Text style={s.systemNoticeText}>
-              This is a system-generated quotation and does not require a signature.
-            </Text>
           </View>
         </Page>
       </Document>
@@ -1181,18 +1272,30 @@ const CorporateMinimalPDF: React.FC<CorporateMinimalPDFProps> = ({ data, pdfData
   const summaryRows = buildExecutiveSummaryRows(quote.items);
   const summarySubtotal = summaryRows.reduce((sum, r) => sum + r.amountExclGst, 0);
   const summaryGstPct = quote.gstPercentage > 0 ? quote.gstPercentage : 18;
-  const summaryTotalIncl =
-    summarySubtotal + (summarySubtotal * summaryGstPct) / 100;
+  const summaryGstAmount = (summarySubtotal * summaryGstPct) / 100;
+  const summaryTotalIncl = summarySubtotal + summaryGstAmount;
   const { pages: summaryPages, hasRemark: summaryHasRemark } =
     buildCorporateMinimalSummaryPages({ data, rows: summaryRows });
+
+  // Resolve per-group reviews once — all identical → one block above bank details.
+  const multiServiceReviews = serviceGroups.map((group) => {
+    const city = group.city?.trim().toLowerCase();
+    const serviceKey =
+      city && city !== '\u2014'
+        ? `${city}|${group.serviceType.toLowerCase()}`
+        : group.serviceType.toLowerCase();
+    const spd = getPdfData(serviceKey, {
+      serviceId: group.items[0]?.serviceId,
+      serviceName: group.serviceType,
+      city,
+    });
+    return spd?.review ?? null;
+  });
+  const sharedReview = getSharedReviewIfAllSame(multiServiceReviews);
 
   const detailSections =
     exportMode !== 'summary'
       ? serviceGroups.map((group, idx) => {
-          const groupTermsRaw = group.termsAndConditions || quote.termsAndConditions || '';
-          const groupTerms = groupTermsRaw.trim()
-            ? filterGSTTerms(normalizeTermsList(groupTermsRaw))
-            : [];
           const heading = getServiceGroupHeading(group);
           const city = group.city?.trim().toLowerCase();
           const serviceKey = city && city !== '\u2014'
@@ -1223,7 +1326,8 @@ const CorporateMinimalPDF: React.FC<CorporateMinimalPDFProps> = ({ data, pdfData
                 normalizeImageSrcs(spd.refImages).length > 0 ||
                 hasSpecGroupContent(spd.specGroups) ||
                 spd.specFields.length > 0 ||
-                normalizeImageSrcs(spd.specImages || []).length > 0
+                normalizeImageSrcs(spd.specImages || []).length > 0 ||
+                !!collectServiceRemarks(group.items)
               ) && (
                 <View wrap={true}>
                   {normalizeImageSrcs(spd.refImages).length > 0 && (
@@ -1235,28 +1339,24 @@ const CorporateMinimalPDF: React.FC<CorporateMinimalPDFProps> = ({ data, pdfData
                   )}
                   {(hasSpecGroupContent(spd.specGroups) ||
                     spd.specFields.length > 0 ||
-                    normalizeImageSrcs(spd.specImages || []).length > 0) && (
+                    normalizeImageSrcs(spd.specImages || []).length > 0 ||
+                    !!collectServiceRemarks(group.items)) && (
                     <DisplaySpecificationBlock
-                      heading={`${sectionNum++}. Display Specification`}
+                      heading={`${sectionNum++}. Specification`}
                       fields={spd.specFields}
                       specGroups={spd.specGroups}
                       images={spd.specImages || []}
+                      remark={collectServiceRemarks(group.items)}
                     />
                   )}
                 </View>
               )}
 
-              {spd?.review && (
+              {/* Per-service review only when reviews are NOT all identical */}
+              {!sharedReview && spd?.review && (
                 <View wrap={false}>
                   <SubHeading>{sectionNum++}. Customer Review</SubHeading>
                   <ReviewBox review={spd.review} />
-                </View>
-              )}
-
-              {groupTerms.length > 0 && (
-                <View wrap={false}>
-                  <SubHeading>{sectionNum++}. Terms & Conditions</SubHeading>
-                  <TermsList terms={groupTerms} />
                 </View>
               )}
             </View>
@@ -1264,21 +1364,28 @@ const CorporateMinimalPDF: React.FC<CorporateMinimalPDFProps> = ({ data, pdfData
         })
       : null;
 
-  const closingSections = (
-    <>
-      {generalTermsList.length > 0 && (
-        <View wrap={false}>
-          <Text style={s.sectionHeading}>General Terms & Conditions</Text>
-          <TermsList terms={generalTermsList} />
-        </View>
-      )}
+  // Terms: heading + first bullet stay together; rest flow. Bank + notice atomic.
+  const termsBlock =
+    mergedTermsList.length > 0 ? <TermsBlock terms={mergedTermsList} /> : null;
+
+  // When every service shares one review, show it once above bank details.
+  const sharedReviewBlock = sharedReview ? (
+    <View wrap={false}>
+      <SubHeading>Customer Review</SubHeading>
+      <ReviewBox review={sharedReview} />
+    </View>
+  ) : null;
+
+  // Bank + notice stay one block; no minPresenceAhead (that left half-empty pages).
+  const bankAndNotice = (
+    <View wrap={false}>
       <BankDetails />
       <View style={s.systemNotice}>
         <Text style={s.systemNoticeText}>
           This is a system-generated quotation and does not require a signature.
         </Text>
       </View>
-    </>
+    </View>
   );
 
   return (
@@ -1287,8 +1394,18 @@ const CorporateMinimalPDF: React.FC<CorporateMinimalPDFProps> = ({ data, pdfData
       author="Baleen Media"
       creator="Quote Buddy"
     >
+      {/* Executive summary pages stay pre-measured.
+          On the totals page only: pack Terms, then service details, then bank/notice
+          into leftover space — bank details always last. */}
       {summaryPages.map((page) => (
-        <Page key={`summary-${page.pageNumber}`} size="A4" style={s.page} wrap>
+        // Non-totals summary pages: wrap={false} so React-PDF cannot spawn
+        // headerless overflow pages. Totals page must wrap (terms / details).
+        <Page
+          key={`summary-${page.pageNumber}`}
+          size="A4"
+          style={s.page}
+          wrap={page.showTotals === true}
+        >
           <View style={s.accentBar} fixed />
           <PageFooter company={company} />
 
@@ -1297,19 +1414,24 @@ const CorporateMinimalPDF: React.FC<CorporateMinimalPDFProps> = ({ data, pdfData
           {page.showSectionHeading && (
             <Text style={s.sectionHeading}>Executive Pricing Summary</Text>
           )}
-          {/* Pre-sized summary slice — wrap={false} avoids headerless orphan rows. */}
           <ExecutiveSummaryTablePage
             page={page}
             hasRemark={summaryHasRemark}
             subtotal={summarySubtotal}
+            gstAmount={summaryGstAmount}
+            gstPct={summaryGstPct}
             totalInclGst={summaryTotalIncl}
             globalRowOffset={0}
           />
 
-          {/* After totals: fill leftover space with service details / closing.
-              These wrap naturally onto following pages when needed. */}
-          {page.showTotals && exportMode !== 'summary' && detailSections}
-          {page.showTotals && closingSections}
+          {page.showTotals && (
+            <>
+              {termsBlock}
+              {exportMode !== 'summary' && detailSections}
+              {exportMode !== 'summary' && sharedReviewBlock}
+              {bankAndNotice}
+            </>
+          )}
         </Page>
       ))}
     </Document>

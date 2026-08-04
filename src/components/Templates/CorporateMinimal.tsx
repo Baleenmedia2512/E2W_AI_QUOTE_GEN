@@ -3,19 +3,81 @@ import { useToast } from '@chakra-ui/react';
 import { TemplateProps } from '../../types';
 import { QuoteItem } from '../../types/quote';
 import { ReferenceImages } from './ReferenceImages';
-import { isMultiServiceQuote, groupItemsByServiceType, DEFAULT_GENERAL_TERMS, getServiceGroupHeading, normalizeTermsList, resolveGeneralTermsList, extractServiceType, buildExecutiveSummaryRows, buildPricingBreakdownLines, ExecutiveSummaryRow, PricingBreakdownLine } from '../../utils/quoteGrouping';
+import { isMultiServiceQuote, groupItemsByServiceType, DEFAULT_GENERAL_TERMS, getServiceGroupHeading, extractServiceType, buildExecutiveSummaryRows, buildPricingBreakdownLines, ExecutiveSummaryRow, PricingBreakdownLine } from '../../utils/quoteGrouping';
+import { resolveMergedDisplayTermEntries, formatServiceLabelPrefix, type DisplayTerm } from '../../utils/termsMerge';
 import { segmentBreakdownFormula } from '../../utils/breakdownFormulaDisplay';
 import {
   applyExecutiveSummaryFieldEdit,
+  applyOneTimeComponentEdit,
   getVendorEditFloors,
+  mergeFloorsWithQuoteItem,
   recalcQuoteTotals,
   resolveDbServiceForQuoteItem,
   uiEditToStorageValue,
+  validateOneTimeComponentEdit,
   validateQuoteEdit,
+  type VendorEditFloors,
 } from '../../utils/quoteEditValidation';
+import { getVendorRatesCache, loadVendorRatesFromCloud } from '../../services/vendorRateService';
+import {
+  previewSectionIdForExecRow,
+  previewServiceSectionId,
+  previewServiceSectionIdFromItem,
+} from '../../utils/previewNavigation';
+import { formatRecurringRateUnitLabel, formatUnitRateDisplay } from '../../utils/rateDisplay';
+import {
+  getSharedReviewIfAllSame,
+  type CustomerReview,
+} from '../../utils/reviewGrouping';
+import { collectServiceRemarks } from '../../utils/specMaterial';
 import './CorporateMinimal.css';
 
 type ExecEditField = 'quantity' | 'duration' | 'requiringCharge' | 'oneTimeCharge';
+
+const EMPTY_FLOORS: VendorEditFloors = {
+  minQty: null,
+  minDuration: null,
+  displayPriceFloor: null,
+  displayPriceIsDaily: true,
+  displayUnitCostPerDay: null,
+  hasDisplayPricing: false,
+  pfCostFloor: null,
+  pfPriceFloor: null,
+  pfComponentCostFloors: {},
+};
+
+/** Resolve vendor floors; reload cache once if empty so margin toasts still work after refresh. */
+async function resolveEditFloors(item: {
+  serviceId?: string;
+  serviceName?: string;
+  description?: string;
+  city?: string;
+}): Promise<VendorEditFloors> {
+  const cacheLenBefore = getVendorRatesCache().length;
+  let svc = resolveDbServiceForQuoteItem(item);
+  if (!svc && cacheLenBefore === 0) {
+    try {
+      console.log('[MarginDebug] resolveEditFloors: cache empty → loading vendor rates…');
+      await loadVendorRatesFromCloud();
+    } catch (e) {
+      console.warn('[MarginDebug] resolveEditFloors: load failed', e);
+    }
+    svc = resolveDbServiceForQuoteItem(item);
+  }
+  const floors = svc ? getVendorEditFloors(svc) : EMPTY_FLOORS;
+  console.log('[MarginDebug] resolveEditFloors', {
+    lookup: item,
+    cacheLenBefore,
+    cacheLenAfter: getVendorRatesCache().length,
+    svcFound: !!svc,
+    svcId: svc?.service_id ?? null,
+    svcName: svc?.service_name ?? null,
+    pfCostFloor: floors.pfCostFloor,
+    pfPriceFloor: floors.pfPriceFloor,
+    hasDisplayPricing: floors.hasDisplayPricing,
+  });
+  return floors;
+}
 
 const ExecNumberCell: React.FC<{
   value: number | undefined;
@@ -24,7 +86,19 @@ const ExecNumberCell: React.FC<{
   onCommit: (n: number) => void;
   placeholder?: string;
   compact?: boolean;
-}> = ({ value, format = 'int', editable, onCommit, placeholder = '—', compact = false }) => {
+  /** Always show a visible border (breakdown pencil-edit mode). */
+  bordered?: boolean;
+  autoFocus?: boolean;
+}> = ({
+  value,
+  format = 'int',
+  editable,
+  onCommit,
+  placeholder = '—',
+  compact = false,
+  bordered = false,
+  autoFocus = false,
+}) => {
   const [draft, setDraft] = useState<string | null>(null);
   const display =
     draft != null
@@ -32,7 +106,7 @@ const ExecNumberCell: React.FC<{
       : value == null || !Number.isFinite(value)
         ? ''
         : format === 'rate'
-          ? (Math.round(value * 100) / 100).toFixed(2)
+          ? formatUnitRateDisplay(value)
           : String(value);
 
   if (!editable) {
@@ -40,34 +114,42 @@ const ExecNumberCell: React.FC<{
       return <div className="item-cell-number">{placeholder}</div>;
     }
     if (format === 'rate') {
-      return (
-        <div className="item-cell-number">
-          {new Intl.NumberFormat('en-IN', {
-            style: 'currency',
-            currency: 'INR',
-            minimumFractionDigits: 0,
-            maximumFractionDigits: 2,
-          }).format(value)}
-        </div>
-      );
+      return <div className="item-cell-number">{formatUnitRateDisplay(value)}</div>;
     }
     return <div className="item-cell-number">{value}</div>;
   }
 
+  const className = [
+    'exec-edit-input',
+    compact ? 'exec-edit-input--compact' : '',
+    format === 'rate' ? 'exec-edit-input--rate' : 'exec-edit-input--int',
+    bordered ? 'exec-edit-input--bordered' : '',
+  ]
+    .filter(Boolean)
+    .join(' ');
+
+  const sizeChars = Math.min(
+    12,
+    Math.max(format === 'rate' ? 6 : 5, (display || '').length + 1),
+  );
+
   return (
     <input
-      className={compact ? 'exec-edit-input exec-edit-input--compact' : 'exec-edit-input'}
+      className={className}
       type="text"
       inputMode="decimal"
       value={display}
       aria-label="Edit value"
+      autoFocus={autoFocus}
+      size={sizeChars}
+      style={compact ? { width: `${sizeChars}ch` } : undefined}
       onChange={(e) => setDraft(e.target.value)}
       onFocus={(e) => {
         setDraft(
           value == null || !Number.isFinite(value)
             ? ''
             : format === 'rate'
-              ? (Math.round(value * 100) / 100).toFixed(2)
+              ? formatUnitRateDisplay(value)
               : String(value),
         );
         e.target.select();
@@ -92,33 +174,54 @@ const ExecNumberCell: React.FC<{
   );
 };
 
+function titleCaseWords(text: string): string {
+  return text
+    .trim()
+    .split(/\s+/)
+    .map((w) => (w ? w.charAt(0).toUpperCase() + w.slice(1).toLowerCase() : w))
+    .join(' ');
+}
+
 /** Editable (or read-only segmented) formula for a pricing-breakdown line. */
 const BreakdownFormulaBody: React.FC<{
   line: PricingBreakdownLine;
   canEdit: boolean;
+  isEditing: boolean;
   onCommit: (row: ExecutiveSummaryRow, field: ExecEditField, value: number) => void;
-}> = ({ line, canEdit, onCommit }) => {
+  onCommitOneTimeComponent?: (
+    row: ExecutiveSummaryRow,
+    components: { label: string; amount: number }[],
+    label: string,
+    value: number,
+  ) => void;
+}> = ({ line, canEdit, isEditing, onCommit, onCommitOneTimeComponent }) => {
   const formula = line.descriptionLines.slice(1).join(' ') || '';
   const row = line.editRow;
 
-  if (!canEdit || !row) {
-    return (
-      <div className="breakdown-desc-secondary">
-        {segmentBreakdownFormula(formula).map((seg, i) =>
-          seg.muted ? (
-            <span key={i} className="breakdown-rate-unit">{seg.text}</span>
-          ) : (
-            <span key={i}>{seg.text}</span>
-          ),
-        )}
-      </div>
-    );
+  const readOnlyFormula = (
+    <div className="breakdown-desc-secondary">
+      {segmentBreakdownFormula(formula).map((seg, i) =>
+        seg.muted ? (
+          <span key={i} className="breakdown-rate-unit">{seg.text}</span>
+        ) : (
+          <span key={i}>{seg.text}</span>
+        ),
+      )}
+    </div>
+  );
+
+  if (!canEdit || !row || !isEditing) {
+    return readOnlyFormula;
   }
 
-  const qtyUnit = line.formulaQtyUnit || 'unit';
+  const qtyUnit = titleCaseWords(line.formulaQtyUnit || 'unit');
 
   if (line.kind === 'display') {
-    const rateLabel = row.ratePeriod === 'per_month' ? 'per month' : 'per day';
+    const rateLabel = formatRecurringRateUnitLabel(
+      row.ratePeriod,
+      row.quantityUnit || qtyUnit,
+      { wrapUnit: false },
+    ).replace(/^\(|\)$/g, '');
     const durLabel =
       row.durationLabel || (row.durationUnit === 'months' ? 'month' : 'days');
     return (
@@ -129,6 +232,8 @@ const BreakdownFormulaBody: React.FC<{
           format="rate"
           editable
           compact
+          bordered
+          autoFocus
           onCommit={(n) => onCommit(row, 'requiringCharge', n)}
         />
         <span className="breakdown-rate-unit"> ({rateLabel}) </span>
@@ -137,6 +242,7 @@ const BreakdownFormulaBody: React.FC<{
           value={row.quantity}
           editable
           compact
+          bordered
           onCommit={(n) => onCommit(row, 'quantity', n)}
         />
         <span className="breakdown-rate-unit"> ({qtyUnit}) </span>
@@ -147,6 +253,7 @@ const BreakdownFormulaBody: React.FC<{
               value={row.duration}
               editable
               compact
+              bordered
               onCommit={(n) => onCommit(row, 'duration', n)}
             />
             <span className="breakdown-rate-unit"> ({durLabel})</span>
@@ -156,7 +263,42 @@ const BreakdownFormulaBody: React.FC<{
     );
   }
 
-  // onetime
+  // onetime — separate fields per component when available
+  const components = line.oneTimeComponents;
+  if (components && components.length > 0 && onCommitOneTimeComponent) {
+    return (
+      <div className="breakdown-desc-secondary breakdown-desc-secondary--editable breakdown-desc-secondary--components">
+        {components.map((comp, idx) => (
+          <div key={comp.label} className="breakdown-edit-component">
+            {idx > 0 ? <span className="breakdown-edit-plus" aria-hidden>+</span> : null}
+            <span className="breakdown-edit-rupee">₹</span>
+            <ExecNumberCell
+              value={comp.amount}
+              format="rate"
+              editable
+              compact
+              bordered
+              autoFocus={idx === 0}
+              onCommit={(n) => onCommitOneTimeComponent(row, components, comp.label, n)}
+            />
+            <span className="breakdown-rate-unit"> ({comp.label})</span>
+          </div>
+        ))}
+        <div className="breakdown-edit-qty-row">
+          <span className="breakdown-edit-times" aria-hidden>×</span>
+          <ExecNumberCell
+            value={row.quantity}
+            editable
+            compact
+            bordered
+            onCommit={(n) => onCommit(row, 'quantity', n)}
+          />
+          <span className="breakdown-rate-unit"> ({qtyUnit})</span>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className="breakdown-desc-secondary breakdown-desc-secondary--editable">
       <span className="breakdown-edit-rupee">₹</span>
@@ -165,6 +307,8 @@ const BreakdownFormulaBody: React.FC<{
         format="rate"
         editable
         compact
+        bordered
+        autoFocus
         onCommit={(n) => onCommit(row, 'oneTimeCharge', n)}
       />
       <span className="breakdown-rate-unit"> (per qty) </span>
@@ -173,6 +317,7 @@ const BreakdownFormulaBody: React.FC<{
         value={row.quantity}
         editable
         compact
+        bordered
         onCommit={(n) => onCommit(row, 'quantity', n)}
       />
       <span className="breakdown-rate-unit"> ({qtyUnit})</span>
@@ -180,9 +325,122 @@ const BreakdownFormulaBody: React.FC<{
   );
 };
 
-export const CorporateMinimal: React.FC<TemplateProps> = ({ data, editable = false, onDataChange }) => {
+/** One pricing-breakdown row: pencil on the left of DESCRIPTION, then title + formula. */
+const BreakdownDescCell: React.FC<{
+  line: PricingBreakdownLine;
+  canEdit: boolean;
+  amountBlock: React.ReactNode;
+  onCommit: (row: ExecutiveSummaryRow, field: ExecEditField, value: number) => void;
+  onCommitOneTimeComponent?: (
+    row: ExecutiveSummaryRow,
+    components: { label: string; amount: number }[],
+    label: string,
+    value: number,
+  ) => void;
+}> = ({ line, canEdit, amountBlock, onCommit, onCommitOneTimeComponent }) => {
+  const [isEditing, setIsEditing] = useState(false);
+  const title = line.descriptionLines[0] || '';
+  const formula = line.descriptionLines.slice(1).join(' ') || null;
+  const showEdit = Boolean(canEdit && line.editRow);
+
+  const editBtn = showEdit ? (
+    <button
+      type="button"
+      className={isEditing ? 'breakdown-formula-done-btn' : 'breakdown-formula-edit-btn'}
+      aria-label={isEditing ? 'Done editing' : 'Edit formula values'}
+      title={isEditing ? 'Done' : 'Edit'}
+      onClick={() => setIsEditing((v) => !v)}
+    >
+      {isEditing ? (
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" aria-hidden>
+          <path d="M20 6L9 17l-5-5" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" />
+        </svg>
+      ) : (
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" aria-hidden>
+          <path
+            d="M12 20h9M16.5 3.5a2.12 2.12 0 013 3L7 19l-4 1 1-4L16.5 3.5z"
+            strokeWidth="2"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+          />
+        </svg>
+      )}
+    </button>
+  ) : null;
+
+  return (
+    <div className={`breakdown-desc-cell${showEdit ? ' breakdown-desc-cell--editable' : ''}${isEditing ? ' breakdown-desc-cell--editing' : ''}`}>
+      {editBtn}
+      <div className="breakdown-desc-cell-body">
+        {formula ? (
+          <>
+            <div className="breakdown-title-row">
+              <div className="breakdown-desc-primary">{title}</div>
+              {amountBlock}
+            </div>
+            <BreakdownFormulaBody
+              line={line}
+              canEdit={canEdit}
+              isEditing={isEditing}
+              onCommit={onCommit}
+              onCommitOneTimeComponent={onCommitOneTimeComponent}
+            />
+          </>
+        ) : (
+          <div className="breakdown-title-row">
+            <div className="breakdown-desc-primary" style={{ marginBottom: 0 }}>{title}</div>
+            {amountBlock}
+          </div>
+        )}
+      </div>
+    </div>
+  );
+};
+
+export const CorporateMinimal: React.FC<TemplateProps> = ({
+  data,
+  editable = false,
+  onDataChange,
+  onNavigateToSection,
+}) => {
   const { company, client, quote } = data;
   const toast = useToast();
+
+  /** Per-service reviews from ReferenceImages — used to group identical reviews. */
+  const [reviewsByKey, setReviewsByKey] = useState<
+    Record<string, CustomerReview | null>
+  >({});
+
+  const handleServiceDataReady = useCallback(
+    (
+      serviceKey: string,
+      ready: {
+        refImages: string[];
+        specImages: string[];
+        specFields: Array<{ label: string; value: string }>;
+        specGroups?: unknown[];
+        review: CustomerReview | null;
+      },
+    ) => {
+      setReviewsByKey((prev) => {
+        const existing = prev[serviceKey];
+        if (existing === ready.review) return prev;
+        if (
+          existing &&
+          ready.review &&
+          existing.reviewerName === ready.review.reviewerName &&
+          existing.starCount === ready.review.starCount &&
+          existing.reviewText === ready.review.reviewText &&
+          existing.reviewUrl === ready.review.reviewUrl
+        ) {
+          return prev;
+        }
+        return { ...prev, [serviceKey]: ready.review };
+      });
+      data.onServiceDataReady?.(serviceKey, ready as never);
+    },
+    [data.onServiceDataReady],
+  );
 
   // Ensure website URL has a protocol
   const ensureHttps = (url: string) => url.startsWith('http') ? url : `https://${url}`;
@@ -190,7 +448,7 @@ export const CorporateMinimal: React.FC<TemplateProps> = ({ data, editable = fal
   const showFloorToast = useCallback(
     (message: string) => {
       toast({
-        title: 'Below minimum',
+        title: message.includes('margin') ? 'Below margin' : 'Below minimum',
         description: message,
         status: 'warning',
         duration: 4000,
@@ -202,7 +460,7 @@ export const CorporateMinimal: React.FC<TemplateProps> = ({ data, editable = fal
   );
 
   const commitExecEdit = useCallback(
-    (row: ExecutiveSummaryRow, field: ExecEditField, value: number) => {
+    async (row: ExecutiveSummaryRow, field: ExecEditField, value: number) => {
       if (!onDataChange) return;
 
       const primary =
@@ -214,23 +472,16 @@ export const CorporateMinimal: React.FC<TemplateProps> = ({ data, editable = fal
         );
       if (!primary) return;
 
-      const svc = resolveDbServiceForQuoteItem({
-        serviceId: row.catalogServiceId || primary.serviceId,
-        serviceName: primary.serviceName,
-        description: primary.description,
-        city: primary.city,
-      });
-      const floors = svc
-        ? getVendorEditFloors(svc)
-        : {
-            minQty: null,
-            minDuration: null,
-            displayPriceFloor: null,
-            displayPriceIsDaily: true,
-            pfPriceFloor: null,
-          };
-
-      // Convert month UI → days / daily before validate + store
+      const floors = mergeFloorsWithQuoteItem(
+        await resolveEditFloors({
+          serviceId: row.catalogServiceId || primary.serviceId,
+          serviceName: primary.serviceName,
+          description: primary.description,
+          city: primary.city,
+        }),
+        primary,
+        quote.items,
+      );
       let storeValue = value;
       if (field === 'duration') {
         storeValue = uiEditToStorageValue('duration', value, row);
@@ -244,6 +495,20 @@ export const CorporateMinimal: React.FC<TemplateProps> = ({ data, editable = fal
       else if (field === 'requiringCharge') validationField = 'displayRate';
       else validationField = 'pfRate';
 
+      const durationDays = row.durationDays ?? 0;
+      const displayDaily =
+        row.dailyRate != null && row.dailyRate > 0
+          ? row.dailyRate
+          : row.ratePeriod === 'per_month'
+            ? (row.requiringCharge || 0) / 30
+            : row.requiringCharge || 0;
+      const packageContext = {
+        quantity: row.quantity,
+        durationDays,
+        displayDailyRate: displayDaily,
+        pfUnitRate: row.oneTimeCharge || 0,
+      };
+
       const result = validateQuoteEdit({
         field: validationField,
         value:
@@ -254,6 +519,7 @@ export const CorporateMinimal: React.FC<TemplateProps> = ({ data, editable = fal
               : value,
         floors,
         rateUiMode: row.ratePeriod === 'per_month' ? 'per_month' : 'per_day',
+        packageContext,
       });
       if (!result.ok) {
         showFloorToast(result.message || 'Invalid value');
@@ -271,6 +537,114 @@ export const CorporateMinimal: React.FC<TemplateProps> = ({ data, editable = fal
       onDataChange({ ...data, quote: nextQuote });
     },
     [data, onDataChange, quote, showFloorToast],
+  );
+
+  const commitOneTimeComponentEdit = useCallback(
+    async (
+      row: ExecutiveSummaryRow,
+      components: { label: string; amount: number }[],
+      label: string,
+      value: number,
+    ) => {
+      if (!onDataChange) return;
+
+      const primary =
+        quote.items.find((i) => i.id === row.id) ||
+        quote.items.find(
+          (i) =>
+            (i.serviceId || '').trim().toLowerCase() ===
+            (row.catalogServiceId || '').trim().toLowerCase(),
+        );
+      if (!primary) return;
+
+      console.log('[MarginDebug] commitOneTimeComponentEdit: primary item', {
+        id: primary.id,
+        serviceId: primary.serviceId,
+        serviceName: primary.serviceName,
+        description: primary.description,
+        city: primary.city,
+        rate: primary.rate,
+        vendorPfUnitCost: primary.vendorPfUnitCost ?? null,
+        vendorDisplayUnitCostPerDay: primary.vendorDisplayUnitCostPerDay ?? null,
+        rowCatalogServiceId: row.catalogServiceId,
+        rowId: row.id,
+        editLabel: label,
+        editValue: value,
+        components,
+      });
+
+      const floors = mergeFloorsWithQuoteItem(
+        await resolveEditFloors({
+          serviceId: row.catalogServiceId || primary.serviceId,
+          serviceName: primary.serviceName,
+          description: primary.description,
+          city: primary.city,
+        }),
+        primary,
+        quote.items,
+      );
+      const nextComponents = components.map((c) =>
+        c.label === label ? { ...c, amount: value } : c,
+      );
+      const durationDays = row.durationDays ?? 0;
+      const displayDaily =
+        row.dailyRate != null && row.dailyRate > 0
+          ? row.dailyRate
+          : row.ratePeriod === 'per_month'
+            ? (row.requiringCharge || 0) / 30
+            : row.requiringCharge || 0;
+      const result = validateOneTimeComponentEdit({
+        floors,
+        label,
+        value,
+        nextComponents,
+        packageContext: {
+          quantity: row.quantity,
+          durationDays,
+          displayDailyRate: displayDaily,
+        },
+      });
+      console.log('[MarginDebug] commitOneTimeComponentEdit: validation result', {
+        ok: result.ok,
+        message: result.message ?? null,
+        mergedPfCostFloor: floors.pfCostFloor,
+        pfPriceFloor: floors.pfPriceFloor,
+        nextComponents,
+      });
+      if (!result.ok) {
+        showFloorToast(result.message || 'Invalid value');
+        return;
+      }
+
+      const nextItems = applyOneTimeComponentEdit(
+        quote.items,
+        primary.id,
+        components,
+        label,
+        value,
+      );
+      const nextQuote = recalcQuoteTotals({ ...quote, items: nextItems });
+      onDataChange({ ...data, quote: nextQuote });
+    },
+    [data, onDataChange, quote, showFloorToast],
+  );
+
+  /** Persist specification remark onto matching quote items / line items. */
+  const commitSpecRemark = useCallback(
+    (targetItems: QuoteItem[], remark: string) => {
+      if (!onDataChange) return;
+      const ids = new Set(targetItems.map((i) => i.id));
+      const nextItems = quote.items.map((item) => {
+        if (!ids.has(item.id)) return item;
+        const next = { ...item, remark };
+        if (next.lineItems?.length) {
+          next.lineItems = next.lineItems.map((li) => ({ ...li, remark }));
+        }
+        return next;
+      });
+      onDataChange({ ...data, quote: { ...quote, items: nextItems } });
+    },
+    [data, onDataChange, quote],
   );
 
   // Render a term string with any embedded URLs as clickable links
@@ -293,6 +667,23 @@ export const CorporateMinimal: React.FC<TemplateProps> = ({ data, editable = fal
   const isMultiService = quote.items.length > 0 && isMultiServiceQuote(quote.items);
   const serviceGroups = isMultiService ? groupItemsByServiceType(quote.items) : [];
 
+  const serviceGroupKey = (group: (typeof serviceGroups)[number]) => {
+    const city = group.city?.trim().toLowerCase();
+    return city && city !== '\u2014'
+      ? `${city}|${group.serviceType.toLowerCase()}`
+      : group.serviceType.toLowerCase();
+  };
+
+  const multiServiceKeys = serviceGroups.map(serviceGroupKey);
+  const allReviewsReady =
+    isMultiService &&
+    multiServiceKeys.length > 0 &&
+    multiServiceKeys.every((k) => Object.prototype.hasOwnProperty.call(reviewsByKey, k));
+  const sharedReview =
+    allReviewsReady
+      ? getSharedReviewIfAllSame(multiServiceKeys.map((k) => reviewsByKey[k]))
+      : null;
+
   const formatCurrency = (amount: number) => {
     return new Intl.NumberFormat('en-IN', {
       style: 'currency',
@@ -302,14 +693,7 @@ export const CorporateMinimal: React.FC<TemplateProps> = ({ data, editable = fal
     }).format(amount);
   };
 
-  const formatRate = (amount: number) => {
-    return new Intl.NumberFormat('en-IN', {
-      style: 'currency',
-      currency: 'INR',
-      minimumFractionDigits: 0,
-      maximumFractionDigits: 2
-    }).format(amount);
-  };
+  const formatRate = (amount: number) => formatUnitRateDisplay(amount);
 
   const formatDate = (date: Date | string) => {
     const d = typeof date === 'string' ? new Date(date) : date;
@@ -321,9 +705,33 @@ export const CorporateMinimal: React.FC<TemplateProps> = ({ data, editable = fal
   };
 
   // Filter GST lines from T&C (GST amount shown separately in a later phase)
-  const filterGSTTerms = (terms: string[]) =>
-    terms.filter(t => !/gst|tax\s*%|inclusive\s*of\s*(gst|tax)|exclusive\s*of\s*(gst|tax)|\+\s*gst|\d+\s*%\s*(gst|tax)/i.test(t));
-  const normalizeTerms = normalizeTermsList;
+  const filterGSTDisplayTerms = (terms: DisplayTerm[]) =>
+    terms.filter(t => !/gst|tax\s*%|inclusive\s*of\s*(gst|tax)|exclusive\s*of\s*(gst|tax)|\+\s*gst|\d+\s*%\s*(gst|tax)/i.test(t.text));
+
+  const renderTermsList = (terms: DisplayTerm[]) => (
+    <ul>
+      {terms.map((term, i) => {
+        const prefix =
+          term.labels.length === 0
+            ? 'General T&C'
+            : formatServiceLabelPrefix(term.labels);
+        return (
+          <li key={i}>
+            <span className="bullet-dot"></span>
+            <span className="term-line">
+              {prefix ? (
+                <>
+                  <strong className="term-service-label">{prefix}</strong>
+                  <span className="term-service-sep">: </span>
+                </>
+              ) : null}
+              <span className="term-body">{term.text}</span>
+            </span>
+          </li>
+        );
+      })}
+    </ul>
+  );
 
   // Executive summary: one row per service_id (Display + P&F collapsed), amounts excl. GST
   const renderItemsTable = (items: QuoteItem[]) => {
@@ -333,10 +741,11 @@ export const CorporateMinimal: React.FC<TemplateProps> = ({ data, editable = fal
     const gstPct = quote.gstPercentage > 0 ? quote.gstPercentage : 18;
     const totalInclGst = subtotal + (subtotal * gstPct) / 100;
     const labelColSpan = 5;
-    const canEdit = Boolean(editable && onDataChange);
+    // Executive summary is navigation-only — edit qty/rates in Pricing Breakdown
+    const canEdit = false;
     return (
       <div className="table-scroll-wrap">
-      <table className={`items-table items-table--exec${hasRemark ? ' items-table--has-remark' : ''}${canEdit ? ' items-table--editable' : ''}`}>
+      <table className={`items-table items-table--exec${hasRemark ? ' items-table--has-remark' : ''}`}>
         <thead>
           <tr className="exec-thead-titles">
             <th className="col-service-id">SERVICE &amp; LOCATION</th>
@@ -358,10 +767,24 @@ export const CorporateMinimal: React.FC<TemplateProps> = ({ data, editable = fal
           </tr>
         </thead>
         <tbody>
-          {rows.map((row) => (
+          {rows.map((row) => {
+            const jumpId = onNavigateToSection
+              ? previewSectionIdForExecRow(row, items)
+              : null;
+            return (
             <tr key={row.id}>
               <td className="item-service-id">
-                <div className="item-title">{row.serviceId}</div>
+                {jumpId ? (
+                  <button
+                    type="button"
+                    className="item-title item-title--nav"
+                    onClick={() => onNavigateToSection?.(jumpId)}
+                  >
+                    {row.serviceId}
+                  </button>
+                ) : (
+                  <div className="item-title">{row.serviceId}</div>
+                )}
               </td>
               <td className="item-quantity">
                 <ExecNumberCell
@@ -404,8 +827,8 @@ export const CorporateMinimal: React.FC<TemplateProps> = ({ data, editable = fal
                       onCommit={(n) => commitExecEdit(row, 'requiringCharge', n)}
                     />
                     {row.duration != null ? (
-                      <div className="item-unit-label">
-                        ({row.ratePeriod === 'per_month' ? 'per month' : 'per day'})
+                      <div className="item-unit-label item-unit-label--rate-period">
+                        {formatRecurringRateUnitLabel(row.ratePeriod, row.quantityUnit)}
                       </div>
                     ) : null}
                   </>
@@ -435,12 +858,18 @@ export const CorporateMinimal: React.FC<TemplateProps> = ({ data, editable = fal
               <td className="item-amount-excl">{formatCurrency(row.amountExclGst)}</td>
               {hasRemark && <td className="item-remark">{row.remark || ''}</td>}
             </tr>
-          ))}
+            );
+          })}
         </tbody>
         <tfoot>
           <tr className="tfoot-totals">
             <td className="tfoot-label" colSpan={labelColSpan}>Total (excl. GST)</td>
             <td className="tfoot-excl">{formatCurrency(subtotal)}</td>
+            {hasRemark && <td></td>}
+          </tr>
+          <tr className="tfoot-totals tfoot-totals--gst">
+            <td className="tfoot-label" colSpan={labelColSpan}>GST @ {gstPct}%</td>
+            <td className="tfoot-excl">{formatCurrency(totalInclGst - subtotal)}</td>
             {hasRemark && <td></td>}
           </tr>
           <tr className="tfoot-totals tfoot-totals--incl">
@@ -485,8 +914,6 @@ export const CorporateMinimal: React.FC<TemplateProps> = ({ data, editable = fal
           </thead>
           <tbody>
             {detailLines.map((line, idx) => {
-              const title = line.descriptionLines[0] || '';
-              const formula = line.descriptionLines.slice(1).join(' ') || null;
               const amountBlock = (
                 <div className="breakdown-amount-stack">
                   <div className="breakdown-amount-inline">{formatCurrency(line.amount)}</div>
@@ -496,24 +923,13 @@ export const CorporateMinimal: React.FC<TemplateProps> = ({ data, editable = fal
               return (
                 <tr key={`${line.kind}-${idx}`}>
                   <td className="item-description breakdown-desc" colSpan={2}>
-                    {formula ? (
-                      <>
-                        <div className="breakdown-desc-primary">{title}</div>
-                        <div className="breakdown-formula-row">
-                          <BreakdownFormulaBody
-                            line={line}
-                            canEdit={canEdit}
-                            onCommit={commitExecEdit}
-                          />
-                          {amountBlock}
-                        </div>
-                      </>
-                    ) : (
-                      <div className="breakdown-formula-row">
-                        <div className="breakdown-desc-primary" style={{ marginBottom: 0, flex: 1 }}>{title}</div>
-                        {amountBlock}
-                      </div>
-                    )}
+                    <BreakdownDescCell
+                      line={line}
+                      canEdit={canEdit}
+                      amountBlock={amountBlock}
+                      onCommit={commitExecEdit}
+                      onCommitOneTimeComponent={commitOneTimeComponentEdit}
+                    />
                   </td>
                 </tr>
               );
@@ -637,23 +1053,11 @@ export const CorporateMinimal: React.FC<TemplateProps> = ({ data, editable = fal
 
   // Single service quote (original behavior)
   if (!isMultiService) {
-    const hasItemTerms = quote.items.some(item => item.termsAndConditions?.trim());
-    const allServiceTerms = quote.items[0]?.termsAndConditions || quote.termsAndConditions || '';
-    const hasSpecificTerms = !!(hasItemTerms || quote.termsAndConditions?.trim());
     const singleTotal = 3;
-    // Service-specific terms: show what's in the DB proposal (filtered for GST which is in table)
-    const rawSingleTerms = hasSpecificTerms && allServiceTerms
-      ? filterGSTTerms(normalizeTerms(allServiceTerms))
-      : [];
-    // Only show Service Terms if we have non-default content (avoids duplicating General Terms)
-    const defaultFiltered = filterGSTTerms(DEFAULT_GENERAL_TERMS);
-    const isDefaultContent = rawSingleTerms.length > 0
-      && rawSingleTerms.length === defaultFiltered.length
-      && rawSingleTerms.every((t, i) => t === defaultFiltered[i]);
-    const singleTerms = isDefaultContent ? [] : rawSingleTerms;
-    // General section always uses DEFAULT_GENERAL_TERMS — quote.termsAndConditions IS the service terms
-    const generalTermsList = filterGSTTerms(DEFAULT_GENERAL_TERMS);
-    const showGeneralSection = generalTermsList.length > 0;
+    // One merged T&C: general first, then per-service extras (ordered) with bold service names
+    const singleTerms = filterGSTDisplayTerms(
+      resolveMergedDisplayTermEntries(quote.termsAndConditions, quote.items, DEFAULT_GENERAL_TERMS),
+    );
     return (
       <>
         <div id="pdf-page-1" className="template-corporate-minimal">
@@ -662,9 +1066,12 @@ export const CorporateMinimal: React.FC<TemplateProps> = ({ data, editable = fal
             {renderClientDetails()}
           </div>
 
-          <div className="quote-items-section">
+          <div
+            className="quote-items-section"
+            id={quote.items[0] ? previewServiceSectionIdFromItem(quote.items[0]) : undefined}
+          >
             <div data-pdf-block="atomic" style={{ paddingBottom: '1px' }}>
-              <h3 style={{ textAlign: 'center', fontSize: '20px', fontWeight: '700', textTransform: 'uppercase', letterSpacing: '0.08em', color: '#3b0a14', margin: '0 0 8px 0', paddingBottom: '10px', borderBottom: '2px solid #2980b9' }}>
+              <h3 style={{ textAlign: 'center', fontSize: '16px', fontWeight: '700', textTransform: 'uppercase', letterSpacing: '0.08em', color: '#3b0a14', margin: '0 0 8px 0', paddingBottom: '10px', borderBottom: '2px solid #2980b9' }}>
                 {extractServiceType(quote.items[0]?.description || '').toUpperCase()}
               </h3>
               <h3 className="smart-section-heading" style={{ fontSize: '15px', fontWeight: '700', textTransform: 'uppercase', letterSpacing: '0.06em', color: '#1a1a2e', margin: '16px 0 14px 0', paddingBottom: '8px', borderBottom: '2px solid #2980b9' }}>
@@ -681,6 +1088,9 @@ export const CorporateMinimal: React.FC<TemplateProps> = ({ data, editable = fal
               proposalPageMap={data.proposalPageMap}
               items={quote.items}
               terms={[]}
+              remark={collectServiceRemarks(quote.items)}
+              remarkEditable={Boolean(editable && onDataChange)}
+              onRemarkChange={(r) => commitSpecRemark(quote.items, r)}
               serviceKey={(() => {
                 const city = (quote.items[0]?.city || '').trim().toLowerCase();
                 const st = extractServiceType(quote.items[0]?.description || '').toLowerCase();
@@ -693,29 +1103,19 @@ export const CorporateMinimal: React.FC<TemplateProps> = ({ data, editable = fal
 
           {/* Terms flow within pdf-page-1 — virtual page engine packs them after reference images,
               eliminating the blank half-page that occurred when they lived in a separate pdf-page-terms */}
+          <div id="preview-terms-single">
           {singleTerms.length > 0 && (
-            <div className="terms-section" data-pdf-block="list" style={{ marginBottom: '24px' }}>
-              <h3 style={{ textAlign: 'center', fontSize: '20px', fontWeight: '700', textTransform: 'uppercase', letterSpacing: '0.08em', color: '#3b0a14', margin: '0 0 18px 0', paddingBottom: '10px', borderBottom: '2px solid #2980b9' }}>
-                Service Terms &amp; Conditions
-              </h3>
-              <ul>
-                {singleTerms.map((term, i) => <li key={i}><span className="bullet-dot"></span>{term}</li>)}
-              </ul>
-            </div>
-          )}
-          {showGeneralSection && (
             <div className="terms-section" data-pdf-block="list">
-              <h3 style={{ textAlign: 'center', fontSize: '20px', fontWeight: '700', textTransform: 'uppercase', letterSpacing: '0.08em', color: '#3b0a14', margin: '0 0 18px 0', paddingBottom: '10px', borderBottom: '2px solid #2980b9' }}>
-                General Terms &amp; Conditions
+              <h3 style={{ textAlign: 'center', fontSize: '16px', fontWeight: '700', textTransform: 'uppercase', letterSpacing: '0.08em', color: '#3b0a14', margin: '0 0 18px 0', paddingBottom: '10px', borderBottom: '2px solid #2980b9' }}>
+                Terms &amp; Conditions
               </h3>
-              <ul>
-                {generalTermsList.map((term, i) => <li key={i}><span className="bullet-dot"></span>{term}</li>)}
-              </ul>
+              {renderTermsList(singleTerms)}
             </div>
           )}
+          </div>
 
           {/* Bank Details */}
-          <div className="bank-details-card" data-pdf-block="atomic">
+          <div id="preview-bank-details" className="bank-details-card" data-pdf-block="atomic">
             <h3 className="bank-details-card-title">Bank Details</h3>
             <table className="bank-details-table">
               <tbody>
@@ -758,7 +1158,7 @@ export const CorporateMinimal: React.FC<TemplateProps> = ({ data, editable = fal
 
         <div className="quote-items-section">
           <div data-pdf-block="atomic" style={{ paddingBottom: '1px' }}>
-            <h3 style={{ textAlign: 'center', fontSize: '20px', fontWeight: '700', textTransform: 'uppercase', letterSpacing: '0.08em', color: '#3b0a14', margin: '0 0 18px 0', paddingBottom: '10px', borderBottom: '2px solid #2980b9' }}>
+            <h3 style={{ textAlign: 'center', fontSize: '16px', fontWeight: '700', textTransform: 'uppercase', letterSpacing: '0.08em', color: '#3b0a14', margin: '0 0 18px 0', paddingBottom: '10px', borderBottom: '2px solid #2980b9' }}>
               Executive Pricing Summary
             </h3>
           </div>
@@ -771,23 +1171,40 @@ export const CorporateMinimal: React.FC<TemplateProps> = ({ data, editable = fal
         {renderCompanyFooter(++pageCounter, multiTotal)}
       </div>
 
-      {/* Pages 2+: All service pages wrapped in one section so the smart block
-          packer can flow services continuously without forced page breaks.
-          The export service captures this as a single 'pdf-page-services' section
-          and splits it into virtual pages only where content genuinely overflows. */}
+      {/* Page 2: Terms & Conditions (immediately after Executive Summary) */}
+      <div id="pdf-page-terms" className="template-corporate-minimal">
+        {(() => {
+          const multiTerms = filterGSTDisplayTerms(
+            resolveMergedDisplayTermEntries(quote.termsAndConditions, quote.items, DEFAULT_GENERAL_TERMS),
+          );
+          if (multiTerms.length === 0) return null;
+          return (
+        <div className="terms-section" data-pdf-block="list">
+          <h3 style={{ textAlign: 'center', fontSize: '16px', fontWeight: '700', textTransform: 'uppercase', letterSpacing: '0.08em', color: '#3b0a14', margin: '0 0 18px 0', paddingBottom: '10px', borderBottom: '2px solid #2980b9' }}>
+            Terms &amp; Conditions
+          </h3>
+          {renderTermsList(multiTerms)}
+        </div>
+          );
+        })()}
+
+        {/* Company Contact Footer */}
+        {renderCompanyFooter(++pageCounter, multiTotal)}
+      </div>
+
+      {/* Pages 3+: Service detail sections */}
       <div id="pdf-page-services" className="template-corporate-minimal">
         {serviceGroups.map((group, groupIndex) => {
-          // Fallback to quote top-level terms when item-level is empty (same-service multi-city case
-          // where hydration used the single-service path and put terms on quote.termsAndConditions)
-          const groupTermsRaw = group.termsAndConditions || quote.termsAndConditions || '';
-          const groupTerms = groupTermsRaw.trim()
-            ? filterGSTTerms(normalizeTerms(groupTermsRaw))
-            : [];
           return (
-            <React.Fragment key={groupIndex}>
+            <div
+              key={groupIndex}
+              id={previewServiceSectionId(group)}
+              className="preview-service-section"
+              data-toc-section="service"
+            >
               <div className="quote-items-section">
                 <div data-pdf-block="atomic" style={{ paddingBottom: '1px' }}>
-                  <h3 style={{ marginBottom: '8px', fontSize: '22px', fontWeight: '700', color: '#750926', textAlign: 'center' }}>
+                  <h3 style={{ marginBottom: '8px', fontSize: '18px', fontWeight: '700', color: '#750926', textAlign: 'center' }}>
                     {getServiceGroupHeading(group)}
                   </h3>
                   <h3 className="smart-section-heading" style={{ fontSize: '15px', fontWeight: '700', textTransform: 'uppercase', letterSpacing: '0.06em', color: '#1a1a2e', margin: '24px 0 14px 0', paddingBottom: '8px', borderBottom: '2px solid #2980b9' }}>
@@ -800,53 +1217,65 @@ export const CorporateMinimal: React.FC<TemplateProps> = ({ data, editable = fal
                 </div>
               </div>
 
-              {/* Reference images, spec, review and terms merged into the same
-                  section so the greedy block packer fills space after the
-                  pricing table instead of starting a separate section. */}
+              {/* Reference images / spec / review — T&C lives after Executive Summary */}
               <ReferenceImages
                 proposalPages={data.proposalPages}
                 proposalPageMap={data.proposalPageMap}
                 items={group.items}
-                terms={groupTerms}
+                terms={[]}
+                remark={collectServiceRemarks(group.items)}
+                remarkEditable={Boolean(editable && onDataChange)}
+                onRemarkChange={(r) => commitSpecRemark(group.items, r)}
                 serviceKey={(() => {
                   const city = group.city?.trim().toLowerCase();
                   return city && city !== '\u2014' ? `${city}|${group.serviceType.toLowerCase()}` : group.serviceType.toLowerCase();
                 })()}
-                onDataReady={data.onServiceDataReady}
+                hideReview={!!sharedReview}
+                onDataReady={handleServiceDataReady}
               />
-            </React.Fragment>
+            </div>
           );
         })}
 
-        {/* Single shared footer for the entire services section —
-            compositeWithPageFooter pins it to the bottom of every virtual page.
-            Page numbers are overwritten by jsPDF's injection loop after all pages are captured. */}
-        {renderCompanyFooter(0, 0)}
-      </div>
+        {/* Identical reviews across all services → one card above bank details */}
+        {sharedReview && (
+          <div className="smart-section" data-pdf-block="atomic" id="preview-shared-review">
+            <h3 className="smart-section-heading">
+              <span className="smart-heading-bar" />
+              Customer Review
+            </h3>
+            <div className="review-card">
+              <div className="review-header">
+                <span className="review-avatar">
+                  {sharedReview.reviewerName.charAt(0).toUpperCase()}
+                </span>
+                <div className="review-meta">
+                  <span className="review-name">{sharedReview.reviewerName}</span>
+                  <span className="review-stars">
+                    {'★'.repeat(sharedReview.starCount)}
+                    {'☆'.repeat(Math.max(0, 5 - sharedReview.starCount))}
+                  </span>
+                </div>
+              </div>
+              {sharedReview.reviewText && (
+                <p className="review-body">{sharedReview.reviewText}</p>
+              )}
+              {sharedReview.reviewUrl && (
+                <a
+                  href={sharedReview.reviewUrl}
+                  className="review-link"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                >
+                  Click here to see the review
+                </a>
+              )}
+            </div>
+          </div>
+        )}
 
-      {/* Last Page: Terms & Conditions */}
-      <div id="pdf-page-terms" className="template-corporate-minimal">
-        {/* General Terms */}
-        {(() => {
-          // Always use DEFAULT_GENERAL_TERMS for the general section — same fix as single-service.
-          // quote.termsAndConditions IS the service-specific DB terms so feeding it into
-          // resolveGeneralTermsList caused service terms to appear as "general" terms.
-          const multiGeneralTerms = filterGSTTerms(DEFAULT_GENERAL_TERMS);
-          if (multiGeneralTerms.length === 0) return null;
-          return (
-        <div className="terms-section" data-pdf-block="list">
-          <h3 style={{ textAlign: 'center', fontSize: '20px', fontWeight: '700', textTransform: 'uppercase', letterSpacing: '0.08em', color: '#3b0a14', margin: '0 0 18px 0', paddingBottom: '10px', borderBottom: '2px solid #2980b9' }}>
-            General Terms &amp; Conditions
-          </h3>
-          <ul>
-            {multiGeneralTerms.map((term, i) => <li key={i}><span className="bullet-dot"></span>{term}</li>)}
-          </ul>
-        </div>
-          );
-        })()}
-
-        {/* Bank Details */}
-        <div className="bank-details-card" data-pdf-block="atomic">
+        {/* Bank + notice last — after all service detail sections */}
+        <div id="preview-bank-details" className="bank-details-card" data-pdf-block="atomic">
           <h3 className="bank-details-card-title">Bank Details</h3>
           <table className="bank-details-table">
             <tbody>
@@ -859,13 +1288,14 @@ export const CorporateMinimal: React.FC<TemplateProps> = ({ data, editable = fal
           </table>
         </div>
 
-        {/* System Generated Notice */}
         <div className="system-generated-notice" data-pdf-block="atomic">
           <p>This is a system-generated quotation and does not require a signature.</p>
         </div>
 
-        {/* Company Contact Footer */}
-        {renderCompanyFooter(multiTotal, multiTotal)}
+        {/* Single shared footer for the entire services section —
+            compositeWithPageFooter pins it to the bottom of every virtual page.
+            Page numbers are overwritten by jsPDF's injection loop after all pages are captured. */}
+        {renderCompanyFooter(0, 0)}
       </div>
     </>
   );

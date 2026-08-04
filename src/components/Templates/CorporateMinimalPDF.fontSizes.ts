@@ -16,32 +16,34 @@ export const PDF_FONT = {
   page: 15.45,
 
   // Header
-  quoteTitle: 27.2,
+  quoteTitle: 24.2,
   companyDetails: 13.39,
   metaLabel: 13.91,
   metaValue: 13.91,
 
   // Client block
-  clientHeading: 17,
-  clientName: 18.54,
-  clientDetail: 15.97,
+  clientHeading: 13.5,
+  clientName: 14.5,
+  clientDetail: 13,
 
   // Section headings
   sectionHeading: 23.18,
-  sectionHeadingGroup: 23.18,
+  sectionHeadingGroup: 18.5,
   subHeading: 13.15, // was 14.94 (+8%) — e.g. "1. Pricing Breakdown"
 
   // Executive pricing table / breakdown headers
   theadCell: 13.35, // was 12.36 (+8%) — DESCRIPTION | AMOUNT
+  /** Second-header formula: (A×B×C)+(A×D) */
+  theadFormula: 12.8,
   tbodyCell: 17,
   tbodyCellFinal: 19.31,
   itemTitle: 18.54,
   itemDetails: 17,
-  itemUnitLabel: 10.3,
-  serviceIdText: 16.74,
-  cellValue: 15.02, // was 13.91 (+8%)
+  itemUnitLabel: 10.51, // +2% from 10.3
+  serviceIdText: 14, // was 17.07 — tighter for multi-line SERVICE & LOCATION
+  cellValue: 15.32, // +2% from 15.02
   /** Pricing breakdown formula (e.g. ₹899 × 50) — ~1% under cellValue */
-  breakdownFormula: 14.87, // was 13.77 (+8%)
+  breakdownFormula: 15.17, // +2% from 14.87
 
   // Totals footer
   tfootLabel: 17,

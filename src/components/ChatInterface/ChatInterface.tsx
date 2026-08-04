@@ -33,7 +33,7 @@ import {
 // DISABLED: proposal_chunks RAG search
 // import { searchServices } from '../../services/pdfEmbeddingService';
 import { extractCityHint, resolveServiceIdFromCatalog } from '../../utils/serviceResolver';
-import { durationMultiplier, enrichQuoteItemsDurationFromDb, resolveQuoteLineDuration } from '../../utils/durationUtils';
+import { computeQuoteItemTotal, enrichQuoteItemsDurationFromDb, resolveQuoteLineDuration } from '../../utils/durationUtils';
 import {
   buildCityServiceListFromDb,
   buildCloudSegmentCityPlan,
@@ -1701,6 +1701,22 @@ const ChatInterface: React.FC = () => {
         console.log('🗺️ Added city→PDF mapping hint:', cityMappingHint);
       }
 
+      // Cloud / vendor catalog mode: never call Gemini for chat.
+      // Quotes are built from DB confirmations; Gemini is only used for qty-unit labels on Preview.
+      if (USE_CLOUD_DATA) {
+        console.warn('🚫 [Chat] Gemini disabled for chat (USE_CLOUD_DATA). Qty-unit AI is preview-only.');
+        const noGeminiMsg: Message = {
+          id: (Date.now() + 1).toString(),
+          role: 'assistant',
+          content:
+            'Chat AI is turned off for quote matching. Type a city name (e.g. Chennai, Coimbatore) to see services from your rate card, then select services to generate a quote. Measurement labels are filled automatically on the Preview page.',
+          timestamp: new Date(),
+        };
+        setMessages(prev => [...prev, noGeminiMsg]);
+        setIsLoading(false);
+        return;
+      }
+
       let response = await sendMessageToGemini({
         userMessage: enhancedUserMessage,
         proposalText: proposal.textContent, // Backward compatibility fallback
@@ -1955,7 +1971,7 @@ const ChatInterface: React.FC = () => {
               svcMeta,
               sectionServiceName || sectionTitle || specificTitle || description,
             );
-            return {
+            const line = {
               id: `${sectionIndex}-${lineIndex}`,
               title: specificTitle, // Store specific service title for T&C display
               description: description,
@@ -1966,12 +1982,14 @@ const ChatInterface: React.FC = () => {
               duration: resolved.duration,
               durationUnit: resolved.durationUnit,
               durationIsAuto: resolved.isAutoFromDb,
-              total: (item.quantity || 1) * (item.unitPrice || 0) * resolved.multiplier,
+              total: 0,
               minimumQuantity: item.minimumQuantity || undefined,
               // Only store terms on the first line item of each section to avoid duplicate textareas
               // For rate card images, clear per-item terms; for proposals, keep them
               termsAndConditions: lineIndex === 0 ? (isRateCardImage ? undefined : (section.termsAndConditions || undefined)) : undefined
             };
+            line.total = computeQuoteItemTotal(line);
+            return line;
           });
         });
 
@@ -2060,31 +2078,40 @@ const ChatInterface: React.FC = () => {
         const hasItemTerms = quoteItems.some((i) => i.termsAndConditions?.trim());
         const hasAnyTerms = !!(topLevelTerms.trim() || hasItemTerms);
 
-        // Use standard business terms for rate card images; DB terms for proposals
+        // Use standard business terms for rate card images; merged DB/AI terms for proposals
         let finalTermsAndConditions: string;
 
         if (isRateCardImage) {
-          finalTermsAndConditions = DEFAULT_GENERAL_TERMS.join('\n');
+          finalTermsAndConditions = DEFAULT_GENERAL_TERMS.map((t) => `• ${t}`).join('\n');
           console.log('✅ Using DEFAULT_GENERAL_TERMS for image rate card');
         } else if (hydratedFromDb) {
+          // hydrateQuoteTermsFromCatalog already merged general + unique service extras with tags
           finalTermsAndConditions = topLevelTerms;
           console.log(
-            hasItemTerms
-              ? '📋 Using DB metadata terms (per-service on items + general on quote)'
-              : `📋 Using DB metadata terms (${topLevelTerms.split('\n').length} lines on quote)`,
+            `📋 Using merged DB T&C (${topLevelTerms.split('\n').length} lines)`,
           );
         } else {
-          const { isRateCardFootnoteText } = await import('../../utils/termsHydration');
+          const {
+            isRateCardFootnoteText,
+            buildMergedTermsAndConditions,
+          } = await import('../../utils/termsHydration');
           if (isRateCardFootnoteText(topLevelTerms)) {
-            finalTermsAndConditions = DEFAULT_GENERAL_TERMS.join('\n');
+            finalTermsAndConditions = DEFAULT_GENERAL_TERMS.map((t) => `• ${t}`).join('\n');
             console.log('⚠️ Detected rate card footnotes in T&C, using DEFAULT_GENERAL_TERMS instead');
+          } else if (hasItemTerms) {
+            // Gemini put per-service terms on items — merge into one tagged list
+            finalTermsAndConditions = buildMergedTermsAndConditions(quoteItems);
+            quoteItems.forEach((item, idx) => {
+              quoteItems[idx] = { ...item, termsAndConditions: undefined };
+            });
+            console.log('📋 Merged Gemini per-service T&C into one tagged list');
           } else if (topLevelTerms.trim()) {
             finalTermsAndConditions = topLevelTerms;
             console.log('✅ Using Gemini-extracted T&C (no DB metadata match)');
           } else if (hasAnyTerms) {
             finalTermsAndConditions = '';
           } else {
-            finalTermsAndConditions = DEFAULT_GENERAL_TERMS.join('\n');
+            finalTermsAndConditions = DEFAULT_GENERAL_TERMS.map((t) => `• ${t}`).join('\n');
             console.log('✅ Using DEFAULT_GENERAL_TERMS (no T&C from DB or AI)');
           }
         }
@@ -2642,8 +2669,8 @@ const ChatInterface: React.FC = () => {
         qItem.description.toLowerCase().includes(w.description.toLowerCase().split(' - ')[0]),
       );
       if (warningItem) {
-        const duration = durationMultiplier(qItem);
-        return { ...qItem, quantity: warningItem.requested, total: warningItem.requested * qItem.rate * duration };
+        const next = { ...qItem, quantity: warningItem.requested };
+        return { ...next, total: computeQuoteItemTotal(next) };
       }
       return qItem;
     });
@@ -2737,8 +2764,8 @@ const ChatInterface: React.FC = () => {
         const useQty = warningItem.requested !== warningItem.originalRequested
           ? warningItem.requested
           : (warningItem.minimum);
-        const duration = durationMultiplier(qItem);
-        return { ...qItem, quantity: useQty, total: useQty * qItem.rate * duration };
+        const next = { ...qItem, quantity: useQty };
+        return { ...next, total: computeQuoteItemTotal(next) };
       }
       return qItem;
     });
@@ -3053,7 +3080,21 @@ const ChatInterface: React.FC = () => {
         }
       }
 
-      // Fallback when cloud catalog unavailable: legacy Gemini path
+      // Fallback when cloud catalog unavailable
+      if (USE_CLOUD_DATA) {
+        const failMsg: Message = {
+          id: (Date.now() + 1).toString(),
+          role: 'assistant',
+          content:
+            'Could not load rate-card services from the cloud catalog. Chat AI is disabled — please retry after services load, or check your connection.',
+          timestamp: new Date(),
+        };
+        setMessages(prev => [...prev, failMsg]);
+        setIsLoading(false);
+        return;
+      }
+
+      // Legacy path only when USE_CLOUD_DATA is false
       const combinedRequest =
         `${displayRequest} [User has already specified complete service names from checkboxes]`;
       console.log('🔧 Confirmation → Gemini fallback:', combinedRequest);

@@ -1,17 +1,25 @@
 /**
  * Table pagination engine — O(n) aggressive pack of measured rows into pages.
  *
- * Fit rule (safe but tight):
+ * Fit rule:
  *   remaining = available - used
- *   if nextRow <= remaining - safetyMargin  → Fits
- *   else if nextRow <= remaining            → FitsAggressive (one more row)
- *   else                                    → NewPage
+ *   if need <= remaining + packOverfillSlack(rowHeight) → Fits
+ *   else → NewPage
+ *
+ * Short/medium rows keep a fixed 20pt slack. Tall wrapped rows get a modest
+ * extra fraction so over-measured long SERVICE & LOCATION text can still pack
+ * when leftover space is real; truly oversized rows still move next page.
  *
  * Continuation pages reserve thead + footer only (no company / client / title)
  * unless `repeatCompanyHeaderOnContinuation` is enabled.
  */
 
-import { DEFAULT_PAGINATION_OPTIONS, PAGE_PACKING_BUFFER_PT } from './constants';
+import {
+  DEFAULT_PAGINATION_OPTIONS,
+  PACK_OVERFILL_SLACK_PT,
+  PAGE_PACKING_BUFFER_PT,
+  SAFETY_ROW_MEDIUM_MAX_PT,
+} from './constants';
 import { availableBodyHeight } from './measure';
 import type {
   BuiltTablePage,
@@ -100,13 +108,18 @@ function round2(n: number): number {
 type FitKind = 'Fits' | 'NewPage';
 
 /**
- * Place only when the block fits under the dynamic safety margin.
- * No "aggressive" zero-margin fit — that caused React-PDF overflow pages
- * with a single row and no table header.
+ * Overfill allowance for packing. Same for short and tall rows — large tall
+ * slack was packing past Yoga capacity and clipping / bouncing tables.
+ */
+export function packOverfillSlack(_rowHeight: number): number {
+  return PACK_OVERFILL_SLACK_PT;
+}
+
+/**
+ * Place when the measured block fits in the leftover body height.
  */
 export function classifyFit(need: number, remaining: number, rowHeightForMargin: number): FitKind {
-  const margin = dynamicSafetyMargin(rowHeightForMargin);
-  if (need <= remaining - margin) return 'Fits';
+  if (need <= remaining + packOverfillSlack(rowHeightForMargin)) return 'Fits';
   return 'NewPage';
 }
 
@@ -387,9 +400,38 @@ function applyWidowOrphanControl<TRow>(
 
   if (pages.length < 2) return;
 
-  // 3) Avoid a continuation page with a single orphan row — but NEVER peel
-  //    extra rows onto a totals page that already has ≥1 companion row.
-  //    That was emptying page 1 to satisfy minRows on the totals page.
+  // 3) Fill leftover space on the previous page by pulling rows back from the
+  //    next page while they fit. Then short-row minRows peel only (never peel
+  //    tall wrapped rows — that left huge gaps).
+  for (let p = 1; p < pages.length; p++) {
+    const prev = pages[p - 1];
+    const cur = pages[p];
+    if (cur.rows.length === 0) continue;
+    // Do not strip the totals page down to zero rows.
+    if (cur.showTotals && cur.rows.length <= 1) continue;
+
+    while (cur.rows.length > 0) {
+      if (cur.showTotals && cur.rows.length <= 1) break;
+      const orphan = cur.rows[0];
+      const prevBody = prev.usedBodyHeight + orphan.height;
+      if (prevBody > prev.availableBodyHeight + packOverfillSlack(orphan.height)) {
+        break;
+      }
+      cur.rows.shift();
+      prev.rows.push(orphan);
+      prev.usedBodyHeight += orphan.height;
+      cur.usedBodyHeight -= orphan.height;
+      cur.rowStartIndex += 1;
+      if (cur.rows.length === 0) {
+        pages.splice(p, 1);
+        p -= 1;
+        break;
+      }
+    }
+  }
+
+  if (pages.length < 2) return;
+
   for (let p = 1; p < pages.length; p++) {
     const prev = pages[p - 1];
     const cur = pages[p];
@@ -400,6 +442,7 @@ function applyWidowOrphanControl<TRow>(
 
     while (cur.rows.length < minRows && prev.rows.length > minRows) {
       const donor = prev.rows[prev.rows.length - 1];
+      if (donor.height > SAFETY_ROW_MEDIUM_MAX_PT) break;
       const curBody =
         cur.usedBodyHeight - (cur.showTotals ? totalsH : 0) + donor.height;
       if (curBody + (cur.showTotals ? totalsH : 0) > cur.availableBodyHeight) {

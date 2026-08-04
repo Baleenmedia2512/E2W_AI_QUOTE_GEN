@@ -31,7 +31,7 @@ import {
 import { FiTrash2, FiEdit3 } from 'react-icons/fi';
 import { Quote, QuoteItem, LineItem } from '../../types/quote';
 import {
-  lineItemPricingMultiplier,
+  computeQuoteItemTotal,
   normalizeDurationToDays,
   quoteHasAnyDuration,
 } from '../../utils/durationUtils';
@@ -41,6 +41,8 @@ import {
   resolveDbServiceForQuoteItem,
   validateQuoteEdit,
 } from '../../utils/quoteEditValidation';
+import { getVendorRatesCache, loadVendorRatesFromCloud } from '../../services/vendorRateService';
+import { formatUnitRateDisplay, roundRate2 } from '../../utils/rateDisplay';
 import './QuotePreview.css';
 
 interface QuotePreviewProps {
@@ -51,12 +53,11 @@ interface QuotePreviewProps {
 
 /** Display / store rates with max 2 decimal places (e.g. 56.67 not 56.666666). */
 function roundRate(n: number): number {
-  if (!Number.isFinite(n)) return 0;
-  return Math.round(n * 100) / 100;
+  return roundRate2(n);
 }
 
 function formatRateDisplay(n: number): string {
-  return roundRate(n).toFixed(2);
+  return formatUnitRateDisplay(n);
 }
 
 /** Convert months → days on a quote item (mutates) so edit UI is always day-based. */
@@ -67,7 +68,13 @@ function ensureQuoteItemDays(item: QuoteItem): void {
       const n = normalizeDurationToDays(li);
       if (wasMonths && n.duration) {
         n.unitPrice = roundRate(n.unitPrice);
-        n.total = n.quantity * n.unitPrice * lineItemPricingMultiplier(n);
+        n.total = computeQuoteItemTotal({
+          quantity: n.quantity,
+          unitPrice: n.unitPrice,
+          duration: n.duration,
+          durationUnit: n.durationUnit,
+          description: n.description,
+        });
       }
       return n;
     });
@@ -80,7 +87,7 @@ function ensureQuoteItemDays(item: QuoteItem): void {
     item.duration = n.duration;
     item.durationUnit = 'days';
     item.durationLabel = 'day';
-    item.total = item.quantity * item.rate * lineItemPricingMultiplier(item);
+    item.total = computeQuoteItemTotal(item);
   }
 }
 
@@ -98,7 +105,7 @@ const QuotePreview: React.FC<QuotePreviewProps> = ({ quote, onUpdate, onSave }) 
 
   const showFloorToast = (message: string) => {
     toast({
-      title: 'Below minimum',
+      title: message.includes('margin') ? 'Below margin' : 'Below minimum',
       description: message,
       status: 'warning',
       duration: 4000,
@@ -108,19 +115,58 @@ const QuotePreview: React.FC<QuotePreviewProps> = ({ quote, onUpdate, onSave }) 
   };
 
   /** Validate qty / duration / rate against vendor floors before applying. */
-  const assertVendorFloor = (
+  const assertVendorFloor = async (
     item: QuoteItem,
     field: 'quantity' | 'duration' | 'unitPrice',
     value: number,
     lineDescription?: string,
-  ): boolean => {
-    const svc = resolveDbServiceForQuoteItem(item);
+  ): Promise<boolean> => {
+    let svc = resolveDbServiceForQuoteItem(item);
+    if (!svc && getVendorRatesCache().length === 0) {
+      try {
+        await loadVendorRatesFromCloud();
+      } catch {
+        /* allow edit if catalog unavailable */
+      }
+      svc = resolveDbServiceForQuoteItem(item);
+    }
     if (!svc) return true; // no catalog row → allow edit
     const floors = getVendorEditFloors(svc);
     const desc = lineDescription || item.description || '';
 
+    const groupItems = localQuote?.items.filter((i) => {
+      const a = (i.serviceId || i.serviceName || '').trim().toLowerCase();
+      const b = (item.serviceId || item.serviceName || '').trim().toLowerCase();
+      if (a && b) return a === b;
+      return i.id === item.id;
+    }) || [item];
+
+    const displayItem = groupItems.find(
+      (i) => rateFieldForLineDescription(i.description) === 'displayRate',
+    );
+    const pfItem = groupItems.find(
+      (i) => rateFieldForLineDescription(i.description) === 'pfRate',
+    );
+    const durationDays =
+      displayItem?.duration && displayItem.duration > 0
+        ? displayItem.duration
+        : item.duration && item.duration > 0
+          ? item.duration
+          : 0;
+    const packageContext = {
+      quantity: item.quantity,
+      durationDays,
+      displayDailyRate: displayItem?.rate || 0,
+      pfUnitRate: pfItem?.rate || 0,
+    };
+
     if (field === 'quantity') {
-      const result = validateQuoteEdit({ field: 'quantity', value, floors });
+      const result = validateQuoteEdit({
+        field: 'quantity',
+        value,
+        floors,
+        packageContext: { ...packageContext, quantity: value },
+      });
       if (!result.ok) {
         showFloorToast(result.message || 'Invalid quantity');
         return false;
@@ -130,7 +176,12 @@ const QuotePreview: React.FC<QuotePreviewProps> = ({ quote, onUpdate, onSave }) 
 
     if (field === 'duration') {
       if (rateFieldForLineDescription(desc) === 'pfRate') return true;
-      const result = validateQuoteEdit({ field: 'duration', value, floors });
+      const result = validateQuoteEdit({
+        field: 'duration',
+        value,
+        floors,
+        packageContext: { ...packageContext, durationDays: value },
+      });
       if (!result.ok) {
         showFloorToast(result.message || 'Invalid duration');
         return false;
@@ -145,6 +196,10 @@ const QuotePreview: React.FC<QuotePreviewProps> = ({ quote, onUpdate, onSave }) 
       value,
       floors,
       rateUiMode: 'per_day',
+      packageContext:
+        rateField === 'displayRate'
+          ? { ...packageContext, displayDailyRate: value }
+          : { ...packageContext, pfUnitRate: value },
     });
     if (!result.ok) {
       showFloorToast(result.message || 'Invalid rate');
@@ -177,16 +232,21 @@ const QuotePreview: React.FC<QuotePreviewProps> = ({ quote, onUpdate, onSave }) 
   const showDurationColumn = quoteHasAnyDuration(localQuote.items);
 
   const calculateLineItemTotal = (item: LineItem & { durationIsAuto?: boolean }): number => {
-    return item.quantity * item.unitPrice * lineItemPricingMultiplier(item);
+    return computeQuoteItemTotal({
+      quantity: item.quantity,
+      unitPrice: item.unitPrice,
+      duration: item.duration,
+      durationUnit: item.durationUnit,
+      description: item.description,
+    });
   };
 
   const calculateItemSubtotal = (item: QuoteItem): number => {
-    // Handle new structure (direct properties)
-    if (item.total !== undefined) {
-      return item.total;
+    // Prefer live recompute so month-display rounding matches the formula
+    if (item.lineItems && item.lineItems.length > 0) {
+      return item.lineItems.reduce((sum, lineItem) => sum + calculateLineItemTotal(lineItem), 0);
     }
-    // Handle old structure (with lineItems)
-    return item.lineItems?.reduce((sum, lineItem) => sum + calculateLineItemTotal(lineItem), 0) || 0;
+    return computeQuoteItemTotal(item);
   };
 
   // Helper to get line items for rendering - handles both old and new structure
@@ -252,7 +312,7 @@ const QuotePreview: React.FC<QuotePreviewProps> = ({ quote, onUpdate, onSave }) 
     return subtotal + gst;
   };
 
-  const updateLineItem = (itemIndex: number, lineItemIndex: number, field: keyof LineItem, value: any) => {
+  const updateLineItem = async (itemIndex: number, lineItemIndex: number, field: keyof LineItem, value: any) => {
     if (!localQuote) return;
 
     const updatedQuote = { ...localQuote };
@@ -265,7 +325,7 @@ const QuotePreview: React.FC<QuotePreviewProps> = ({ quote, onUpdate, onSave }) 
         item.lineItems && item.lineItems[lineItemIndex]
           ? item.lineItems[lineItemIndex].description
           : item.description;
-      if (!assertVendorFloor(item, field, Number(value), lineDesc)) {
+      if (!(await assertVendorFloor(item, field, Number(value), lineDesc))) {
         return;
       }
     }
@@ -307,10 +367,10 @@ const QuotePreview: React.FC<QuotePreviewProps> = ({ quote, onUpdate, onSave }) 
         item.description = value;
       } else if (field === 'quantity') {
         item.quantity = value;
-        item.total = value * item.rate * lineItemPricingMultiplier(item);
+        item.total = computeQuoteItemTotal(item);
       } else if (field === 'unitPrice') {
         item.rate = roundRate(value);
-        item.total = item.quantity * item.rate * lineItemPricingMultiplier(item);
+        item.total = computeQuoteItemTotal(item);
       } else if (field === 'duration') {
         if (value && value > 0) {
           item.duration = value;
@@ -321,8 +381,10 @@ const QuotePreview: React.FC<QuotePreviewProps> = ({ quote, onUpdate, onSave }) 
           // Keep duration as 0 so the input stays visible; clear unit/auto flags
           item.duration = 0;
           item.durationIsAuto = undefined;
+          item.durationUnit = undefined;
+          item.durationLabel = undefined;
         }
-        item.total = item.quantity * item.rate * lineItemPricingMultiplier(item);
+        item.total = computeQuoteItemTotal(item);
       } else if (field === 'remark') {
         item.remark = value;
       } else if (field === 'quantityUnit') {
@@ -465,17 +527,6 @@ const QuotePreview: React.FC<QuotePreviewProps> = ({ quote, onUpdate, onSave }) 
     updatedQuote.termsAndConditions = value;
     updatedQuote.updatedAt = new Date();
 
-    setLocalQuote(updatedQuote);
-    onUpdate(updatedQuote);
-  };
-
-  const updateItemTerms = (itemIndex: number, value: string) => {
-    if (!localQuote) return;
-    const updatedQuote = { ...localQuote };
-    updatedQuote.items = updatedQuote.items.map((item, i) =>
-      i === itemIndex ? { ...item, termsAndConditions: value } : item
-    );
-    updatedQuote.updatedAt = new Date();
     setLocalQuote(updatedQuote);
     onUpdate(updatedQuote);
   };
@@ -1292,55 +1343,6 @@ const QuotePreview: React.FC<QuotePreviewProps> = ({ quote, onUpdate, onSave }) 
           }}
         />
       </Box>
-
-      {/* Per-item terms — only shown for multi-service quotes */}
-      {localQuote.items.map((item, idx) =>
-        item.termsAndConditions ? (
-          <Box mt={6} key={item.id}>
-            <HStack justify="space-between" mb={3}>
-              <Text fontSize="md" fontWeight="700" color="gray.800">
-                📝 {item.title || item.description.split(' - ')[0]} — Terms & Conditions
-              </Text>
-              <Icon as={FiEdit3} color="red.500" boxSize={5} />
-            </HStack>
-            <Textarea
-              value={item.termsAndConditions}
-              onChange={(e) => {
-                updateItemTerms(idx, e.target.value);
-                e.target.style.height = 'auto';
-                e.target.style.height = e.target.scrollHeight + 'px';
-              }}
-              placeholder="Enter service-specific terms..."
-              minH="120px"
-              size="lg"
-              bg="white"
-              borderWidth="2px"
-              borderColor="gray.300"
-              borderRadius="12px"
-              fontWeight="500"
-              resize="vertical"
-              overflow="hidden"
-              onFocus={(e) => {
-                const t = e.target;
-                setTimeout(() => t.select(), 300);
-                e.target.style.height = 'auto';
-                e.target.style.height = e.target.scrollHeight + 'px';
-              }}
-              sx={{
-                field: {
-                  overflow: 'hidden !important',
-                }
-              }}
-              _hover={{ borderColor: 'red.300', boxShadow: '0 0 0 1px rgba(201, 31, 61, 0.1)' }}
-              _focus={{ 
-                borderColor: 'red.500', 
-                boxShadow: '0 0 0 3px rgba(201, 31, 61, 0.15)',
-                bg: 'white'
-              }}
-            />
-          </Box>
-        ) : null
-      )}
     </Box>
   );
 };

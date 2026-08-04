@@ -10,6 +10,7 @@ import {
   SAFETY_ROW_MEDIUM_MAX_PT,
   SAFETY_ROW_SMALL_MAX_PT,
 } from './constants';
+import { hyphenateLongWords } from '../utils/hyphenateLongWords';
 
 /** Usable content width inside page padding. */
 export function contentWidth(geometry: {
@@ -32,6 +33,7 @@ export function contentHeight(geometry: {
 /**
  * Estimate wrapped line count for a string in a fixed column.
  * Does not hyphenate mid-word; breaks on whitespace or explicit soft points.
+ * Explicit `\n` is always a hard line break.
  */
 export function countWrappedLines(
   text: string,
@@ -45,24 +47,100 @@ export function countWrappedLines(
   // floor → fewer chars/line → more lines → safer (never under-measure wrap)
   const charsPerLine = Math.max(1, Math.floor(maxWidth / avgChar));
 
-  const tokens = raw.split(/(\s+|-)/).filter((t) => t.length > 0);
+  let totalLines = 0;
+  const paragraphs = raw.split('\n');
+
+  for (const para of paragraphs) {
+    const segment = para.trim();
+    if (!segment) {
+      totalLines += 1;
+      continue;
+    }
+
+    const tokens = segment.split(/(\s+|-)/).filter((t) => t.length > 0);
+    let lines = 1;
+    let col = 0;
+
+    for (const token of tokens) {
+      const len = token.length;
+      if (col === 0 && len > charsPerLine) {
+        const used = Math.ceil(len / charsPerLine);
+        lines += used - 1;
+        col = len % charsPerLine;
+        if (col === 0) {
+          lines += 1;
+        }
+        continue;
+      }
+      if (col + len > charsPerLine) {
+        lines += 1;
+        col = /^\s+$/.test(token) ? 0 : len;
+      } else {
+        col += len;
+      }
+    }
+
+    totalLines += Math.max(1, lines);
+  }
+
+  return Math.max(1, totalLines);
+}
+
+/**
+ * Match CorporateMinimalPDF `ServiceIdText`: hyphen-break words longer than 13 chars,
+ * then wrap on kebab segments / whitespace. Falls back to normal wrap when
+ * there are no hyphens.
+ */
+export function countServiceIdWrappedLines(
+  text: string,
+  maxWidth: number,
+  style: Pick<TextMeasureStyle, 'fontSize' | 'avgCharWidthFactor'>,
+): number {
+  const raw = hyphenateLongWords((text ?? '').trim());
+  if (!raw) return 1;
+
+  // Hard newlines from long-word breaks — measure each line and sum.
+  if (raw.includes('\n')) {
+    let total = 0;
+    for (const line of raw.split('\n')) {
+      total += countServiceIdWrappedLines(line, maxWidth, style);
+    }
+    return Math.max(1, total);
+  }
+
+  const parts = raw.split('-').filter((p) => p.length > 0);
+  if (parts.length <= 1) {
+    return countWrappedLines(raw, maxWidth, style);
+  }
+
+  const avgChar = Math.max(0.01, style.fontSize * style.avgCharWidthFactor);
+  const charsPerLine = Math.max(1, Math.floor(maxWidth / avgChar));
+
   let lines = 1;
   let col = 0;
-
-  for (const token of tokens) {
-    const len = token.length;
-    if (col === 0 && len > charsPerLine) {
-      const used = Math.ceil(len / charsPerLine);
-      lines += used - 1;
-      col = len % charsPerLine;
-      if (col === 0) {
-        lines += 1;
+  for (let i = 0; i < parts.length; i++) {
+    const seg = i < parts.length - 1 ? `${parts[i]}-` : parts[i];
+    const len = seg.length;
+    if (col === 0) {
+      // Segment longer than a line still occupies at least one line.
+      if (len > charsPerLine) {
+        lines += Math.ceil(len / charsPerLine) - 1;
+        col = len % charsPerLine;
+        if (col === 0) {
+          lines += 1;
+          col = 0;
+        }
+      } else {
+        col = len;
       }
       continue;
     }
     if (col + len > charsPerLine) {
       lines += 1;
-      col = /^\s+$/.test(token) ? 0 : len;
+      col = len > charsPerLine ? len % charsPerLine || charsPerLine : len;
+      if (len > charsPerLine) {
+        lines += Math.ceil(len / charsPerLine) - 1;
+      }
     } else {
       col += len;
     }
@@ -89,11 +167,16 @@ export function measureStackedCellHeight(args: {
   secondaryStyle?: TextMeasureStyle;
   paddingVertical: number;
   columnWidth: number;
+  /** Use kebab-segment wrap (SERVICE & LOCATION) instead of generic wrap. */
+  primaryWrap?: 'default' | 'serviceId';
 }): number {
   const padX = args.primaryStyle.paddingHorizontal ?? 0;
   const innerW = Math.max(1, args.columnWidth - padX * 2);
 
-  const primaryLines = countWrappedLines(args.primaryText, innerW, args.primaryStyle);
+  const primaryLines =
+    args.primaryWrap === 'serviceId'
+      ? countServiceIdWrappedLines(args.primaryText, innerW, args.primaryStyle)
+      : countWrappedLines(args.primaryText, innerW, args.primaryStyle);
   let h = textBlockHeight(primaryLines, args.primaryStyle);
 
   if (args.secondaryText && args.secondaryStyle) {
@@ -121,7 +204,7 @@ export function sumHeights(heights: number[]): number {
 
 /**
  * Dynamic safety margin by row height band.
- * Small rows → 4pt, medium → 6pt, large → 8pt. Never a fixed 20–40pt reserve.
+ * Small / medium / large — kept modest so leftover page gap can take 1–2 more rows.
  */
 export function dynamicSafetyMargin(rowHeight: number): number {
   if (rowHeight <= SAFETY_ROW_SMALL_MAX_PT) return SAFETY_MARGIN_SMALL_PT;

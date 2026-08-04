@@ -36,6 +36,8 @@ export interface TemplateProps {
   data: TemplateData;
   editable?: boolean;
   onDataChange?: (data: TemplateData) => void;
+  /** Preview-only: jump to a section (TOC / exec summary service link). */
+  onNavigateToSection?: (sectionId: string) => void;
 }
 
 export type TemplateType = 'corporate-minimal' | 'premium-agency' | 'modern-sales' | 'classic-business';
