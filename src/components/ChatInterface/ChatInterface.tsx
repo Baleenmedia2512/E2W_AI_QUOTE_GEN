@@ -642,7 +642,13 @@ const ChatInterface: React.FC = () => {
     result: ProgressiveTurnResult,
   ) => {
     setProgressiveSession(result.session);
-    if (result.quoteRows && result.quoteRows.length > 0) {
+    // Never quote while Continue (Yes/No) is showing — wait for yes_generate
+    if (
+      result.quoteRows
+      && result.quoteRows.length > 0
+      && result.step !== 'did_you_mean'
+      && !result.session.needsContinueConfirm
+    ) {
       // Skip "Creating your quote..." interim message — go straight to quote
       if (userMessage) {
         setMessages((prev) => [...prev, userMessage]);

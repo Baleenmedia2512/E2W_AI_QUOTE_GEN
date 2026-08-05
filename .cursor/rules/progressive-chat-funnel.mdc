@@ -1,0 +1,63 @@
+---
+description: Mandatory progressive quote-chat funnel — Type before City, preserve place (OMR), city checkboxes. Do not regress.
+alwaysApply: true
+---
+
+# Progressive Chat Funnel (do not break)
+
+When changing quote chat matching, intent, or Chip UI — especially `src/utils/progressiveChatEngine.ts`, `ChatInterface`, `chatIntentAiService` — keep these product rules.
+
+## Funnel order (mandatory)
+
+**Service → Type → City → Area → Direction → Quote**
+
+- Ask **Type before City**. Never ask City, then Type, then City again.
+- 2+ options → ask; 0/NA → skip; exactly 1 city → Yes/No **Continue** (“We currently offer … in X only”) — never silent auto-city → quote.
+
+## City UI
+
+- 2+ cities/places → **checkboxes** (`allowMulti: true`) + Confirm.
+- Multi-city Confirm → **one quote** with a line per resolvable city (or workQueue then one quote) — never orphan “Next — …” dead-ends.
+
+## Place / OMR (critical)
+
+Queries like `near omr hoarding`:
+
+1. Lock **area** (OMR) + medium; ask **Type** first if 2+ types.
+2. After Type → **Continue** for that place’s metro only (e.g. Chennai).
+3. **Keep** `area` / `placeHint`; **skip** area re-ask; go to Direction.
+4. Never reopen full city list (no Coimbatore) after place is known.
+
+**Type chip** (`medium:…|type`) on the **same** medium MUST preserve `city`, `area`, `placeHint`, `candidateServiceIds`.
+
+**New medium** chip MAY clear stale place/candidates.
+
+## Place / area vs direction_remarks (critical)
+
+- Place matching (`filterByLocality`, `filterHitsBySessionLocation`, locality detect) uses **only** area_name / locality / city metadata.
+- **Never** match place from `direction_remarks` (e.g. `ARCOT ROAD VIRUGAMBAKKAM TOWARDS VADAPALANI` is **not** hoarding in Vadapalani).
+- `direction_remarks` are only for: Direction step chips, and `detectDirectionInText` for multi-word sites (e.g. “Gemini Flyover”).
+
+## Batch multi-service + Metro (critical)
+
+- Batch **city** chips for Metro = **known metros only** (Chennai). Never Anna Nagar / Vanagaram as Metro cities.
+- **Bus Shelter / site media**: keep **locality/place** chips (Anna Nagar, …) — do not auto-collapse to Chennai and skip the city ask.
+- After Metro city Confirm: show **one list of all metro family chips** — Metro Station — Elevated, Metro Station — Underground, Train Inside, Train Wrap (include Train* even when the medium name has no “metro”).
+- Apartment / Padur-style locality-as-city chips remain OK outside Metro batch city rule.
+
+## Metro / family tokens (critical)
+
+- `metro`, `bus`, `led`, `booth` = **service family**, never a direction/site match.
+- Do **not** match these via substring in `direction_remarks` or long `service_name` lines (e.g. bus shelter titled “…Metro Station…”).
+- Continue Yes/No: keep `needsContinueConfirm` until **Yes** — never show “quote ready” without a click.
+- Query `led`: show LED matches **and** Non LED siblings of the same product (e.g. Mobile Van LED + Mobile Van Non LED).
+
+## Do not “fix” with these regressions
+
+- Do **not** defer Type until after City (that caused double city ask and broke OMR).
+- Madurai / Police Booth: fix via **city pool = same medium (+ mediumType) filters** as matching (`poolForCityOptions`), not by delaying Type.
+- `detectCityInText` = **known metros only** (not Padur / Vadapalani / Hosur / OMR as typed cities).
+
+## Out of scope (unless product asks)
+
+Fuzzy place typos, booth/gandhi gate special cases, service Did-you-mean for clear services like `bus semi`.

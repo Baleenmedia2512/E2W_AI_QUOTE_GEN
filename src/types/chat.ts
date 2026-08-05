@@ -109,14 +109,18 @@ export interface Message {
   progressiveSession?: {
     originalText: string;
     medium?: string;
+    mediumType?: string;
     browseToken?: string;
     city?: string;
     area?: string;
+    directionHint?: string;
+    placeHint?: string;
     qty: number | null;
     durationText?: string | null;
     candidateServiceIds?: string[];
     bestGuessServiceId?: string;
     bestGuessLabel?: string;
+    bestGuessKind?: 'place' | 'service';
     pendingRows?: Array<{ service: string; qty: number | string; city: string; serviceId?: string }>;
     pendingMedia?: string[];
     collectedRows?: Array<{ service: string; qty: number | string; city: string; serviceId?: string }>;
@@ -124,6 +128,14 @@ export interface Message {
     aiReply?: string | null;
     segments?: Array<{ raw: string; token: string; qty: number | null; city: string | null }>;
     qtyByServiceId?: Record<string, number>;
+    pendingCityQueue?: string[];
+    workQueue?: Array<{
+      medium: string;
+      browseToken?: string;
+      qty: number | null;
+      city?: string;
+      candidateServiceIds?: string[];
+    }>;
   };
 
   // DEPRECATED (kept for backward compatibility)

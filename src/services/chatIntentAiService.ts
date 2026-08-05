@@ -111,9 +111,9 @@ function resolveCityAgainstCatalog(
 ): string | null {
   if (!city?.trim()) return null;
   const q = city.toLowerCase().trim();
-  const hit = catalogCities.find((c) => c.toLowerCase() === q)
-    || catalogCities.find((c) => c.toLowerCase().includes(q) || q.includes(c.toLowerCase()));
-  return hit || city.trim();
+  // Exact match only — loose includes() wrongly maps invented AI cities onto wrong places
+  const hit = catalogCities.find((c) => c.toLowerCase() === q);
+  return hit || null;
 }
 
 /**
@@ -161,14 +161,18 @@ export async function parseChatIntentWithAi(
       '  Do NOT pick only one type for those.',
       '- kind=quote when types are clear: "bus", "auto", "bus and auto in madurai".',
       '  media = family tokens or catalog type names (bus, auto, …). Multiple allowed.',
-      '- If user says a clear type WITHOUT city and cities exist → still kind=quote with media set; app asks city.',
-      '- city = one of CITIES list or null. Never put locality/area names (e.g. Anna Nagar) as city.',
+      '- If user says a clear type WITHOUT city and cities exist → still kind=quote with media set; city=null; app asks city.',
+      '- city = one of CITIES list ONLY when user named that city; otherwise null. Never invent a city.',
+      '- Never put locality/area names (e.g. Anna Nagar, Tenyampet) as city — use areaHint for those.',
+      '- areaHint = locality only when user named it; else null.',
       '- qty only if user typed a count (not duration). duration like "3 months" or null.',
       '- shortReply = ONE short friendly line (max 14 words). No prices.',
       '- Examples:',
       '  "bus" → kind=quote, media=["bus"], city=null, ambiguous=false',
+      '  "apartment demo" → kind=quote, media=["apartment demo"], city=null, areaHint=null',
       '  "led" → kind=clarify_type, ambiguous=true, media=[], clarifyHint="led"',
       '  "bus and auto madurai" → kind=quote, media=["bus","auto"], city="Madurai"',
+      '  "hoarding near Tenyampet" → kind=quote, media=["hoarding"], city=null, areaHint="Tenyampet"',
       '  "bus stand branding madurai" → kind=clarify_type, ambiguous=true, clarifyHint="bus stand", city="Madurai"',
       '  "chennai" → kind=city_browse, city="Chennai"',
       '',
