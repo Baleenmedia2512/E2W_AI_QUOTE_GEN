@@ -11,7 +11,7 @@ import type { TemplateData } from '../../types/template';
 import type { ExecutiveSummaryRow } from '../../utils/quoteGrouping';
 import {
   formatRecurringRateUnitLabel,
-  formatUnitRateDisplay,
+  formatUnitRateInr,
 } from '../../utils/rateDisplay';
 import { PDF_FONT } from '../../components/Templates/CorporateMinimalPDF.fontSizes';
 import {
@@ -138,7 +138,7 @@ export function measureExecutiveSummaryRowHeight(
     },
     {
       primaryText:
-        row.requiringCharge > 0 ? formatUnitRateDisplay(row.requiringCharge) : '—',
+        row.requiringCharge > 0 ? formatUnitRateInr(row.requiringCharge) : '—',
       primaryStyle: cellValueStyle(),
       secondaryText: rateUnitLabel(row),
       secondaryStyle: unitLabelStyle(),
@@ -147,7 +147,7 @@ export function measureExecutiveSummaryRowHeight(
     },
     {
       primaryText:
-        row.oneTimeCharge > 0 ? formatUnitRateDisplay(row.oneTimeCharge) : '—',
+        row.oneTimeCharge > 0 ? formatUnitRateInr(row.oneTimeCharge) : '—',
       primaryStyle: cellValueStyle(),
       secondaryText: oneTimeUnitLabel(row),
       secondaryStyle: unitLabelStyle(),

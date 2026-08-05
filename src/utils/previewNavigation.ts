@@ -84,7 +84,6 @@ export function buildPreviewTocItems(items: QuoteItem[]): PreviewTocItem[] {
 
   const toc: PreviewTocItem[] = [
     { id: PREVIEW_SECTION_SUMMARY, label: 'Executive Pricing Summary', kind: 'summary' },
-    { id: PREVIEW_SECTION_TERMS, label: 'Terms & Conditions', kind: 'terms' },
   ];
 
   groupItemsByServiceType(items).forEach((group) => {
@@ -95,6 +94,7 @@ export function buildPreviewTocItems(items: QuoteItem[]): PreviewTocItem[] {
     });
   });
 
+  toc.push({ id: PREVIEW_SECTION_TERMS, label: 'Terms & Conditions', kind: 'terms' });
   toc.push({ id: PREVIEW_SECTION_BANK, label: 'Bank Details', kind: 'bank' });
   return toc;
 }

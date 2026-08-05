@@ -24,7 +24,7 @@ import {
   previewServiceSectionId,
   previewServiceSectionIdFromItem,
 } from '../../utils/previewNavigation';
-import { formatRecurringRateUnitLabel, formatUnitRateDisplay } from '../../utils/rateDisplay';
+import { formatRecurringRateUnitLabel, formatUnitRateDisplay, formatUnitRateInr, parseRateInput } from '../../utils/rateDisplay';
 import {
   getSharedReviewIfAllSame,
   type CustomerReview,
@@ -88,6 +88,8 @@ const ExecNumberCell: React.FC<{
   compact?: boolean;
   /** Always show a visible border (breakdown pencil-edit mode). */
   bordered?: boolean;
+  /** When false, rate cells omit ₹ (parent already shows a ₹ prefix). Default true. */
+  currency?: boolean;
   autoFocus?: boolean;
 }> = ({
   value,
@@ -97,16 +99,19 @@ const ExecNumberCell: React.FC<{
   placeholder = '—',
   compact = false,
   bordered = false,
+  currency = true,
   autoFocus = false,
 }) => {
   const [draft, setDraft] = useState<string | null>(null);
+  const formatRateView = (n: number) =>
+    currency ? formatUnitRateInr(n) : formatUnitRateDisplay(n);
   const display =
     draft != null
       ? draft
       : value == null || !Number.isFinite(value)
         ? ''
         : format === 'rate'
-          ? formatUnitRateDisplay(value)
+          ? formatRateView(value)
           : String(value);
 
   if (!editable) {
@@ -114,7 +119,7 @@ const ExecNumberCell: React.FC<{
       return <div className="item-cell-number">{placeholder}</div>;
     }
     if (format === 'rate') {
-      return <div className="item-cell-number">{formatUnitRateDisplay(value)}</div>;
+      return <div className="item-cell-number">{formatRateView(value)}</div>;
     }
     return <div className="item-cell-number">{value}</div>;
   }
@@ -158,7 +163,7 @@ const ExecNumberCell: React.FC<{
         const raw = draft;
         setDraft(null);
         if (raw == null || raw.trim() === '') return;
-        const n = parseFloat(raw.replace(/,/g, ''));
+        const n = format === 'rate' ? parseRateInput(raw) : parseFloat(raw.replace(/,/g, ''));
         if (!Number.isFinite(n)) return;
         if (value != null && Math.abs(n - value) < 1e-9) return;
         onCommit(n);
@@ -233,6 +238,7 @@ const BreakdownFormulaBody: React.FC<{
           editable
           compact
           bordered
+          currency={false}
           autoFocus
           onCommit={(n) => onCommit(row, 'requiringCharge', n)}
         />
@@ -278,6 +284,7 @@ const BreakdownFormulaBody: React.FC<{
               editable
               compact
               bordered
+              currency={false}
               autoFocus={idx === 0}
               onCommit={(n) => onCommitOneTimeComponent(row, components, comp.label, n)}
             />
@@ -308,6 +315,7 @@ const BreakdownFormulaBody: React.FC<{
         editable
         compact
         bordered
+        currency={false}
         autoFocus
         onCommit={(n) => onCommit(row, 'oneTimeCharge', n)}
       />
@@ -692,8 +700,6 @@ export const CorporateMinimal: React.FC<TemplateProps> = ({
       maximumFractionDigits: 0
     }).format(amount);
   };
-
-  const formatRate = (amount: number) => formatUnitRateDisplay(amount);
 
   const formatDate = (date: Date | string) => {
     const d = typeof date === 'string' ? new Date(date) : date;
@@ -1171,28 +1177,7 @@ export const CorporateMinimal: React.FC<TemplateProps> = ({
         {renderCompanyFooter(++pageCounter, multiTotal)}
       </div>
 
-      {/* Page 2: Terms & Conditions (immediately after Executive Summary) */}
-      <div id="pdf-page-terms" className="template-corporate-minimal">
-        {(() => {
-          const multiTerms = filterGSTDisplayTerms(
-            resolveMergedDisplayTermEntries(quote.termsAndConditions, quote.items, DEFAULT_GENERAL_TERMS),
-          );
-          if (multiTerms.length === 0) return null;
-          return (
-        <div className="terms-section" data-pdf-block="list">
-          <h3 style={{ textAlign: 'center', fontSize: '16px', fontWeight: '700', textTransform: 'uppercase', letterSpacing: '0.08em', color: '#3b0a14', margin: '0 0 18px 0', paddingBottom: '10px', borderBottom: '2px solid #2980b9' }}>
-            Terms &amp; Conditions
-          </h3>
-          {renderTermsList(multiTerms)}
-        </div>
-          );
-        })()}
-
-        {/* Company Contact Footer */}
-        {renderCompanyFooter(++pageCounter, multiTotal)}
-      </div>
-
-      {/* Pages 3+: Service detail sections */}
+      {/* Pages 2+: Service detail sections */}
       <div id="pdf-page-services" className="template-corporate-minimal">
         {serviceGroups.map((group, groupIndex) => {
           return (
@@ -1217,7 +1202,7 @@ export const CorporateMinimal: React.FC<TemplateProps> = ({
                 </div>
               </div>
 
-              {/* Reference images / spec / review — T&C lives after Executive Summary */}
+              {/* Reference images / spec / review — T&C is after all details, before bank */}
               <ReferenceImages
                 proposalPages={data.proposalPages}
                 proposalPageMap={data.proposalPageMap}
@@ -1237,7 +1222,7 @@ export const CorporateMinimal: React.FC<TemplateProps> = ({
           );
         })}
 
-        {/* Identical reviews across all services → one card above bank details */}
+        {/* Identical reviews across all services → one card before T&C / bank */}
         {sharedReview && (
           <div className="smart-section" data-pdf-block="atomic" id="preview-shared-review">
             <h3 className="smart-section-heading">
@@ -1274,7 +1259,25 @@ export const CorporateMinimal: React.FC<TemplateProps> = ({
           </div>
         )}
 
-        {/* Bank + notice last — after all service detail sections */}
+        {/* T&C after all service details — immediately before bank details */}
+        <div id="pdf-page-terms" className="terms-section" data-pdf-block="list">
+          {(() => {
+            const multiTerms = filterGSTDisplayTerms(
+              resolveMergedDisplayTermEntries(quote.termsAndConditions, quote.items, DEFAULT_GENERAL_TERMS),
+            );
+            if (multiTerms.length === 0) return null;
+            return (
+              <>
+                <h3 style={{ textAlign: 'center', fontSize: '16px', fontWeight: '700', textTransform: 'uppercase', letterSpacing: '0.08em', color: '#3b0a14', margin: '0 0 18px 0', paddingBottom: '10px', borderBottom: '2px solid #2980b9' }}>
+                  Terms &amp; Conditions
+                </h3>
+                {renderTermsList(multiTerms)}
+              </>
+            );
+          })()}
+        </div>
+
+        {/* Bank + notice last — after T&C */}
         <div id="preview-bank-details" className="bank-details-card" data-pdf-block="atomic">
           <h3 className="bank-details-card-title">Bank Details</h3>
           <table className="bank-details-table">

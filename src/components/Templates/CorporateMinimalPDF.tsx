@@ -21,7 +21,7 @@ import {
   Path,
 } from '@react-pdf/renderer';
 import { TemplateData } from '../../types/template';
-import { formatRecurringRateUnitLabel, formatUnitRateDisplay } from '../../utils/rateDisplay';
+import { formatRecurringRateUnitLabel, formatUnitRateInr } from '../../utils/rateDisplay';
 import { hyphenateLongWords } from '../../utils/hyphenateLongWords';
 import { getSharedReviewIfAllSame } from '../../utils/reviewGrouping';
 import {
@@ -88,7 +88,11 @@ export interface CorporateMinimalPDFProps {
   data: TemplateData;
   /** Per-service image/spec/review data resolved by ReferenceImages.tsx */
   pdfData: ServicePdfData[];
-  /** 'summary' = pricing summary + general terms + bank only (multi-service); 'full' = everything */
+  /**
+   * Multi-service export layout:
+   * - 'summary'  = executive summary → T&C → bank
+   * - 'detailed' / 'full' = executive summary → service details → T&C → bank
+   */
   exportMode?: PdfExportMode;
 }
 
@@ -103,7 +107,7 @@ const formatCurrency = (amount: number) =>
     maximumFractionDigits: 0,
   }).format(amount);
 
-const formatRate = (amount: number) => formatUnitRateDisplay(amount);
+const formatRate = (amount: number) => formatUnitRateInr(amount);
 
 const formatDate = (date: Date | string) => {
   const d = typeof date === 'string' ? new Date(date) : date;
@@ -345,8 +349,8 @@ const ExecutiveSummaryTablePage: React.FC<{
         <Text style={[s.theadCell, s.colServiceId, { textAlign: 'left' }]} hyphenationCallback={noHyphen}>
           SERVICE & LOCATION
         </Text>
-        <Text style={[s.theadCell, s.colQty]} hyphenationCallback={noHyphen}>{'REQ\nQUANTITY'}</Text>
-        <Text style={[s.theadCell, s.colDur, s.colDurHeader]} hyphenationCallback={noHyphen}>{'REQ\nDURATION'}</Text>
+        <Text style={[s.theadCell, s.colQty]} hyphenationCallback={noHyphen}>{'REQ.\nQUANTITY'}</Text>
+        <Text style={[s.theadCell, s.colDur, s.colDurHeader]} hyphenationCallback={noHyphen}>{'REQ.\nDURATION'}</Text>
         <Text style={[s.theadCell, s.colRecurring]} hyphenationCallback={noHyphen}>
           {'RECURRING\nCHARGE'}
         </Text>
@@ -649,7 +653,7 @@ const RefImages: React.FC<{
 }> = ({ images, heading, imageDimensions }) => {
   const validImages = normalizeImageSrcs(images);
   if (validImages.length === 0) return null;
-  const title = heading ? `${heading} (${validImages.length})` : undefined;
+  const title = heading || undefined;
 
   const imgStyle = (idx: number): { width: number; height: number } => {
     const d = computeImgDims(imageDimensions?.[idx]);
@@ -1228,7 +1232,6 @@ const CorporateMinimalPDF: React.FC<CorporateMinimalPDFProps> = ({ data, pdfData
                 <RefImages
                   images={singlePdf.refImages}
                   heading="2. Reference Image(s)"
-                  imageDimensions={singlePdf.refImageDimensions}
                 />
               )}
               <DisplaySpecificationBlock
@@ -1395,8 +1398,9 @@ const CorporateMinimalPDF: React.FC<CorporateMinimalPDFProps> = ({ data, pdfData
       creator="Quote Buddy"
     >
       {/* Executive summary pages stay pre-measured.
-          On the totals page only: pack Terms, then service details, then bank/notice
-          into leftover space — bank details always last. */}
+          Totals page packing:
+          - Summary download: T&C → bank
+          - Detailed/full: service details → shared review → T&C → bank */}
       {summaryPages.map((page) => (
         // Non-totals summary pages: wrap={false} so React-PDF cannot spawn
         // headerless overflow pages. Totals page must wrap (terms / details).
@@ -1426,10 +1430,19 @@ const CorporateMinimalPDF: React.FC<CorporateMinimalPDFProps> = ({ data, pdfData
 
           {page.showTotals && (
             <>
-              {termsBlock}
-              {exportMode !== 'summary' && detailSections}
-              {exportMode !== 'summary' && sharedReviewBlock}
-              {bankAndNotice}
+              {exportMode === 'summary' ? (
+                <>
+                  {termsBlock}
+                  {bankAndNotice}
+                </>
+              ) : (
+                <>
+                  {detailSections}
+                  {sharedReviewBlock}
+                  {termsBlock}
+                  {bankAndNotice}
+                </>
+              )}
             </>
           )}
         </Page>

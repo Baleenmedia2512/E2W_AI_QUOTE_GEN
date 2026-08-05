@@ -3,6 +3,14 @@
   flex-direction: column;
   height: 100vh;
   background: #F8FAFC;
+  /* Space for fixed single-row QuoteFlowNav */
+  padding-top: 64px;
+}
+
+@media (max-width: 480px) {
+  .quote-preview-page {
+    padding-top: 58px;
+  }
 }
 
 /* Preview Error */
@@ -61,7 +69,7 @@
   transform: scale(0.98);
 }
 
-/* Toolbar - Modern Native Style */
+/* Toolbar - sits under fixed flow nav */
 .preview-toolbar {
   background: white;
   border-bottom: 1px solid #E2E8F0;
@@ -71,12 +79,10 @@
   align-items: center;
   gap: 16px;
   flex-wrap: wrap;
-  position: sticky;
-  top: 0;
-  z-index: 1001;
+  position: relative;
+  z-index: 10;
   flex-shrink: 0;
   box-shadow: 0 1px 3px rgba(0, 0, 0, 0.04);
-  backdrop-filter: blur(10px);
 }
 
 .toolbar-section {
@@ -523,28 +529,40 @@
 .preview-container {
   flex: 1;
   overflow: auto;
-  padding: 16px 20px 100px;
+  padding: 8px 12px 80px;
   display: flex;
-  justify-content: center;
+  justify-content: stretch;
   align-items: flex-start;
-  background: #F8FAFC;
+  background: #F1F5F9;
   position: relative;
   min-width: 0;
+  width: 100%;
 }
 
 .preview-wrapper {
   transform-origin: top center;
   transition: transform 0.3s cubic-bezier(0.4, 0, 0.2, 1);
   min-height: 100%;
+  width: 100%;
   display: flex;
   justify-content: center;
 }
 
 .preview-content {
   background: white;
-  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.12);
-  border-radius: 8px;
-  margin: 0 auto;
+  box-shadow: 0 4px 24px rgba(0, 0, 0, 0.08);
+  border-radius: 4px;
+  margin: 0;
+  width: 100%;
+  max-width: 100%;
+}
+
+/* Screen preview: use full available width (PDF export keeps A4 via .pdf-export-mode) */
+.preview-content .template-corporate-minimal {
+  max-width: 100% !important;
+  width: 100% !important;
+  margin: 0 !important;
+  box-sizing: border-box;
 }
 
 /* Mobile Actions - Bottom Sheet Style */
@@ -566,15 +584,15 @@
 .mobile-action-btn {
   flex: 1;
   padding: 14px 20px;
-  background: #C91F3D;
-  border: none;
+  background: #fff;
+  border: 1.5px solid #C91F3D;
   border-radius: 14px;
-  font-size: 15px;
+  font-size: 14px;
   font-weight: 600;
-  color: white;
+  color: #C91F3D;
   cursor: pointer;
   transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
-  box-shadow: 0 4px 12px rgba(201, 31, 61, 0.3);
+  box-shadow: none;
 }
 
 .mobile-action-btn:active {

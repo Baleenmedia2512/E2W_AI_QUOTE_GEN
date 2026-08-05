@@ -1,8 +1,7 @@
 import React from 'react';
 import { Box, Container, useToast } from '@chakra-ui/react';
 import { useHistory } from 'react-router-dom';
-import QuoteFlowNav from '../components/QuoteWizard/QuoteFlowNav';
-import QuoteStepper from '../components/QuoteWizard/QuoteStepper';
+import QuoteFlowNav, { getQuoteFlowNavOffset } from '../components/QuoteWizard/QuoteFlowNav';
 import ClientInfoForm from '../components/ClientInfoForm/ClientInfoFormWithAutocomplete';
 import { useAppStore } from '../store';
 import { ClientInfo } from '../types/client';
@@ -19,6 +18,8 @@ const QuotePage: React.FC = () => {
     setClientInfo,
     selectedTemplate,
   } = useAppStore();
+
+  const navOffset = getQuoteFlowNavOffset('client');
 
   const navigateToPreview = (quote: Quote | null, client: ClientInfo | null) => {
     try {
@@ -135,22 +136,19 @@ const QuotePage: React.FC = () => {
     } else {
       toast({
         title: 'Fill client details',
-        description: 'Complete and save the client form, or press Continue on the form.',
+        description: 'Complete the client form, then press Next: Preview on the form.',
         status: 'info',
         duration: 3000,
         isClosable: true,
       });
-      // Scroll to form / let user submit — try trigger nothing, just message
     }
   };
 
   return (
-    <Box minH="100vh" bg="#F8FAFC" pt={{ base: '56px', md: '72px' }} pb={{ base: '80px', md: 0 }}>
+    <Box minH="100vh" bg="#F8FAFC" pt={navOffset} pb={{ base: '80px', md: 0 }}>
       <QuoteFlowNav step="client" onNext={handleNextPreview} />
 
-      <QuoteStepper currentStep={2} />
-
-      <Container maxW="900px" py={{ base: 4, md: 8 }} px={{ base: 4, md: 6 }}>
+      <Container maxW="100%" py={{ base: 4, md: 6 }} px={{ base: 3, md: 6 }}>
         <ClientInfoForm
           onSubmit={handleClientSubmit}
           onBack={() => history.push('/')}

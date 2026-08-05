@@ -1,68 +1,48 @@
 import React from 'react';
 import { Box } from '@chakra-ui/react';
 import ChatInterface from '../components/ChatInterface/ChatInterface';
-import QuoteFlowNav from '../components/QuoteWizard/QuoteFlowNav';
-import QuoteStepper from '../components/QuoteWizard/QuoteStepper';
+import QuoteFlowNav, { getQuoteFlowNavOffset } from '../components/QuoteWizard/QuoteFlowNav';
 import { useAppStore } from '../store';
 
 const HomePage: React.FC = () => {
   const { currentQuote } = useAppStore();
   const hasQuote = !!currentQuote;
+  const navOffset = getQuoteFlowNavOffset('chat', hasQuote);
 
   return (
-    <Box minH="100vh" bg="#F8FAFC">
+    <Box
+      className="qb-home-shell"
+      h="100dvh"
+      maxH="100dvh"
+      w="100%"
+      bg="white"
+      display="flex"
+      flexDirection="column"
+      overflow="hidden"
+    >
       <QuoteFlowNav step="chat" hasQuote={hasQuote} />
 
-      {hasQuote && (
-        <Box pt={{ base: '56px', md: '72px' }}>
-          <QuoteStepper currentStep={1} />
-        </Box>
-      )}
-
-      {/* Main Content */}
+      {/* Full-bleed chat — no side gutters / nested card layer */}
       <Box
-        mt={hasQuote ? 0 : { base: '56px', md: '72px' }}
-        minH={{
-          base: hasQuote ? 'calc(100vh - 180px)' : 'calc(100vh - 129px)',
-          md: hasQuote ? 'calc(100vh - 160px)' : 'calc(100vh - 105px)',
-        }}
-        maxH={{
-          base: hasQuote ? 'calc(100vh - 180px)' : 'calc(100vh - 129px)',
-          md: hasQuote ? 'calc(100vh - 160px)' : 'calc(100vh - 105px)',
-        }}
-        sx={{
-          '@supports (height: 100dvh)': {
-            minH: {
-              base: hasQuote ? 'calc(100dvh - 180px)' : 'calc(100dvh - 129px)',
-              md: hasQuote ? 'calc(100vh - 160px)' : 'calc(100vh - 105px)',
-            },
-            maxH: {
-              base: hasQuote ? 'calc(100dvh - 180px)' : 'calc(100dvh - 129px)',
-              md: hasQuote ? 'calc(100vh - 160px)' : 'calc(100vh - 105px)',
-            },
-          },
-        }}
+        className="qb-home-shell__chat"
+        flex="1"
+        minH={0}
+        w="100%"
+        pt={navOffset}
+        pb={{ base: 0, md: 0 }}
+        display="flex"
+        flexDirection="column"
+        overflow="hidden"
       >
         <Box
-          maxW="1400px"
-          mx="auto"
-          h="100%"
+          flex="1"
+          minH={0}
+          w="100%"
           display="flex"
           flexDirection="column"
-          px={{ base: 3, md: 6 }}
-          py={{ base: 2, md: 4 }}
+          overflow="hidden"
         >
-          <Box
-            flex="1"
-            bg="white"
-            borderRadius={{ base: '12px', md: '16px' }}
-            boxShadow="0 2px 12px rgba(0, 0, 0, 0.08)"
-            minH={0}
-            display="flex"
-            flexDirection="column"
-          >
-            <ChatInterface />
-          </Box>
+          <ChatInterface />
         </Box>
       </Box>
     </Box>

@@ -14,7 +14,9 @@
 .chat-content {
   display: flex;
   flex-direction: column;
-  height: calc(100vh - 200px);
+  flex: 1;
+  min-height: 0;
+  height: auto;
   padding: 0;
   overflow: hidden;
 }

@@ -1,0 +1,254 @@
+/**
+ * Mobile-only chat UX (320px–767px).
+ * Tablet (>=768) and desktop (>=1024) are untouched — all rules scoped to max-width: 767.98px.
+ */
+
+:root {
+  --qb-header-h: 60px;
+  --qb-nav-h: 64px;
+  --qb-composer-h: 56px;
+  --qb-brand: #750926;
+  --qb-border: #eeeeee;
+  --qb-pad: 16px;
+}
+
+/* —— Progressive horizontal padding by device width —— */
+@media (max-width: 767.98px) {
+  :root {
+    --qb-pad: 12px;
+  }
+}
+
+@media (min-width: 360px) and (max-width: 767.98px) {
+  :root {
+    --qb-pad: 16px;
+  }
+}
+
+@media (min-width: 412px) and (max-width: 767.98px) {
+  :root {
+    --qb-pad: 18px;
+  }
+}
+
+@media (min-width: 480px) and (max-width: 767.98px) {
+  :root {
+    --qb-pad: 20px;
+  }
+}
+
+@media (max-width: 767.98px) {
+  html,
+  body {
+    overflow-x: hidden;
+    max-width: 100vw;
+  }
+
+  /* —— Header —— */
+  .qb-flow-nav {
+    min-height: calc(var(--qb-header-h) + env(safe-area-inset-top, 0px));
+    padding-top: env(safe-area-inset-top, 0px);
+    border-bottom: 1px solid var(--qb-border) !important;
+    box-shadow: none !important;
+  }
+
+  .qb-flow-nav__inner {
+    min-height: var(--qb-header-h) !important;
+    padding-left: var(--qb-pad) !important;
+    padding-right: var(--qb-pad) !important;
+    padding-top: 0 !important;
+    padding-bottom: 0 !important;
+  }
+
+  .qb-flow-nav__brand-text {
+    font-size: clamp(15px, 4vw, 17px) !important;
+  }
+
+  /* —— Home shell —— */
+  .qb-home-shell__chat {
+    min-height: 0;
+    height: 100%;
+  }
+
+  /* —— Chat root —— */
+  .qb-chat-root {
+    height: 100%;
+    max-height: 100%;
+    overflow: hidden;
+    background: #fff;
+  }
+
+  .qb-chat-stack {
+    height: 100%;
+    min-height: 0;
+    justify-content: flex-start !important;
+  }
+
+  .qb-chat-stack--empty {
+    justify-content: center !important;
+    overflow-y: auto;
+    -webkit-overflow-scrolling: touch;
+    padding-bottom: calc(
+      var(--qb-composer-h) + var(--qb-nav-h) + env(safe-area-inset-bottom, 0px) + 24px
+    );
+  }
+
+  /* —— Empty state —— */
+  .qb-empty-title {
+    font-size: clamp(24px, 5vw, 30px) !important;
+    font-weight: 600 !important;
+    color: #1a202c !important;
+    margin: 0 !important;
+    padding: 0 var(--qb-pad) !important;
+    max-width: 100% !important;
+  }
+
+  .qb-empty-sub {
+    display: block !important;
+    font-size: clamp(14px, 3vw, 16px);
+    color: #718096;
+    text-align: center;
+    margin: 8px auto 20px;
+    padding: 0 var(--qb-pad);
+    line-height: 1.45;
+    max-width: 28rem;
+  }
+
+  /* —— Suggestions —— */
+  .qb-suggestions {
+    display: flex !important;
+    flex-direction: column !important;
+    flex-wrap: nowrap !important;
+    width: 100% !important;
+    max-width: 100% !important;
+    padding: 0 var(--qb-pad) !important;
+    gap: 12px !important;
+    align-self: stretch !important;
+    margin-top: 8px;
+  }
+
+  .qb-suggestion-card {
+    width: 100% !important;
+    min-height: 52px !important;
+    height: auto !important;
+    border-radius: 18px !important;
+    border: 1px solid #e8e8e8 !important;
+    background: #fff !important;
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.06) !important;
+    font-size: clamp(14px, 3.5vw, 16px) !important;
+    font-weight: 500 !important;
+    justify-content: flex-start !important;
+    padding: 14px 18px !important;
+    transition: transform 0.2s ease, box-shadow 0.2s ease, background 0.2s ease !important;
+    -webkit-tap-highlight-color: transparent;
+  }
+
+  .qb-suggestion-card:active {
+    transform: scale(0.98);
+    background: #faf5f7 !important;
+    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.08) !important;
+  }
+
+  /* —— Messages scroll —— */
+  .qb-chat-scroll {
+    flex: 1 1 auto !important;
+    min-height: 0 !important;
+    width: 100% !important;
+    overflow-y: auto !important;
+    -webkit-overflow-scrolling: touch;
+    padding-left: var(--qb-pad) !important;
+    padding-right: var(--qb-pad) !important;
+    padding-top: 12px !important;
+    /* Keep last message above sticky composer + bottom nav */
+    padding-bottom: 180px !important;
+  }
+
+  .qb-chat-scroll .qb-msg-row {
+    max-width: 80% !important;
+    animation: qbMsgIn 0.2s ease-out;
+  }
+
+  .qb-chat-scroll .qb-msg-row--assistant {
+    max-width: 92% !important;
+    width: auto !important;
+  }
+
+  @keyframes qbMsgIn {
+    from {
+      opacity: 0;
+      transform: translateY(6px);
+    }
+    to {
+      opacity: 1;
+      transform: translateY(0);
+    }
+  }
+
+  /* —— Sticky composer above bottom nav —— */
+  .qb-composer {
+    position: fixed !important;
+    left: var(--qb-pad) !important;
+    right: var(--qb-pad) !important;
+    bottom: calc(72px + env(safe-area-inset-bottom, 0px)) !important;
+    z-index: 1002 !important;
+    width: auto !important;
+    max-width: none !important;
+    margin: 0 !important;
+    padding: 0 !important;
+    background: transparent !important;
+    align-self: auto !important;
+  }
+
+  .qb-composer__bar {
+    min-height: var(--qb-composer-h) !important;
+    height: auto !important;
+    border-radius: 28px !important;
+    border: 1.5px solid #d0d0d0 !important;
+    border-color: var(--qb-brand) !important;
+    box-shadow: 0 4px 20px rgba(0, 0, 0, 0.1) !important;
+    background: #fff !important;
+    padding-left: 16px !important;
+    padding-right: 8px !important;
+    transition: box-shadow 0.2s ease, border-color 0.2s ease !important;
+  }
+
+  .qb-composer__bar:focus-within {
+    box-shadow: 0 0 0 3px rgba(117, 9, 38, 0.15), 0 4px 20px rgba(0, 0, 0, 0.1) !important;
+  }
+
+  .qb-composer__input {
+    font-size: clamp(14px, 3.5vw, 16px) !important;
+    min-height: 44px !important;
+  }
+
+  .qb-composer__icon {
+    width: 44px !important;
+    height: 44px !important;
+    min-width: 44px !important;
+  }
+
+  /* Hide mobile history chevrons overlapping the pill (cleaner native feel) */
+  .qb-composer .qb-history-rail {
+    display: none !important;
+  }
+
+  /* —— Bottom nav —— */
+  .bottom-nav {
+    height: auto;
+    min-height: calc(var(--qb-nav-h) + env(safe-area-inset-bottom, 0px));
+    border-top: 1px solid var(--qb-border);
+    z-index: 1000;
+  }
+
+  .bottom-nav > .chakra-stack,
+  .bottom-nav [class*="chakra-stack"] {
+    min-height: var(--qb-nav-h);
+  }
+}
+
+/* Desktop/tablet: hide mobile-only subtitle */
+@media (min-width: 768px) {
+  .qb-empty-sub {
+    display: none !important;
+  }
+}

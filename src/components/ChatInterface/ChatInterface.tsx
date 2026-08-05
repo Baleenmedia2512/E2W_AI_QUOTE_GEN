@@ -68,11 +68,9 @@ const USE_CLOUD_DATA = true;
 const USE_PROGRESSIVE_CHAT = true;
 
 const SUGGESTION_PROMPTS = [
-  'bus',
-  'hoarding chennai',
-  'auto full branding',
-  'bus shelter',
-  '50 bus semi branding chennai',
+  'Give quote for bus branding',
+  'Give quote for hoarding in Chennai',
+  'Give quote for auto full branding',
 ];
 
 // ── Command History Helpers (module-level, no component dependency) ────────
@@ -2303,110 +2301,65 @@ const ChatInterface: React.FC = () => {
 
   return (
     <Box
+      className="qb-chat-root"
       display="flex"
       flexDirection="column"
       h="100%"
       w="100%"
-      borderRadius="14px"
-      border="1px solid"
-      borderColor="gray.200"
+      borderRadius={0}
+      border="none"
       bg="white"
     >
-      {/* Header - AI Assistant with Online Status */}
-      <HStack
-        justify="space-between"
-        align="center"
-        px={5}
-        py={4}
-        bgGradient="linear(90deg, gray.900, #1A1A2E)"
-        flexShrink={0}
+      {/* Content — full-width after chat; mobile input edge-to-edge */}
+      <VStack
+        className={`qb-chat-stack${messages.length === 0 ? ' qb-chat-stack--empty' : ''}`}
+        align="stretch"
+        spacing={0}
+        flex={1}
+        minH={0}
+        justify={messages.length === 0 ? { base: 'center', md: 'center' } : 'flex-start'}
+        w="100%"
       >
-        <HStack spacing={2}>
-          <Box
-            bgGradient="linear(135deg, purple.500, red.600)"
-            color="white"
-            w="32px"
-            h="32px"
-            borderRadius="8px"
-            display="flex"
-            alignItems="center"
-            justifyContent="center"
-            fontSize="sm"
-            fontWeight="700"
-          >
-            G
-          </Box>
-          <Text fontSize="md" fontWeight="600" color="white">
-            Quote Assistant
-          </Text>
-        </HStack>
-        <HStack spacing={1}>
-          <Box 
-            w="8px" 
-            h="8px" 
-            borderRadius="full" 
-            bg="teal.400"
-            sx={{
-              animation: 'pulse 2s infinite',
-              '@keyframes pulse': {
-                '0%,100%': { opacity: 1 },
-                '50%': { opacity: 0.4 },
-              },
-            }}
-          />
-          <Text fontSize="xs" color="teal.400" fontWeight="500">
-            Online
-          </Text>
-        </HStack>
-      </HStack>
-
-      {/* Content Area - Flexible Container */}
-      <VStack align="stretch" spacing={4} flex={1} p={4} minH={0}>
-        {/* Suggestion Chips */}
         {messages.length === 0 && (
-          <Box px={2}>
-            <Text fontSize="xs" fontWeight="500" color="gray.500" mb={2}>
-              Try asking:
+          <>
+            <Text
+              className="qb-empty-title"
+              fontSize={{ base: 'xl', md: '2xl' }}
+              fontWeight="600"
+              color="gray.700"
+              textAlign="center"
+              letterSpacing="-0.01em"
+              px={{ base: 3, md: 4 }}
+              mb={{ base: 1, md: 5 }}
+              mt={{ base: 0, md: 0 }}
+              flexShrink={0}
+              w="100%"
+              maxW={{ base: '100%', md: '720px' }}
+              alignSelf={{ base: 'stretch', md: 'center' }}
+              order={{ base: 1, md: 0 }}
+            >
+              Try asking...
             </Text>
-            <VStack align="stretch" spacing={2}>
-              {SUGGESTION_PROMPTS.map((prompt, index) => (
-                <Button
-                  key={index}
-                  variant="outline"
-                  borderColor="gray.300"
-                  color="gray.700"
-                  size="sm"
-                  justifyContent="flex-start"
-                  textAlign="left"
-                  whiteSpace="normal"
-                  h="auto"
-                  py={2}
-                  px={3}
-                  borderRadius="full"
-                  fontWeight="400"
-                  fontSize="11px"
-                  onClick={() => handleSuggestionClick(prompt)}
-                  _hover={{
-                    bg: 'red.50',
-                    borderColor: 'red.500',
-                    color: 'red.600',
-                  }}
-                >
-                  {prompt}
-                </Button>
-              ))}
-            </VStack>
-          </Box>
+            <Text
+              className="qb-empty-sub"
+              display={{ base: 'block', md: 'none' }}
+              order={{ base: 1, md: 0 }}
+            >
+              Describe a service, city, quantity, or duration — we&apos;ll build a quote for you.
+            </Text>
+          </>
         )}
 
-        {/* AI Response Output Area */}
+        {messages.length > 0 && (
         <Box
+          className="qb-chat-scroll"
           flex={1}
-          bg="gray.50"
-          borderRadius="lg"
-          p={{ base: 3, md: 3 }}
+          bg="white"
+          px={{ base: 2, md: 4 }}
+          py={{ base: 2, md: 4 }}
           overflowY="auto"
           minH="0"
+          w="100%"
           sx={{ 
             '::-webkit-scrollbar': { 
               width: '6px',
@@ -2420,20 +2373,18 @@ const ChatInterface: React.FC = () => {
             },
           }}
         >
-          {messages.length === 0 ? (
-            <Flex justify="center" align="center" h="full">
-              <Text color="gray.400" fontSize="xs" textAlign="center" px={4}>
-                Try “bus”, “hoarding chennai”, or a service name — I’ll help you pick and quote.
-              </Text>
-            </Flex>
-          ) : (
-            <VStack align="stretch" spacing={5}>
+            <VStack align="stretch" spacing={{ base: 4, md: 5 }} w="100%" maxW="100%">
               {messages.map(message => {
                 return (
                   <Box
                     key={message.id}
+                    className={`qb-msg-row${message.role === 'assistant' ? ' qb-msg-row--assistant' : ''}`}
                     alignSelf={message.role === 'user' ? 'flex-end' : 'flex-start'}
-                    maxW={message.role === 'user' ? '80%' : '90%'}
+                    maxW={{
+                      base: message.role === 'user' ? '80%' : '92%',
+                      md: message.role === 'user' ? '70%' : '85%',
+                    }}
+                    w={message.role === 'user' ? 'auto' : { base: '100%', md: 'auto' }}
                   >
                     <Box>
                         {!message.isCityPicker && !message.isMultipleMatch && <Box>
@@ -3797,32 +3748,55 @@ Generate a detailed quote based on the above information.`;
 
               <div ref={messagesEndRef} />
             </VStack>
-          )}
         </Box>
+        )}
 
-        {/* Bottom Chat Input Bar */}
-        <HStack 
-          spacing={{ base: 1.5, md: 3 }} 
-          flexShrink={0} 
-          px={{ base: 2, md: 4 }}
-          py={{ base: 2.5, md: 4 }}
-          pb={{ base: 'calc(0.625rem + env(safe-area-inset-bottom, 0px))', md: 4 }}
-          mb={{ base: '64px', md: 0 }}
-          borderTop="2px solid"
-          borderColor="gray.300"
-          bg="white"
-          boxShadow="0 -4px 20px rgba(0, 0, 0, 0.08)"
-          position="relative"
-          zIndex={999}
+        {/* Chat input — centered when empty; full width after chat starts */}
+        <Box
+          className="qb-composer"
+          w="100%"
+          maxW={messages.length === 0 ? { base: '100%', md: '720px' } : '100%'}
+          alignSelf={messages.length === 0 ? { base: 'stretch', md: 'center' } : 'stretch'}
+          mx={messages.length === 0 ? { base: 0, md: 'auto' } : 0}
+          flexShrink={0}
+          px={{ base: 2, md: messages.length === 0 ? 4 : 4 }}
+          pt={messages.length === 0 ? { base: 2, md: 4 } : { base: 2, md: 3 }}
+          pb={
+            messages.length === 0
+              ? { base: 2, md: 2 }
+              : { base: 'calc(0.5rem + env(safe-area-inset-bottom, 0px))', md: 4 }
+          }
+          mb={messages.length === 0 ? 0 : { base: 0, md: 0 }}
+          bg={{ base: 'transparent', md: 'white' }}
+          order={{ base: 3, md: 0 }}
         >
-          <Box position="relative" flex={1}>
+          <Flex
+            className="qb-composer__bar"
+            align="center"
+            w="100%"
+            gap={1}
+            pl={{ base: 3, md: 5 }}
+            pr={{ base: 1.5, md: 2 }}
+            py={{ base: 1, md: 1.5 }}
+            bg="white"
+            border="2px solid"
+            borderColor="brand.500"
+            borderRadius={{ base: '28px', md: 'full' }}
+            position="relative"
+            zIndex={999}
+            transition="box-shadow 0.2s ease, border-color 0.2s ease"
+            _hover={{ borderColor: 'brand.600' }}
+            _focusWithin={{
+              borderColor: 'brand.500',
+              boxShadow: '0 0 0 3px rgba(201, 31, 61, 0.15)',
+            }}
+          >
             <Input
+              className="qb-composer__input"
               ref={inputRef}
               value={inputValue}
               onChange={(e) => {
                 setInputValue(e.target.value);
-                // If user manually edits while in history-browse mode, exit history mode
-                // so the next ↑ press starts fresh from the newest entry.
                 if (historyIndex !== -1) {
                   setHistoryIndex(-1);
                   setDraftInput('');
@@ -3836,330 +3810,265 @@ Generate a detailed quote based on the above information.`;
               }}
               onKeyDown={handleInputKeyDown}
               onFocus={(e) => {
-                // Select all text on focus so the user can instantly replace it
                 e.target.select();
-                // Auto-scroll input into view when keyboard appears
                 if (Capacitor.isNativePlatform() || window.innerWidth <= 768) {
                   setTimeout(() => {
-                    e.target.scrollIntoView({ 
-                      behavior: 'smooth', 
+                    e.target.scrollIntoView({
+                      behavior: 'smooth',
                       block: 'center',
-                      inline: 'nearest'
+                      inline: 'nearest',
                     });
                   }, 300);
                 }
               }}
-              placeholder={
-                proposal.textContent
-                  ? '💬 Ask about this proposal...'
-                  : '✨ Type your message here - ask anything about quotes...'
-              }
+              placeholder="Give me a quote for…"
+              aria-label="Message input"
               disabled={isLoading}
-              size="lg"
-              borderRadius="16px"
-              bg="gray.50"
-              border="2px solid"
-              borderColor="gray.300"
+              variant="unstyled"
+              flex={1}
+              minW={0}
               color="gray.900"
               fontSize={{ base: '14px', md: '16px' }}
-              h={{ base: '44px', md: '60px' }}
-              w="100%"
-              pl={{ base: 3, md: 6 }}
-              pr={{ base: 3, md: 6 }}
-              fontWeight="500"
-              transition="all 0.2s ease"
-              _placeholder={{ 
-                color: 'gray.500', 
-                fontSize: { base: '12px', md: '16px' },
-                fontWeight: '500',
-              }}
-              _hover={{ 
-                borderColor: 'brand.400',
-                bg: 'white',
-                boxShadow: '0 0 0 1px rgba(201, 31, 61, 0.2), 0 4px 16px rgba(0, 0, 0, 0.08)',
-              }}
-              _focus={{
-                borderColor: 'brand.500',
-                bg: 'white',
-                boxShadow: '0 0 0 4px rgba(201, 31, 61, 0.15), 0 8px 24px rgba(201, 31, 61, 0.12)',
-                outline: 'none',
+              h={{ base: '44px', md: '44px' }}
+              fontWeight="400"
+              _placeholder={{
+                color: 'gray.500',
+                fontSize: { base: '13px', md: '15px' },
+                fontWeight: '400',
               }}
               _disabled={{
-                bg: 'gray.100',
                 color: 'gray.400',
                 cursor: 'not-allowed',
-                opacity: 0.7,
-                borderColor: 'gray.300',
               }}
               sx={{
                 '&::placeholder': {
                   textOverflow: 'ellipsis',
                   overflow: 'hidden',
                   whiteSpace: 'nowrap',
-                }
+                },
               }}
             />
-          </Box>
-          <Box position="relative" display="inline-flex" alignItems="center" justifyContent="center">
-            {/* Listening indicator text */}
-            {isRecording && (
-              <Text
-                position="absolute"
-                top="-28px"
-                fontSize="xs"
-                fontWeight="600"
-                color="red.500"
-                bg="white"
-                px={3}
-                py={1}
+
+            <Box position="relative" display="inline-flex" flexShrink={0}>
+              {isRecording && (
+                <Text
+                  position="absolute"
+                  top="-28px"
+                  right="0"
+                  fontSize="xs"
+                  fontWeight="600"
+                  color="red.500"
+                  bg="white"
+                  px={3}
+                  py={1}
+                  borderRadius="full"
+                  boxShadow="0 2px 8px rgba(239, 68, 68, 0.2)"
+                  border="1px solid"
+                  borderColor="red.200"
+                  whiteSpace="nowrap"
+                >
+                  Listening...
+                </Text>
+              )}
+
+              {/* Mobile history shortcuts */}
+              {inputHistory.length > 0 && (
+                <VStack
+                  className="qb-history-rail"
+                  display={{ base: 'flex', md: 'none' }}
+                  position="absolute"
+                  bottom="calc(100% + 6px)"
+                  right="0"
+                  spacing={0}
+                  bg="white"
+                  border="1.5px solid"
+                  borderColor="gray.200"
+                  borderRadius="12px"
+                  overflow="hidden"
+                  boxShadow="0 2px 12px rgba(0,0,0,0.15)"
+                  zIndex={1001}
+                  w="34px"
+                >
+                  <IconButton
+                    aria-label="Previous message"
+                    icon={<FiChevronUp />}
+                    h="28px"
+                    w="34px"
+                    minW="34px"
+                    fontSize="16px"
+                    variant="ghost"
+                    borderRadius="0"
+                    color={historyIndex === -1 || historyIndex > 0 ? 'brand.500' : 'gray.300'}
+                    isDisabled={isLoading || inputHistory.length === 0 || historyIndex === 0}
+                    onClick={() => {
+                      if (inputHistory.length === 0) return;
+                      const newIdx =
+                        historyIndex === -1
+                          ? inputHistory.length - 1
+                          : Math.max(0, historyIndex - 1);
+                      if (historyIndex === -1) setDraftInput(inputValue);
+                      setHistoryIndex(newIdx);
+                      setInputValue(inputHistory[newIdx].text);
+                      setTimeout(() => {
+                        const el = inputRef.current;
+                        if (el) el.selectionStart = el.selectionEnd = inputHistory[newIdx].text.length;
+                      }, 0);
+                    }}
+                    _hover={{ bg: 'brand.50' }}
+                    _disabled={{ color: 'gray.200', cursor: 'not-allowed', opacity: 1 }}
+                  />
+                  <Box w="100%" h="1px" bg="gray.200" flexShrink={0} />
+                  <IconButton
+                    aria-label="Next message"
+                    icon={<FiChevronDown />}
+                    h="28px"
+                    w="34px"
+                    minW="34px"
+                    fontSize="16px"
+                    variant="ghost"
+                    borderRadius="0"
+                    color={historyIndex !== -1 ? 'brand.500' : 'gray.300'}
+                    isDisabled={isLoading || historyIndex === -1}
+                    onClick={() => {
+                      if (historyIndex === -1) return;
+                      const newIdx = historyIndex + 1;
+                      if (newIdx >= inputHistory.length) {
+                        setHistoryIndex(-1);
+                        setInputValue(draftInput);
+                        setTimeout(() => {
+                          const el = inputRef.current;
+                          if (el) el.selectionStart = el.selectionEnd = draftInput.length;
+                        }, 0);
+                      } else {
+                        setHistoryIndex(newIdx);
+                        setInputValue(inputHistory[newIdx].text);
+                        setTimeout(() => {
+                          const el = inputRef.current;
+                          if (el) el.selectionStart = el.selectionEnd = inputHistory[newIdx].text.length;
+                        }, 0);
+                      }
+                    }}
+                    _hover={{ bg: 'brand.50' }}
+                    _disabled={{ color: 'gray.200', cursor: 'not-allowed', opacity: 1 }}
+                  />
+                </VStack>
+              )}
+
+              <IconButton
+                className="qb-composer__icon"
+                aria-label={isRecording ? 'Stop recording' : 'Voice input'}
+                icon={<FiMic size={24} />}
+                onClick={toggleVoiceInput}
+                isDisabled={isLoading}
+                variant="ghost"
+                color={isRecording ? 'red.500' : 'blue.500'}
+                h={{ base: '44px', md: '40px' }}
+                w={{ base: '44px', md: '40px' }}
+                minW={{ base: '44px', md: '40px' }}
                 borderRadius="full"
-                boxShadow="0 2px 8px rgba(239, 68, 68, 0.2)"
-                border="1px solid"
-                borderColor="red.200"
-                whiteSpace="nowrap"
-                sx={{
-                  animation: 'fadeIn 0.3s ease-in-out',
-                  '@keyframes fadeIn': {
-                    from: { opacity: 0, transform: 'translateY(4px)' },
-                    to: { opacity: 1, transform: 'translateY(0)' },
-                  },
+                fontSize={{ base: '20px', md: '18px' }}
+                _hover={{ bg: isRecording ? 'red.50' : 'blue.50' }}
+                _focusVisible={{
+                  outline: '2px solid',
+                  outlineColor: 'brand.500',
+                  outlineOffset: '2px',
                 }}
-              >
-                🎙️ Listening...
-              </Text>
-            )}
-            
-            {/* Animated rings when recording */}
-            {isRecording && (
-              <>
-                <Box
-                  position="absolute"
-                  w="48px"
-                  h="48px"
-                  borderRadius="full"
-                  border="2px solid"
-                  borderColor="red.400"
-                  sx={{
-                    animation: 'ripple 1.5s ease-out infinite',
-                    '@keyframes ripple': {
-                      '0%': { 
-                        transform: 'scale(1)',
-                        opacity: 0.8,
-                      },
-                      '100%': { 
-                        transform: 'scale(1.8)',
-                        opacity: 0,
-                      },
-                    },
-                  }}
-                />
-                <Box
-                  position="absolute"
-                  w="48px"
-                  h="48px"
-                  borderRadius="full"
-                  border="2px solid"
-                  borderColor="red.300"
-                  sx={{
-                    animation: 'ripple 1.5s ease-out infinite 0.5s',
-                    '@keyframes ripple': {
-                      '0%': { 
-                        transform: 'scale(1)',
-                        opacity: 0.8,
-                      },
-                      '100%': { 
-                        transform: 'scale(1.8)',
-                        opacity: 0,
-                      },
-                    },
-                  }}
-                />
-              </>
-            )}
-            
-            {/* Voice input button */}
+                _disabled={{ color: 'gray.300', cursor: 'not-allowed' }}
+              />
+            </Box>
+
             <IconButton
-              aria-label={isRecording ? "Stop recording" : "Voice input"}
-              icon={<FiMic />}
-              onClick={toggleVoiceInput}
-              isDisabled={isLoading}
-              bgGradient={isRecording 
-                ? "linear(to-br, red.500, red.600, pink.500)" 
-                : "linear(to-br, blue.500, blue.600, cyan.500)"
-              }
-              color="white"
-              size="md"
-              h={{ base: '38px', md: '48px' }}
-              w={{ base: '38px', md: '48px' }}
-              minW={{ base: '38px', md: '48px' }}
+              className="qb-composer__icon"
+              aria-label="Send message"
+              data-send-btn
+              icon={isLoading ? <Spinner size="sm" color="white" thickness="3px" /> : <FiSend size={20} />}
+              onClick={handleSendMessage}
+              isDisabled={!inputValue.trim() || isLoading}
+              bg={inputValue.trim() && !isLoading ? 'brand.500' : 'gray.200'}
+              color={inputValue.trim() && !isLoading ? 'white' : 'gray.500'}
+              h={{ base: '44px', md: '40px' }}
+              w={{ base: '44px', md: '40px' }}
+              minW={{ base: '44px', md: '40px' }}
               borderRadius="full"
               flexShrink={0}
-              fontSize={{ base: '15px', md: '20px' }}
-              position="relative"
-              zIndex={1}
-              border="2px solid"
-              borderColor={isRecording ? "red.300" : "blue.300"}
-              boxShadow={isRecording 
-                ? "0 4px 20px rgba(239, 68, 68, 0.5), 0 0 30px rgba(239, 68, 68, 0.3), inset 0 1px 0 rgba(255,255,255,0.3)" 
-                : "0 4px 16px rgba(59, 130, 246, 0.4), 0 0 24px rgba(59, 130, 246, 0.2), inset 0 1px 0 rgba(255,255,255,0.3)"
-              }
+              fontSize={{ base: '16px', md: '16px' }}
               _hover={{
-                bgGradient: isRecording 
-                  ? "linear(to-br, red.600, red.700, pink.600)" 
-                  : "linear(to-br, blue.600, blue.700, cyan.600)",
-                transform: 'translateY(-2px) scale(1.05)',
-                boxShadow: isRecording 
-                  ? '0 8px 28px rgba(239, 68, 68, 0.6), 0 0 40px rgba(239, 68, 68, 0.4), inset 0 1px 0 rgba(255,255,255,0.4)' 
-                  : '0 8px 24px rgba(59, 130, 246, 0.5), 0 0 32px rgba(59, 130, 246, 0.3), inset 0 1px 0 rgba(255,255,255,0.4)',
-                borderColor: isRecording ? "red.200" : "blue.200",
+                bg: inputValue.trim() && !isLoading ? 'brand.600' : 'gray.300',
               }}
-              _active={{
-                transform: 'scale(0.95)',
-                boxShadow: isRecording 
-                  ? '0 2px 12px rgba(239, 68, 68, 0.4), inset 0 2px 4px rgba(0,0,0,0.2)' 
-                  : '0 2px 12px rgba(59, 130, 246, 0.4), inset 0 2px 4px rgba(0,0,0,0.2)',
+              _focusVisible={{
+                outline: '2px solid',
+                outlineColor: 'brand.500',
+                outlineOffset: '2px',
               }}
               _disabled={{
-                bgGradient: 'linear(to-br, gray.300, gray.400)',
-                color: 'gray.500',
+                bg: 'gray.200',
+                color: 'gray.400',
                 cursor: 'not-allowed',
-                opacity: 0.6,
-                boxShadow: '0 2px 8px rgba(0, 0, 0, 0.1)',
-                borderColor: 'gray.300',
-              }}
-              sx={isRecording ? {
-                animation: 'micPulse 1.2s ease-in-out infinite',
-                '@keyframes micPulse': {
-                  '0%, 100%': { 
-                    transform: 'scale(1)',
-                    filter: 'brightness(1)',
-                  },
-                  '50%': { 
-                    transform: 'scale(1.08)',
-                    filter: 'brightness(1.15)',
-                  },
-                },
-              } : {
-                transition: 'all 0.3s cubic-bezier(0.4, 0, 0.2, 1)',
+                opacity: 1,
               }}
             />
-          </Box>
-          {/* Mobile-only: floating ▲▼ history pill above the input bar */}
-          {inputHistory.length > 0 && (
-            <VStack
-              display={{ base: 'flex', md: 'none' }}
-              position="absolute"
-              bottom="calc(100% + 6px)"
-              right={{ base: '8px', md: '16px' }}
-              spacing={0}
-              bg="white"
-              border="1.5px solid"
-              borderColor="gray.200"
-              borderRadius="12px"
-              overflow="hidden"
-              boxShadow="0 2px 12px rgba(0,0,0,0.15)"
-              zIndex={1001}
-              w="34px"
-            >
-              <IconButton
-                aria-label="Previous message"
-                icon={<FiChevronUp />}
-                h="28px"
-                w="34px"
-                minW="34px"
-                fontSize="16px"
-                variant="ghost"
-                borderRadius="0"
-                color={historyIndex === -1 || historyIndex > 0 ? 'brand.500' : 'gray.300'}
-                isDisabled={isLoading || inputHistory.length === 0 || historyIndex === 0}
-                onClick={() => {
-                  if (inputHistory.length === 0) return;
-                  const newIdx = historyIndex === -1
-                    ? inputHistory.length - 1
-                    : Math.max(0, historyIndex - 1);
-                  if (historyIndex === -1) setDraftInput(inputValue);
-                  setHistoryIndex(newIdx);
-                  setInputValue(inputHistory[newIdx].text);
-                  setTimeout(() => {
-                    const el = inputRef.current;
-                    if (el) el.selectionStart = el.selectionEnd = inputHistory[newIdx].text.length;
-                  }, 0);
-                }}
-                _hover={{ bg: 'brand.50' }}
-                _disabled={{ color: 'gray.200', cursor: 'not-allowed', opacity: 1 }}
-              />
-              <Box w="100%" h="1px" bg="gray.200" flexShrink={0} />
-              <IconButton
-                aria-label="Next message"
-                icon={<FiChevronDown />}
-                h="28px"
-                w="34px"
-                minW="34px"
-                fontSize="16px"
-                variant="ghost"
-                borderRadius="0"
-                color={historyIndex !== -1 ? 'brand.500' : 'gray.300'}
-                isDisabled={isLoading || historyIndex === -1}
-                onClick={() => {
-                  if (historyIndex === -1) return;
-                  const newIdx = historyIndex + 1;
-                  if (newIdx >= inputHistory.length) {
-                    setHistoryIndex(-1);
-                    setInputValue(draftInput);
-                    setTimeout(() => {
-                      const el = inputRef.current;
-                      if (el) el.selectionStart = el.selectionEnd = draftInput.length;
-                    }, 0);
-                  } else {
-                    setHistoryIndex(newIdx);
-                    setInputValue(inputHistory[newIdx].text);
-                    setTimeout(() => {
-                      const el = inputRef.current;
-                      if (el) el.selectionStart = el.selectionEnd = inputHistory[newIdx].text.length;
-                    }, 0);
-                  }
-                }}
-                _hover={{ bg: 'brand.50' }}
-                _disabled={{ color: 'gray.200', cursor: 'not-allowed', opacity: 1 }}
-              />
-            </VStack>
-          )}
-          <IconButton
-            aria-label="Send message"
-            data-send-btn
-            icon={isLoading ? <Spinner size="sm" color="white" thickness="3px" /> : <FiSend />}
-            onClick={handleSendMessage}
-            isDisabled={!inputValue.trim() || isLoading}
-            bgGradient="linear(to-br, brand.500, brand.600)"
-            color="white"
-            size="lg"
-            h={{ base: '44px', md: '60px' }}
-            w={{ base: '44px', md: '60px' }}
-            minW={{ base: '44px', md: '60px' }}
-            borderRadius={{ base: '12px', md: '16px' }}
+          </Flex>
+        </Box>
+
+        {messages.length === 0 && (
+          <Flex
+            className="qb-suggestions"
+            w="100%"
+            maxW={{ base: '100%', md: '720px' }}
+            alignSelf={{ base: 'stretch', md: 'center' }}
+            px={{ base: 2, md: 4 }}
+            pt={{ base: 3, md: 5 }}
+            pb={{ base: 0, md: 8 }}
             flexShrink={0}
-            fontSize={{ base: '18px', md: '22px' }}
-            transition="all 0.2s ease"
-            boxShadow="0 4px 20px rgba(201, 31, 61, 0.4), 0 2px 8px rgba(201, 31, 61, 0.25)"
-            _hover={{
-              bgGradient: "linear(to-br, brand.600, brand.700)",
-              transform: 'translateY(-2px) scale(1.05)',
-              boxShadow: '0 8px 28px rgba(201, 31, 61, 0.5), 0 4px 12px rgba(201, 31, 61, 0.35)',
-            }}
-            _active={{
-              transform: 'scale(0.95)',
-              boxShadow: '0 2px 12px rgba(201, 31, 61, 0.35)',
-            }}
-            _disabled={{
-              bgGradient: 'linear(to-br, gray.300, gray.400)',
-              color: 'gray.500',
-              cursor: 'not-allowed',
-              opacity: 0.6,
-              boxShadow: '0 2px 8px rgba(0, 0, 0, 0.1)',
-              filter: 'grayscale(0.3)',
-            }}
-          />
-        </HStack>
+            justify={{ base: 'stretch', md: 'center' }}
+            direction={{ base: 'column', md: 'row' }}
+            wrap="wrap"
+            gap={{ base: 3, md: 2 }}
+            order={{ base: 2, md: 0 }}
+          >
+            {SUGGESTION_PROMPTS.map((prompt, index) => (
+              <Button
+                key={index}
+                className="qb-suggestion-card"
+                variant="outline"
+                borderWidth="1.5px"
+                borderColor="gray.200"
+                bg="white"
+                color="gray.700"
+                size="md"
+                fontWeight="500"
+                fontSize={{ base: '15px', md: 'sm' }}
+                h={{ base: '54px', md: 'auto' }}
+                minH={{ base: '52px', md: 'auto' }}
+                w={{ base: '100%', md: 'auto' }}
+                py={2.5}
+                px={5}
+                borderRadius={{ base: '18px', md: 'full' }}
+                justifyContent={{ base: 'flex-start', md: 'center' }}
+                boxShadow="0 1px 2px rgba(0,0,0,0.04)"
+                transition="transform 0.2s ease, box-shadow 0.2s ease, background 0.2s ease"
+                onClick={() => handleSuggestionClick(prompt)}
+                _hover={{
+                  bg: 'brand.50',
+                  borderColor: 'brand.400',
+                  color: 'brand.700',
+                  boxShadow: '0 2px 8px rgba(201, 31, 61, 0.12)',
+                  transform: 'translateY(-1px)',
+                }}
+                _focusVisible={{
+                  outline: '2px solid',
+                  outlineColor: 'brand.500',
+                  outlineOffset: '2px',
+                }}
+                _active={{
+                  transform: 'scale(0.98)',
+                }}
+              >
+                {prompt}
+              </Button>
+            ))}
+          </Flex>
+        )}
       </VStack>
 
       {/* Confirmation Table Modal — shown after min qty (if any) and before Gemini */}
@@ -4188,7 +4097,7 @@ Generate a detailed quote based on the above information.`;
             {/* Sticky Header */}
             <Box px={6} pt={6} pb={3} flexShrink={0}>
               <Text fontSize="16px" fontWeight="700" color="gray.800">
-                📋 Confirm Your Services
+                Confirm Your Services
               </Text>
             </Box>
 

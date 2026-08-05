@@ -974,8 +974,8 @@ function startBatchMultiSelect(
   const pickSegNamesList = [...new Set(pickGroups.map((g) => g.segmentName))];
   const pickLine =
     pickSegNamesList.length === 1 && autoServiceNames.length === 0
-      ? `Which city for ${pickSegNamesList[0]}? Pick one, then Confirm:`
-      : `These need a city — pick one per group, then Confirm:`;
+      ? `Which city for ${pickSegNamesList[0]}? Pick one or more, then Confirm:`
+      : `These need a city — pick one or more, then Confirm:`;
   const botText = reply || `${autoLine}${pickLine}`;
 
   const autoIds = autoOnlyGroups.flatMap((g) => g.ids);
@@ -2698,20 +2698,46 @@ export function continueProgressiveAction(
     };
   }
 
-  // Multi-place: if directions exist → direction picker for union
+  // Multi-place Confirm → one quote row per checked city/area (never collapse to 1)
     if (ids.length > 1) {
-      const withDir = allHits.filter((s) => !!getDirectionLabel(s));
-      if (withDir.length > 1) {
-        const where = lastSession.city || lastSession.area || 'selected areas';
-        return buildDirectionPicker(withDir, { ...lastSession, candidateServiceIds: allHits.map((s) => s.service_id) }, where);
-      }
-      // One representative per unique medium+city+area group
       const reps = new Map<string, DbService>();
       for (const h of allHits) {
-        const gk = `${canonicalizeServiceName(getMediumKey(h))}|${(getLocalityFromMetaCity(h) || getAreaLabel(h) || extractRealCityFromDbService(h) || '').toLowerCase()}`;
+        const placeKey = canonicalizeServiceName(
+          getLocalityFromMetaCity(h)
+            || getAreaLabel(h)
+            || extractRealCityFromDbService(h)
+            || h.service_id,
+        );
+        const gk = `${canonicalizeServiceName(getMediumKey(h))}|${placeKey}`;
         if (!reps.has(gk)) reps.set(gk, h);
       }
-      return finalizeSelection([...reps.values()], lastSession, services);
+      const placeReps = [...reps.values()];
+      const placesLabel = placeReps
+        .map((s) => getLocalityFromMetaCity(s) || extractRealCityFromDbService(s) || getAreaLabel(s))
+        .filter(Boolean);
+      // Do not pin session to the last city — keep all candidates for type follow-up
+      const multiSession: ProgressiveSession = {
+        ...lastSession,
+        city: undefined,
+        area: undefined,
+        candidateServiceIds: allHits.map((s) => s.service_id),
+      };
+      const types = uniqueMediumLabelsWithExamples(allHits);
+      if (types.length > 1) {
+        return afterLocationResolved(
+          allHits,
+          multiSession,
+          services,
+          `In ${placesLabel.join(' + ') || 'your selection'} — which type?`,
+        );
+      }
+      if (placeReps.length) {
+        return finalizeSelection(placeReps, {
+          ...multiSession,
+          candidateServiceIds: placeReps.map((s) => s.service_id),
+        }, services);
+      }
+      return afterLocationResolved(allHits, multiSession, services);
     }
 
     return afterLocationResolved(allHits, lastSession, services);
@@ -2791,30 +2817,39 @@ export function continueProgressiveAction(
       const locPool = filterHitsBySessionLocation(basePool, nextSession);
 
       if (allChips.length > 1) {
-        // Multi-medium confirm: collect reps for each medium(+type) and finalize together
+        // Multi-type confirm: one (or one-per-place) rep for each checked type
         const allSelected: DbService[] = [];
         const seen = new Set<string>();
         for (const chip of allChips) {
           const use = locPool.filter((s) => serviceMatchesMediumChip(s, chip));
+          // Keep every selected place for this type (Chennai + Rotn × type)
+          const byPlace = new Map<string, DbService>();
           for (const svc of use) {
+            const placeKey = canonicalizeServiceName(
+              getLocalityFromMetaCity(svc)
+                || extractRealCityFromDbService(svc)
+                || getAreaLabel(svc)
+                || svc.service_id,
+            );
+            if (!byPlace.has(placeKey)) byPlace.set(placeKey, svc);
+          }
+          const placeReps = byPlace.size ? [...byPlace.values()] : use.slice(0, 1);
+          for (const svc of placeReps) {
             if (!seen.has(svc.service_id)) {
               seen.add(svc.service_id);
               allSelected.push(svc);
-              break;
             }
           }
         }
-        // If any selected medium still has multiple directions, ask direction first
-        const withDir = allSelected.length
-          ? locPool.filter((s) =>
-              allChips.some((c) => serviceMatchesMediumChip(s, c))
-              && !!getDirectionLabel(s),
-            )
-          : [];
+        // Direction only when a single place-rep still has multiple direction_remarks
+        const withDir = allSelected.filter((s) => !!getDirectionLabel(s));
         const uniqueDirs = new Set(withDir.map((s) => canonicalizeServiceName(getDirectionLabel(s) || '')));
-        if (uniqueDirs.size > 1) {
+        if (allSelected.length === 1 && uniqueDirs.size > 1) {
           const where = [session.area, session.city].filter(Boolean).join(' · ') || 'that location';
-          return buildDirectionPicker(withDir, { ...nextSession, candidateServiceIds: withDir.map((s) => s.service_id) }, where);
+          return buildDirectionPicker(withDir, {
+            ...nextSession,
+            candidateServiceIds: withDir.map((s) => s.service_id),
+          }, where);
         }
         if (allSelected.length) return finalizeSelection(allSelected, nextSession, services);
       }
@@ -2864,7 +2899,22 @@ export function continueProgressiveAction(
           },
         };
       }
-      return finalizeSelection(use, nextSession, services);
+      // Multiple places, one type (e.g. after multi-city Confirm) → one row per place
+      const byPlace = new Map<string, DbService>();
+      for (const svc of use) {
+        const placeKey = canonicalizeServiceName(
+          getLocalityFromMetaCity(svc)
+            || extractRealCityFromDbService(svc)
+            || getAreaLabel(svc)
+            || svc.service_id,
+        );
+        if (!byPlace.has(placeKey)) byPlace.set(placeKey, svc);
+      }
+      return finalizeSelection(
+        byPlace.size > 1 ? [...byPlace.values()] : use.slice(0, 1),
+        nextSession,
+        services,
+      );
     }
 
     // No location yet — ask city+area for this type
@@ -2967,27 +3017,43 @@ export function continueProgressiveAction(
   }
 
   // Direction pick — single or multi confirm
-  if (actionId.startsWith('direction:') || (selectedIds?.length && selectedIds[0]?.startsWith('direction:'))) {
+  if (
+    actionId.startsWith('direction:')
+    || (selectedIds?.length && selectedIds.every((id) => id.startsWith('direction:')))
+  ) {
     const ids = selectedIds?.length
-      ? selectedIds.map((id) => id.startsWith('direction:') ? id.slice(10) : id)
+      ? selectedIds.map((id) => (id.startsWith('direction:') ? id.slice(10) : id))
       : [actionId.slice(10)];
     const selected = services.filter((s) => ids.includes(s.service_id));
     if (selected.length) return finalizeSelection(selected, session, services);
   }
 
   // Batch-group confirm: each selectedId is "batch-group:id1,id2,..."
+  // One checkbox = one place chip — selecting 2+ cities must yield 2+ quote rows.
   const hasBatchGroup = (selectedIds || [actionId]).some((id) => id.startsWith('batch-group:'));
   if (hasBatchGroup) {
-    const pickedIds: string[] = [];
-    for (const id of (selectedIds || [actionId])) {
-      if (id.startsWith('batch-group:')) {
-        pickedIds.push(...id.slice(12).split(',').filter(Boolean));
-      } else {
-        pickedIds.push(id);
+    const selectedChips = (selectedIds || [actionId]).filter((id) => id.startsWith('batch-group:'));
+
+    // One representative per checked place chip (preserves multi-city Confirm)
+    const chipReps: DbService[] = [];
+    const chipPools: DbService[][] = [];
+    const seenRep = new Set<string>();
+    for (const chipId of selectedChips) {
+      const ids = chipId.slice(12).split(',').filter(Boolean);
+      const candidates = services.filter((s) => ids.includes(s.service_id));
+      if (!candidates.length) continue;
+      chipPools.push(candidates);
+      // Prefer a row that already looks like the segment medium when possible
+      const preferred =
+        candidates.find((s) => canonicalizeServiceName(getMediumKey(s)) === canonicalizeServiceName(session.browseToken || session.medium || ''))
+        || candidates[0];
+      if (preferred && !seenRep.has(preferred.service_id)) {
+        seenRep.add(preferred.service_id);
+        chipReps.push(preferred);
       }
     }
-    const picked = services.filter((s) => pickedIds.includes(s.service_id));
-    if (!picked.length) {
+
+    if (!chipReps.length) {
       // Only autos — finalize those
       const autoOnly = services.filter((s) => (session.collectedServiceIds || []).includes(s.service_id));
       const autoRepMap = new Map<string, DbService>();
@@ -2998,8 +3064,8 @@ export function continueProgressiveAction(
       if (autoRepMap.size) {
         return finalizeSelection([...autoRepMap.values()], {
           ...session,
-          collectedRows: session.collectedRows, // already built
-          collectedServiceIds: [], // rows already collected — avoid double-merge of ids into confusion
+          collectedRows: session.collectedRows,
+          collectedServiceIds: [],
         }, services);
       }
       return {
@@ -3010,29 +3076,49 @@ export function continueProgressiveAction(
       };
     }
 
-    // Same path as single-medium: medium chips → product chips (Elevated / Train
-    // Inside / Wrap) → direction → quote. Do not finalize one metro rep early.
-    const place =
-      getLocalityFromMetaCity(picked[0])
-      || extractRealCityFromDbService(picked[0])
-      || session.city
-      || 'that location';
-    const areaRaw = getMetaAreaRaw(picked[0]);
+    // Per-chip type ambiguity (e.g. Metro Elevated vs Underground at one place)
+    const chipNeedsType = chipPools.some(
+      (pool) => uniqueMediumLabelsWithExamples(pool).length > 1,
+    );
+    const typesAcross = uniqueMediumLabelsWithExamples(chipReps);
+
+    // Same type across places, no per-place type fork → quote every checked place
+    if (!chipNeedsType && typesAcross.length <= 1) {
+      return finalizeSelection(chipReps, {
+        ...session,
+        candidateServiceIds: chipReps.map((s) => s.service_id),
+      }, services);
+    }
+
+    // Need a type question — keep ALL selected place candidates (do not pin city to first)
+    const allPicked = chipPools.flat();
+    const uniqPicked = [...new Map(allPicked.map((s) => [s.service_id, s])).values()];
+    const placesLabel = chipReps
+      .map((s) => getLocalityFromMetaCity(s) || extractRealCityFromDbService(s))
+      .filter(Boolean);
+    const where =
+      placesLabel.length > 1
+        ? placesLabel.join(' + ')
+        : (placesLabel[0] || 'your selection');
+
     return afterLocationResolved(
-      picked,
+      uniqPicked,
       {
         ...session,
-        city: extractRealCityFromDbService(picked[0]) || session.city,
-        area:
-          getLocalityFromMetaCity(picked[0])
-          || (areaRaw && !isNumericOnlyLabel(areaRaw) ? areaRaw : undefined)
-          || session.area,
-        browseToken: canonicalizeServiceName(getMediumKey(picked[0]) || session.browseToken || ''),
-        medium: getMediumKey(picked[0]) || session.medium,
-        candidateServiceIds: picked.map((s) => s.service_id),
+        city: chipReps.length === 1
+          ? (extractRealCityFromDbService(chipReps[0]) || session.city)
+          : undefined,
+        area: chipReps.length === 1
+          ? (getLocalityFromMetaCity(chipReps[0]) || session.area)
+          : undefined,
+        browseToken: canonicalizeServiceName(
+          getMediumKey(chipReps[0]) || session.browseToken || '',
+        ),
+        medium: getMediumKey(chipReps[0]) || session.medium,
+        candidateServiceIds: uniqPicked.map((s) => s.service_id),
       },
       services,
-      `In ${place} — which type?`,
+      `In ${where} — which type?`,
     );
   }
 

@@ -42,7 +42,7 @@ import {
   validateQuoteEdit,
 } from '../../utils/quoteEditValidation';
 import { getVendorRatesCache, loadVendorRatesFromCloud } from '../../services/vendorRateService';
-import { formatUnitRateDisplay, roundRate2 } from '../../utils/rateDisplay';
+import { formatUnitRateInr, parseRateInput, roundRate2 } from '../../utils/rateDisplay';
 import './QuotePreview.css';
 
 interface QuotePreviewProps {
@@ -57,7 +57,7 @@ function roundRate(n: number): number {
 }
 
 function formatRateDisplay(n: number): string {
-  return formatUnitRateDisplay(n);
+  return formatUnitRateInr(n);
 }
 
 /** Convert months → days on a quote item (mutates) so edit UI is always day-based. */
@@ -758,7 +758,7 @@ const QuotePreview: React.FC<QuotePreviewProps> = ({ quote, onUpdate, onSave }) 
                                 const raw = rateInputValues[lineItem.id];
                                 const n =
                                   raw != null && raw !== ''
-                                    ? parseFloat(raw)
+                                    ? parseRateInput(raw)
                                     : lineItem.unitPrice;
                                 if (Number.isFinite(n)) {
                                   updateLineItem(itemIndex, lineItemIndex, 'unitPrice', roundRate(n));
@@ -1018,7 +1018,7 @@ const QuotePreview: React.FC<QuotePreviewProps> = ({ quote, onUpdate, onSave }) 
                                   const raw = rateInputValues[lineItem.id];
                                   const n =
                                     raw != null && raw !== ''
-                                      ? parseFloat(raw)
+                                      ? parseRateInput(raw)
                                       : lineItem.unitPrice;
                                   if (Number.isFinite(n)) {
                                     updateLineItem(itemIndex, lineItemIndex, 'unitPrice', roundRate(n));

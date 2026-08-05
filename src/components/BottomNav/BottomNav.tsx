@@ -36,6 +36,8 @@ const BottomNav: React.FC = () => {
   return (
     <Box
       className="bottom-nav"
+      as="nav"
+      aria-label="Main navigation"
       position="fixed"
       bottom="0"
       left="0"
@@ -48,7 +50,7 @@ const BottomNav: React.FC = () => {
       pb="env(safe-area-inset-bottom)"
       display={{ base: 'block', md: 'none' }} // Only show on mobile
     >
-      <HStack spacing={0} justify="space-around" h="64px" px={2}>
+      <HStack spacing={0} justify="space-around" h="64px" minH="64px" px={2}>
         {navItems.map((item) => {
           const isActive = location.pathname === item.path;
           return (
@@ -57,12 +59,26 @@ const BottomNav: React.FC = () => {
               spacing={0}
               flex={1}
               h="full"
+              minH="44px"
               justify="center"
               cursor="pointer"
               onClick={() => handleNavigate(item.path)}
               transition="all 0.2s cubic-bezier(0.4, 0, 0.2, 1)"
               role="button"
               aria-label={item.label}
+              aria-current={isActive ? 'page' : undefined}
+              tabIndex={0}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter' || e.key === ' ') {
+                  e.preventDefault();
+                  handleNavigate(item.path);
+                }
+              }}
+              _focusVisible={{
+                outline: '2px solid',
+                outlineColor: 'brand.500',
+                outlineOffset: '-2px',
+              }}
               _active={{
                 transform: 'scale(0.92)',
               }}

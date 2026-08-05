@@ -6,12 +6,12 @@ import { exportToPDF } from '../services/pdfExportService';
 import { ExtractedPage, ServiceReadyData } from '../types';
 import { resolveServiceIdsForItems } from '../utils/serviceResolver';
 import { ServicePdfData, PdfExportMode } from '../components/Templates/CorporateMinimalPDF';
+import { isMultiServiceQuote } from '../utils/quoteGrouping';
 import {
   buildPreviewTocItems,
   scrollToPreviewSection,
 } from '../utils/previewNavigation';
 import QuoteFlowNav from '../components/QuoteWizard/QuoteFlowNav';
-import QuoteStepper from '../components/QuoteWizard/QuoteStepper';
 import './QuotePreviewPage.css';
 
 // ═══════════════════════════════════════════════════════════════════════
@@ -526,15 +526,13 @@ export const QuotePreviewPage: React.FC = () => {
       <QuoteFlowNav
         step="preview"
         onDownloadPdf={() => handleExportPDF('full')}
+        onDownloadPdfMode={handleExportPDF}
+        multiDownloadOptions={!!currentQuote && isMultiServiceQuote(currentQuote.items)}
         isDownloading={isExporting}
         canDownload={isContentReady && !isExporting}
       />
 
-      <div style={{ paddingTop: 64 }}>
-        <QuoteStepper currentStep={3} />
-      </div>
-
-      {/* Secondary toolbar: contents + zoom only */}
+      {/* Secondary toolbar: TOC toggle + zoom */}
       <div className="preview-toolbar">
         <div className="toolbar-section">
           <button
@@ -542,12 +540,12 @@ export const QuotePreviewPage: React.FC = () => {
             className={`toolbar-button toc-toggle-btn${showToc ? ' is-active' : ''}`}
             onClick={() => setShowToc((v) => !v)}
             aria-pressed={showToc}
-            aria-label={showToc ? 'Hide table of contents' : 'Show table of contents'}
+            aria-label={showToc ? 'Hide TOC' : 'Open TOC'}
           >
             <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor">
               <path d="M4 6h16M4 12h10M4 18h14" strokeWidth="2" strokeLinecap="round"/>
             </svg>
-            Contents
+            {showToc ? 'Hide TOC' : 'Open TOC'}
           </button>
           <h1 className="toolbar-title">Quote Preview</h1>
         </div>
@@ -581,17 +579,17 @@ export const QuotePreviewPage: React.FC = () => {
             <button
               type="button"
               className="preview-toc-backdrop"
-              aria-label="Close table of contents"
+              aria-label="Hide TOC"
               onClick={() => setShowToc(false)}
             />
-            <aside className="preview-toc" aria-label="Table of Contents">
+            <aside className="preview-toc" aria-label="TOC">
               <div className="preview-toc-header">
-                <h2>Table of Contents</h2>
+                <h2>TOC</h2>
                 <button
                   type="button"
                   className="preview-toc-close"
                   onClick={() => setShowToc(false)}
-                  aria-label="Close"
+                  aria-label="Hide TOC"
                 >
                   <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor">
                     <path d="M18 6L6 18M6 6l12 12" strokeWidth="2" strokeLinecap="round"/>
@@ -599,22 +597,13 @@ export const QuotePreviewPage: React.FC = () => {
                 </button>
               </div>
               <nav className="preview-toc-list">
-                {tocItems.map((item, index) => (
+                {tocItems.map((item) => (
                   <button
                     key={item.id}
                     type="button"
                     className={`preview-toc-item${activeTocId === item.id ? ' is-active' : ''}`}
                     onClick={() => handleNavigateToSection(item.id)}
                   >
-                    <span className="preview-toc-index">
-                      {item.kind === 'summary'
-                        ? 'Sum'
-                        : item.kind === 'terms'
-                          ? 'T&C'
-                          : item.kind === 'bank'
-                            ? 'Bank'
-                            : index}
-                    </span>
                     <span className="preview-toc-label">{item.label}</span>
                   </button>
                 ))}
@@ -652,13 +641,35 @@ export const QuotePreviewPage: React.FC = () => {
 
       {isContentReady && (
         <div className="mobile-actions">
-          <button
-            onClick={() => handleExportPDF('full')}
-            className="mobile-action-btn primary"
-            disabled={isExporting}
-          >
-            {isExporting ? 'Downloading...' : 'Download PDF'}
-          </button>
+          {currentQuote && isMultiServiceQuote(currentQuote.items) ? (
+            <>
+              <button
+                type="button"
+                onClick={() => handleExportPDF('summary')}
+                className="mobile-action-btn"
+                disabled={isExporting}
+              >
+                {isExporting ? 'Downloading...' : 'Summary Only'}
+              </button>
+              <button
+                type="button"
+                onClick={() => handleExportPDF('detailed')}
+                className="mobile-action-btn primary"
+                disabled={isExporting}
+              >
+                {isExporting ? 'Downloading...' : 'Detailed Summary'}
+              </button>
+            </>
+          ) : (
+            <button
+              type="button"
+              onClick={() => handleExportPDF('full')}
+              className="mobile-action-btn primary"
+              disabled={isExporting}
+            >
+              {isExporting ? 'Downloading...' : 'Download PDF'}
+            </button>
+          )}
         </div>
       )}
     </div>
