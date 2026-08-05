@@ -755,8 +755,8 @@ export const CorporateMinimal: React.FC<TemplateProps> = ({
         <thead>
           <tr className="exec-thead-titles">
             <th className="col-service-id">SERVICE &amp; LOCATION</th>
-            <th className="col-quantity">REQ QUANTITY</th>
-            <th className="col-duration" title="Campaign duration">REQ DURATION</th>
+            <th className="col-quantity">REQ. QUANTITY</th>
+            <th className="col-duration" title="Campaign duration">REQ. DURATION</th>
             <th className="col-requiring">RECURRING CHARGE</th>
             <th className="col-onetime">ONE TIME CHARGE</th>
             <th className="col-amount-excl">AMOUNT</th>
