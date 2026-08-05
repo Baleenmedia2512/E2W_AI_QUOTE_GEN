@@ -12,13 +12,14 @@ import {
 import { FiCheck } from 'react-icons/fi';
 
 interface QuoteStepperProps {
-  currentStep: number; // 1-4
+  /** 1 = Chat, 2 = Client Info, 3 = Preview */
+  currentStep: number;
 }
 
 const steps = [
-  { number: 1, label: 'Company Info' },
+  { number: 1, label: 'Chat' },
   { number: 2, label: 'Client Info' },
-  { number: 3, label: 'Preview & Edit' },
+  { number: 3, label: 'Preview' },
 ];
 
 const QuoteStepper: React.FC<QuoteStepperProps> = ({ currentStep }) => {
@@ -28,7 +29,6 @@ const QuoteStepper: React.FC<QuoteStepperProps> = ({ currentStep }) => {
         <HStack spacing={{ base: 2, md: 4 }} justify="center" wrap="wrap">
           {steps.map((step, index) => (
             <React.Fragment key={step.number}>
-              {/* Step Indicator */}
               <Flex align="center" gap={2}>
                 <Circle
                   size={{ base: '32px', md: '40px' }}
@@ -39,15 +39,11 @@ const QuoteStepper: React.FC<QuoteStepperProps> = ({ currentStep }) => {
                       ? '#750926'
                       : 'gray.200'
                   }
-                  color={
-                    step.number <= currentStep ? 'white' : 'gray.500'
-                  }
+                  color={step.number <= currentStep ? 'white' : 'gray.500'}
                   fontWeight="600"
                   fontSize={{ base: 'sm', md: 'md' }}
                   border="3px solid"
-                  borderColor={
-                    step.number <= currentStep ? '#750926' : 'gray.300'
-                  }
+                  borderColor={step.number <= currentStep ? '#750926' : 'gray.300'}
                   transition="all 0.3s"
                 >
                   {step.number < currentStep ? (
@@ -61,9 +57,11 @@ const QuoteStepper: React.FC<QuoteStepperProps> = ({ currentStep }) => {
                     fontSize={{ base: 'xs', md: 'sm' }}
                     fontWeight={step.number === currentStep ? '600' : '500'}
                     color={
-                      step.number === currentStep ? '#750926' : 
-                      step.number < currentStep ? '#750926' :
-                      'gray.600'
+                      step.number === currentStep
+                        ? '#750926'
+                        : step.number < currentStep
+                        ? '#750926'
+                        : 'gray.600'
                     }
                   >
                     {step.label}
@@ -71,7 +69,6 @@ const QuoteStepper: React.FC<QuoteStepperProps> = ({ currentStep }) => {
                 </Box>
               </Flex>
 
-              {/* Connector Line */}
               {index < steps.length - 1 && (
                 <Box
                   width={{ base: '20px', md: '60px' }}
@@ -87,7 +84,6 @@ const QuoteStepper: React.FC<QuoteStepperProps> = ({ currentStep }) => {
           ))}
         </HStack>
 
-        {/* Progress Bar for Mobile */}
         <Box mt={4} display={{ base: 'block', sm: 'none' }}>
           <Progress
             value={(currentStep / steps.length) * 100}

@@ -1,67 +1,105 @@
-import React, { useState, useEffect } from 'react';
-import {
-  Box,
-  Button,
-  HStack,
-  VStack,
-  Container,
-  Icon,
-  IconButton,
-} from '@chakra-ui/react';
-import { FiArrowLeft, FiArrowRight } from 'react-icons/fi';
+import React from 'react';
+import { Box, Container, useToast } from '@chakra-ui/react';
 import { useHistory } from 'react-router-dom';
-import QuoteNavBar from '../components/QuoteWizard/QuoteNavBar';
+import QuoteFlowNav from '../components/QuoteWizard/QuoteFlowNav';
 import QuoteStepper from '../components/QuoteWizard/QuoteStepper';
-import CompanyInfoForm from '../components/CompanyInfoForm/CompanyInfoForm';
 import ClientInfoForm from '../components/ClientInfoForm/ClientInfoFormWithAutocomplete';
-import QuotePreview from '../components/QuotePreview/QuotePreview';
 import { useAppStore } from '../store';
-import { CompanyInfo } from '../types/company';
 import { ClientInfo } from '../types/client';
 import { Quote } from '../types/quote';
-import { saveCompanyInfo } from '../utils/localStorage';
-
-type QuoteStep = 'company' | 'client' | 'preview';
 
 const QuotePage: React.FC = () => {
   const history = useHistory();
-  const { currentQuote, updateQuote, setCurrentQuote, companyInfo, clientInfo, setCompanyInfo, setClientInfo, selectedTemplate, setSelectedTemplate } = useAppStore();
-  const [currentStep, setCurrentStep] = useState<QuoteStep>('company');
-  const [isNavigating, setIsNavigating] = useState(false);
+  const toast = useToast();
+  const {
+    currentQuote,
+    setCurrentQuote,
+    companyInfo,
+    clientInfo,
+    setClientInfo,
+    selectedTemplate,
+  } = useAppStore();
 
-  // Determine initial step based on available data
-  useEffect(() => {
-    console.log('📄 QuotePage mounted - checking data...');
-    console.log('Has companyInfo:', !!companyInfo);
-    console.log('Has clientInfo:', !!clientInfo);
-    console.log('Has currentQuote:', !!currentQuote);
-    
-    if (!companyInfo) {
-      console.log('→ Setting step to: company');
-      setCurrentStep('company');
-    } else if (!clientInfo) {
-      console.log('→ Setting step to: client');
-      setCurrentStep('client');
-    } else if (currentQuote) {
-      console.log('→ Setting step to: preview');
-      setCurrentStep('preview');
+  const navigateToPreview = (quote: Quote | null, client: ClientInfo | null) => {
+    try {
+      let quoteToSave = quote;
+
+      if (quoteToSave && quoteToSave.items.length === 0) {
+        quoteToSave = {
+          ...quoteToSave,
+          items: [
+            {
+              id: '1',
+              description: 'Sample Service/Product',
+              quantity: 1,
+              rate: 1000,
+              total: 1000,
+            },
+          ],
+          subtotal: 1000,
+          gstAmount: 180,
+          total: 1180,
+        };
+        setCurrentQuote(quoteToSave);
+      }
+
+      if (!quoteToSave) {
+        toast({
+          title: 'No quote available',
+          description: 'Generate a quote from Chat first.',
+          status: 'warning',
+          duration: 3000,
+          isClosable: true,
+        });
+        history.push('/');
+        return;
+      }
+
+      if (!companyInfo) {
+        toast({
+          title: 'Company details required',
+          description: 'Add your company info in Settings before preview.',
+          status: 'warning',
+          duration: 4000,
+          isClosable: true,
+        });
+        history.push('/company-settings');
+        return;
+      }
+
+      if (!client) {
+        toast({
+          title: 'Client details required',
+          status: 'warning',
+          duration: 3000,
+          isClosable: true,
+        });
+        return;
+      }
+
+      localStorage.setItem('currentQuote', JSON.stringify(quoteToSave));
+      localStorage.setItem('companyInfo', JSON.stringify(companyInfo));
+      localStorage.setItem('clientInfo', JSON.stringify(client));
+      localStorage.setItem('selectedTemplate', selectedTemplate);
+
+      history.push('/preview');
+    } catch (error) {
+      toast({
+        title: 'Navigation failed',
+        description: (error as Error).message,
+        status: 'error',
+        duration: 4000,
+        isClosable: true,
+      });
     }
-  }, []); // Only run on mount
-
-
-
-  const handleCompanySubmit = (info: CompanyInfo) => {
-    setCompanyInfo(info);
-    saveCompanyInfo(info);
-    setCurrentStep('client');
   };
 
   const handleClientSubmit = (info: ClientInfo) => {
     setClientInfo(info);
-    
-    // Create quote if it doesn't exist (for manual flow)
-    if (!currentQuote) {
-      const newQuote: Quote = {
+
+    let quoteToUse = currentQuote;
+    if (!quoteToUse) {
+      quoteToUse = {
         id: Date.now().toString(),
         quoteNumber: `Q-${Date.now()}`,
         date: new Date().toISOString(),
@@ -69,11 +107,11 @@ const QuotePage: React.FC = () => {
         items: [
           {
             id: '1',
-            description: 'Sample Service/Product (Edit in preview)',
+            description: 'Sample Service/Product',
             quantity: 1,
             rate: 1000,
-            total: 1000
-          }
+            total: 1000,
+          },
         ],
         subtotal: 1000,
         gstEnabled: true,
@@ -85,301 +123,39 @@ const QuotePage: React.FC = () => {
         createdAt: new Date(),
         updatedAt: new Date(),
       };
-      setCurrentQuote(newQuote);
-      console.log('✅ Created new quote with sample item:', newQuote);
+      setCurrentQuote(quoteToUse);
     }
-    
-    setCurrentStep('preview');
+
+    navigateToPreview(quoteToUse, info);
   };
 
-  const handleQuoteUpdate = (quote: Quote) => {
-    updateQuote(quote);
-  };
-
-  const handleSaveQuote = () => {
-    if (!currentQuote) {
-      alert('No quote to save');
-      return;
-    }
-    
-    // Save to local storage
-    const savedQuotes = JSON.parse(localStorage.getItem('savedQuotes') || '[]');
-    const existingIndex = savedQuotes.findIndex((q: Quote) => q.id === currentQuote.id);
-    
-    if (existingIndex >= 0) {
-      savedQuotes[existingIndex] = currentQuote;
-      alert('Quote updated successfully!');
+  const handleNextPreview = () => {
+    if (clientInfo) {
+      navigateToPreview(currentQuote, clientInfo);
     } else {
-      savedQuotes.push(currentQuote);
-      alert('Quote saved successfully!');
-    }
-    
-    localStorage.setItem('savedQuotes', JSON.stringify(savedQuotes));
-    console.log('Saved quote:', currentQuote);
-  };
-
-  const handleGeneratePDF = () => {
-    console.log('🔍 Continue to Template clicked');
-    
-    if (!currentQuote) {
-      console.error('❌ No quote available');
-      alert('Please create a quote first');
-      return;
-    }
-    
-    if (!companyInfo) {
-      console.error('❌ Company info missing');
-      alert('Please add company information first');
-      setCurrentStep('company');
-      return;
-    }
-    
-    if (!clientInfo) {
-      console.error('❌ Client info missing');
-      alert('Please add client information first');
-      setCurrentStep('client');
-      return;
-    }
-    
-    console.log('✅ Validation passed - navigating to preview...');
-    handleTemplateSelected();
-  };
-
-  const handleTemplateSelected = () => {
-    console.log('🚀 PREVIEW & EXPORT PDF BUTTON CLICKED');
-    console.log('Template selected:', selectedTemplate);
-    console.log('Current quote:', currentQuote);
-    console.log('Company info:', companyInfo);
-    console.log('Client info:', clientInfo);
-    
-    setIsNavigating(true);
-    
-    try {
-      // Ensure quote has at least one item for preview
-      if (currentQuote && currentQuote.items.length === 0) {
-        console.log('⚠️ Quote has no items, adding sample item...');
-        const updatedQuote = {
-          ...currentQuote,
-          items: [{
-            id: '1',
-            description: 'Sample Service/Product (Edit in preview)',
-            quantity: 1,
-            rate: 1000,
-            total: 1000
-          }],
-          subtotal: 1000,
-          gstAmount: 180,
-          total: 1180
-        };
-        setCurrentQuote(updatedQuote);
-        localStorage.setItem('currentQuote', JSON.stringify(updatedQuote));
-        console.log('✅ Sample item added to quote');
-      } else if (currentQuote) {
-        localStorage.setItem('currentQuote', JSON.stringify(currentQuote));
-        console.log('✅ Quote saved to localStorage');
-      } else {
-        console.error('❌ No quote to save!');
-        alert('Please create a quote first');
-        setIsNavigating(false);
-        return;
-      }
-      
-      if (companyInfo) {
-        localStorage.setItem('companyInfo', JSON.stringify(companyInfo));
-        console.log('✅ Company info saved to localStorage');
-      } else {
-        console.error('❌ No company info to save!');
-      }
-      
-      if (clientInfo) {
-        localStorage.setItem('clientInfo', JSON.stringify(clientInfo));
-        console.log('✅ Client info saved to localStorage');
-      } else {
-        console.error('❌ No client info to save!');
-      }
-      
-      localStorage.setItem('selectedTemplate', selectedTemplate);
-      console.log('✅ Template saved to localStorage:', selectedTemplate);
-      
-      console.log('🔄 Navigating to /preview...');
-      console.log('History object:', history);
-      
-      // Try multiple navigation methods
-      try {
-        history.push('/preview');
-        console.log('✅ history.push executed');
-      } catch (navError) {
-        console.error('❌ history.push failed:', navError);
-        console.log('🔄 Trying window.location fallback...');
-        window.location.href = '/preview';
-      }
-      
-    } catch (error) {
-      console.error('❌ Error in handleTemplateSelected:', error);
-      alert('An error occurred: ' + (error as Error).message);
-      setIsNavigating(false);
-    }
-  };
-
-  const handleBack = () => {
-    if (currentStep === 'preview') {
-      setCurrentStep('client');
-    } else if (currentStep === 'client') {
-      setCurrentStep('company');
-    } else {
-      history.push('/');
-    }
-  };
-
-  const handleNext = () => {
-    if (currentStep === 'company' && companyInfo) {
-      setCurrentStep('client');
-    } else if (currentStep === 'client' && clientInfo) {
-      setCurrentStep('preview');
-    } else if (currentStep === 'preview' && currentQuote) {
-      handleTemplateSelected();
-    }
-  };
-
-  const getStepNumber = (): number => {
-    switch (currentStep) {
-      case 'company': return 1;
-      case 'client': return 2;
-      case 'preview': return 3;
-      default: return 1;
+      toast({
+        title: 'Fill client details',
+        description: 'Complete and save the client form, or press Continue on the form.',
+        status: 'info',
+        duration: 3000,
+        isClosable: true,
+      });
+      // Scroll to form / let user submit — try trigger nothing, just message
     }
   };
 
   return (
     <Box minH="100vh" bg="#F8FAFC" pt={{ base: '56px', md: '72px' }} pb={{ base: '80px', md: 0 }}>
-      {/* Top Navigation - All Screens */}
-      <QuoteNavBar />
+      <QuoteFlowNav step="client" onNext={handleNextPreview} />
 
-      {/* Stepper */}
-      <QuoteStepper currentStep={getStepNumber()} />
+      <QuoteStepper currentStep={2} />
 
-      {/* Back/Next Navigation Arrows - Modern Style */}
-      <Box 
-        bg="white" 
-        borderBottom="1px solid" 
-        borderColor="gray.100" 
-        py={{ base: 2, md: 3 }}
-        boxShadow="0 1px 3px rgba(0, 0, 0, 0.04)"
-      >
-        <Container maxW="1280px" px={{ base: 4, md: 6 }}>
-          <HStack justify="space-between">
-            <IconButton
-              aria-label="Back"
-              icon={<Icon as={FiArrowLeft} />}
-              variant="ghost"
-              onClick={handleBack}
-              isDisabled={currentStep === 'company'}
-              colorScheme="brand"
-              size="md"
-              borderRadius="12px"
-            />
-            <IconButton
-              aria-label="Next"
-              icon={<Icon as={FiArrowRight} />}
-              variant="ghost"
-              onClick={handleNext}
-              isDisabled={
-                (currentStep === 'company' && !companyInfo) ||
-                (currentStep === 'client' && !clientInfo) ||
-                (currentStep === 'preview' && !currentQuote)
-              }
-              colorScheme="brand"
-              size="md"
-              borderRadius="12px"
-            />
-          </HStack>
-        </Container>
-      </Box>
-
-      {/* Main Content - Centered Card */}
       <Container maxW="900px" py={{ base: 4, md: 8 }} px={{ base: 4, md: 6 }}>
-        <Box>
-          {currentStep === 'company' && (
-            <CompanyInfoForm
-              onSubmit={handleCompanySubmit}
-              initialData={companyInfo}
-            />
-          )}
-
-          {currentStep === 'client' && (
-            <ClientInfoForm
-              onSubmit={handleClientSubmit}
-              onBack={() => setCurrentStep('company')}
-              initialData={clientInfo}
-            />
-          )}
-
-          {currentStep === 'preview' && currentQuote && (
-            <VStack spacing={6} align="stretch">
-              <QuotePreview
-                quote={currentQuote}
-                onUpdate={handleQuoteUpdate}
-                onSave={handleSaveQuote}
-              />
-              <HStack 
-                spacing={4} 
-                justify="flex-end" 
-                bg="white" 
-                p={{ base: 4, md: 6 }} 
-                borderRadius="20px" 
-                boxShadow="0 4px 12px rgba(0, 0, 0, 0.08)" 
-                flexDir={{ base: 'column', sm: 'row' }} 
-                w="100%"
-              >
-                <Button
-                  variant="outline"
-                  onClick={() => setCurrentStep('client')}
-                  size="lg"
-                  borderWidth="2px"
-                  borderColor="gray.300"
-                  color="gray.700"
-                  fontWeight="600"
-                  px={8}
-                  _hover={{ 
-                    bg: 'gray.50', 
-                    borderColor: 'gray.400',
-                    transform: 'translateY(-2px)',
-                    boxShadow: '0 4px 12px rgba(0, 0, 0, 0.1)'
-                  }}
-                  _active={{ transform: 'scale(0.98)' }}
-                  w={{ base: '100%', sm: 'auto' }}
-                  borderRadius="12px"
-                >
-                  ← Back
-                </Button>
-                <Button
-                  bgGradient="linear(to-r, #C91F3D, #B31B3E)"
-                  color="white"
-                  onClick={handleGeneratePDF}
-                  size="lg"
-                  fontWeight="600"
-                  px={{ base: 6, md: 10 }}
-                  _hover={{ 
-                    bgGradient: 'linear(to-r, #B31B3E, #9f1239)',
-                    transform: 'translateY(-2px)',
-                    boxShadow: '0 6px 20px rgba(201, 31, 61, 0.4)'
-                  }}
-                  _active={{ transform: 'scale(0.98)' }}
-                  isDisabled={!companyInfo || !clientInfo || !currentQuote}
-                  w={{ base: '100%', sm: 'auto' }}
-                  borderRadius="12px"
-                  boxShadow="0 4px 16px rgba(201, 31, 61, 0.3)"
-                >
-                  {!companyInfo ? 'Add Company Info' : 
-                   !clientInfo ? 'Add Client Info' : 
-                   'Preview & Export PDF'}
-                </Button>
-              </HStack>
-            </VStack>
-          )}
-
-
-        </Box>
+        <ClientInfoForm
+          onSubmit={handleClientSubmit}
+          onBack={() => history.push('/')}
+          initialData={clientInfo}
+        />
       </Container>
     </Box>
   );

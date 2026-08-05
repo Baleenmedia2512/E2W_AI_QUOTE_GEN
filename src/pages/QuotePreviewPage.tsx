@@ -6,11 +6,12 @@ import { exportToPDF } from '../services/pdfExportService';
 import { ExtractedPage, ServiceReadyData } from '../types';
 import { resolveServiceIdsForItems } from '../utils/serviceResolver';
 import { ServicePdfData, PdfExportMode } from '../components/Templates/CorporateMinimalPDF';
-import { isMultiServiceQuote } from '../utils/quoteGrouping';
 import {
   buildPreviewTocItems,
   scrollToPreviewSection,
 } from '../utils/previewNavigation';
+import QuoteFlowNav from '../components/QuoteWizard/QuoteFlowNav';
+import QuoteStepper from '../components/QuoteWizard/QuoteStepper';
 import './QuotePreviewPage.css';
 
 // ═══════════════════════════════════════════════════════════════════════
@@ -67,12 +68,10 @@ export const QuotePreviewPage: React.FC = () => {
   const [isRestoring, setIsRestoring] = useState(false); // Set to false to avoid blocking
   const [isContentReady, setIsContentReady] = useState(true); // Set to true for immediate display
   const [zoom, setZoom] = useState(100);
-  const [showExportMenu, setShowExportMenu] = useState(false);
   const [showToc, setShowToc] = useState(
     () => (typeof window !== 'undefined' ? window.innerWidth > 900 : true),
   );
   const [activeTocId, setActiveTocId] = useState<string | null>(null);
-  const exportMenuRef = useRef<HTMLDivElement>(null);
   const previewRef = useRef<HTMLDivElement>(null);
   const previewContainerRef = useRef<HTMLDivElement>(null);
   const pdfDataRef = useRef<ServicePdfData[]>([]);
@@ -134,16 +133,15 @@ export const QuotePreviewPage: React.FC = () => {
   
   const [pageImages, setPageImages] = useState<ExtractedPage[]>(mergedAllImages);
 
-  // Early validation and redirect - prevent errors from missing data
+  // Early validation and redirect
   useEffect(() => {
     if (!currentQuote || !companyInfo || !clientInfo) {
-      console.warn('⚠️ Missing required data for preview, redirecting to quote page...');
-      console.warn('Missing Quote:', !currentQuote);
-      console.warn('Missing Company:', !companyInfo);
-      console.warn('Missing Client:', !clientInfo);
-      
-      // Redirect to quote page to complete missing steps
-      history.push('/quote');
+      console.warn('⚠️ Missing required data for preview...');
+      if (!companyInfo) {
+        history.push('/company-settings');
+      } else if (!clientInfo || !currentQuote) {
+        history.push(!currentQuote ? '/' : '/quote');
+      }
     }
   }, [currentQuote, companyInfo, clientInfo, history]);
 
@@ -416,8 +414,19 @@ export const QuotePreviewPage: React.FC = () => {
             {!companyInfo && '• Company information is missing'}<br />
             {!clientInfo && '• Client information is missing'}
           </p>
-          <button onClick={() => history.push('/quote')} className="back-button">
-            Go Back to Quote Page
+          <button
+            onClick={() =>
+              history.push(
+                !companyInfo ? '/company-settings' : !clientInfo ? '/quote' : '/'
+              )
+            }
+            className="back-button"
+          >
+            {!companyInfo
+              ? 'Go to Company Settings'
+              : !clientInfo
+              ? 'Go to Client Info'
+              : 'Go to Chat'}
           </button>
         </div>
       </div>
@@ -463,23 +472,9 @@ export const QuotePreviewPage: React.FC = () => {
     );
   };
 
-  const isMultiService = currentQuote && currentQuote.items.length > 0 && isMultiServiceQuote(currentQuote.items);
-
-  // Close export menu on outside click
-  useEffect(() => {
-    const handleClickOutside = (e: MouseEvent) => {
-      if (exportMenuRef.current && !exportMenuRef.current.contains(e.target as Node)) {
-        setShowExportMenu(false);
-      }
-    };
-    if (showExportMenu) document.addEventListener('mousedown', handleClickOutside);
-    return () => document.removeEventListener('mousedown', handleClickOutside);
-  }, [showExportMenu]);
-
   const handleExportPDF = async (mode: PdfExportMode = 'full') => {
     console.log(`📄 Export PDF clicked (mode: ${mode})`);
-    setShowExportMenu(false);
-    
+
     if (!previewRef.current) {
       alert('Preview content not loaded. Please refresh and try again.');
       return;
@@ -491,7 +486,7 @@ export const QuotePreviewPage: React.FC = () => {
     }
 
     setIsExporting(true);
-    
+
     try {
       const docIds = activeProposals
         .map((p) => p.id)
@@ -528,18 +523,20 @@ export const QuotePreviewPage: React.FC = () => {
 
   return (
     <div className="quote-preview-page">
-      {/* Toolbar */}
+      <QuoteFlowNav
+        step="preview"
+        onDownloadPdf={() => handleExportPDF('full')}
+        isDownloading={isExporting}
+        canDownload={isContentReady && !isExporting}
+      />
+
+      <div style={{ paddingTop: 64 }}>
+        <QuoteStepper currentStep={3} />
+      </div>
+
+      {/* Secondary toolbar: contents + zoom only */}
       <div className="preview-toolbar">
         <div className="toolbar-section">
-          <button
-            onClick={() => history.push('/quote')}
-            className="toolbar-button back-btn"
-          >
-            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor">
-              <path d="M19 12H5M12 19l-7-7 7-7" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
-            </svg>
-            Back
-          </button>
           <button
             type="button"
             className={`toolbar-button toc-toggle-btn${showToc ? ' is-active' : ''}`}
@@ -574,65 +571,6 @@ export const QuotePreviewPage: React.FC = () => {
               Reset
             </button>
           </div>
-
-          {isMultiService ? (
-            <div className="export-dropdown-wrap" ref={exportMenuRef}>
-              <button
-                onClick={() => setShowExportMenu((v) => !v)}
-                className="toolbar-button primary"
-                disabled={isExporting || !isContentReady}
-              >
-                {isExporting ? (
-                  <><div className="spinner"></div>Exporting...</>
-                ) : (
-                  <>
-                    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor">
-                      <path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4M7 10l5 5 5-5M12 15V3" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
-                    </svg>
-                    Export PDF
-                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" style={{ marginLeft: 4 }}>
-                      <path d="M6 9l6 6 6-6" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
-                    </svg>
-                  </>
-                )}
-              </button>
-              {showExportMenu && (
-                <div className="export-dropdown-menu">
-                  <button className="export-dropdown-item" onClick={() => handleExportPDF('summary')}>
-                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor">
-                      <path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
-                      <path d="M14 2v6h6M16 13H8M16 17H8M10 9H8" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
-                    </svg>
-                    Summary Only
-                  </button>
-                  <button className="export-dropdown-item" onClick={() => handleExportPDF('detailed')}>
-                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor">
-                      <path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
-                      <path d="M14 2v6h6M16 13H8M16 17H8M10 9H8" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
-                    </svg>
-                    Detailed Summary
-                  </button>
-                </div>
-              )}
-            </div>
-          ) : (
-            <button
-              onClick={() => handleExportPDF('full')}
-              className="toolbar-button primary"
-              disabled={isExporting || !isContentReady}
-            >
-              {isExporting ? (
-                <><div className="spinner"></div>Exporting...</>
-              ) : (
-                <>
-                  <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor">
-                    <path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4M7 10l5 5 5-5M12 15V3" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
-                  </svg>
-                  Export PDF
-                </>
-              )}
-            </button>
-          )}
         </div>
       </div>
 
@@ -700,7 +638,6 @@ export const QuotePreviewPage: React.FC = () => {
             </div>
           )}
           <div className="preview-wrapper" style={{ transform: `scale(${zoom / 100})` }}>
-            {/* Hidden DOM store — pdfExportService reads templateData + pdfData from here */}
             <div
               id="pdf-data-store"
               data-template-store={JSON.stringify(templateData)}
@@ -713,23 +650,15 @@ export const QuotePreviewPage: React.FC = () => {
         </div>
       </div>
 
-      {/* Mobile Actions */}
       {isContentReady && (
         <div className="mobile-actions">
-          {isMultiService ? (
-            <>
-              <button onClick={() => handleExportPDF('summary')} className="mobile-action-btn primary" disabled={isExporting}>
-                {isExporting ? 'Exporting...' : 'Summary PDF'}
-              </button>
-              <button onClick={() => handleExportPDF('detailed')} className="mobile-action-btn primary" disabled={isExporting} style={{ marginLeft: 8 }}>
-                {isExporting ? 'Exporting...' : 'Detailed PDF'}
-              </button>
-            </>
-          ) : (
-            <button onClick={() => handleExportPDF('full')} className="mobile-action-btn primary" disabled={isExporting}>
-              {isExporting ? 'Exporting...' : 'Export PDF'}
-            </button>
-          )}
+          <button
+            onClick={() => handleExportPDF('full')}
+            className="mobile-action-btn primary"
+            disabled={isExporting}
+          >
+            {isExporting ? 'Downloading...' : 'Download PDF'}
+          </button>
         </div>
       )}
     </div>

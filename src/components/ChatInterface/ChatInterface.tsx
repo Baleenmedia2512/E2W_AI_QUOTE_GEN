@@ -17,23 +17,14 @@ import { FiSend, FiCheck, FiMic, FiChevronUp, FiChevronDown, FiX, FiEdit2 } from
 import { useHistory } from 'react-router-dom';
 import { useAppStore } from '../../store';
 import { useAuthStore } from '../../store/authStore';
-import { sendMessageToGemini } from '../../services/geminiService';
 import { Message } from '../../types/chat';
-import { Quote, QuoteItem } from '../../types/quote';
+import { Quote } from '../../types/quote';
 import { saveChatHistory, loadChatHistory } from '../../utils/localStorage';
-import { loadAllProposalsFromCloud } from '../../services/supabaseProposalService';
-import { DEFAULT_GENERAL_TERMS } from '../../utils/quoteGrouping';
 import { SpeechRecognition } from '@capacitor-community/speech-recognition';
 import { Capacitor } from '@capacitor/core';
-import {
-  getCityServiceRegistry,
-  KNOWN_CITY_LIST,
-  type ServiceQuantity,
-} from '../../hooks/useCityServiceRegistry';
-// DISABLED: proposal_chunks RAG search
-// import { searchServices } from '../../services/pdfEmbeddingService';
-import { extractCityHint, resolveServiceIdFromCatalog } from '../../utils/serviceResolver';
-import { computeQuoteItemTotal, enrichQuoteItemsDurationFromDb, resolveQuoteLineDuration } from '../../utils/durationUtils';
+import { KNOWN_CITY_LIST, type ServiceQuantity } from '../../utils/serviceNameUtils';
+import { resolveServiceIdFromCatalog } from '../../utils/serviceResolver';
+import { computeQuoteItemTotal } from '../../utils/durationUtils';
 import {
   buildCityServiceListFromDb,
   buildCloudSegmentCityPlan,
@@ -50,13 +41,10 @@ import {
   mergeGroupedServicesByCategory,
   MULTI_SVC_DEBUG,
   runCloudPreGeminiValidation,
-  validateConfirmationRowsMinQty,
   validateQuoteItemsAgainstDbMinQty,
   VEHICLE_CATEGORY_PATTERN,
 } from '../../utils/cloudQuoteValidation';
 import {
-  buildGeminiContextFromDbServices,
-  filterDbServicesForConfirmedRows,
   gateMinQtyBeforeConfirm,
   labelsToConfirmRows,
   mergeDirectPartsIntoGroupedServices,
@@ -64,20 +52,27 @@ import {
   rowsFromCloudBelowMin,
 } from '../../utils/confirmedQuotePipeline';
 import type { DbService } from '../../utils/serviceResolver';
+import {
+  continueProgressiveAction,
+  resolveMinQtyEdits,
+  resolveProgressiveText,
+  type ProgressiveSession,
+  type ProgressiveTurnResult,
+} from '../../utils/progressiveChatEngine';
 
 // ═══════════════════════════════════════════════════════════════════════
-// 🔀 DATA SOURCE TOGGLE
-// false = OLD: Full PDF text sent to Gemini (local IndexedDB flow)
-// true  = NEW: DB service chunks sent to Gemini (RAG cloud flow, faster + cheaper)
+// Progressive DB chat (short friendly replies). Gemini optional for intent only.
+// Legacy multi-match / city-wizard path disabled while USE_PROGRESSIVE_CHAT is on.
 // ═══════════════════════════════════════════════════════════════════════
 const USE_CLOUD_DATA = true;
+const USE_PROGRESSIVE_CHAT = true;
 
 const SUGGESTION_PROMPTS = [
-  'Generate quote for 100 auto full branding',
-  'Create quote for banner printing 10x5 feet, qty 50',
-  'Quote for vehicle branding – 20 tempos',
-  'Generate quote for shop signage',
-  'Create quote for the services in proposal',
+  'bus',
+  'hoarding chennai',
+  'auto full branding',
+  'bus shelter',
+  '50 bus semi branding chennai',
 ];
 
 // ── Command History Helpers (module-level, no component dependency) ────────
@@ -117,7 +112,7 @@ interface CityPickerSegment {
   cityNeeded: boolean;            // true if no city was detected in this segment
   detectedCity: string | null;    // City found in segment text (if any)
   selectedCities: string[];       // Cities chosen by user (multi-select)
-  matchedCities?: string[];       // Cities where service is confirmed available (from registry)
+  matchedCities?: string[];       // Cities where service is available (from DB catalog)
 }
 
 const ChatInterface: React.FC = () => {
@@ -143,12 +138,6 @@ const ChatInterface: React.FC = () => {
   const inputRef = useRef<HTMLInputElement>(null);
   const prevUserIdRef = useRef<string | undefined>(undefined);
   // ──────────────────────────────────────────────────────────────────────────
-
-  // ── City Service Registry ─────────────────────────────────────────────────
-  // Built by useCityServiceRegistry() in App.tsx (runs on every page).
-  // Read here via the module-level singleton — no local useEffect needed.
-  const cityServiceRegistry = { current: getCityServiceRegistry() };
-  // ─────────────────────────────────────────────────────────────────────────
 
   // Multi-select state for MULTIPLE_MATCH scenarios
   // Map: messageId -> { groupKey (vehicleType|city) -> string[] of selected service names }
@@ -251,6 +240,15 @@ const ChatInterface: React.FC = () => {
   // Alternate message used when user clicks "Use Minimum" on a multi-segment below-min warning.
   // Holds the original message rewritten with each below-min segment's qty bumped to its registry minimum.
   const [pendingMinReplacedMessage, setPendingMinReplacedMessage] = useState<string | null>(null);
+
+  // Progressive chat session (city → area → min-qty → quote)
+  const [progressiveSession, setProgressiveSession] = useState<ProgressiveSession | null>(null);
+  const [progressiveMultiSelect, setProgressiveMultiSelect] = useState<Record<string, string[]>>({});
+  /** messageId → serviceKey currently being edited on min-qty card */
+  const [minQtyEditingKey, setMinQtyEditingKey] = useState<Record<string, string | null>>({});
+  /** messageId → serviceKey → draft string while typing */
+  const [minQtyDrafts, setMinQtyDrafts] = useState<Record<string, Record<string, string>>>({});
+  const minQtyApplyLock = useRef(false);
   /** Gemini EXACT_MATCH hint only — cloud gate handles validation first. */
   const isFullySpecifiedRequest = (userRequest: string): boolean => {
     if (isMultiSegmentQuoteRequest(userRequest)) {
@@ -332,8 +330,7 @@ const ChatInterface: React.FC = () => {
   // Split message by "and" or ",", then check each segment for a city keyword.
   // Pre-processing also handles Bug 1 — repeated clauses like " i need "/" i want "/
   // " also need " treated as new " and " boundaries.
-  // (No service-name aliases here — spelling/spacing variants are handled generically
-  // inside classifySegmentByRegistry by joining adjacent words.)
+  // (No service-name aliases here — spelling variants handled by DB catalog matching.)
   const parseSegmentsForCity = (message: string, cities: string[]): CityPickerSegment[] => {
     const normalized = message
       // Bug 1: treat repeated "i need"/"i want"/"also need" mid-sentence as new clauses.
@@ -421,166 +418,6 @@ const ChatInterface: React.FC = () => {
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [messages, isLoading]);
-
-  // Sync minQtyCacheRef from the global registry on mount (registry may already
-  // be populated by useCityServiceRegistry in App.tsx before this component mounts)
-  useEffect(() => {
-    getCityServiceRegistry().forEach(entry => {
-      if (entry.status === 'ready') {
-        Object.entries(entry.quantities).forEach(([svc, q]) => {
-          if (q.min > 1) minQtyCacheRef.current.set(svc, q.min);
-        });
-      }
-    });
-  }, []); // eslint-disable-line react-hooks/exhaustive-deps
-
-  // Helper: check if a user query segment matches any service in a city's registry.
-  // Returns 'found' | 'not_found' | 'registry_unavailable'
-  const checkServiceInRegistry = (
-    cityKey: string,
-    querySegment: string
-  ): { result: 'found' | 'not_found' | 'registry_unavailable'; matchedService?: string; qty?: ServiceQuantity } => {
-    const entry = cityServiceRegistry.current.get(cityKey);
-    if (!entry || entry.status !== 'ready' || entry.services.length === 0) {
-      console.log(`📋 [Registry] "${cityKey}" — not ready or empty`);
-      return { result: 'registry_unavailable' };
-    }
-
-    console.log(`📋 [Registry] "${cityKey}" services (${entry.services.length}):`, entry.services);
-
-    // Clean query: strip city name, standalone numbers, filler words
-    // Use \b\d+\b (not \d+) so alphanumeric tokens like "a4"/"a5" are preserved
-    const cleaned = querySegment
-      .replace(new RegExp(`\\b${cityKey}\\b`, 'gi'), '')
-      .replace(/\b\d+\b/g, '')
-      .replace(/\b(need|for|the|a|an|in|at|of|and|months?|days?|weeks?|years?|i|want|please|generate|quote|services?|ads?|advertising|outdoor|campaign|some|any)\b/gi, '')
-      .toLowerCase()
-      .trim();
-
-    const userWords = cleaned.split(/\s+/).filter(w => w.length >= 2);
-    if (userWords.length === 0) return { result: 'registry_unavailable' };
-
-    // Normalize a word to its base (strip trailing 's') for singular/plural matching
-    // e.g. "hoardings" → "hoarding" → regex \bhoardings?\b matches both "hoarding" and "hoardings"
-    const baseWord = (w: string) => w.replace(/s$/, '');
-
-    // Forward match: ALL user words appear in registry service name
-    const forwardMatches = entry.services.filter(svc =>
-      userWords.every(word => new RegExp(`\\b${baseWord(word)}s?\\b`, 'i').test(svc))
-    );
-
-    // Reverse match: ALL registry service words appear in user query (user typed more than needed)
-    // e.g. "newspaper insertion paper size" → registry "newspaper insertion" → reverse match ✓
-    const reverseMatches = forwardMatches.length === 0
-      ? entry.services.filter(svc => {
-          const svcWords = svc.split(/\s+/).filter(w => w.length >= 2);
-          return svcWords.every(sw =>
-            userWords.some(uw => new RegExp(`\\b${baseWord(sw)}s?\\b`, 'i').test(uw))
-          );
-        })
-      : [];
-
-    const matches = forwardMatches.length > 0 ? forwardMatches : reverseMatches;
-
-    console.log(`🔍 [Registry] query="${querySegment}" → cleaned words: [${userWords.join(', ')}]`);
-    console.log(`🔍 [Registry] forwardMatches: [${forwardMatches.join(', ')}] | reverseMatches: [${reverseMatches.join(', ')}]`);
-
-    if (matches.length === 0) return { result: 'not_found' };
-
-    // Return the first/best match with its quantity constraints
-    const best = matches[0];
-    return { result: 'found', matchedService: best, qty: entry.quantities[best] };
-  };
-  // ─────────────────────────────────────────────────────────────────────────
-
-  // ─── GENERIC SEGMENT CLASSIFIER (registry-driven, category-agnostic) ────
-  // Replaces hardcoded keyword logic. For ANY service category (bus, auto,
-  // newspaper, lamp post, hoarding, radio, …) decides:
-  //   • registry_unavailable → caller falls back to text scan / Gemini
-  //   • empty                → user typed only fillers
-  //   • not_found            → service genuinely absent in this city
-  //   • specific             → exactly one service matches (auto-confirm)
-  //   • vague                → 2+ services match (show checkbox group)
-  type SegmentClassification =
-    | { state: 'registry_unavailable' }
-    | { state: 'empty' }
-    | { state: 'not_found' }
-    | { state: 'specific'; matches: string[]; qty?: ServiceQuantity }
-    | { state: 'vague'; matches: string[] };
-
-  const classifySegmentByRegistry = (cityKey: string, segText: string): SegmentClassification => {
-    const entry = cityServiceRegistry.current.get(cityKey);
-    if (!entry || entry.status !== 'ready' || entry.services.length === 0) {
-      return { state: 'registry_unavailable' };
-    }
-    // Use \b\d+\b (not \d+) so alphanumeric tokens like "a4"/"a5" are preserved
-    const cleaned = segText
-      .replace(new RegExp(`\\b${cityKey}\\b`, 'gi'), '')
-      .replace(/\b\d+\b/g, '')
-      .replace(/\b(need|for|the|a|an|in|at|of|and|months?|days?|weeks?|years?|i|want|please|generate|quote|services?|ads?|advertising|outdoor|campaign|some|any)\b/gi, '')
-      .toLowerCase().trim();
-    const userWords = cleaned.split(/\s+/).filter(w => w.length >= 2);
-    if (userWords.length === 0) return { state: 'empty' };
-
-    // Generic spelling-variant tolerance (NO hardcoded service names):
-    //   • strip trailing "s" for singular/plural (\bword s?\b regex)
-    //   • generate joined-pair tokens for adjacent user words
-    //     (e.g. "news","paper" → also try "newspaper";
-    //           "lamp","post"  → also try "lamppost")
-    //     so the user's spacing doesn't have to match the registry's spelling.
-    const baseWord = (w: string) => w.replace(/s$/, '');
-    const escapeRx = (s: string) => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-    const joinedPairs: string[] = [];
-    for (let i = 0; i < userWords.length - 1; i++) {
-      joinedPairs.push(baseWord(userWords[i]) + baseWord(userWords[i + 1]));
-    }
-    const wordMatchesService = (word: string, svc: string) =>
-      new RegExp(`\\b${escapeRx(baseWord(word))}s?\\b`, 'i').test(svc);
-
-    const matches = entry.services.filter(svc => {
-      // Forward match: every user word appears (singular/plural) in service name.
-      if (userWords.every(w => wordMatchesService(w, svc))) return true;
-      // Joined-pair tolerance: walk userWords, allowing adjacent pairs to merge.
-      let i = 0;
-      while (i < userWords.length) {
-        const single = wordMatchesService(userWords[i], svc);
-        const pair = i < userWords.length - 1 && new RegExp(`\\b${escapeRx(joinedPairs[i])}s?\\b`, 'i').test(svc);
-        if (single) { i += 1; continue; }
-        if (pair) { i += 2; continue; }
-        return false;
-      }
-      return true;
-    });
-    console.log(`🧮 [Classify] city="${cityKey}" userWords=[${userWords.join(',')}] joined=[${joinedPairs.join(',')}] → ${matches.length} match(es): [${matches.join(' | ')}]`);
-    if (matches.length === 0) return { state: 'not_found' };
-    if (matches.length === 1) return { state: 'specific', matches, qty: entry.quantities[matches[0]] };
-
-    // ── TF-IDF tie-break ──────────────────────────────────────────────────
-    // Multiple candidates matched — score each by IDF-weighted token overlap.
-    // Rare disambiguating words ("underground", "lobby", "lit") outweigh
-    // common ones ("branding", "board"). If the top score clearly beats the
-    // runner-up (>= 25% margin AND >= 1.0 absolute), classify as specific.
-    const idf = entry.idf || {};
-    const userTokens = [...userWords.map(baseWord), ...joinedPairs];
-    const scoreOf = (svc: string): number => {
-      const svcTokens = new Set(svc.split(/\s+/).map(baseWord));
-      let s = 0;
-      for (const t of userTokens) if (svcTokens.has(t)) s += idf[t] ?? 1;
-      return s;
-    };
-    const scored = matches
-      .map(svc => ({ svc, score: scoreOf(svc) }))
-      .sort((a, b) => b.score - a.score);
-    console.log(`🧮 [Classify] TF-IDF scores:`, scored.slice(0, 5).map(s => `${s.svc}=${s.score.toFixed(2)}`).join(' | '));
-
-    const [top, second] = scored;
-    const clearWinner = top.score >= 1.0 && top.score >= second.score * 1.25;
-    if (clearWinner) {
-      return { state: 'specific', matches: [top.svc], qty: entry.quantities[top.svc] };
-    }
-    return { state: 'vague', matches };
-  };
-  // ─────────────────────────────────────────────────────────────────────────
 
   // Handle keyboard appearance on mobile - adjust viewport
   useEffect(() => {
@@ -802,6 +639,222 @@ const ChatInterface: React.FC = () => {
     }
   };
 
+  const appendProgressiveResult = async (
+    userMessage: Message | null,
+    result: ProgressiveTurnResult,
+  ) => {
+    setProgressiveSession(result.session);
+    if (result.quoteRows && result.quoteRows.length > 0) {
+      // Skip "Creating your quote..." interim message — go straight to quote
+      if (userMessage) {
+        setMessages((prev) => [...prev, userMessage]);
+      }
+      await generateQuoteFromProgressiveRows(result.quoteRows, result.session.originalText);
+      return;
+    }
+
+    const assistantMsg: Message = {
+      id: (Date.now() + 1).toString(),
+      role: 'assistant',
+      content: result.botText,
+      timestamp: new Date(),
+      isProgressiveChat: true,
+      progressiveStep: result.step,
+      progressiveOptions: result.options,
+      progressiveAllowMulti: result.allowMulti,
+      progressiveSession: result.session,
+      progressiveAutoConfirmed: result.autoConfirmedList,
+      progressiveBelowMin: result.belowMinDetails,
+    };
+    setMessages((prev) =>
+      userMessage ? [...prev, userMessage, assistantMsg] : [...prev, assistantMsg],
+    );
+  };
+
+  const generateQuoteFromProgressiveRows = async (
+    rows: Array<{ service: string; qty: number | string; city: string; serviceId?: string }>,
+    originalUserInput: string,
+  ) => {
+    setIsLoading(true);
+    setError(null);
+    try {
+      const { loadAllServicesFromCloud } = await import('../../services/supabaseProposalService');
+      const { buildQuoteFromConfirmedRows } = await import('../../utils/buildQuoteFromConfirmedRows');
+      const dbServices = (await loadAllServicesFromCloud()) || [];
+      const result = buildQuoteFromConfirmedRows(
+        dedupeConfirmationRows(rows),
+        dbServices,
+        originalUserInput,
+      );
+      if (!result.success) {
+        setMessages((prev) => [
+          ...prev,
+          {
+            id: Date.now().toString(),
+            role: 'assistant',
+            content: `Could not build quote: ${result.message}`,
+            timestamp: new Date(),
+            isError: true,
+          },
+        ]);
+        return;
+      }
+      setCurrentQuote(result.quote);
+      loadCloudServices().catch(() => undefined);
+      setMessages((prev) => [
+        ...prev,
+        {
+          id: (Date.now() + 1).toString(),
+          role: 'assistant',
+          content: '✓ Your quote is ready!',
+          timestamp: new Date(),
+        },
+      ]);
+      setProgressiveSession(null);
+      setTimeout(() => {
+        history.push('/quote');
+      }, 1000);
+    } catch (err) {
+      setMessages((prev) => [
+        ...prev,
+        {
+          id: Date.now().toString(),
+          role: 'assistant',
+          content: err instanceof Error ? err.message : 'Quote failed.',
+          timestamp: new Date(),
+          isError: true,
+        },
+      ]);
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  const handleProgressiveOptionClick = async (
+    message: Message,
+    optionId: string,
+  ) => {
+    if (isLoading) return;
+    const session = message.progressiveSession || progressiveSession;
+    if (!session) return;
+
+    if (message.progressiveAllowMulti) {
+      // Toggle handled in chip UI — do not navigate yet
+      return;
+    }
+
+    setIsLoading(true);
+    try {
+      const { loadAllServicesFromCloud } = await import('../../services/supabaseProposalService');
+      const dbServices = (await loadAllServicesFromCloud()) || [];
+      const result = continueProgressiveAction(optionId, session, dbServices);
+      // No echo bubble for chip selections — bot's reply conveys what was chosen
+      await appendProgressiveResult(null, result);
+    } catch (err) {
+      console.error(err);
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  const handleProgressiveMultiConfirm = async (message: Message) => {
+    if (isLoading) return;
+    const session = message.progressiveSession || progressiveSession;
+    if (!session) return;
+    const selected = progressiveMultiSelect[message.id] || [];
+    if (selected.length === 0) return;
+
+    setIsLoading(true);
+    try {
+      const { loadAllServicesFromCloud } = await import('../../services/supabaseProposalService');
+      const dbServices = (await loadAllServicesFromCloud()) || [];
+      const result = continueProgressiveAction(
+        selected[0],
+        session,
+        dbServices,
+        selected,
+      );
+      setProgressiveMultiSelect((prev) => {
+        const next = { ...prev };
+        delete next[message.id];
+        return next;
+      });
+      // No echo bubble for confirm — bot's reply confirms the selection
+      await appendProgressiveResult(null, result);
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  const minQtyItemKey = (item: { service: string; serviceId?: string }) =>
+    item.serviceId || item.service;
+
+  /** Apply pencil qty edits — re-ask same card if still below min, else quote. */
+  const applyMinQtyPencilEdits = async (message: Message) => {
+    if (isLoading || minQtyApplyLock.current) return;
+    const session = message.progressiveSession || progressiveSession;
+    const details = message.progressiveBelowMin;
+    if (!session || !details?.length) return;
+
+    const drafts = minQtyDrafts[message.id] || {};
+    const edits: Record<string, number> = {};
+    for (const item of details) {
+      const key = minQtyItemKey(item);
+      const raw = drafts[key];
+      if (raw == null || String(raw).trim() === '') continue;
+      const n = parseInt(String(raw).replace(/,/g, ''), 10);
+      if (Number.isFinite(n) && n > 0) edits[key] = n;
+    }
+    if (Object.keys(edits).length === 0) {
+      setMinQtyEditingKey((prev) => ({ ...prev, [message.id]: null }));
+      return;
+    }
+
+    minQtyApplyLock.current = true;
+    setIsLoading(true);
+    setMinQtyEditingKey((prev) => ({ ...prev, [message.id]: null }));
+    try {
+      const result = resolveMinQtyEdits(session, edits, details);
+      setProgressiveSession(result.session);
+
+      if (result.quoteRows && result.quoteRows.length > 0) {
+        setMinQtyDrafts((prev) => {
+          const next = { ...prev };
+          delete next[message.id];
+          return next;
+        });
+        await generateQuoteFromProgressiveRows(result.quoteRows, result.session.originalText);
+        return;
+      }
+
+      // Same-card re-ask — patch this message in place
+      setMessages((prev) =>
+        prev.map((m) =>
+          m.id === message.id
+            ? {
+                ...m,
+                content: result.botText,
+                progressiveBelowMin: result.belowMinDetails,
+                progressiveOptions: result.options,
+                progressiveSession: result.session,
+                progressiveStep: result.step,
+                timestamp: new Date(),
+              }
+            : m,
+        ),
+      );
+      // Seed drafts with new requested values
+      const nextDrafts: Record<string, string> = {};
+      for (const d of result.belowMinDetails || []) {
+        nextDrafts[minQtyItemKey(d)] = String(d.requested);
+      }
+      setMinQtyDrafts((prev) => ({ ...prev, [message.id]: nextDrafts }));
+    } finally {
+      setIsLoading(false);
+      minQtyApplyLock.current = false;
+    }
+  };
+
   // Core send logic — accepts text directly, no reliance on inputValue state
   const sendMessageWithContent = async (text: string) => {
     if (!text.trim() || isLoading) return;
@@ -821,53 +874,77 @@ const ChatInterface: React.FC = () => {
       timestamp: new Date(),
     };
 
-    // Needed by CLOUD CITY GATE (keep outside commented RAG block)
+    // ─── PROGRESSIVE CHAT (primary) ──────────────────────────────────────────
+    if (USE_PROGRESSIVE_CHAT && USE_CLOUD_DATA && !isQtyOverride && !isCheckboxConfirmedFlag) {
+      setInputValue('');
+      pushToHistory(cleanedText);
+      setIsLoading(true);
+      setError(null);
+      setMessages((prev) => [...prev, userMessage]);
+      try {
+        const { loadAllServicesFromCloud } = await import('../../services/supabaseProposalService');
+        const { getCatalogTypeKeys, getCatalogCities } = await import('../../utils/progressiveChatEngine');
+        const dbServices = (await loadAllServicesFromCloud()) || [];
+        const catalogTypes = getCatalogTypeKeys(dbServices);
+        const catalogCities = getCatalogCities(dbServices);
+
+        let intent = null as Awaited<
+          ReturnType<typeof import('../../services/chatIntentAiService').parseChatIntentWithAi>
+        >;
+        try {
+          const { parseChatIntentWithAi } = await import('../../services/chatIntentAiService');
+          intent = await parseChatIntentWithAi(cleanedText, {
+            types: catalogTypes,
+            cities: catalogCities,
+          });
+        } catch {
+          intent = null;
+        }
+
+        const result = resolveProgressiveText(
+          cleanedText,
+          dbServices,
+          progressiveSession,
+          intent
+            ? {
+                kind: intent.kind,
+                media: intent.media,
+                medium: intent.medium,
+                city: intent.city,
+                areaHint: intent.areaHint,
+                ambiguous: intent.ambiguous,
+                clarifyHint: intent.clarifyHint,
+                qty: intent.qty,
+                duration: intent.duration,
+                shortReply: intent.shortReply,
+              }
+            : null,
+        );
+        await appendProgressiveResult(null, result);
+      } catch (err) {
+        setMessages((prev) => [
+          ...prev,
+          {
+            id: (Date.now() + 1).toString(),
+            role: 'assistant',
+            content: err instanceof Error ? err.message : 'Something went wrong.',
+            timestamp: new Date(),
+            isError: true,
+            failedInput: cleanedText,
+          },
+        ]);
+      } finally {
+        setIsLoading(false);
+      }
+      return;
+    }
+
+    // Needed by CLOUD CITY GATE (legacy path)
     const isQuoteRequest = /\b(generate|create|quote|price|cost|for)\b/i.test(cleanedText)
       || /\b\d+\b/.test(cleanedText)
       || /\b(branding|advertising|signage|hoarding|banner|sticker|shelter|panel|board|printing|display|wrapping)\b/i.test(cleanedText)
       || VEHICLE_CATEGORY_PATTERN.test(cleanedText)
       || isVagueCategoryQuery(cleanedText);
-
-    // ─── RAG SEARCH GATE (DISABLED — proposal_chunks) ─────────────────────────
-    /*
-    const isSimpleSearch = !isQuoteRequest && !isQtyOverride && !isCheckboxConfirmedFlag;
-    
-    if (isSimpleSearch && cleanedText.split(' ').length >= 2) {
-      try {
-        console.log('🔍 Searching RAG database for:', cleanedText);
-        const ragResults = await searchServices(cleanedText, 5);
-        
-        if (ragResults && ragResults.length > 0) {
-          console.log(`✅ Found ${ragResults.length} RAG results`);
-          
-          // Format results as assistant message
-          let ragContent = `📚 **Found ${ragResults.length} matching services:**\n\n`;
-          ragResults.forEach((result: any, idx: number) => {
-            const similarity = (result.similarity * 100).toFixed(1);
-            ragContent += `**${idx + 1}. ${result.service_name}** (${similarity}% match)\n`;
-            ragContent += `${result.content.substring(0, 200)}...\n\n`;
-            ragContent += `_Click below to generate a quote for this service_\n\n`;
-          });
-          
-          const assistantMsg: Message = {
-            id: (Date.now() + 1).toString(),
-            role: 'assistant',
-            content: ragContent,
-            timestamp: new Date(),
-            isRagSearchResult: true,
-            ragResults: ragResults,
-          };
-          
-          setMessages(prev => [...prev, userMessage, assistantMsg]);
-          return;
-        }
-      } catch (error) {
-        console.warn('RAG search failed, falling back to Gemini:', error);
-        // Continue to normal Gemini flow
-      }
-    }
-    */
-    // ──────────────────────────────────────────────────────────────────────────
 
     // ─── CITY-ONLY QUERY GATE ────────────────────────────────────────────────
     if (!isQtyOverride && !isCheckboxConfirmedFlag) {
@@ -877,49 +954,23 @@ const ChatInterface: React.FC = () => {
           const { loadAllServicesFromCloud } = await import('../../services/supabaseProposalService');
           cityOnlyDbServices = (await loadAllServicesFromCloud()) || [];
         } catch {
-          // Registry path still available
+          // DB unavailable — no city list
         }
       }
       const cityOnlyMatches = detectCityOnlyQuery(cleanedText, cityOnlyDbServices);
       if (cityOnlyMatches.length > 0) {
-        // Prefer vendor_rate_chunks catalog (clean medium-id labels). PDF registry is fallback only.
-        let listSource: 'VENDOR_DB' | 'REGISTRY' = 'VENDOR_DB';
         let lists: Array<{ city: string; services: Array<{ name: string; minQty: number }> }> = [];
 
         if (USE_CLOUD_DATA && cityOnlyDbServices.length > 0) {
           lists = cityOnlyMatches
             .map(cityKey => buildCityServiceListFromDb(cityKey, cityOnlyDbServices))
             .filter((x): x is { city: string; services: Array<{ name: string; minQty: number }> } => !!x);
-          listSource = 'VENDOR_DB';
         }
 
-        if (lists.length === 0) {
-          lists = cityOnlyMatches
-            .map(cityKey => {
-              const entry = cityServiceRegistry.current.get(cityKey);
-              if (!entry || entry.status !== 'ready' || entry.services.length === 0) return null;
-              const services = entry.services.map(svc => ({
-                name: svc.split(' ').map(w => w.charAt(0).toUpperCase() + w.slice(1)).join(' '),
-                minQty: entry.quantities[svc]?.min ?? 1,
-              }));
-              return {
-                city: cityKey.charAt(0).toUpperCase() + cityKey.slice(1),
-                services,
-              };
-            })
-            .filter((x): x is { city: string; services: Array<{ name: string; minQty: number }> } => !!x);
-          if (lists.length > 0) listSource = 'REGISTRY';
-        }
-
-        console.log('🔍 [CityList] source=', listSource, {
+        console.log('🔍 [CityList] source=VENDOR_DB', {
           cities: cityOnlyMatches,
           vendorDbCount: cityOnlyDbServices.length,
-          sampleVendor: cityOnlyDbServices.slice(0, 5).map(s => ({
-            id: s.service_id,
-            name: s.service_name,
-          })),
           listCount: lists.reduce((n, l) => n + l.services.length, 0),
-          sampleList: lists[0]?.services.slice(0, 5).map(s => s.name),
         });
 
         if (lists.length > 0) {
@@ -1217,963 +1268,25 @@ const ChatInterface: React.FC = () => {
     }
     // ─────────────────────────────────────────────────────────────────────────
 
-    // ─── CITY GATE (local PDF registry — skipped when cloud DB handles routing) ─
-    if (activeProposals.length > 1 && !(USE_CLOUD_DATA && prefetchedDbServices && prefetchedDbServices.length > 0)) {
-      const availCities = getAvailableCities();
-      if (availCities.length > 1) {
-        const rawSegments = parseSegmentsForCity(userMessage.content, availCities);
-        // For pure one-segment, city-missing queries like "auto", force explicit
-        // city choice instead of silently auto-assigning a single matched city.
-        const forceCityPickerForSingleCityless =
-          rawSegments.length === 1 &&
-          rawSegments[0].cityNeeded &&
-          !rawSegments[0].detectedCity;
-
-        // Auto-assign city for segments whose service exists in exactly ONE city's registry.
-        // Falls back to raw PDF text scan if registry not yet built for a city.
-        // Only segments present in 2+ cities remain cityNeeded=true and appear in the picker.
-        const segments: CityPickerSegment[] = rawSegments.map(seg => {
-          if (!seg.cityNeeded) return seg; // already has city in the text
-
-          // Bug 4 (strict): ONLY list cities whose registry actually contains the service.
-          // No text-scan fallback — if a registry isn't ready yet, that city is excluded
-          // rather than guessed in (which previously let Madurai leak under "lamp post").
-          const citiesWithService = availCities.filter(city => {
-            const cityKey = KNOWN_CITY_LIST.find(c => city.toLowerCase().includes(c)) || city.toLowerCase();
-            const cls = classifySegmentByRegistry(cityKey, seg.raw);
-            return cls.state === 'specific' || cls.state === 'vague';
-          });
-
-          if (citiesWithService.length === 1 && !forceCityPickerForSingleCityless) {
-            console.log(`🏙️ Registry auto-assigned "${seg.raw}" → ${citiesWithService[0]}`);
-            return {
-              ...seg,
-              cityNeeded: false,
-              detectedCity: citiesWithService[0],
-              selectedCities: [citiesWithService[0]],
-              matchedCities: citiesWithService,
-            };
-          }
-
-          // 0 cities (service not found anywhere) or 2+ cities (need picker)
-          return { ...seg, matchedCities: citiesWithService };
-        });
-
-        // Show city picker only when a segment needs a city AND the service was found in 2+ cities.
-        // If service is found in 0 cities (unknown query) let Gemini handle it directly.
-        const hasServiceRequest = segments.some(s =>
-          s.cityNeeded && s.matchedCities !== undefined && s.matchedCities.length >= 2
-        );
-        if (hasServiceRequest || forceCityPickerForSingleCityless) {
-          let localDbServices: DbService[] = (prefetchedDbServices || []) as DbService[];
-          if (USE_CLOUD_DATA && localDbServices.length === 0) {
-            try {
-              const { loadAllServicesFromCloud } = await import('../../services/supabaseProposalService');
-              localDbServices = (await loadAllServicesFromCloud()) || [];
-              prefetchedDbServices = localDbServices;
-            } catch {
-              // Registry path still works when DB unavailable
-            }
-          }
-          const pickerMsgId = (Date.now() + 1).toString();
-          const pickerMsg: Message = {
-            id: pickerMsgId,
-            role: 'assistant',
-            content: '🏙️ Multiple city rate cards are loaded. Please select the city for each service below:',
-            timestamp: new Date(),
-            isCityPicker: true,
-          };
-          setMessages(prev => [...prev, userMessage, pickerMsg]);
-          setInputValue('');
-          setCityPickerState({
-            messageId: pickerMsgId,
-            originalMessage: userMessage.content,
-            segments,
-            availableCities: availCities,
-            dbServices: localDbServices,
-            requireServiceSelection: forceCityPickerForSingleCityless || isVagueCategoryQuery(userMessage.content),
-          });
-          return; // Stop here — do NOT send to Gemini yet
-        }
-      }
-    }
-    // ─────────────────────────────────────────────────────────────────────────
-
-    // ─── PRE-GEMINI CITY-SERVICE AVAILABILITY CHECK (Registry-based) ────────
-    if (activeProposals.length > 1 && !(USE_CLOUD_DATA && prefetchedDbServices && prefetchedDbServices.length > 0)) {
-      const availCitiesPre = getAvailableCities();
-      if (availCitiesPre.length > 1) {
-        const preSegments = parseSegmentsForCity(userMessage.content, availCitiesPre);
-        const preAlerts: Array<{ city: string; service: string }> = [];
-        const validSegmentRaws: string[] = [];
-        // Parallel display labels (friendly: `{qty} {Service} ({City})`) — shown in the
-        // "Already confirmed" panel. Falls back to the raw segment when service is unknown.
-        const validSegmentLabels: string[] = [];
-        const titleCaseSvc = (s: string) => s.split(' ').map(w => w.charAt(0).toUpperCase() + w.slice(1).toLowerCase()).join(' ');
-        // vague segment now carries the FULL matches list straight from the classifier,
-        // so the checkbox group is built from real registry data (works for any category).
-        const vagueSegments: Array<{ seg: typeof preSegments[0]; cityKey: string; matches: string[]; qty: number }> = [];
-        // Collected below-minimum segments — surfaced AFTER the loop in a single combined warning
-        // so other valid segments aren't dropped (previously a `return` bailed out on the first).
-        const belowMinSegments: Array<{
-          rawSegment: string;
-          requestedQty: number;
-          minQty: number;
-          svcLabel: string;
-          cityLabel: string;
-        }> = [];
-
-        for (const seg of preSegments) {
-          const segLower = seg.raw.toLowerCase();
-
-          if (!seg.detectedCity) {
-            // No city in this segment — check if it names a known-but-unloaded city
-            const unloadedCity = KNOWN_CITY_LIST.find(city =>
-              new RegExp(`\\b${city}\\b`).test(segLower) &&
-              !activeProposals.some(p => p.fileName.toLowerCase().includes(city))
-            );
-            if (unloadedCity) {
-              const cityLabel = unloadedCity.charAt(0).toUpperCase() + unloadedCity.slice(1);
-              const svcLabel = seg.raw
-                .replace(new RegExp(unloadedCity, 'gi'), '')
-                .replace(/\d+/g, '')
-                .replace(/\b(need|for|the|a|an|in|at|of|months?|days?|weeks?|years?)\b/gi, '')
-                .replace(/\s+/g, ' ')
-                .trim()
-                .split(' ')
-                .map(w => w.charAt(0).toUpperCase() + w.slice(1).toLowerCase())
-                .join(' ') || cityLabel;
-              preAlerts.push({ city: cityLabel, service: svcLabel });
-              continue;
-            }
-            // No city at all → let Gemini handle it
-            validSegmentRaws.push(seg.raw);
-            validSegmentLabels.push(seg.raw);
-            continue;
-          }
-
-          // City detected — classify via registry (single decision point)
-          const cityKey = KNOWN_CITY_LIST.find(c => seg.detectedCity!.toLowerCase().includes(c)) || seg.detectedCity.toLowerCase();
-          const cls = classifySegmentByRegistry(cityKey, seg.raw);
-          const cityLabel = seg.detectedCity.charAt(0).toUpperCase() + seg.detectedCity.slice(1);
-
-          // — registry not built yet: try a generic price-line text scan as a stop-gap —
-          if (cls.state === 'registry_unavailable') {
-            const cityProposal = activeProposals.find(p => p.fileName.toLowerCase().includes(cityKey));
-            const userWords = seg.raw
-              .replace(/\d+/g, '')
-              .replace(new RegExp(`\\b${cityKey}\\b`, 'gi'), '')
-              .replace(/\b(i|need|a|an|the|for|in|at|of|and|want|please|generate|quote|services?|ads?|advertising|outdoor|some|any)\b/gi, '')
-              .toLowerCase().replace(/\s+/g, ' ').trim()
-              .split(/\s+/).filter(w => w.length >= 2);
-
-            if (cityProposal?.textContent && userWords.length > 0) {
-              // Generic heuristic: short line containing all user words AND a price/qty hint nearby
-              const textLines = cityProposal.textContent.split(/\r?\n/);
-              const found: string[] = [];
-              for (const line of textLines) {
-                const t = line.trim();
-                if (t.length < 4 || t.length > 100) continue;
-                const tLower = t.toLowerCase();
-                const hasAllUserWords = userWords.every(w => tLower.includes(w));
-                const looksLikeServiceLine = /(rs\.?|₹|\/-|\bsq\.?cm\b|\bsec\b|\bspot\b|\bday\b|\bmonth\b|\bper\b|\d{2,})/i.test(t);
-                if (hasAllUserWords && looksLikeServiceLine) {
-                  const cleaned = t
-                    .replace(/[:\-–—]\s*[\d₹,. ]+.*$/, '')
-                    .replace(/\s+/g, ' ').trim();
-                  if (cleaned.length > 3 && !found.includes(cleaned)) found.push(cleaned);
-                }
-              }
-              if (found.length >= 1) {
-                const qtyMatch = seg.raw.match(/(\d+)/);
-                const qty = qtyMatch ? parseInt(qtyMatch[1]) : 1;
-                if (found.length === 1) {
-                  // single match → specific (auto-confirm)
-                  validSegmentRaws.push(seg.raw);
-                  validSegmentLabels.push(`${qty} ${titleCaseSvc(found[0])} (${cityLabel})`);
-                } else if (isCheckboxConfirmedFlag) {
-                  // Already confirmed via checkboxes — bypass checkbox UI, send to Gemini
-                  validSegmentRaws.push(seg.raw);
-                  validSegmentLabels.push(seg.raw);
-                } else {
-                  vagueSegments.push({ seg, cityKey, matches: found, qty });
-                }
-                continue;
-              }
-            }
-            // No text-based services found → let Gemini handle it
-            validSegmentRaws.push(seg.raw);
-            validSegmentLabels.push(seg.raw);
-            continue;
-          }
-
-          // — empty or not_found → alert —
-          if (cls.state === 'empty' || cls.state === 'not_found') {
-            const svcLabel = seg.raw
-              .replace(new RegExp(seg.detectedCity, 'gi'), '')
-              .replace(/\d+/g, '')
-              .replace(/\b(need|for|the|a|an|in|at|of|months?|days?|weeks?|years?)\b/gi, '')
-              .replace(/\s+/g, ' ')
-              .trim()
-              .split(' ')
-              .map(w => w.charAt(0).toUpperCase() + w.slice(1).toLowerCase())
-              .join(' ') || cityLabel;
-            preAlerts.push({ city: cityLabel, service: svcLabel });
-            continue;
-          }
-
-          // — vague → checkbox group (bypass when already confirmed via checkboxes) —
-          if (cls.state === 'vague') {
-            if (isCheckboxConfirmedFlag) {
-              // User already confirmed these services via checkboxes — skip checkbox UI
-              validSegmentRaws.push(seg.raw);
-              validSegmentLabels.push(seg.raw);
-              continue;
-            }
-            const qtyMatch = seg.raw.match(/(\d+)/);
-            const qty = qtyMatch ? parseInt(qtyMatch[1]) : 1;
-            vagueSegments.push({ seg, cityKey, matches: cls.matches, qty });
-            continue;
-          }
-
-          // — specific → validate qty against registry min/max, then send to Gemini —
-          {
-            const matchedSvc = cls.matches[0];
-            const qtyMatch = seg.raw.match(/(\d+)/);
-            // Default qty falls back to registry min so users who don't type a number
-            // (e.g. "newspaper insertion in chennai") get the rate-card minimum.
-            const requestedQty = qtyMatch ? parseInt(qtyMatch[1]) : (cls.qty?.min ?? null);
-
-            if (cls.qty && requestedQty !== null) {
-              const { min, max } = cls.qty;
-              if (!isQtyOverride && requestedQty < min) {
-                const svcLabel = matchedSvc.split(' ').map(w => w.charAt(0).toUpperCase() + w.slice(1)).join(' ');
-                // Collect — DO NOT return. We still want every other segment processed
-                // so the user gets a single combined warning and the full batch is sent
-                // to Gemini after they choose Continue / Use Minimum.
-                belowMinSegments.push({
-                  rawSegment: seg.raw,
-                  requestedQty,
-                  minQty: min,
-                  svcLabel,
-                  cityLabel,
-                });
-                validSegmentRaws.push(seg.raw);
-                validSegmentLabels.push(`${requestedQty} ${titleCaseSvc(matchedSvc)} (${cityLabel}) ⚠️ below min ${min}`);
-                continue;
-              }
-              if (max !== null && requestedQty > max) {
-                const svcLabel = matchedSvc.split(' ').map(w => w.charAt(0).toUpperCase() + w.slice(1)).join(' ');
-                preAlerts.push({ city: cityLabel, service: `${svcLabel} (max ${max} units — you requested ${requestedQty})` });
-                continue;
-              }
-            }
-            validSegmentRaws.push(seg.raw);
-            const labelQty = requestedQty ?? 1;
-            validSegmentLabels.push(`${labelQty} ${titleCaseSvc(matchedSvc)} (${cityLabel})`);
-          }
-        }
-
-        // ── Partial invalid FIRST (when no checkbox UI needed) ──
-        if (preAlerts.length > 0 && vagueSegments.length === 0) {
-          setUnavailableServices(preAlerts);
-          setMessages(prev => [...prev, userMessage]);
-          setInputValue('');
-          if (validSegmentRaws.length === 0) {
-            return;
-          }
-          const partialRows = labelsToConfirmRows(validSegmentLabels);
-          if (partialRows.length > 0) {
-            setPendingValidConfirm({
-              rows: partialRows,
-              originalUserInput: cleanedText,
-              messageId: userMessage.id,
-            });
-            setPendingValidMessage(null);
-          } else {
-            setPendingValidMessage(validSegmentRaws.join(' and '));
-          }
-          return;
-        }
-
-        // ── Below-minimum segments (only when no availability alerts) ──
-        if (belowMinSegments.length > 0) {
-          setMessages(prev => [...prev, userMessage]);
-          const fullMessage = validSegmentRaws.join(' and ');
-          let rewritten = fullMessage;
-          for (const bm of belowMinSegments) {
-            const rewrittenSeg = bm.rawSegment.replace(/\b\d+\b/, String(bm.minQty));
-            rewritten = rewritten.replace(bm.rawSegment, rewrittenSeg);
-          }
-          setMinQtyWarning({
-            items: belowMinSegments.map(bm => ({
-              description: `${bm.svcLabel} - ${bm.cityLabel}`,
-              requested: bm.requestedQty,
-              originalRequested: bm.requestedQty,
-              minimum: bm.minQty,
-            })),
-            pendingQuote: null as any,
-          });
-          setPendingValidMessage(fullMessage);
-          setPendingMinReplacedMessage(rewritten);
-          return;
-        }
-
-        // Handle vague segments with city → show checkboxes built from registry matches
-        if (vagueSegments.length > 0) {
-          const groupedServices: Array<{
-            vehicleType: string;
-            requestedQuantity: number;
-            services: Array<{ name: string; category: string }>;
-          }> = [];
-
-          vagueSegments.forEach(({ seg, matches, qty }) => {
-            const cityLabel = seg.detectedCity!.charAt(0).toUpperCase() + seg.detectedCity!.slice(1);
-            // Use the FIRST matched service's leading word as the group label
-            // (e.g. "Lamp Post Branding" → "Lamp Post"; "Newspaper Insertion - RE" → "Newspaper")
-            const groupLabel = matches[0]
-              .split(/[-–—]/)[0]
-              .split(' ').slice(0, 2)
-              .map(w => w.charAt(0).toUpperCase() + w.slice(1))
-              .join(' ').trim();
-            const relatedServices = matches.map(s => ({
-              name: s.split(' ').map(w => w.charAt(0).toUpperCase() + w.slice(1)).join(' '),
-              category: groupLabel,
-              requestedQuantity: qty,
-            }));
-
-            groupedServices.push({
-              vehicleType: `${groupLabel}|${cityLabel}`,
-              requestedQuantity: qty,
-              services: relatedServices,
-            });
-          });
-
-          const mergedVagueGroups = mergeGroupedServicesByCategory(groupedServices);
-
-          if (mergedVagueGroups.length > 0) {
-            if (preAlerts.length > 0) {
-              setUnavailableServices(preAlerts);
-              if (validSegmentLabels.length > 0) {
-                const partialRows = labelsToConfirmRows(validSegmentLabels);
-                if (partialRows.length > 0) {
-                  setPendingValidConfirm({
-                    rows: partialRows,
-                    originalUserInput: cleanedText,
-                    messageId: userMessage.id,
-                  });
-                  setPendingValidMessage(null);
-                }
-              }
-            }
-            const assistantId = Date.now().toString();
-            const assistantMsg = prepareMultipleMatchMessage({
-              id: assistantId,
-              role: 'assistant',
-              content: `🔀 Multiple services found. Select all you need:`,
-              timestamp: new Date(),
-              isMultipleMatch: true,
-              groupedServices: mergedVagueGroups,
-              directParts: validSegmentLabels.length > 0 ? validSegmentLabels : undefined,
-            });
-            setMessages(prev => [...prev, userMessage, assistantMsg]);
-            setInputValue('');
-            return;
-          }
-        }
-      }
-    }
-    // ─────────────────────────────────────────────────────────────────────────
-
     setMessages(prev => [...prev, userMessage]);
     setIsLoading(true);
     setError(null);
 
 
     try {
-      // Prepare proposal contexts for AI
-      let proposalContexts: Array<{fileName: string, content: string}> | undefined;
-      let dbServicesForResolution: any[] = [];
-
-      if (USE_CLOUD_DATA) {
-        // ── NEW: RAG / DB path — send only matched service chunks (500 tokens vs 50,000) ──
-        try {
-          const { loadAllServicesFromCloud } = await import('../../services/supabaseProposalService');
-          const dbServices = prefetchedDbServices ?? await loadAllServicesFromCloud();
-          dbServicesForResolution = dbServices || [];
-
-          if (dbServices && dbServices.length > 0) {
-            let servicesToSend = dbServices as DbService[];
-
-            // Post-confirm: send ONLY the services the user locked in the confirm table
-            if (isCheckboxConfirmedFlag && confirmedRowsRef.current?.length) {
-              servicesToSend = filterDbServicesForConfirmedRows(
-                confirmedRowsRef.current,
-                servicesToSend,
-              );
-              console.log(`🔒 [ConfirmedPipeline] Scoped Gemini context to ${servicesToSend.length} confirmed service(s)`);
-            } else {
-              const detectedCity = detectKnownCityInText(cleanedText, dbServicesForResolution);
-              if (detectedCity) {
-                const cityFiltered = dbServices.filter((svc: any) => {
-                  const locs: string[] = svc.metadata?.locations || [];
-                  const docName = (svc.document_name || '').toLowerCase();
-                  return locs.some((l: string) => l.toLowerCase().includes(detectedCity))
-                      || docName.includes(detectedCity);
-                });
-                if (cityFiltered.length > 0) {
-                  servicesToSend = cityFiltered;
-                  console.log(`🏙️ [CityFilter] Filtered to "${detectedCity}": ${cityFiltered.length} services`);
-                }
-              }
-            }
-
-            proposalContexts = buildGeminiContextFromDbServices(servicesToSend);
-            console.log(`☁️ [USE_CLOUD_DATA] Using ${proposalContexts.length} DB services as context (~${proposalContexts.reduce((s, p) => s + p.content.length, 0)} chars)`);
-            // DEBUG: Show exact context for first 3 services so we can verify pricing format
-            console.log('📋 [DB-CONTEXT-DEBUG] Sample service contexts sent to Gemini:');
-            proposalContexts.slice(0, 3).forEach((ctx, i) => {
-              console.log(`\n  Service ${i + 1} (${ctx.fileName}):\n${ctx.content}\n  ---`);
-            });
-            // Also show context for auto full branding specifically if present
-            const autoCtx = proposalContexts.find(ctx => ctx.content.toLowerCase().includes('auto full branding'));
-            if (autoCtx) {
-              console.log('\n🚗 [DB-CONTEXT-DEBUG] Auto Full Branding context:\n' + autoCtx.content);
-            }
-          } else {
-            console.warn('⚠️ [USE_CLOUD_DATA] No DB services found, falling back to PDF text');
-          }
-        } catch (cloudErr) {
-          console.warn('⚠️ [USE_CLOUD_DATA] DB load failed, falling back to PDF text:', cloudErr);
-        }
-      }
-
-      // ── OLD / FALLBACK: Full PDF text path ────────────────────────────────
-      if (!proposalContexts) {
-      if (activeProposals.length > 0) {
-        // Multi-location mode: use only user-selected active proposals
-        proposalContexts = activeProposals
-          .filter(p => p.textContent && p.textContent.trim().length > 50)
-          .map(p => ({ fileName: p.fileName, content: p.textContent }));
-        console.log(`🎯 Multi-location mode: using ${proposalContexts.length} user-selected proposals`);
-      } else {
-        // Default: Load all proposals from cloud for multi-document search
-        let allProposals: any[] = [];
-        try {
-          allProposals = await loadAllProposalsFromCloud(100);
-        } catch (err) {
-          console.warn('Could not load proposals from cloud, using current proposal only:', err);
-        }
-
-        if (allProposals && allProposals.length > 0) {
-          // Multi-document mode: Send ALL uploaded proposals to AI
-          proposalContexts = allProposals
-            .filter(p => p.text_content && p.text_content.trim().length > 50)
-            .map(p => ({
-              fileName: p.file_name,
-              content: p.text_content
-            }));
-          console.log(`📚 Multi-document search enabled: ${proposalContexts.length} documents available`);
-        }
-      }
-      }
-      // ── END FALLBACK ──────────────────────────────────────────────────────
-
-      // 🔧 CLIENT-SIDE VALIDATION: Check if request is fully specified (prevents checkbox loops)
-      let enhancedUserMessage = userMessage.content;
-
-      if (isCheckboxConfirmedFlag) {
-        enhancedUserMessage =
-          `[EXACT_MATCH_HINT: User already confirmed exact service names via checkboxes — generate quote immediately, DO NOT return multipleMatch] ${enhancedUserMessage}`;
-        console.log('🔧 Added post-checkbox EXACT_MATCH hint');
-      } else if (isFullySpecifiedRequest(userMessage.content)) {
-        enhancedUserMessage = `[EXACT_MATCH_HINT: This request contains full service names] ${enhancedUserMessage}`;
-        console.log('🔧 Added EXACT_MATCH hint to prevent re-analysis');
-      }
-
-      const isFullySpecified = isCheckboxConfirmedFlag || isFullySpecifiedRequest(userMessage.content);
-
-      // Add city→PDF mapping hint when multiple PDFs are loaded so AI knows which
-      // document to draw prices from for each city section
-      if (activeProposals.length > 1) {
-        const cityMappingHint = activeProposals
-          .map(p => {
-            const name = p.fileName.replace(/\.(pdf|xlsx?)$/i, '').replace(/[_-]+/g, ' ').trim();
-            return `"${p.fileName}" → ${name} pricing`;
-          })
-          .join('; ');
-        enhancedUserMessage = `[CITY_PDF_MAP: ${cityMappingHint}] ${enhancedUserMessage}`;
-        console.log('🗺️ Added city→PDF mapping hint:', cityMappingHint);
-      }
-
       // Cloud / vendor catalog mode: never call Gemini for chat.
       // Quotes are built from DB confirmations; Gemini is only used for qty-unit labels on Preview.
-      if (USE_CLOUD_DATA) {
-        console.warn('🚫 [Chat] Gemini disabled for chat (USE_CLOUD_DATA). Qty-unit AI is preview-only.');
-        const noGeminiMsg: Message = {
-          id: (Date.now() + 1).toString(),
-          role: 'assistant',
-          content:
-            'Chat AI is turned off for quote matching. Type a city name (e.g. Chennai, Coimbatore) to see services from your rate card, then select services to generate a quote. Measurement labels are filled automatically on the Preview page.',
-          timestamp: new Date(),
-        };
-        setMessages(prev => [...prev, noGeminiMsg]);
-        setIsLoading(false);
-        return;
-      }
-
-      let response = await sendMessageToGemini({
-        userMessage: enhancedUserMessage,
-        proposalText: proposal.textContent, // Backward compatibility fallback
-        proposalTexts: proposalContexts, // NEW: Multi-document support
-        chatHistory: messages,
-      });
-
-      // Post-checkbox: Gemini must not re-open service pickers — retry once as EXACT_MATCH
-      if (
-        isCheckboxConfirmedFlag &&
-        response.isMultipleMatch &&
-        response.groupedServices &&
-        !response.isQuoteGeneration
-      ) {
-        console.log('🔁 [Post-Confirm] MULTIPLE_MATCH after checkbox confirm — retrying as EXACT_MATCH');
-        const stripped = cleanedText.replace(/^generate\s+quote\s+for\s+/i, '').trim();
-        const retryMessage =
-          `[EXACT_MATCH_HINT: User ALREADY confirmed these exact services via checkboxes. ` +
-          `Return quoteGenerated JSON only — never multipleMatch.] Generate quote for ${stripped}`;
-        try {
-          const retryResponse = await sendMessageToGemini({
-            userMessage: retryMessage,
-            proposalText: proposal.textContent,
-            proposalTexts: proposalContexts,
-            chatHistory: [],
-          });
-          if (retryResponse.isQuoteGeneration && retryResponse.quoteData) {
-            response = retryResponse;
-          } else {
-            console.warn('⚠️ [Post-Confirm] Retry did not produce quote:', retryResponse.matchType);
-          }
-        } catch (retryErr) {
-          console.warn('⚠️ [Post-Confirm] EXACT_MATCH retry failed:', retryErr);
-        }
-      }
-
-      const assistantMessage: Message = {
+      console.warn('🚫 [Chat] Gemini disabled for chat. Qty-unit AI is preview-only.');
+      const noGeminiMsg: Message = {
         id: (Date.now() + 1).toString(),
         role: 'assistant',
-        content: response.message,
+        content:
+          'Chat AI is disabled. Use city/service selection from the catalog.',
         timestamp: new Date(),
-        matchType: response.matchType,
-        
-        // MULTIPLE_MATCH
-        isMultipleMatch: response.isMultipleMatch,
-        groupedServices: response.groupedServices
-          ? mergeGroupedServicesByCategory(response.groupedServices)
-          : response.groupedServices,
-        originalUserInput: userMessage.content, // Preserve original input to carry forward duration/days
-        
-        // PARTIAL_MATCH
-        isPartialMatch: response.isPartialMatch,
-        requestedService: response.requestedService,
-        requestedQuantity: response.requestedQuantity,
-        closestServices: response.closestServices,
-        alternativeServices: response.alternativeServices,
-        
-        // NO_MATCH
-        isNoMatch: response.isNoMatch,
-        allServicesGrouped: response.allServicesGrouped,
-        
-        // DEPRECATED (backward compatibility)
-        isServiceNotFound: response.isServiceNotFound,
-        availableServices: response.availableServices,
-        validServices: response.validServices,
-        missingServices: response.missingServices,
       };
-
-      // Handle 4-tier matching system responses
-      
-      // MULTIPLE_MATCH - Ask user to clarify (or redirect vague queries to city-first flow)
-      if (response.isMultipleMatch && response.groupedServices) {
-        const quoteReadyAfterConfirm =
-          isCheckboxConfirmedFlag && response.isQuoteGeneration && response.quoteData;
-
-        if (isCheckboxConfirmedFlag && !quoteReadyAfterConfirm) {
-          console.log('🚫 [Post-Confirm] Blocking duplicate checkbox UI after user confirmation');
-          const failMsg: Message = {
-            id: (Date.now() + 1).toString(),
-            role: 'assistant',
-            content:
-              'Your services were confirmed, but quote generation did not complete. Please tap Generate again or simplify to one service per message.',
-            timestamp: new Date(),
-          };
-          setMessages(prev => [...prev, failMsg]);
-          setIsLoading(false);
-          return;
-        }
-
-        if (!quoteReadyAfterConfirm) {
-        if (
-          USE_CLOUD_DATA &&
-          !isCheckboxConfirmedFlag &&
-          isVagueCategoryQuery(cleanedText)
-        ) {
-          try {
-            const dbList = (dbServicesForResolution.length > 0
-              ? dbServicesForResolution
-              : (await (await import('../../services/supabaseProposalService')).loadAllServicesFromCloud())) as DbService[];
-            if (!detectKnownCityInText(cleanedText, dbList)) {
-            const cloudCities = getCitiesForServiceQuery(cleanedText, dbList);
-
-            if (cloudCities.length >= 1) {
-              const segments: CityPickerSegment[] = [{
-                raw: cleanedText,
-                cityNeeded: true,
-                detectedCity: null,
-                selectedCities: [],
-                matchedCities: cloudCities,
-              }];
-              const pickerMsgId = (Date.now() + 1).toString();
-              const pickerMsg: Message = {
-                id: pickerMsgId,
-                role: 'assistant',
-                content: cloudCities.length >= 2
-                  ? '🏙️ This service is available in multiple cities. Please select your city:'
-                  : '🏙️ Please select your city to see available services:',
-                timestamp: new Date(),
-                isCityPicker: true,
-              };
-              setMessages(prev => [...prev, pickerMsg]);
-              setCityPickerState({
-                messageId: pickerMsgId,
-                originalMessage: cleanedText,
-                segments,
-                availableCities: cloudCities.length >= 2 ? cloudCities : getMergedDynamicCities(dbList),
-                dbServices: dbList,
-                requireServiceSelection: true,
-              });
-              setIsLoading(false);
-              return;
-            }
-            }
-          } catch (redirectErr) {
-            console.warn('⚠️ [MULTIPLE_MATCH] City-first redirect failed:', redirectErr);
-          }
-        }
-
-        console.log('🔀 MULTIPLE_MATCH detected - Showing service options');
-        response.groupedServices.forEach(group => {
-          console.log(`  - ${group.vehicleType}: ${group.services.length} services found`);
-        });
-        setMessages(prev => [...prev, assistantMessage]);
-        setIsLoading(false);
-        return;
-        }
-      }
-      
-      // PARTIAL_MATCH - Suggest alternatives
-      if (response.isPartialMatch && response.closestServices) {
-        setMessages(prev => [...prev, assistantMessage]);
-        setIsLoading(false);
-        return;
-      }
-      
-      // NO_MATCH - Show all services
-      if (response.isNoMatch && response.allServicesGrouped) {
-        setMessages(prev => [...prev, assistantMessage]);
-        setIsLoading(false);
-        return;
-      }
-      
-      // DEPRECATED: Handle old serviceNotFound format
-      if (response.isServiceNotFound && response.availableServices) {
-        assistantMessage.content = response.serviceNotFoundMessage || 
-          `The requested service is not available in the proposal. Please select from the available services below:`;
-        setMessages(prev => [...prev, assistantMessage]);
-        setIsLoading(false);
-        return;
-      }
-
-      // EXACT_MATCH - Quote generated, process and navigate
-      if (response.isQuoteGeneration && response.quoteData) {
-        // Don't show the raw Gemini response message for quote generation
-        // Check the actual documents that were sent to Gemini (multi-doc or single doc)
-        let isRateCardImage = false;
-        if (proposalContexts && proposalContexts.length > 0) {
-          // Multi-document mode: check if ALL documents are images
-          isRateCardImage = proposalContexts.every(p => {
-            const ext = p.fileName.toLowerCase().split('.').pop() || '';
-            return ['jpg', 'jpeg', 'png', 'webp'].includes(ext);
-          });
-        } else {
-          // Single document mode: check current proposal
-          const fileExtension = proposal.fileName.toLowerCase().split('.').pop() || '';
-          isRateCardImage = ['jpg', 'jpeg', 'png', 'webp'].includes(fileExtension);
-        }
-        
-        console.log('🔍 Rate card detection:', { isRateCardImage, fileName: proposal.fileName, multiDoc: !!proposalContexts });
-        
-        // Flatten lineItems into individual QuoteItems
-        const quoteItems: QuoteItem[] = response.quoteData.items.flatMap((section: any, sectionIndex: number) => {
-          const sectionTitle = section.title || '';
-          // Resolve service_id once per section from Gemini's title (e.g. "Bus Semi Branding")
-          let sectionServiceId: string | undefined;
-          let sectionServiceName: string | undefined;
-          if (sectionTitle && dbServicesForResolution.length > 0) {
-            const rowMatch = confirmedRowsRef.current?.find((r) =>
-              sectionTitle.toLowerCase().includes(r.service.toLowerCase()) ||
-              r.service.toLowerCase().includes(sectionTitle.toLowerCase()),
-            );
-            const cityHintEarly = rowMatch?.city && rowMatch.city !== '—'
-              ? rowMatch.city.toLowerCase()
-              : extractCityHint(cleanedText);
-            const resolved = resolveServiceIdFromCatalog(sectionTitle, dbServicesForResolution, cityHintEarly);
-            if (resolved) {
-              sectionServiceId = resolved.serviceId;
-              sectionServiceName = resolved.serviceName;
-              console.log(`🔗 [ServiceId] Section "${sectionTitle}" → ${sectionServiceId}`);
-            }
-          }
-          return section.lineItems.map((item: any, lineIndex: number) => {
-            // Use original description from AI - don't prepend generic section title
-            // The AI already provides specific service names (e.g., "BUS SEMI BRANDING - Rental Price")
-            let description = item.description;
-            
-            // Check if description is too generic (missing specific service details)
-            // Only prepend section title if description doesn't contain specific service keywords
-            const hasSpecificService = /\b(BUS|AUTO|CAB|TAXI|TEMPO|TRUCK|VAN|VEHICLE|SHOP|BANNER|SIGNAGE|BOARD|HOARDING|DISPLAY|PRINTING|FIXING|RENTAL|BRANDING|FULL|SEMI|BACK|FRONT|SIDE)\b/i.test(description);
-            const containsSectionTitle = description.toLowerCase().includes(sectionTitle.toLowerCase());
-            
-            // Only prepend if description is generic AND doesn't already have section title
-            if (sectionTitle && !containsSectionTitle && !hasSpecificService) {
-              description = `${sectionTitle} - ${description}`;
-            }
-            
-            // Extract specific service title from description for display in T&C section
-            // This ensures we show "Bus Full Branding" instead of generic "Vehicle Branding"
-            let specificTitle = '';
-            const descParts = description.split(' - ');
-            if (descParts.length >= 2 && sectionTitle && 
-                descParts[0].toLowerCase().trim() === sectionTitle.toLowerCase().trim()) {
-              // First part is generic section title, use second part as specific title
-              specificTitle = descParts[1].trim();
-            } else {
-              // Use first part as title
-              specificTitle = descParts[0].trim();
-            }
-            // Clean up extra details (e.g., "(per bus month)") to get just the service name
-            specificTitle = specificTitle
-              .replace(/\s*\(.*?\)\s*/g, '') // Remove parenthetical notes
-              .replace(/\s*-\s*(Display|Rental|Printing|Fixing|Price).*$/i, '') // Remove price type suffixes
-              .trim();
-            
-            const svcMeta = sectionServiceId
-              ? dbServicesForResolution.find((s: { service_id: string }) => s.service_id === sectionServiceId)?.metadata
-              : undefined;
-
-            const resolved = resolveQuoteLineDuration(
-              { duration: item.duration, durationUnit: item.durationUnit, description },
-              cleanedText,
-              svcMeta,
-              sectionServiceName || sectionTitle || specificTitle || description,
-            );
-            const line = {
-              id: `${sectionIndex}-${lineIndex}`,
-              title: specificTitle, // Store specific service title for T&C display
-              description: description,
-              serviceId: sectionServiceId,
-              serviceName: sectionServiceName || sectionTitle || undefined,
-              quantity: item.quantity || 1,
-              rate: item.unitPrice || 0,
-              duration: resolved.duration,
-              durationUnit: resolved.durationUnit,
-              durationIsAuto: resolved.isAutoFromDb,
-              total: 0,
-              minimumQuantity: item.minimumQuantity || undefined,
-              // Only store terms on the first line item of each section to avoid duplicate textareas
-              // For rate card images, clear per-item terms; for proposals, keep them
-              termsAndConditions: lineIndex === 0 ? (isRateCardImage ? undefined : (section.termsAndConditions || undefined)) : undefined
-            };
-            line.total = computeQuoteItemTotal(line);
-            return line;
-          });
-        });
-
-        // Deduplicate: Gemini sometimes extracts the same service section twice when the
-        // PDF mentions it in both a pricing summary table AND a detailed section.
-        // Keep only the first occurrence of each unique description (case-insensitive).
-        const _seenDescriptions = new Set<string>();
-        const uniqueQuoteItems = quoteItems.filter(item => {
-          const key = item.description.toLowerCase().trim();
-          if (_seenDescriptions.has(key)) {
-            console.log(`⚠️ Duplicate item removed: "${item.description}"`);
-            return false;
-          }
-          _seenDescriptions.add(key);
-          return true;
-        });
-        if (uniqueQuoteItems.length < quoteItems.length) {
-          console.log(`🧹 Deduplication: ${quoteItems.length} → ${uniqueQuoteItems.length} items`);
-          // Replace reference so all downstream code uses deduplicated list
-          quoteItems.length = 0;
-          quoteItems.push(...uniqueQuoteItems);
-        }
-
-        // Resolve proposal_chunks.service_id for each item (direct image lookup in preview)
-        if (dbServicesForResolution.length === 0) {
-          try {
-            const { loadAllServicesFromCloud } = await import('../../services/supabaseProposalService');
-            dbServicesForResolution = await loadAllServicesFromCloud();
-          } catch (err) {
-            console.warn('⚠️ Could not load services for serviceId resolution:', err);
-          }
-        }
-        if (dbServicesForResolution.length > 0) {
-          const { attachServiceIdsToQuoteItems, extractCityHint } = await import('../../utils/serviceResolver');
-          const cityHint = extractCityHint(cleanedText)
-            || extractCityHint(quoteItems.map(i => i.description).join(' '));
-          const resolvedItems = attachServiceIdsToQuoteItems(
-            quoteItems,
-            dbServicesForResolution,
-            cityHint,
-          );
-          quoteItems.length = 0;
-          quoteItems.push(...resolvedItems);
-          const enriched = enrichQuoteItemsDurationFromDb(
-            quoteItems,
-            cleanedText,
-            dbServicesForResolution,
-          );
-          quoteItems.length = 0;
-          quoteItems.push(...enriched);
-        }
-
-        // Populate minimum-quantity cache from AI response so that future requests in the
-        // same session can validate against known minimums even if the AI omits minimumQuantity.
-        quoteItems.forEach(item => {
-          if (item.minimumQuantity) {
-            const serviceKey = item.description.split(' - ')[0].toLowerCase().trim();
-            minQtyCacheRef.current.set(serviceKey, item.minimumQuantity);
-            console.log(`📦 Cached min qty: "${serviceKey}" → ${item.minimumQuantity}`);
-          }
-        });
-
-        const subtotal = quoteItems.reduce((sum, item) => sum + item.total, 0);
-        const gstPercentage = 18;
-        const gstAmount = subtotal * (gstPercentage / 100);
-        
-        // Hydrate T&C from proposal_chunks.metadata.terms (DB source of truth)
-        let topLevelTerms = response.quoteData.termsAndConditions || '';
-        let hydratedFromDb = false;
-
-        if (!isRateCardImage && dbServicesForResolution.length > 0) {
-          const { hydrateQuoteTermsFromCatalog } = await import('../../utils/termsHydration');
-          console.log('🔍 [T&C-Debug] quoteItems serviceIds:', quoteItems.map(i => ({ desc: i.description, sid: i.serviceId })));
-          const hydrated = hydrateQuoteTermsFromCatalog(
-            quoteItems,
-            topLevelTerms,
-            dbServicesForResolution,
-          );
-          quoteItems.length = 0;
-          quoteItems.push(...hydrated.items);
-          topLevelTerms = hydrated.termsAndConditions;
-          hydratedFromDb = hydrated.hydratedFromDb;
-          console.log('🔍 [T&C-Debug] hydratedFromDb:', hydratedFromDb, '| topLevelTerms preview:', topLevelTerms.slice(0, 120));
-        }
-
-        const hasItemTerms = quoteItems.some((i) => i.termsAndConditions?.trim());
-        const hasAnyTerms = !!(topLevelTerms.trim() || hasItemTerms);
-
-        // Use standard business terms for rate card images; merged DB/AI terms for proposals
-        let finalTermsAndConditions: string;
-
-        if (isRateCardImage) {
-          finalTermsAndConditions = DEFAULT_GENERAL_TERMS.map((t) => `• ${t}`).join('\n');
-          console.log('✅ Using DEFAULT_GENERAL_TERMS for image rate card');
-        } else if (hydratedFromDb) {
-          // hydrateQuoteTermsFromCatalog already merged general + unique service extras with tags
-          finalTermsAndConditions = topLevelTerms;
-          console.log(
-            `📋 Using merged DB T&C (${topLevelTerms.split('\n').length} lines)`,
-          );
-        } else {
-          const {
-            isRateCardFootnoteText,
-            buildMergedTermsAndConditions,
-          } = await import('../../utils/termsHydration');
-          if (isRateCardFootnoteText(topLevelTerms)) {
-            finalTermsAndConditions = DEFAULT_GENERAL_TERMS.map((t) => `• ${t}`).join('\n');
-            console.log('⚠️ Detected rate card footnotes in T&C, using DEFAULT_GENERAL_TERMS instead');
-          } else if (hasItemTerms) {
-            // Gemini put per-service terms on items — merge into one tagged list
-            finalTermsAndConditions = buildMergedTermsAndConditions(quoteItems);
-            quoteItems.forEach((item, idx) => {
-              quoteItems[idx] = { ...item, termsAndConditions: undefined };
-            });
-            console.log('📋 Merged Gemini per-service T&C into one tagged list');
-          } else if (topLevelTerms.trim()) {
-            finalTermsAndConditions = topLevelTerms;
-            console.log('✅ Using Gemini-extracted T&C (no DB metadata match)');
-          } else if (hasAnyTerms) {
-            finalTermsAndConditions = '';
-          } else {
-            finalTermsAndConditions = DEFAULT_GENERAL_TERMS.map((t) => `• ${t}`).join('\n');
-            console.log('✅ Using DEFAULT_GENERAL_TERMS (no T&C from DB or AI)');
-          }
-        }
-        
-        const quote: Quote = {
-          id: Date.now().toString(),
-          quoteNumber: `QT-${Date.now().toString().slice(-6)}`,
-          date: new Date().toISOString(),
-          validUntil: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString(),
-          items: quoteItems,
-          subtotal,
-          gstEnabled: true,
-          gstPercentage,
-          gstAmount,
-          total: subtotal + gstAmount,
-          deliveryTimeline: response.quoteData.deliveryTimeline || '7 working days after payment',
-          termsAndConditions: finalTermsAndConditions,
-          notes: response.quoteData.notes,
-          createdAt: new Date(),
-          updatedAt: new Date()
-        };
-
-        // Post-Gemini min-qty check against DB metadata (cloud source of truth).
-        if (!isQtyOverride && dbServicesForResolution.length > 0) {
-          const minViolations = validateQuoteItemsAgainstDbMinQty(quoteItems, dbServicesForResolution);
-          if (minViolations.length > 0) {
-            console.log('⚠️ [MinQty-DB] Below minimum:', minViolations);
-            setMinQtyWarning({ items: minViolations, pendingQuote: quote });
-            setIsLoading(false);
-            return;
-          }
-        }
-
-        setCurrentQuote(quote);
-
-        // Refresh cloud page cache so preview direct-lookup has latest images + review metadata
-        loadCloudServices().catch((err) => {
-          console.warn('⚠️ Could not refresh cloud services after quote:', err);
-        });
-        
-        // Show success message before navigating
-        const quoteReadyMessage: Message = {
-          id: (Date.now() + 2).toString(),
-          role: 'assistant',
-          content: '✓ Your Quote generated successfully!',
-          timestamp: new Date(),
-        };
-        setMessages(prev => [...prev, quoteReadyMessage]);
-
-        // Auto-navigate to quote page after a brief delay
-        setTimeout(() => {
-          history.push('/quote');
-        }, 1500);
-      } else {
-        // Regular (non-quote) assistant response — show in chat
-        setMessages(prev => [...prev, assistantMessage]);
-      }
+      setMessages(prev => [...prev, noGeminiMsg]);
+      setIsLoading(false);
+      return;
     } catch (err: any) {
       console.error('Chat error:', err);
       setError(err.message || 'Failed to send message');
@@ -2302,7 +1415,7 @@ const ChatInterface: React.FC = () => {
     });
   };
 
-  // Confirm city selections → show city-scoped service checkboxes → confirm → min qty → Gemini
+  // Confirm city selections → show city-scoped service checkboxes → confirm → min qty → DB quote
   const handleCityConfirm = async () => {
     if (!cityPickerState) return;
     const pickerSnapshot = cityPickerState;
@@ -2325,7 +1438,6 @@ const ChatInterface: React.FC = () => {
     }> = [];
     const directParts: string[] = [];
     const missingServiceAlerts: Array<{ city: string; service: string }> = [];
-    let needsGemini = false;
 
     const isVagueFlow =
       pickerSnapshot.requireServiceSelection ||
@@ -2342,7 +1454,6 @@ const ChatInterface: React.FC = () => {
     }
 
     for (const pair of pairs) {
-      const cityKey = KNOWN_CITY_LIST.find(c => pair.city.toLowerCase().includes(c)) || pair.city.toLowerCase();
       const cityLabel = pair.city.charAt(0).toUpperCase() + pair.city.slice(1);
 
       // Cloud / DB-first path — validate service exists in selected city
@@ -2361,90 +1472,10 @@ const ChatInterface: React.FC = () => {
         continue;
       }
 
-      // DB path for vague flows without USE_CLOUD_DATA flag
-      if (isVagueFlow && dbServices.length > 0) {
-        const group = buildGroupedServicesFromDb(pair.raw, pair.city, pair.qty, dbServices);
-        if (group) {
-          groupedServices.push(group);
-          continue;
-        }
-        const svcWord = pair.raw.replace(/\d+/g, '').trim() || pair.raw;
-        missingServiceAlerts.push({ city: cityLabel, service: svcWord });
-        continue;
-      }
-
-      const regCheck = checkServiceInRegistry(cityKey, pair.raw);
-
-      if (regCheck.result === 'not_found') {
-        const svcLabel = pair.raw
-          .replace(/\d+/g, '')
-          .replace(/\b(need|for|the|a|an|in|at|of)\b/gi, '')
-          .replace(/\s+/g, ' ').trim()
-          .split(' ').map(w => w.charAt(0).toUpperCase() + w.slice(1).toLowerCase()).join(' ');
-        missingServiceAlerts.push({ city: cityLabel, service: svcLabel });
-        continue;
-      }
-
-      if (regCheck.result === 'registry_unavailable') {
-        if (dbServices.length > 0) {
-          const group = buildGroupedServicesFromDb(pair.raw, pair.city, pair.qty, dbServices);
-          if (group) {
-            if (isVagueFlow || group.services.length > 1) {
-              groupedServices.push(group);
-            } else {
-              directParts.push(`${pair.qty} ${group.services[0].name} ${cityLabel}`);
-            }
-            continue;
-          }
-        }
-        if (isVagueFlow) {
-          missingServiceAlerts.push({ city: cityLabel, service: pair.raw.trim() });
-          continue;
-        }
-        needsGemini = true;
-        continue;
-      }
-
-      const matchedSvc = regCheck.matchedService!;
-      const registryEntry = cityServiceRegistry.current.get(cityKey);
-      const baseWord = matchedSvc.toLowerCase().split(' ')[0];
-      const relatedServices = registryEntry
-        ? registryEntry.services
-            .filter(s => new RegExp(`\\b${baseWord}\\b`, 'i').test(s))
-            .map(s => ({
-              name: s.split(' ').map(w => w.charAt(0).toUpperCase() + w.slice(1)).join(' '),
-              category: matchedSvc.split(' ').map(w => w.charAt(0).toUpperCase() + w.slice(1)).join(' '),
-            }))
-        : [{ name: matchedSvc.split(' ').map(w => w.charAt(0).toUpperCase() + w.slice(1)).join(' '), category: matchedSvc }];
-
-      const matchedWords = matchedSvc.toLowerCase().split(/\s+/);
-      const userServiceWords = pair.raw
-        .toLowerCase()
-        .replace(new RegExp(`\\b${cityKey}\\b`, 'gi'), '')
-        .replace(/\d+/g, '')
-        .replace(/\b(need|for|the|a|an|in|at|of|and|i|want|please|services?|ads?|advertising|outdoor|some|any)\b/gi, '')
-        .replace(/\s+/g, ' ').trim()
-        .split(/\s+/).filter(w => w.length >= 2);
-
-      const isUnique = relatedServices.length === 1;
-      const isWordSpecific = userServiceWords.length >= matchedWords.length &&
-        userServiceWords.every(w => matchedWords.some(mw => mw.startsWith(w) || w.startsWith(mw)));
-      const isSpecific = !isVagueFlow && (isUnique || isWordSpecific);
-
-      if (isSpecific) {
-        const svcTitleCase = matchedSvc.split(' ').map(w => w.charAt(0).toUpperCase() + w.slice(1)).join(' ');
-        directParts.push(`${pair.qty} ${svcTitleCase} ${cityLabel}`);
-        continue;
-      }
-
-      const vehicleLabel = matchedSvc.split(' ').map(w => w.charAt(0).toUpperCase() + w.slice(1)).join(' ');
-      groupedServices.push({
-        vehicleType: `${vehicleLabel}|${cityLabel}`,
-        requestedQuantity: pair.qty,
-        services: relatedServices,
-      });
+      // No registry fallback — unavailable when DB has no match
+      const svcWord = pair.raw.replace(/\d+/g, '').trim() || pair.raw;
+      missingServiceAlerts.push({ city: cityLabel, service: svcWord });
     }
-
     if (missingServiceAlerts.length > 0) {
       setUnavailableServices(missingServiceAlerts);
       if (directParts.length === 0 && groupedServices.length === 0) {
@@ -2495,7 +1526,7 @@ const ChatInterface: React.FC = () => {
       return;
     }
 
-    if (directParts.length > 0 && mergedGroups.length === 0 && !needsGemini) {
+    if (directParts.length > 0 && mergedGroups.length === 0) {
       const confirmRows = labelsToConfirmRows(directParts as string[]);
       if (confirmRows.length > 0) {
         const msgId = (Date.now() + 1).toString();
@@ -2507,23 +1538,6 @@ const ChatInterface: React.FC = () => {
       const combined = `Generate quote for ${directParts.join(' and ')}${durationSuffix} [User has already specified complete service names from checkboxes]`;
       pushToHistory(`Generate quote for ${directParts.join(' and ')}${durationSuffix}`);
       sendMessageWithContent(combined);
-      return;
-    }
-
-    if (needsGemini || (mergedGroups.length === 0 && missingServiceAlerts.length === 0 && !isVagueFlow)) {
-      if (USE_CLOUD_DATA && dbServices.length > 0 && pairs.length > 0) {
-        const fallbackRows = dedupeConfirmationRows(
-          pairs.map((p) => ({
-            service: p.raw.replace(/\d+/g, '').trim(),
-            qty: p.qty,
-            city: p.city,
-          })),
-        );
-          void executeConfirmedGeneration(fallbackRows, pickerSnapshot.originalMessage, '');
-        return;
-      }
-      const reconstructed = pairs.map(p => `${p.city} ${p.qty > 1 ? p.qty + ' ' : ''}${p.raw.replace(/\d+/g, '').trim()}`).join(' and ');
-      sendMessageWithContent(reconstructed);
       return;
     }
 
@@ -3409,9 +2423,7 @@ const ChatInterface: React.FC = () => {
           {messages.length === 0 ? (
             <Flex justify="center" align="center" h="full">
               <Text color="gray.400" fontSize="xs" textAlign="center" px={4}>
-                {proposal.textContent
-                  ? 'Ask me anything about your uploaded proposals.'
-                  : 'Ask general questions or upload documents for custom quotes.'}
+                Try “bus”, “hoarding chennai”, or a service name — I’ll help you pick and quote.
               </Text>
             </Flex>
           ) : (
@@ -3430,36 +2442,63 @@ const ChatInterface: React.FC = () => {
                               ? 'linear(135deg, #dc2626 0%, #be123c 50%, #9f1239 100%)' 
                               : undefined
                             }
-                            bg={message.role === 'user' ? undefined : (message.isError ? 'red.50' : 'white')}
+                            bg={
+                              message.role === 'user'
+                                ? undefined
+                                : (message.isError ? 'red.50' : 'white')
+                            }
                             border={message.role === 'user' ? 'none' : '1px solid'}
-                            borderColor={message.role === 'user' ? undefined : (message.isError ? 'red.300' : 'gray.200')}
-                            color={message.role === 'user' ? 'white' : (message.isError ? 'red.700' : 'gray.800')}
+                            borderColor={
+                              message.role === 'user'
+                                ? undefined
+                                : (message.isError ? 'red.300' : 'brand.100')
+                            }
+                            borderLeftWidth={
+                              message.role !== 'user' && !message.isError ? '4px' : undefined
+                            }
+                            borderLeftColor={
+                              message.role !== 'user' && !message.isError ? 'brand.500' : undefined
+                            }
+                            color={
+                              message.role === 'user'
+                                ? 'white'
+                                : (message.isError ? 'red.700' : 'gray.900')
+                            }
                             px={{ base: 4, md: 5 }}
                             py={{ base: 3.5, md: 4 }}
                             borderRadius={message.role === 'user' ? '20px 20px 4px 20px' : '4px 16px 16px 16px'}
                             boxShadow={message.role === 'user' 
                               ? '0 8px 16px rgba(220, 38, 38, 0.25), 0 2px 4px rgba(220, 38, 38, 0.1)' 
-                              : (message.isError ? '0 4px 12px rgba(239, 68, 68, 0.15)' : '0 4px 12px rgba(0, 0, 0, 0.06), 0 1px 3px rgba(0, 0, 0, 0.08)')
+                              : (message.isError
+                                  ? '0 4px 12px rgba(239, 68, 68, 0.15)'
+                                  : '0 6px 18px rgba(117, 9, 38, 0.08), 0 1px 3px rgba(0, 0, 0, 0.06)')
                             }
                           >
-                            <HStack spacing={2} mb={message.isError ? 1 : 0}>
+                            <HStack spacing={2} mb={message.isError ? 1 : 0} align="flex-start">
                               {message.isError && <Text fontSize="16px">❌</Text>}
                               <Text 
-                                fontSize="14px" 
+                                fontSize="14px"
                                 whiteSpace="pre-wrap"
-                                lineHeight="1.6"
-                                fontWeight={message.isError ? "600" : "500"}
+                                lineHeight="1.55"
+                                fontWeight={message.role === 'user' ? '500' : (message.isError ? '600' : '500')}
+                                letterSpacing="normal"
                                 flex={1}
+                                color={
+                                  message.role === 'user'
+                                    ? 'white'
+                                    : (message.isError ? 'red.700' : 'gray.800')
+                                }
                               >
                                 {message.content}
                               </Text>
                             </HStack>
                             <Text
                               fontSize="11px"
-                              mt={2}
-                              opacity={message.role === 'user' ? 0.75 : 0.6}
-                              fontWeight="500"
+                              mt={2.5}
+                              opacity={message.role === 'user' ? 0.75 : 0.55}
+                              fontWeight="600"
                               letterSpacing="tight"
+                              color={message.role === 'user' ? undefined : 'gray.500'}
                             >
                               {message.timestamp.toLocaleTimeString([], {
                                 hour: '2-digit',
@@ -3467,6 +2506,370 @@ const ChatInterface: React.FC = () => {
                               })}
                             </Text>
                           </Box>
+
+                          {/* Soft note for single-city services is already in message.content */}
+
+                          {/* Min qty details card */}
+                          {message.progressiveBelowMin && message.progressiveBelowMin.length > 0 && (
+                            <Box mt={3} p={3} bg="orange.50" border="1px solid" borderColor="orange.200" borderRadius="lg">
+                              <HStack mb={2} spacing={1} justify="space-between" align="flex-start">
+                                <Text fontSize="12px" fontWeight="700" color="orange.700">
+                                  ⚠ Minimum Quantity Required
+                                </Text>
+                                <Text fontSize="10px" color="orange.600" fontWeight="500" maxW="55%" textAlign="right">
+                                  Tap pencil to edit qty
+                                </Text>
+                              </HStack>
+                              {message.progressiveBelowMin.map((item, i) => {
+                                const itemKey = item.serviceId || item.service;
+                                const isEditing = minQtyEditingKey[message.id] === itemKey;
+                                const draft =
+                                  minQtyDrafts[message.id]?.[itemKey]
+                                  ?? String(item.requested);
+                                return (
+                                  <Box key={itemKey} mb={i < message.progressiveBelowMin!.length - 1 ? 2 : 0}>
+                                    <Text fontSize="12px" fontWeight="600" color="gray.700">{item.service}</Text>
+                                    <HStack mt={0.5} spacing={3} align="flex-end">
+                                      <Box>
+                                        <Text fontSize="10px" color="gray.500" fontWeight="500">Requested</Text>
+                                        <HStack spacing={1} align="center">
+                                          {isEditing ? (
+                                            <Input
+                                              size="xs"
+                                              type="number"
+                                              min={1}
+                                              w="72px"
+                                              value={draft}
+                                              autoFocus
+                                              bg="white"
+                                              borderColor="orange.300"
+                                              fontWeight="600"
+                                              onChange={(e) => {
+                                                const v = e.target.value;
+                                                setMinQtyDrafts((prev) => ({
+                                                  ...prev,
+                                                  [message.id]: {
+                                                    ...(prev[message.id] || {}),
+                                                    [itemKey]: v,
+                                                  },
+                                                }));
+                                              }}
+                                              onKeyDown={(e) => {
+                                                if (e.key === 'Enter') {
+                                                  e.preventDefault();
+                                                  void applyMinQtyPencilEdits(message);
+                                                }
+                                                if (e.key === 'Escape') {
+                                                  setMinQtyEditingKey((prev) => ({ ...prev, [message.id]: null }));
+                                                }
+                                              }}
+                                              onBlur={() => void applyMinQtyPencilEdits(message)}
+                                            />
+                                          ) : (
+                                            <Text fontSize="13px" fontWeight="700" color="red.500">
+                                              {item.requested.toLocaleString()}
+                                            </Text>
+                                          )}
+                                          <IconButton
+                                            aria-label="Edit quantity"
+                                            icon={<FiEdit2 />}
+                                            size="xs"
+                                            variant="ghost"
+                                            color="brand.600"
+                                            isDisabled={isLoading}
+                                            onClick={() => {
+                                              setMinQtyDrafts((prev) => ({
+                                                ...prev,
+                                                [message.id]: {
+                                                  ...(prev[message.id] || {}),
+                                                  [itemKey]: String(
+                                                    prev[message.id]?.[itemKey] ?? item.requested,
+                                                  ),
+                                                },
+                                              }));
+                                              setMinQtyEditingKey((prev) => ({
+                                                ...prev,
+                                                [message.id]: itemKey,
+                                              }));
+                                            }}
+                                            _hover={{ bg: 'orange.100' }}
+                                            fontSize="11px"
+                                            w="22px"
+                                            h="22px"
+                                            minW="22px"
+                                          />
+                                        </HStack>
+                                      </Box>
+                                      <Text fontSize="16px" color="gray.300" pb="2px">→</Text>
+                                      <Box>
+                                        <Text fontSize="10px" color="gray.500" fontWeight="500">Minimum</Text>
+                                        <Text fontSize="13px" fontWeight="700" color="green.600">
+                                          {item.minimum.toLocaleString()}
+                                        </Text>
+                                      </Box>
+                                    </HStack>
+                                  </Box>
+                                );
+                              })}
+                            </Box>
+                          )}
+
+                          {/* Progressive chat option chips */}
+                          {message.isProgressiveChat && message.progressiveOptions && message.progressiveOptions.length > 0 && (
+                            <Box mt={3}>
+                              {message.progressiveAllowMulti ? (
+                                /* Scrollable checklist — fixed ~10 rows visible */
+                                <Box
+                                  border="1px solid"
+                                  borderColor="brand.100"
+                                  borderRadius="xl"
+                                  overflow="hidden"
+                                  bg="white"
+                                  boxShadow="0 4px 14px rgba(117, 9, 38, 0.06), 0 1px 3px rgba(0, 0, 0, 0.04)"
+                                >
+                                  {/* Header row: Select all / Clear */}
+                                  <HStack
+                                    px={3}
+                                    py={2}
+                                    bg="brand.50"
+                                    borderBottom="1px solid"
+                                    borderColor="brand.100"
+                                    spacing={2}
+                                  >
+                                    <Button
+                                      size="xs"
+                                      variant="link"
+                                      color="brand.600"
+                                      fontWeight="600"
+                                      fontSize="12px"
+                                      _hover={{ color: 'brand.700', textDecoration: 'underline' }}
+                                      onClick={() =>
+                                        setProgressiveMultiSelect((prev) => ({
+                                          ...prev,
+                                          [message.id]: message.progressiveOptions!.map((o) => o.id),
+                                        }))
+                                      }
+                                    >
+                                      Select all
+                                    </Button>
+                                    <Text color="brand.200" fontSize="xs" lineHeight="1">|</Text>
+                                    <Button
+                                      size="xs"
+                                      variant="link"
+                                      color="gray.500"
+                                      fontWeight="500"
+                                      fontSize="12px"
+                                      _hover={{ color: 'gray.700', textDecoration: 'underline' }}
+                                      onClick={() =>
+                                        setProgressiveMultiSelect((prev) => ({
+                                          ...prev,
+                                          [message.id]: [],
+                                        }))
+                                      }
+                                    >
+                                      Clear
+                                    </Button>
+                                    <Text
+                                      ml="auto"
+                                      fontSize="11px"
+                                      color="gray.500"
+                                      fontWeight="500"
+                                      bg="white"
+                                      px={2}
+                                      py={0.5}
+                                      borderRadius="full"
+                                      border="1px solid"
+                                      borderColor="gray.200"
+                                    >
+                                      {progressiveMultiSelect[message.id]?.length
+                                        ? `${progressiveMultiSelect[message.id].length} selected`
+                                        : `${message.progressiveOptions.length} options`}
+                                    </Text>
+                                  </HStack>
+
+                                  {/* Horizontal wrap checklist (groups as section headers) */}
+                                  <Box
+                                    overflowY="auto"
+                                    maxH="280px"
+                                    px={2.5}
+                                    py={2.5}
+                                    bg="gray.50"
+                                    css={{
+                                      '&::-webkit-scrollbar': { width: '4px' },
+                                      '&::-webkit-scrollbar-track': { background: 'transparent' },
+                                      '&::-webkit-scrollbar-thumb': { background: '#CBD5E0', borderRadius: '4px' },
+                                    }}
+                                  >
+                                    {(() => {
+                                      const opts = message.progressiveOptions!;
+                                      const hasGroups = opts.some((o) => o.group);
+                                      // Group options for horizontal rows under section headers
+                                      const sections: Array<{ group: string | null; items: typeof opts }> = [];
+                                      if (!hasGroups) {
+                                        sections.push({ group: null, items: opts });
+                                      } else {
+                                        const map = new Map<string, typeof opts>();
+                                        for (const o of opts) {
+                                          const g = o.group || 'Other';
+                                          if (!map.has(g)) map.set(g, []);
+                                          map.get(g)!.push(o);
+                                        }
+                                        for (const [g, items] of map) sections.push({ group: g, items });
+                                      }
+                                      return sections.map((sec) => (
+                                        <Box key={sec.group || '_all'} mb={sec.group ? 2.5 : 0}>
+                                          {sec.group && (
+                                            <Text
+                                              px={1}
+                                              mb={1.5}
+                                              fontSize="10px"
+                                              fontWeight="600"
+                                              color="gray.500"
+                                              textTransform="uppercase"
+                                              letterSpacing="0.06em"
+                                            >
+                                              {sec.group}
+                                            </Text>
+                                          )}
+                                          <Box display="flex" flexWrap="wrap" gap={2}>
+                                            {sec.items.map((opt) => {
+                                              const isSelected = (progressiveMultiSelect[message.id] || []).includes(opt.id);
+                                              return (
+                                                <Box
+                                                  key={opt.id}
+                                                  as="button"
+                                                  type="button"
+                                                  display="inline-flex"
+                                                  alignItems="center"
+                                                  gap={2}
+                                                  px={3}
+                                                  py={2}
+                                                  borderRadius="full"
+                                                  border="1.5px solid"
+                                                  borderColor={isSelected ? 'brand.500' : 'gray.200'}
+                                                  bg={isSelected ? 'brand.50' : 'white'}
+                                                  boxShadow={
+                                                    isSelected
+                                                      ? '0 1px 4px rgba(201, 31, 61, 0.15)'
+                                                      : '0 1px 2px rgba(0, 0, 0, 0.04)'
+                                                  }
+                                                  cursor={isLoading ? 'not-allowed' : 'pointer'}
+                                                  _hover={{
+                                                    borderColor: 'brand.400',
+                                                    bg: isSelected ? 'brand.50' : 'white',
+                                                    boxShadow: '0 2px 6px rgba(201, 31, 61, 0.12)',
+                                                  }}
+                                                  transition="all 0.15s ease"
+                                                  disabled={isLoading}
+                                                  onClick={() => {
+                                                    if (isLoading) return;
+                                                    setProgressiveMultiSelect((prev) => {
+                                                      const cur = prev[message.id] || [];
+                                                      const next = cur.includes(opt.id)
+                                                        ? cur.filter((x) => x !== opt.id)
+                                                        : [...cur, opt.id];
+                                                      return { ...prev, [message.id]: next };
+                                                    });
+                                                  }}
+                                                >
+                                                  <Box
+                                                    flexShrink={0}
+                                                    w="15px"
+                                                    h="15px"
+                                                    borderRadius="4px"
+                                                    border="2px solid"
+                                                    borderColor={isSelected ? 'brand.500' : 'gray.300'}
+                                                    bg={isSelected ? 'brand.500' : 'white'}
+                                                    display="flex"
+                                                    alignItems="center"
+                                                    justifyContent="center"
+                                                  >
+                                                    {isSelected && (
+                                                      <Text fontSize="9px" color="white" fontWeight="700" lineHeight="1">✓</Text>
+                                                    )}
+                                                  </Box>
+                                                  <Text
+                                                    fontSize="13px"
+                                                    fontWeight="500"
+                                                    color={isSelected ? 'brand.700' : 'gray.700'}
+                                                    maxW="240px"
+                                                    noOfLines={2}
+                                                    textAlign="left"
+                                                  >
+                                                    {opt.label}
+                                                  </Text>
+                                                </Box>
+                                              );
+                                            })}
+                                          </Box>
+                                        </Box>
+                                      ));
+                                    })()}
+                                  </Box>
+
+                                  {/* Confirm button */}
+                                  <Box
+                                    p={2.5}
+                                    bg="white"
+                                    borderTop="1px solid"
+                                    borderColor="brand.100"
+                                  >
+                                    <Button
+                                      w="100%"
+                                      size="md"
+                                      bg="brand.500"
+                                      color="white"
+                                      borderRadius="lg"
+                                      fontWeight="600"
+                                      fontSize="14px"
+                                      h="40px"
+                                      boxShadow="0 2px 8px rgba(201, 31, 61, 0.25)"
+                                      _hover={{ bg: 'brand.600', color: 'white' }}
+                                      _active={{ bg: 'brand.700', color: 'white' }}
+                                      _disabled={{
+                                        bg: 'gray.200',
+                                        color: 'gray.500',
+                                        opacity: 1,
+                                        cursor: 'not-allowed',
+                                        boxShadow: 'none',
+                                      }}
+                                      isDisabled={isLoading || !(progressiveMultiSelect[message.id]?.length)}
+                                      onClick={() => void handleProgressiveMultiConfirm(message)}
+                                    >
+                                      Confirm
+                                      {progressiveMultiSelect[message.id]?.length
+                                        ? ` (${progressiveMultiSelect[message.id].length})`
+                                        : ''}
+                                    </Button>
+                                  </Box>
+                                </Box>
+                              ) : (
+                                <Box display="flex" flexWrap="wrap" gap={2}>
+                                  {message.progressiveOptions.map((opt) => (
+                                    <Button
+                                      key={opt.id}
+                                      size="sm"
+                                      variant="outline"
+                                      borderColor="gray.200"
+                                      color="gray.700"
+                                      bg="white"
+                                      borderRadius="full"
+                                      fontWeight="500"
+                                      fontSize="13px"
+                                      px={3}
+                                      h="34px"
+                                      boxShadow="0 1px 2px rgba(0, 0, 0, 0.04)"
+                                      _hover={{ borderColor: 'brand.400', color: 'brand.700', bg: 'brand.50' }}
+                                      isDisabled={isLoading}
+                                      onClick={() => void handleProgressiveOptionClick(message, opt.id)}
+                                    >
+                                      {opt.label}
+                                    </Button>
+                                  ))}
+                                </Box>
+                              )}
+                            </Box>
+                          )}
                           
                           {/* Retry button for error messages */}
                           {message.isError && message.failedInput && (
@@ -4128,21 +3531,13 @@ Generate a detailed quote based on the above information.`;
                                   .map(w => w.charAt(0).toUpperCase() + w.slice(1).toLowerCase())
                                   .join(' ');
 
-                                // Use pre-computed matchedCities from city gate (strict classifier).
-                                // Render-time fallback also stays strict — no registry_unavailable leak.
-                                const citiesWithService = seg.matchedCities ?? cityPickerState.availableCities.filter(city => {
-                                  const cityKey = KNOWN_CITY_LIST.find(c => city.toLowerCase().includes(c)) || city.toLowerCase();
-                                  const cls = classifySegmentByRegistry(cityKey, seg.raw);
-                                  return cls.state === 'specific' || cls.state === 'vague';
-                                });
-
-                                // Cities where registry explicitly says NOT available
-                                const citiesWithoutService = cityPickerState.availableCities.filter(city => {
-                                  if (citiesWithService.includes(city)) return false;
-                                  const cityKey = KNOWN_CITY_LIST.find(c => city.toLowerCase().includes(c)) || city.toLowerCase();
-                                  const cls = classifySegmentByRegistry(cityKey, seg.raw);
-                                  return cls.state === 'not_found' || cls.state === 'empty';
-                                });
+                                // Prefer matchedCities from DB city gate; otherwise show all available cities.
+                                const citiesWithService = seg.matchedCities?.length
+                                  ? seg.matchedCities
+                                  : cityPickerState.availableCities;
+                                const citiesWithoutService = cityPickerState.availableCities.filter(
+                                  city => !citiesWithService.includes(city),
+                                );
 
                                 const allCitiesSelected = citiesWithService.length > 0 && citiesWithService.every(c => seg.selectedCities.includes(c));
                                 return (
@@ -4188,17 +3583,34 @@ Generate a detailed quote based on the above information.`;
                                       </Text>
                                     ) : (
                                       <VStack align="stretch" spacing={2}>
-                                        {/* Only show cities where service is available (or registry unavailable = show with fallback) */}
+                                        {/* Cities where the service is available (from DB matchedCities) */}
                                         {citiesWithService.map((city, cIdx) => {
                                           const isSelected = seg.selectedCities.includes(city);
-                                          // Get min qty hint from registry (strict classifier so "min 10"
-                                          // never leaks in from an unrelated reverse-match).
+                                          // Min qty from DB catalog (default 1 when unknown).
                                           const cityKey = KNOWN_CITY_LIST.find(c => city.toLowerCase().includes(c)) || city.toLowerCase();
-                                          const cls = classifySegmentByRegistry(cityKey, seg.raw);
-                                          const minQty = (cls.state === 'specific' || cls.state === 'vague')
-                                            ? cls.matches.map(m => cityServiceRegistry.current.get(cityKey)?.quantities[m]?.min)
-                                                .filter((n): n is number => typeof n === 'number' && n > 0)
-                                                .sort((a, b) => a - b)[0] ?? null
+                                          const dbList = cityPickerState.dbServices || [];
+                                          const groupHint = dbList.length
+                                            ? buildGroupedServicesFromDb(seg.raw, cityKey, 1, dbList)
+                                            : null;
+                                          const minQty = groupHint?.services?.length
+                                            ? (() => {
+                                                const mins = groupHint.services
+                                                  .map(svc => {
+                                                    const resolved = resolveServiceIdFromCatalog(svc.name, dbList, cityKey);
+                                                    if (!resolved) return 1;
+                                                    const row = dbList.find(s => s.service_id === resolved.serviceId);
+                                                    const rawMin = row?.metadata?.min_quantity ?? (row as { min_quantity?: number } | undefined)?.min_quantity;
+                                                    const n = Number(rawMin);
+                                                    const qty: ServiceQuantity = {
+                                                      min: Number.isFinite(n) && n > 0 ? n : 1,
+                                                      max: null,
+                                                    };
+                                                    return qty.min > 1 ? qty.min : 1;
+                                                  })
+                                                  .filter(n => n > 1)
+                                                  .sort((a, b) => a - b);
+                                                return mins[0] ?? null;
+                                              })()
                                             : null;
 
                                           return (
@@ -5148,7 +4560,7 @@ Generate a detailed quote based on the above information.`;
                 mb={{ base: 3, md: 4 }}
                 lineHeight="1.5"
               >
-                Would you like to continue with your requested quantity, or update to the minimum?
+                Min quantity applies. Can I use the minimum?
               </Text>
               <Stack 
                 direction={{ base: "column", sm: "row" }} 
@@ -5158,23 +4570,17 @@ Generate a detailed quote based on the above information.`;
                 <Button
                   size="sm"
                   variant="outline"
-                  borderColor="#c0392b"
-                  color="#c0392b"
-                  onClick={handleMinQtyContinue}
-                  _hover={{ bg: '#fff5f5' }}
+                  borderColor="gray.300"
+                  color="gray.600"
+                  onClick={handleMinQtyClose}
+                  _hover={{ bg: 'gray.50' }}
                   w={{ base: "100%", sm: "auto" }}
                   h={{ base: "40px", sm: "36px" }}
                   fontSize={{ base: "13px", md: "14px" }}
                   borderRadius="10px"
                   order={{ base: 2, sm: 1 }}
                 >
-                  {(() => {
-                    const qtys = minQtyWarning.items.map(it => it.requested);
-                    const allSame = qtys.every(q => q === qtys[0]);
-                    return minQtyWarning.items.length === 1 || allSame
-                      ? `Continue with ${qtys[0]}`
-                      : `Generate as Requested`;
-                  })()}
+                  No
                 </Button>
                 <Button
                   size="sm"
@@ -5189,8 +4595,8 @@ Generate a detailed quote based on the above information.`;
                   order={{ base: 1, sm: 2 }}
                 >
                   {minQtyWarning.items.length === 1
-                    ? `Use Minimum (${minQtyWarning.items[0].minimum})`
-                    : `Use Minimums`}
+                    ? `Yes — use ${minQtyWarning.items[0].minimum}`
+                    : `Yes — use minimums`}
                 </Button>
               </Stack>
             </Box>

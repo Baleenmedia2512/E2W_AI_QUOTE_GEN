@@ -11,9 +11,9 @@ interface NavItem {
 }
 
 const navItems: NavItem[] = [
-  { path: '/', icon: FiHome, label: 'Home' },
+  { path: '/', icon: FiHome, label: 'Chat' },
   { path: '/documents', icon: FiFolder, label: 'Docs' },
-  { path: '/quote', icon: FiFileText, label: 'Quote' },
+  { path: '/quote', icon: FiFileText, label: 'Client' },
   { path: '/preview', icon: FiEye, label: 'Preview' },
 ];
 

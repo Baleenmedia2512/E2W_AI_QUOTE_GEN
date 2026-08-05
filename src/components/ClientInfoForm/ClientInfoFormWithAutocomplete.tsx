@@ -368,7 +368,7 @@ const ClientInfoFormWithAutocomplete: React.FC<ClientInfoFormWithAutocompletePro
                 }}
                 _active={{ transform: 'scale(0.98)' }}
               >
-                ← Back
+                ← Back: Chat
               </Button>
             )}
             <Button
@@ -407,7 +407,7 @@ const ClientInfoFormWithAutocomplete: React.FC<ClientInfoFormWithAutocompletePro
               }}
               _active={{ transform: 'scale(0.98)' }}
             >
-              Continue →
+              Next: Preview →
             </Button>
           </HStack>
         </VStack>

@@ -1,5 +1,5 @@
 import { QuoteItem } from '../types/quote';
-import { canonicalizeServiceName } from '../hooks/useCityServiceRegistry';
+import { canonicalizeServiceName } from './serviceNameUtils';
 import { pickPreferredDbService } from './dbPricingUtils';
 
 const CITY_NAMES = [

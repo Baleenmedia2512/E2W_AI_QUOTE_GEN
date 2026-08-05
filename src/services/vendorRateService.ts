@@ -5,7 +5,7 @@
  * Missing extras → keep proposal_chunks values (full fallback when no vendor match).
  */
 
-import { canonicalizeServiceName } from '../hooks/useCityServiceRegistry';
+import { canonicalizeServiceName } from '../utils/serviceNameUtils';
 import { supabase } from './supabaseClient';
 import type {
   VendorImageRef,

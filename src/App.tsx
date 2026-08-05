@@ -5,6 +5,7 @@ import HomePage from './pages/HomePage';
 import DocumentsPage from './pages/DocumentsPage';
 import QuotePage from './pages/QuotePage';
 import { QuotePreviewPage } from './pages/QuotePreviewPage';
+import CompanySettingsPage from './pages/CompanySettingsPage';
 import LoginPage from './pages/LoginPage';
 import UnauthorizedPage from './pages/UnauthorizedPage';
 import { ErrorBoundary } from './components/ErrorBoundary/ErrorBoundary';
@@ -14,14 +15,11 @@ import { Header } from './components/Header';
 import { registerServiceWorker } from './utils/pwa';
 import { PrivateRoute } from './components/PrivateRoute';
 import { useCompanySync } from './hooks/useCompanySync';
-import { useCityServiceRegistry } from './hooks/useCityServiceRegistry';
 import { useAppStore } from './store';
 
 const App: React.FC = () => {
   // Initialize database sync for company info (syncs across devices)
   useCompanySync(true); // true = enable real-time updates
-  // Build city service registry in background whenever active proposals change
-  useCityServiceRegistry();
 
   const { restoreActiveProposals, loadRecentProposals } = useAppStore();
 
@@ -49,8 +47,16 @@ const App: React.FC = () => {
           <Route
             render={({ location }) => {
               // Don't show app header on login or quote preview (preview has its own toolbar)
+              // Pages with their own top nav (flow headers)
               const hideHeader =
-                location.pathname === '/login' || location.pathname === '/preview';
+                location.pathname === '/login' ||
+                location.pathname === '/' ||
+                location.pathname === '/quote' ||
+                location.pathname === '/preview' ||
+                location.pathname === '/company-settings';
+              const hideBottomNav =
+                location.pathname === '/login' ||
+                location.pathname === '/preview';
               return (
                 <>
                   {!hideHeader && <Header />}
@@ -64,11 +70,12 @@ const App: React.FC = () => {
                     <PrivateRoute exact path="/documents" component={DocumentsPage} />
                     <PrivateRoute exact path="/quote" component={QuotePage} />
                     <PrivateRoute exact path="/preview" component={QuotePreviewPage} />
+                    <PrivateRoute exact path="/company-settings" component={CompanySettingsPage} />
                     
                     {/* Fallback */}
                     <Route render={() => <Redirect to="/" />} />
                   </Switch>
-                  <BottomNav />
+                  {!hideBottomNav && <BottomNav />}
                 </>
               );
             }}

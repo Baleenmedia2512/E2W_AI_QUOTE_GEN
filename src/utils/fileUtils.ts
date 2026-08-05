@@ -1,5 +1,4 @@
 import * as XLSX from 'xlsx';
-import { GoogleGenerativeAI } from '@google/generative-ai';
 
 export interface FileExtractionResult {
   textContent: string;
@@ -55,87 +54,32 @@ export const validateExcelFile = (file: File): { valid: boolean; error?: string 
 };
 
 /**
- * Extract text from image using Gemini Vision API
+ * Prepare image for display. OCR / Gemini Vision is disabled — qty-unit AI only.
  */
 export const extractImageContent = async (file: File): Promise<FileExtractionResult> => {
   try {
-    console.log('Starting image extraction for:', file.name);
-    
-    // Convert image to base64
+    console.log('Starting image extraction for:', file.name, '(OCR disabled)');
+
     const arrayBuffer = await file.arrayBuffer();
     const base64String = btoa(
       new Uint8Array(arrayBuffer).reduce((data, byte) => data + String.fromCharCode(byte), '')
     );
-    
-    // Create object URL for display
     const imageDataUrl = `data:${file.type};base64,${base64String}`;
-    
-    // Use Gemini Vision API for OCR
-    const apiKey = import.meta.env.VITE_GEMINI_API_KEY;
-    if (!apiKey || apiKey.trim() === '') {
-      throw new Error('Gemini API key not configured. Please add VITE_GEMINI_API_KEY to your .env file.');
-    }
-    
-    const genAI = new GoogleGenerativeAI(apiKey.trim());
-    const model = genAI.getGenerativeModel({ model: 'gemini-2.5-flash-lite' });
-    
-    console.log('Sending image to Gemini Vision API for text extraction...');
-    
-    const prompt = `Extract ALL text content from this image. Preserve the layout, structure, and formatting as much as possible. Include:
-- All headings and titles
-- All body text and paragraphs
-- All tables, pricing, and numerical data
-- All lists and bullet points
-- All labels and descriptions
+    const textContent = '[OCR disabled — image uploaded for display only]';
 
-Format the output as clean, structured text that maintains the original document's hierarchy and organization. Use tabs or pipes (|) to separate columns in tables.
-
-CRITICAL FOR TABLES (ESPECIALLY RATE CARDS):
-1. If the image contains a table with COLUMN HEADERS at the top, you MUST preserve them EXACTLY and align them with their data columns
-2. For each data row, explicitly label which value belongs to which column
-3. For rate card tables with editions/cities as rows and categories as columns:
-   - First line: Extract ALL column headers from left to right (e.g., "Edition | Business/Finance | Education | Real Estate | Rental | Automobile Used | Automobile New | Service")
-   - Each data row: Start with the row label (edition/city name), then list ALL values in the SAME ORDER as the headers
-   - Use consistent pipe (|) separators between columns
-   - Example format:
-     Edition | Column1 | Column2 | Column3 | Column4
-     City1   | Value1  | Value2  | Value3  | Value4
-     City2   | Value1  | Value2  | Value3  | Value4
-4. VERIFY: Count the number of columns in the header row and ensure each data row has the SAME number of values
-5. If a table has merged cells or complex structure, use clear labels like "Column Name: Value" for each cell`;
-    
-    const result = await model.generateContent([
-      prompt,
-      {
-        inlineData: {
-          mimeType: file.type,
-          data: base64String
-        }
-      }
-    ]);
-    
-    const response = await result.response;
-    const textContent = response.text();
-    
-    console.log('Image text extraction successful, length:', textContent.length);
-    
-    if (!textContent || textContent.trim().length === 0) {
-      throw new Error('No text could be extracted from the image. The image may not contain readable text.');
-    }
-    
     return {
-      textContent: textContent.trim(),
+      textContent,
       pageCount: 1,
       images: [imageDataUrl],
       pageImages: [{
         pageNumber: 1,
-        text: textContent.trim(),
+        text: textContent,
         imageDataUrl
       }]
     };
   } catch (error: any) {
-    console.error('Error extracting image content:', error);
-    throw new Error(`Failed to extract text from image: ${error.message || 'Unknown error'}`);
+    console.error('Error preparing image content:', error);
+    throw new Error(`Failed to prepare image: ${error.message || 'Unknown error'}`);
   }
 };
 

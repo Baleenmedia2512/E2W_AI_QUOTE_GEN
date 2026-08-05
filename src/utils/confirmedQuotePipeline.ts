@@ -1,4 +1,4 @@
-import { canonicalizeServiceName } from '../hooks/useCityServiceRegistry';
+import { canonicalizeServiceName } from './serviceNameUtils';
 import type { GroupedServices } from '../types/chat';
 import {
   ConfirmationRow,

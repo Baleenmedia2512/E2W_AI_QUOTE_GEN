@@ -1,22 +1,14 @@
 import * as pdfjsLib from 'pdfjs-dist';
-import { GoogleGenerativeAI } from '@google/generative-ai';
-import { trackTokenUsage } from '../services/tokenMonitorService';
 
-// ═══════════════════════════════════════════════════════════════════════════
-// 🧪 IMAGE EXTRACTION MODE TOGGLE
-// ═══════════════════════════════════════════════════════════════════════════
-const USE_GEMINI_VISION_ONLY = false;  // Set to true for token cost testing
-// false = Native PDF.js extraction first (0 tokens), Gemini Vision fallback
-// true  = Gemini Vision API only (enables full token cost comparison)
-// ═══════════════════════════════════════════════════════════════════════════
+// Native PDF.js image extraction only — Gemini Vision disabled (qty-unit AI only)
+const USE_NATIVE_ONLY = true;
 
 // Configure PDF.js worker - Use unpkg CDN as fallback with proper configuration
 // Try multiple CDN sources for better reliability
 const workerSrc = `https://unpkg.com/pdfjs-dist@${pdfjsLib.version}/build/pdf.worker.min.mjs`;
 pdfjsLib.GlobalWorkerOptions.workerSrc = workerSrc;
 
-const mode = USE_GEMINI_VISION_ONLY ? 'Gemini Vision ONLY (testing)' : 'Native + Gemini fallback';
-console.log(`📦 PDF.js worker configured - Mode: ${mode}`);
+console.log('📦 PDF.js worker configured - Mode: Native only (Gemini Vision disabled)');
 const IMAGE_DEBUG_TAG = '[image debug]';
 const imageDebug = (...args: any[]) => console.log(IMAGE_DEBUG_TAG, ...args);
 const imageDebugWarn = (...args: any[]) => console.warn(IMAGE_DEBUG_TAG, ...args);
@@ -880,239 +872,9 @@ async function extractNativeImages(
 }
 // ── End Native Image Extraction ───────────────────────────────────────────────
 
-async function detectImageRegions(imageDataUrl: string, pageNumber: number, pdfFileName?: string): Promise<ImageBoundingBox[]> {
-  const startTime = performance.now();
-  try {
-    const apiKey = import.meta.env.VITE_GEMINI_API_KEY;
-    if (!apiKey || apiKey.trim() === '') return [];
-
-    const genAI = new GoogleGenerativeAI(apiKey.trim());
-    const model = genAI.getGenerativeModel({ model: 'gemini-2.5-flash-lite' });
-
-    const base64Data = imageDataUrl.split(',')[1];
-
-    const prompt = `Analyze this advertising/media proposal PDF page image. Detect all reference photographs and advertising mockup images.
-
-Types to detect:
-- Metro/train/bus/transit interior photos showing advertising panels or branding inside coaches/compartments
-- Vehicle branding mockups: bus, auto-rickshaw, van, car, metro coach exterior wraps
-- Outdoor advertising: billboards, hoardings, LED panels, flex prints, lamp post displays, traffic boards
-- Signage: standees, branding boards, street furniture displays
-- General reference photos and design example images
-
-Critical rules for metro/train interior photos:
-- Treat each complete photo of a metro coach interior, train compartment, or transit vehicle interior as ONE bounding box — even if multiple advertisement panels are visible INSIDE the photo
-- Do NOT create separate boxes for individual advertisement posters/panels that appear inside a metro/train photo — the whole coach interior view is one image
-- If the page has 2 separate metro interior photos (e.g. one above the other), return 2 separate boxes
-
-General rules:
-- ONLY detect actual photographs and mockup images — ignore text blocks, tables, headers, footers, page numbers, small logos (under 4% of page area), decorative lines, watermarks
-- Each detected region must be at least 4% of the total page area
-- Include any visible border or frame within the bounding box
-- Detect all photos even if stacked vertically or placed side by side
-
-Return ONLY a valid JSON array (no markdown, no explanation):
-[{"box": [y_min, x_min, y_max, x_max], "label": "short description"}]
-
-Coordinates use 0-1000 normalized scale where [0,0] is top-left and [1000,1000] is bottom-right.
-If no photos or mockup images are found, return exactly: []`;
-
-    const result = await model.generateContent([
-      prompt,
-      { inlineData: { mimeType: 'image/jpeg', data: base64Data } }
-    ]);
-
-    const response = await result.response;
-    const text = response.text().trim();
-    const processingTimeMs = performance.now() - startTime;
-
-    // Track token usage for image detection
-    const usageMetadata = response.usageMetadata;
-    trackTokenUsage({
-      operationType: 'image_detection',
-      operationDetails: `Image detection on page ${pageNumber}`,
-      inputTokens: usageMetadata?.promptTokenCount || 0,
-      outputTokens: usageMetadata?.candidatesTokenCount || 0,
-      processingTimeMs,
-      contextSize: prompt.length,
-      responseSize: text.length,
-      pdfFileName
-    });
-
-    console.log(`📦 Gemini Vision response for page ${pageNumber}:`, text.substring(0, 200));
-
-    let jsonStr = text;
-    const codeBlockMatch = text.match(/```(?:json)?\s*([\s\S]*?)\s*```/);
-    if (codeBlockMatch) {
-      jsonStr = codeBlockMatch[1];
-    }
-    const arrayMatch = jsonStr.match(/\[[\s\S]*\]/);
-    if (!arrayMatch) return [];
-
-    const rawBoxes: any[] = JSON.parse(arrayMatch[0]);
-
-    // Normalize: Gemini Vision sometimes returns "box" and sometimes "box_2d" as the key.
-    // Coerce every item so b.box always holds the coords array before filtering/cropping.
-    const boxes: ImageBoundingBox[] = rawBoxes.map((b: any) => ({
-      ...b,
-      box: (b.box_2d || b.box) as [number, number, number, number],
-    }));
-
-    const validBoxes = boxes.filter(b => {
-      if (!b.box || !Array.isArray(b.box) || b.box.length !== 4) return false;
-      const [yMin, xMin, yMax, xMax] = b.box;
-      if (typeof yMin !== 'number' || typeof xMin !== 'number' ||
-          typeof yMax !== 'number' || typeof xMax !== 'number') return false;
-      if (yMin >= yMax || xMin >= xMax) return false;
-      if (yMin < 0 || xMin < 0 || yMax > 1000 || xMax > 1000) return false;
-      const area = ((yMax - yMin) * (xMax - xMin)) / (1000 * 1000);
-      return area >= 0.04;
-    });
-    imageDebug(`action=detect page=${pageNumber} stage=validated raw=${rawBoxes.length} valid=${validBoxes.length}`);
-
-    // IoU deduplication: Gemini often returns multiple overlapping boxes for the same
-    // visual element (e.g. 5 nearly-identical bounding boxes for one mockup image).
-    // Sort by area descending (prefer largest box), then discard any box that overlaps
-    // more than 40% with an already-kept box.
-    const sorted = [...validBoxes].sort((a, b) => {
-      const areaA = (a.box[2] - a.box[0]) * (a.box[3] - a.box[1]);
-      const areaB = (b.box[2] - b.box[0]) * (b.box[3] - b.box[1]);
-      return areaB - areaA; // largest first
-    });
-    const deduped: ImageBoundingBox[] = [];
-    for (const box of sorted) {
-      const [yMin, xMin, yMax, xMax] = box.box;
-      const boxArea = (yMax - yMin) * (xMax - xMin);
-      const overlaps = deduped.some(k => {
-        const [kyMin, kxMin, kyMax, kxMax] = k.box;
-        const kArea = (kyMax - kyMin) * (kxMax - kxMin);
-        const interY = Math.max(0, Math.min(yMax, kyMax) - Math.max(yMin, kyMin));
-        const interX = Math.max(0, Math.min(xMax, kxMax) - Math.max(xMin, kxMin));
-        const interArea = interY * interX;
-        const unionArea = boxArea + kArea - interArea;
-        const iou = unionArea > 0 ? interArea / unionArea : 0;
-        return iou > 0.20; // 20% overlap → treat as duplicate (lower = keep adjacent grid photos)
-      });
-      if (!overlaps) deduped.push(box);
-    }
-    console.log(`📦 Boxes after IoU dedup: ${deduped.length} (was ${validBoxes.length})`);
-    imageDebug(`action=detect page=${pageNumber} stage=dedup valid=${validBoxes.length} deduped=${deduped.length}`);
-
-    // ── Phase 1: Wide / tall strip splitter ─────────────────────────────────
-    // Gemini sometimes returns 2 full-width horizontal strips (one per row)
-    // instead of 4 individual photos. Split any box that spans >65% of the page
-    // width (or height) into two halves — left/right or top/bottom.
-    // Runs only when we have fewer than 4 boxes.
-    let working: ImageBoundingBox[] = [...deduped];
-    if (working.length < 4) {
-      const splitPass: ImageBoundingBox[] = [];
-      for (const b of working) {
-        const [y0, x0, y1, x1] = b.box;
-        const w = x1 - x0;
-        const h = y1 - y0;
-        const area = (w * h) / (1000 * 1000);
-        if (w > 650 && area >= 0.12) {
-          // Wide strip → split left / right
-          const mx = Math.round((x0 + x1) / 2);
-          splitPass.push({ box: [y0, x0, y1, mx] as [number,number,number,number], label: b.label + '-L', noPad: true });
-          splitPass.push({ box: [y0, mx, y1, x1] as [number,number,number,number], label: b.label + '-R', noPad: true });
-          console.log(`✂️ Split wide strip (w=${w}) into left/right`);
-        } else if (h > 600 && area >= 0.12) {
-          // Tall strip → split top / bottom
-          const my = Math.round((y0 + y1) / 2);
-          splitPass.push({ box: [y0, x0, my, x1] as [number,number,number,number], label: b.label + '-T', noPad: true });
-          splitPass.push({ box: [my, x0, y1, x1] as [number,number,number,number], label: b.label + '-B', noPad: true });
-          console.log(`✂️ Split tall strip (h=${h}) into top/bottom`);
-        } else {
-          splitPass.push(b);
-        }
-      }
-      if (splitPass.length > working.length) {
-        console.log(`✂️ Strip split: ${working.length} → ${splitPass.length} boxes`);
-        imageDebug(`action=split page=${pageNumber} stage=strip from=${working.length} to=${splitPass.length}`);
-        working = splitPass;
-      }
-    }
-    if (working.length >= 4) return working;
-
-    // ── Phase 2: Single large merged block → 4 quadrants ────────────────────
-    // Handles the case where Gemini returns 1 box covering the entire 2×2 grid.
-    if (working.length < 3 && working.length > 0) {
-      const largest = working.reduce((a, b) => {
-        const aArea = (a.box[2] - a.box[0]) * (a.box[3] - a.box[1]);
-        const bArea = (b.box[2] - b.box[0]) * (b.box[3] - b.box[1]);
-        return bArea > aArea ? b : a;
-      });
-      const [yMin, xMin, yMax, xMax] = largest.box;
-      const largestArea = ((yMax - yMin) * (xMax - xMin)) / (1000 * 1000);
-      if (largestArea >= 0.35) {
-        const midY = Math.round((yMin + yMax) / 2);
-        const midX = Math.round((xMin + xMax) / 2);
-        const quadrants: ImageBoundingBox[] = [
-          { box: [yMin, xMin, midY, midX] as [number,number,number,number], label: 'grid-tl', noPad: true },
-          { box: [yMin, midX, midY, xMax] as [number,number,number,number], label: 'grid-tr', noPad: true },
-          { box: [midY, xMin, yMax, midX] as [number,number,number,number], label: 'grid-bl', noPad: true },
-          { box: [midY, midX, yMax, xMax] as [number,number,number,number], label: 'grid-br', noPad: true },
-        ];
-        console.log(`🔲 Grid fallback: splitting 1 large box (area ${(largestArea*100).toFixed(0)}%) into 4 quadrants`);
-        imageDebug(`action=split page=${pageNumber} stage=grid-fallback areaRatio=${largestArea.toFixed(4)} to=4+others`);
-        const others = working.filter(b => b !== largest);
-        return [...quadrants, ...others];
-      }
-    }
-
-    // ── Phase 3: Quadrant coverage fill ─────────────────────────────────────
-    // Handles the "3 detected, 1 missed" case.
-    // Uses actual detected box edges as the row/column seam so the filled box
-    // aligns perfectly with its neighbours — no bleed or overlap at boundaries.
-    if (working.length >= 1 && working.length < 4) {
-      let envY0 = 1000, envX0 = 1000, envY1 = 0, envX1 = 0;
-      for (const b of working) {
-        const [y0, x0, y1, x1] = b.box;
-        envY0 = Math.min(envY0, y0); envX0 = Math.min(envX0, x0);
-        envY1 = Math.max(envY1, y1); envX1 = Math.max(envX1, x1);
-      }
-      const envArea = ((envY1 - envY0) * (envX1 - envX0)) / (1000 * 1000);
-      if (envArea >= 0.20) {
-        const geoMidY = (envY0 + envY1) / 2;
-        const geoMidX = (envX0 + envX1) / 2;
-        const topRowBoxes  = working.filter(b => (b.box[0] + b.box[2]) / 2 < geoMidY);
-        const leftColBoxes = working.filter(b => (b.box[1] + b.box[3]) / 2 < geoMidX);
-        const seamY = topRowBoxes.length  > 0 ? Math.max(...topRowBoxes.map(b  => b.box[2])) : geoMidY;
-        const seamX = leftColBoxes.length > 0 ? Math.max(...leftColBoxes.map(b => b.box[3])) : geoMidX;
-        const gridQuads: Array<[number, number, number, number]> = [
-          [envY0, envX0, seamY, seamX],
-          [envY0, seamX, seamY, envX1],
-          [seamY, envX0, envY1, seamX],
-          [seamY, seamX, envY1, envX1],
-        ];
-        const extra: ImageBoundingBox[] = [];
-        for (const [qy0, qx0, qy1, qx1] of gridQuads) {
-          const qArea = (qy1 - qy0) * (qx1 - qx0);
-          let covered = 0;
-          for (const b of working) {
-            const [by0, bx0, by1, bx1] = b.box;
-            const iy = Math.max(0, Math.min(qy1, by1) - Math.max(qy0, by0));
-            const ix = Math.max(0, Math.min(qx1, bx1) - Math.max(qx0, bx0));
-            covered += iy * ix;
-          }
-          if (qArea > 0 && covered / qArea < 0.50) {
-            extra.push({ box: [qy0, qx0, qy1, qx1] as [number,number,number,number], label: 'grid-fill', noPad: true });
-          }
-        }
-        if (extra.length > 0 && extra.length < 4) {
-          console.log(`🔲 Quadrant fill: adding ${extra.length} uncovered region(s) (seamY=${seamY}, seamX=${seamX})`);
-          imageDebug(`action=split page=${pageNumber} stage=quadrant-fill add=${extra.length} base=${working.length}`);
-          return [...working, ...extra];
-        }
-      }
-    }
-
-    return working;
-  } catch (error) {
-    console.warn(`⚠️ Gemini Vision detection failed for page ${pageNumber}:`, error);
-    return [];
-  }
+async function detectImageRegions(_imageDataUrl: string, pageNumber: number, _pdfFileName?: string): Promise<ImageBoundingBox[]> {
+  console.log(`⏭️ [GEMINI] Bounding-box detection disabled (native-only) — page ${pageNumber}`);
+  return [];
 }
 
 function cropImageRegions(imageDataUrl: string, boxes: ImageBoundingBox[], pageText: string = ''): Promise<string[]> {
@@ -1428,7 +1190,7 @@ export function cropPageSlice(imageDataUrl: string, fromPercent: number, toPerce
 
 // --- End Auto-Crop Helpers ---
 
-// --- Customer Review OCR via Gemini Vision ---
+// --- Customer Review OCR (Gemini disabled) ---
 
 export interface GeminiReviewData {
   reviewerName: string;
@@ -1436,114 +1198,13 @@ export interface GeminiReviewData {
   reviewText: string;
 }
 
-/** Convert data URL or HTTP(S) image URL to base64 for Gemini Vision inlineData. */
-async function imageSourceToBase64(
-  imageSource: string,
-): Promise<{ mimeType: string; data: string } | null> {
-  if (!imageSource?.trim()) return null;
-
-  if (imageSource.startsWith('data:')) {
-    const match = imageSource.match(/^data:([^;]+);base64,(.+)$/);
-    if (!match) return null;
-    return { mimeType: match[1], data: match[2] };
-  }
-
-  if (!/^https?:\/\//i.test(imageSource)) return null;
-
-  try {
-    const response = await fetch(imageSource);
-    if (!response.ok) {
-      console.warn(`⚠️ Review OCR fetch failed: HTTP ${response.status}`);
-      return null;
-    }
-    const blob = await response.blob();
-    const mimeType = blob.type || 'image/jpeg';
-    const dataUrl = await new Promise<string>((resolve, reject) => {
-      const reader = new FileReader();
-      reader.onload = () => resolve(reader.result as string);
-      reader.onerror = reject;
-      reader.readAsDataURL(blob);
-    });
-    const base64 = dataUrl.split(',')[1];
-    if (!base64) return null;
-    return { mimeType, data: base64 };
-  } catch (err) {
-    console.warn('⚠️ Review OCR image fetch failed:', err);
-    return null;
-  }
-}
-
 /**
- * Uses Gemini Vision to OCR the customer review card embedded as an image inside a PDF page.
- * Accepts data URLs and public HTTP(S) URLs (e.g. Supabase storage).
+ * Gemini Vision review OCR disabled — qty-unit AI only.
+ * Kept as a no-op export for existing callers (ReferenceImages, RAG pipeline).
  */
-export async function extractReviewViaGemini(imageDataUrl: string): Promise<GeminiReviewData | null> {
-  const startTime = performance.now();
-  try {
-    const apiKey = import.meta.env.VITE_GEMINI_API_KEY;
-    if (!apiKey || apiKey.trim() === '') return null;
-
-    const genAI = new GoogleGenerativeAI(apiKey.trim());
-    const model = genAI.getGenerativeModel({ model: 'gemini-2.5-flash-lite' });
-
-    const imagePayload = await imageSourceToBase64(imageDataUrl);
-    if (!imagePayload) return null;
-
-    const prompt = `This is a page from an advertising proposal PDF. It contains a Google Review / customer review card embedded as an image.
-
-Extract the following from the review card:
-1. Reviewer name (the person who wrote the review)
-2. Star rating (count the filled stars, a number from 1 to 5)
-3. Review text (the full review paragraph written by the customer)
-
-Return ONLY valid JSON, no markdown, no extra text:
-{"reviewerName": "...", "starCount": 5, "reviewText": "..."}
-
-If you cannot find any review content, return exactly: null`;
-
-    const result = await model.generateContent([
-      prompt,
-      { inlineData: { mimeType: imagePayload.mimeType, data: imagePayload.data } }
-    ]);
-
-    const response = await result.response;
-    const text = response.text().trim();
-    const processingTimeMs = performance.now() - startTime;
-
-    // Track token usage for review OCR
-    const usageMetadata = response.usageMetadata;
-    trackTokenUsage({
-      operationType: 'review_ocr',
-      operationDetails: 'Customer review OCR via Gemini Vision',
-      inputTokens: usageMetadata?.promptTokenCount || 0,
-      outputTokens: usageMetadata?.candidatesTokenCount || 0,
-      processingTimeMs,
-      contextSize: prompt.length,
-      responseSize: text.length
-    });
-
-    console.log('🔍 Gemini review OCR response:', text.substring(0, 300));
-
-    if (text === 'null' || text === '') return null;
-
-    let jsonStr = text;
-    const codeBlockMatch = text.match(/```(?:json)?\s*([\s\S]*?)\s*```/);
-    if (codeBlockMatch) jsonStr = codeBlockMatch[1];
-    const objMatch = jsonStr.match(/\{[\s\S]*\}/);
-    if (!objMatch) return null;
-
-    const parsed = JSON.parse(objMatch[0]);
-    if (!parsed || typeof parsed !== 'object') return null;
-
-    return {
-      reviewerName: String(parsed.reviewerName || '').trim() || 'Customer',
-      starCount: Math.min(5, Math.max(1, Number(parsed.starCount) || 5)),
-      reviewText: String(parsed.reviewText || '').trim(),
-    };
-  } catch (error) {
-    console.warn('⚠️ Gemini review OCR failed:', error);
-    return null;
-  }
+export async function extractReviewViaGemini(_imageDataUrl: string): Promise<GeminiReviewData | null> {
+  console.log('⏭️ [GEMINI] Review OCR disabled — qty-unit AI only');
+  return null;
 }
 
 // --- End Customer Review OCR ---
@@ -1664,51 +1325,42 @@ export const extractPDFContent = async (file: File, maxImagePages?: number): Pro
         await pdfPage.render({ canvasContext: ctx, viewport }).promise;
         const imageDataUrl = canvas.toDataURL('image/jpeg', 0.92);
 
-        // ── Image extraction (mode controlled by USE_GEMINI_VISION_ONLY flag) ──
+        // ── Image extraction (native PDF.js only — Gemini Vision disabled) ──
         let croppedImages: string[] | undefined;
         // 🆕 Y-positions from native extraction (canvas top-down pixels)
         let nativeBoxesWithPositions: Array<{ box: ImageBoundingBox; imageYPos: number }> = [];
         
         console.log(`\n🔍 [IMAGE-DEBUG] Page ${pageNumber}/${pageCount} ════════════════════════`);
-        console.log(`   Mode: ${USE_GEMINI_VISION_ONLY ? 'GEMINI ONLY (testing)' : 'Native + Gemini fallback'}`);
+        console.log(`   Mode: Native only (USE_NATIVE_ONLY=${USE_NATIVE_ONLY})`);
         console.log(`   shouldAttemptCropping: ${shouldAttemptCropping(text)}`);
         console.log(`   Page text preview: "${text.substring(0, 100).replace(/\n/g, ' ')}..."`);
-        imageDebug(`page=${pageNumber} stage=start mode=${USE_GEMINI_VISION_ONLY ? 'gemini-only' : 'native+gemini'} shouldAttemptCropping=${shouldAttemptCropping(text)}`);
+        imageDebug(`page=${pageNumber} stage=start mode=native-only shouldAttemptCropping=${shouldAttemptCropping(text)}`);
         
-        // Native extraction (skip if USE_GEMINI_VISION_ONLY = true)
-        if (!USE_GEMINI_VISION_ONLY) {
-          console.log(`   🔧 [NATIVE] Starting native PDF.js extraction...`);
-          try {
-            const nativeImgs = await extractNativeImages(pdfPage, canvas, pageNumber, templateObjIds, text);
-            if (nativeImgs.length > 0) {
-              // Fix 1: Sort by canvasY (top→bottom) so visual order matches heading order.
-              // PDF binary operator order ≠ visual order — without sort, spec diagram and
-              // reference photo can be swapped, causing wrong imageType assignment.
-              const sortedNativeImgs = [...nativeImgs].sort((a, b) => a.canvasY - b.canvasY);
-              croppedImages = sortedNativeImgs.map(n => n.dataUrl);
-              // 🆕 Populate boxesWithPositions from native extraction Y coords
-              // canvasY is already in top-down canvas pixels — store as imageYPos directly
-              nativeBoxesWithPositions = sortedNativeImgs.map(n => ({
-                box: { box: [0,0,0,0] as [number,number,number,number], label: '' } as ImageBoundingBox,
-                imageYPos: n.canvasY
-              }));
-              nativeSuccessCount++;
-              console.log(`   ✅ [NATIVE] SUCCESS: ${nativeImgs.length} native image(s) extracted`);
-              console.log(`   ⏭️  [GEMINI] SKIPPED (native extraction succeeded)`);
-              imageDebug(`page=${pageNumber} source=native count=${nativeImgs.length} status=success`);
-            } else {
-              console.log(`   ○  [NATIVE] EMPTY: no embedded images found`);
-              console.log(`   ⏩ [GEMINI] Will attempt fallback if shouldAttemptCropping=true`);
-              imageDebug(`page=${pageNumber} source=native count=0 status=empty`);
-            }
-          } catch (nativeErr) {
-            console.log(`   ⚠️ [NATIVE] ERROR:`, nativeErr);
-            console.warn(`   ⏩ [GEMINI] Will attempt fallback due to native error`);
-            imageDebugWarn(`page=${pageNumber} source=native status=error`);
+        console.log(`   🔧 [NATIVE] Starting native PDF.js extraction...`);
+        try {
+          const nativeImgs = await extractNativeImages(pdfPage, canvas, pageNumber, templateObjIds, text);
+          if (nativeImgs.length > 0) {
+            // Fix 1: Sort by canvasY (top→bottom) so visual order matches heading order.
+            // PDF binary operator order ≠ visual order — without sort, spec diagram and
+            // reference photo can be swapped, causing wrong imageType assignment.
+            const sortedNativeImgs = [...nativeImgs].sort((a, b) => a.canvasY - b.canvasY);
+            croppedImages = sortedNativeImgs.map(n => n.dataUrl);
+            // 🆕 Populate boxesWithPositions from native extraction Y coords
+            // canvasY is already in top-down canvas pixels — store as imageYPos directly
+            nativeBoxesWithPositions = sortedNativeImgs.map(n => ({
+              box: { box: [0,0,0,0] as [number,number,number,number], label: '' } as ImageBoundingBox,
+              imageYPos: n.canvasY
+            }));
+            nativeSuccessCount++;
+            console.log(`   ✅ [NATIVE] SUCCESS: ${nativeImgs.length} native image(s) extracted`);
+            imageDebug(`page=${pageNumber} source=native count=${nativeImgs.length} status=success`);
+          } else {
+            console.log(`   ○  [NATIVE] EMPTY: no embedded images found`);
+            imageDebug(`page=${pageNumber} source=native count=0 status=empty`);
           }
-        } else {
-          console.log(`   ⏭️  [NATIVE] SKIPPED (USE_GEMINI_VISION_ONLY = true)`);
-          imageDebug(`page=${pageNumber} source=native status=skipped mode=gemini-only`);
+        } catch (nativeErr) {
+          console.log(`   ⚠️ [NATIVE] ERROR:`, nativeErr);
+          imageDebugWarn(`page=${pageNumber} source=native status=error`);
         }
         
         // 🆕 COORDINATE-BASED TYPE DETECTION: Extract heading positions from PDF text
@@ -1740,60 +1392,21 @@ export const extractPDFContent = async (file: File, maxImagePages?: number): Pro
           console.log(`   ⚠️  [HEADINGS] No headings detected - will use fallback keyword detection`);
         }
         
-        // Gemini Vision API (fallback OR primary based on flag)
+        // Gemini Vision disabled — use native positions only
         let boxesWithPositions: Array<{ box: ImageBoundingBox; imageYPos: number }> = [];
-        // 🆕 Use native positions if available (populated during native extraction above)
-        if (typeof nativeBoxesWithPositions !== 'undefined' && nativeBoxesWithPositions.length > 0) {
+        if (nativeBoxesWithPositions.length > 0) {
           boxesWithPositions = nativeBoxesWithPositions;
           console.log(`   📌 [NATIVE-POS] Using ${boxesWithPositions.length} native Y-position(s) for coordinate matching`);
-        }
-        
-        if (!croppedImages && shouldAttemptCropping(text)) {
-          const reason = USE_GEMINI_VISION_ONLY ? 'PRIMARY (testing mode)' : 'FALLBACK (native returned empty)';
-          console.log(`   🔄 [GEMINI] Starting Gemini Vision API - ${reason}`);
-          try {
-            const boxes = await detectImageRegions(imageDataUrl, pageNumber, file.name);
-            console.log(`   📦 [GEMINI] Detected ${boxes.length} bounding box(es)`);
-            if (boxes.length > 0) {
-              const cropped = await cropImageRegions(imageDataUrl, boxes, text);
-              console.log(`   ✂️  [GEMINI] Cropped ${cropped.length} image(s) from boxes`);
-              imageDebug(`page=${pageNumber} source=gemini boxes=${boxes.length} cropped=${cropped.length}`);
-              if (cropped.length > 0) {
-                croppedImages = cropped;
-                
-                // Store boxes with Y-positions for type detection
-                // Convert normalized 0-1000 scale to actual page coordinates
-                boxesWithPositions = boxes.map((box, idx) => {
-                  // box[0] = y_min in 0-1000 scale (top-left = 0)
-                  // Convert to PDF coordinates (bottom-left = 0)
-                  const normalizedYTop = box.box[0] / 1000; // 0.0 to 1.0 from top
-                  const imageYPos = pageHeight * (1 - normalizedYTop); // Flip: bottom = 0
-                  return { box, imageYPos };
-                });
-                
-                console.log(`   ✅ [GEMINI] SUCCESS: ${cropped.length} image(s) extracted`);
-              } else {
-                console.log(`   ○  [GEMINI] EMPTY: cropping returned no images`);
-                imageDebugWarn(`page=${pageNumber} source=gemini status=empty-after-crop boxes=${boxes.length}`);
-              }
-            } else {
-              console.log(`   ○  [GEMINI] EMPTY: no bounding boxes detected`);
-              imageDebugWarn(`page=${pageNumber} source=gemini status=no-boxes`);
-            }
-          } catch (geminiErr) {
-            console.log(`   ⚠️ [GEMINI] ERROR:`, geminiErr);
-            imageDebugWarn(`page=${pageNumber} source=gemini status=error`);
-          }
         } else if (!croppedImages) {
-          console.log(`   ⏭️  [GEMINI] SKIPPED (shouldAttemptCropping=false)`);
-          imageDebug(`page=${pageNumber} source=gemini status=skipped shouldAttemptCropping=false`);
+          console.log(`   ⏭️  [GEMINI] SKIPPED (native-only mode)`);
+          imageDebug(`page=${pageNumber} source=gemini status=skipped mode=native-only`);
         }
 
         // ── REVIEW PAGE FALLBACK ─────────────────────────────────────────────
-        // If native + Gemini both returned nothing AND this is a review page,
+        // If native returned nothing AND this is a review page,
         // use the full-page render + strip header/footer as guaranteed fallback.
         // Review cards are often rendered as rasterized content (not XObjects)
-        // so native extraction misses them. Gemini may also skip if no photo detected.
+        // so native extraction misses them.
         const isReviewPageFallback = /customer\s*review|google\s*review|client\s*review|customer\s*feedback/i.test(text);
         if ((!croppedImages || croppedImages.length === 0) && isReviewPageFallback) {
           console.log(`   📋 [REVIEW-FALLBACK] Review page with no extracted images — using imageDataUrl + header/footer strip`);

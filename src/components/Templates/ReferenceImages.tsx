@@ -1,7 +1,6 @@
 import React, { useMemo, useState, useEffect, useRef } from 'react';
 import './ReferenceImages.css';
 import { extractReviewViaGemini, cropReferencePageImage, cropPageStrippingHeaderFooter, cropSpecAboveReference, cropSpecDiagram, cropPageHalf, cropPageFromPercent, cropPageSlice } from '../../utils/pdfUtils';
-import { getCityServiceRegistry, canonicalizeServiceName, getPageIndexForCity } from '../../hooks/useCityServiceRegistry';
 import { resolveServiceIdsForItems } from '../../utils/serviceResolver';
 import { extractMetroMultiTableSpec, type PdfSpecGroup } from '../../utils/metroSpecParser';
 import {
@@ -553,56 +552,7 @@ function filterPagesByCategory(pages: ExtractedPage[], category: string, cityKey
       return false;
     }
 
-    // CONFLICT GUARD: Dynamically compute sibling-discriminator exclusions from the registry.
-    // A "sibling" is a service that shares ≥2 NON-GENERIC tokens with the current query.
-    // Generic tokens (branding, board, advertisement) are so common they don't uniquely
-    // identify a sibling relationship — excluding them prevents false positives like
-    // "auto semi branding" being treated as a sibling of "bus semi branding" just
-    // because they share "semi" + "branding".
-    // Falls back to hardcoded pairs when registry is not yet loaded (safe silent fallback).
-    const GENERIC_TOKENS = new Set(['branding', 'board', 'advertisement', 'advertising']);
-    const registryConflictFound = (() => {
-      const registry = cityKey ? getCityServiceRegistry().get(cityKey) : null;
-      if (!registry || registry.status !== 'ready') {
-        console.log(`⚠️ [ConflictGuard] Registry not ready for "${cityKey}" — using static fallback`);
-        return false;
-      }
-      const queryTokens = new Set(requiredKeywords);
-      const queryNonGeneric = requiredKeywords.filter(t => !GENERIC_TOKENS.has(t));
-      console.log(`🛡️ [ConflictGuard] Page ${page.pageNumber} | query non-generic tokens: [${queryNonGeneric.join(', ')}] | guardHeading: "${guardHeadingArea.substring(0, 60)}"`);
-      for (const entry of Object.values(registry.entries)) {
-        const siblingTokens = entry.canonicalName.split(/\s+/).filter(Boolean);
-        const siblingNonGeneric = siblingTokens.filter(t => !GENERIC_TOKENS.has(t));
-        // Normalize plural/singular before comparing so "sticker" ≅ "stickers" are treated
-        // as the same token — prevents the registry singular from appearing in siblingUnique
-        // and causing a self-rejection on the correct page.
-        const normalize = (t: string) => t.endsWith('s') && t.length > 4 ? t.slice(0, -1) : t;
-        const normalizedQueryTokens = new Set([...queryTokens].map(normalize));
-        const sharedNonGeneric = siblingNonGeneric.filter(t => normalizedQueryTokens.has(normalize(t)));
-        // Only consider true siblings: share ≥2 non-generic tokens but differ in at least 1
-        if (sharedNonGeneric.length < 2) continue;
-        const siblingUnique = siblingNonGeneric.filter(t => !normalizedQueryTokens.has(normalize(t)));
-        if (siblingUnique.length === 0) continue; // same service, skip
-        // Use word-boundary regex so "sticker" does NOT match inside "stickers" and vice versa
-        const conflictingToken = siblingUnique.find(t => {
-          const wbRe = new RegExp('(?<![a-z0-9])' + t.replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + '(?![a-z0-9])', 'i');
-          return wbRe.test(guardHeadingArea);
-        });
-        if (conflictingToken) {
-          console.warn(`❌ [CONFLICT-GUARD] Page ${page.pageNumber} — sibling "${entry.canonicalName}" discriminator "${conflictingToken}" found in guardHeading`);
-          console.warn('   guardHeadingArea:', JSON.stringify(guardHeadingArea));
-          console.warn('   raw page.text[0..300]:', JSON.stringify(page.text.substring(0, 300)));
-          return true;
-        }
-        console.log(`  ℹ️ [ConflictGuard] Sibling "${entry.canonicalName}" | unique: [${siblingUnique.join(', ')}] | not in guardHeading ✓`);
-      }
-      return false;
-    })();
-
-    if (registryConflictFound) return false;
-
-    // STATIC CONFLICT GUARD (fallback when registry not yet loaded):
-    // Hardcoded pairs for the known Chennai PDF conflicts.
+    // STATIC CONFLICT GUARD — hardcoded pairs for known rate-card heading conflicts.
     const conflictGuards: Array<{ requiredAll: string[]; excludeIfHeadingHas: string[] }> = [
       { requiredAll: ['sun', 'pack'],    excludeIfHeadingHas: ['dye', 'cutting'] },
       { requiredAll: ['dye', 'cutting'], excludeIfHeadingHas: ['sun', 'pack'] },
@@ -1132,41 +1082,6 @@ function filterPagesByQuoteItems(pages: ExtractedPage[], items: QuoteItem[]): Ex
     
     // Loop through EACH service type and collect pages
     for (const serviceType of serviceTypes) {
-      // ── FAST PATH: direct page-index lookup — exact, deterministic, no fuzzy matching ──
-      // The index is built once from PDF pageImages using (N/M) page markers.
-      // If a hit is found, use those page numbers directly and skip the 300-line keyword scan.
-      if (cityKey) {
-        const pageIndexMap = getPageIndexForCity(cityKey);
-        if (pageIndexMap) {
-          // Gemini descriptions often duplicate the service name:
-          //   "30 Sqft Flex Banner - 30 Sqft FLEX BANNER"
-          //   "Direction Board - DIRECTION BOARD"
-          //   "Pamphlet Printing A5 - PAMPHLET PRINTING_ A5"
-          // canonicalizeServiceName of the full string produces a doubled key that
-          // never matches the registry. Fix: try each " - " segment individually so
-          // we find the segment whose canonical matches the registry key.
-          // The underscore in "PAMPHLET PRINTING_ A5" is preserved by normalizeSvc
-          // and is part of the registry key — trying the ALLCAPS segment finds it.
-          const segments = serviceType.split(/\s+-\s+/);
-          let indexedNums: number[] | undefined;
-          let matchedCanonical = '';
-          for (const seg of segments) {
-            const c = canonicalizeServiceName(seg.trim());
-            if (pageIndexMap[c] && pageIndexMap[c].length > 0) {
-              indexedNums = pageIndexMap[c];
-              matchedCanonical = c;
-              break;
-            }
-          }
-          if (indexedNums && indexedNums.length > 0) {
-            console.log(`📇 [PageIndex] Direct hit: "${matchedCanonical}" → pages [${indexedNums.join(', ')}]`);
-            indexedNums.forEach(n => matchedPages.add(n));
-            continue; // skip keyword scan entirely
-          }
-          console.log(`📇 [PageIndex] Miss for "${serviceType}" — falling back to keyword scan`);
-        }
-      }
-
       console.group(`🔍 [ReferenceImages] Searching pages for: "${serviceType}" | city: "${cityKey ?? 'unknown'}"`);
       const matchingPages = filterPagesByCategory(pages, serviceType, cityKey);
       console.groupEnd();

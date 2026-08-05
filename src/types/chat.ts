@@ -77,6 +77,55 @@ export interface Message {
     metadata?: any;
   }>;
 
+  /** Progressive DB+AI chat step (replaces legacy multi-match / city wizard). */
+  isProgressiveChat?: boolean;
+  progressiveStep?:
+    | 'related_services'
+    | 'did_you_mean'
+    | 'pick_city'
+    | 'pick_area'
+    | 'pick_type'
+    | 'pick_direction'
+    | 'no_match'
+    | 'min_qty_confirm'
+    | 'quote_ready'
+    | 'small_talk';
+  progressiveOptions?: Array<{
+    id: string;
+    label: string;
+    serviceId?: string;
+    city?: string;
+    medium?: string;
+    group?: string;
+  }>;
+  progressiveAllowMulti?: boolean;
+  progressiveAutoConfirmed?: string[];
+  progressiveBelowMin?: Array<{
+    service: string;
+    requested: number;
+    minimum: number;
+    serviceId?: string;
+  }>;
+  progressiveSession?: {
+    originalText: string;
+    medium?: string;
+    browseToken?: string;
+    city?: string;
+    area?: string;
+    qty: number | null;
+    durationText?: string | null;
+    candidateServiceIds?: string[];
+    bestGuessServiceId?: string;
+    bestGuessLabel?: string;
+    pendingRows?: Array<{ service: string; qty: number | string; city: string; serviceId?: string }>;
+    pendingMedia?: string[];
+    collectedRows?: Array<{ service: string; qty: number | string; city: string; serviceId?: string }>;
+    collectedServiceIds?: string[];
+    aiReply?: string | null;
+    segments?: Array<{ raw: string; token: string; qty: number | null; city: string | null }>;
+    qtyByServiceId?: Record<string, number>;
+  };
+
   // DEPRECATED (kept for backward compatibility)
   isServiceNotFound?: boolean;
   availableServices?: ServiceSuggestion[];

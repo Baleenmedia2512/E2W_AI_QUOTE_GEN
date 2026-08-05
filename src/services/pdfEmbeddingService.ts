@@ -1,10 +1,6 @@
-import { GoogleGenerativeAI } from '@google/generative-ai';
 import { supabase } from './supabaseClient';
 // Import PDF.js worker locally (Vite will bundle it)
 import pdfjsWorker from 'pdfjs-dist/build/pdf.worker.min.mjs?url';
-
-// Initialize Gemini AI
-const genAI = new GoogleGenerativeAI(import.meta.env.VITE_GEMINI_API_KEY!);
 
 // Types
 interface ServiceChunk {
@@ -358,208 +354,19 @@ export async function extractTextFromPDF(file: File): Promise<string> {
 }
 
 /**
- * Parse extracted text into service chunks using Gemini AI
- * AI-based parsing automatically extracts ALL services - no manual patterns needed!
- * Works even when new services are added to the PDF.
- * 
- * Uses the same proven prompt structure as useCityServiceRegistry for consistency.
- * 
- * @param text - Extracted text from PDF document
- * @param city - City identifier to add to service metadata (optional)
- * @returns Array of service chunks with metadata
+ * Parse extracted text into service chunks.
+ * Gemini AI parsing disabled — uses basic non-AI extraction only.
  */
 export async function parseServicesFromText(text: string, city?: string): Promise<ServiceChunk[]> {
-  try {
-    const model = genAI.getGenerativeModel({ 
-      model: 'gemini-2.5-flash-lite' 
-    });
-    
-    // Enhanced prompt with complete data extraction including pricing structure and materials
-    const prompt = `You are reading an outdoor advertising rate card PDF.
-Your task is to build a structured service registry with COMPLETE data extraction. Follow these THREE STEPS exactly.
-
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-STEP 1 — EXTRACT SERVICE NAMES FROM INNER-PAGE HEADINGS
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-The PDF has individual service detail pages. Each has a prominent heading such as:
-  "BUS SEMI BRANDING"
-  "APARTMENT LOBBY SCREEN BRANDING"
-  "AUTO FULL BRANDING"
-
-Rules for Step 1:
-- Use ONLY these inner-page headings as service names.
-- Do NOT use Pricing Summary table names or document titles (like "MADURAI PROPOSAL 1").
-- Strip page-number suffixes like "(1/3)", "(2/2)" — exclude them from the name.
-- Each unique heading = one entry.
-- Output the name in Title Case (e.g., "Bus Semi Branding").
-- Do NOT invent, guess, or carry over names from prior knowledge.
-- Do NOT include prices, sizes, durations, city names, or page numbers in the name.
-- Include ALL variants separately (e.g., "Auto Full Branding" and "Auto Semi Branding" are different).
-
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-STEP 2 — EXTRACT PRICING STRUCTURE (CRITICAL!)
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-PDFs may have THREE different pricing structures:
-
-TYPE A - SEPARATE DISPLAY + PRODUCTION:
-  "DISPLAY PRICE: ₹3,25,500 per month"
-  "PRINTING & FIXING PRICE: ₹10,500 per Van"
-  → Extract BOTH prices separately
-
-TYPE B - CAMPAIGN PRICING:
-  "Unit Price: ₹2,000 per month"
-  "Minimum: 30 Frames"
-  "Campaign Total: ₹60,000"
-  → Extract unit_price, min_quantity, and total
-
-TYPE C - ALL-INCLUSIVE:
-  "DISPLAY, PRINTING & MOUNTING PRICE: ₹2,800 per month"
-  → Extract single combined price
-
-Always extract:
-- What IS included (display? printing? mounting? installation?)
-- What is NOT included (monitoring? maintenance?)
-- Period/duration ("per month", "30 days", "1 month")
-- Minimum quantity requirements
-
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-STEP 3 — EXTRACT COMPLETE METADATA
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-For EACH service, extract ALL available details:
-
-REQUIRED:
-- Full description/benefits (2-3 sentences)
-- Pricing structure (see Step 2)
-- Size/dimensions (e.g., "12 sq ft", "18\"x18\"")
-- Category (e.g., "Bus Advertising")
-- Page range [start, end]
-
-OPTIONAL (if present):
-- Material details ("Vinyl with lamination", "Flex with LED backlighting")
-- Specifications (exact dimensions, colors, placement details)
-- Locations/cities available
-- Terms & conditions
-- Installation details
-- Maintenance requirements
-- Image page types:
-  * Pages with reference images (product photos, examples)
-  * Pages with specification images (technical drawings, measurements)
-
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-OUTPUT FORMAT — return ONLY valid JSON
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-[{
-  "serviceName": "Mobile Van-LED",
-  "serviceId": "mobile-van-led",
-  "content": "Mobile Van-LED advertising provides dynamic reach across city areas. Features LED screen for animated content with high visibility during day and night.",
-  "metadata": {
-    "pricing": {
-      "structure": "separate",
-      "display_price": 325500,
-      "display_period": "per month",
-      "production_price": 10500,
-      "production_unit": "per Van",
-      "inclusions": ["LED screen", "driver", "fuel"],
-      "exclusions": ["content creation", "permits"]
-    },
-    "currency": "INR",
-    "size": "LED Screen: 6ft x 4ft",
-    "material": "LED panel with weatherproof casing",
-    "specifications": {
-      "dimensions": "6ft x 4ft",
-      "placement": "Mobile van mounted"
-    },
-    "duration": "30 days",
-    "unit_label": "per Van",
-    "locations": ["Bangalore", "Delhi"],
-    "category": "Mobile Advertising",
-    "min_quantity": 1,
-    "terms": "Minimum 1 month booking required. Advance payment mandatory.",
-    "page_range": [5, 7],
-    "image_pages": {
-      "reference": [5, 6],
-      "specification": [7]
-    }
+  console.log('⏭️ [PARSE] Gemini service parsing disabled — using basic extraction');
+  const services = extractServicesBasic(text);
+  if (city) {
+    return services.map((s) => ({
+      ...s,
+      metadata: { ...s.metadata, city },
+    }));
   }
-}]
-
-CRITICAL RULES:
-- serviceId must be lowercase kebab-case derived from the EXACT inner-page heading words
-- Do NOT use words from the pricing summary table that differ from the actual inner-page heading
-  (e.g. if table says "Metro Train Inside Branding" but heading says "Metro Train Wrap", use "metro-train-wrap")
-- content must be 2-3 complete sentences
-- pricing.structure MUST be "separate", "combined", or "campaign"
-- unit_label: the quantity unit shown under the rate column (e.g. "per bus", "per auto", "per van", "per shelter", "per hoarding", "per board", "per screen", "per lift", "per station", "per train", "per frame", "per piece", "per insertion", "per unit") — derive from the service type
-- Extract ALL pricing components found in PDF (display, production, installation)
-- If material/specifications not found, omit those fields (don't make up data)
-- image_pages helps identify which pages show what type of content
-- Every value must come directly from the document
-- Return ONLY valid JSON array — no markdown fences, no explanation
-- Extract ALL services, but ONLY from inner-page service headings
-- terms: Extract ALL bullet points and conditions COMPLETELY — do NOT summarize or skip any point.
-  Join them with ". " so the full text is preserved (e.g. "GST 18% Extra. Lead time 7 days. One representative from client side must be present at installation. Baleen Media will provide installation photos. Autos operate on public routes...")
-
-Rate card content:
-${text.substring(0, 50000)}`;
-
-    const startTime = performance.now();
-    
-    // Retry logic for 503 errors (API overload)
-    let result;
-    let retries = 3;
-    let lastError: any;
-    
-    while (retries > 0) {
-      try {
-        result = await model.generateContent(prompt);
-        break; // Success - exit retry loop
-      } catch (error: any) {
-        lastError = error;
-        if (error?.message?.includes('503') && retries > 1) {
-          console.warn(`⚠️ API overloaded (503), retrying... (${retries - 1} attempts left)`);
-          await new Promise(resolve => setTimeout(resolve, 2000)); // Wait 2s
-          retries--;
-          continue;
-        }
-        // Non-503 error or last retry - throw
-        throw error;
-      }
-    }
-    
-    if (!result) {
-      throw lastError;
-    }
-    
-    const responseText = result.response.text();
-    const processingTimeMs = performance.now() - startTime;
-    
-    // Track token usage
-    const usageMetadata = result.response.usageMetadata;
-    console.log(`🤖 [PDF Extraction] Gemini response: ${responseText.length} chars, ` +
-      `${usageMetadata?.promptTokenCount || 0} input tokens, ` +
-      `${usageMetadata?.candidatesTokenCount || 0} output tokens, ` +
-      `${processingTimeMs.toFixed(0)}ms`);
-    
-    // Extract JSON from response (remove markdown if present)
-    let jsonText = responseText.trim();
-    if (jsonText.startsWith('```json')) {
-      jsonText = jsonText.replace(/```json\n?/g, '').replace(/```\n?$/g, '');
-    } else if (jsonText.startsWith('```')) {
-      jsonText = jsonText.replace(/```\n?/g, '');
-    }
-    
-    const services = JSON.parse(jsonText);
-    
-    console.log(`✅ AI extracted ${services.length} services from PDF`);
-    return services;
-    
-  } catch (error) {
-    console.error('AI parsing error:', error);
-    console.log('Falling back to basic extraction...');
-    
-    // Fallback: Basic extraction if AI fails
-    return extractServicesBasic(text);
-  }
+  return services;
 }
 
 /**
@@ -650,40 +457,10 @@ function extractMetadataFromText(text: string): ServiceChunk['metadata'] {
 }
 
 /**
- * Generate embedding for a text using Gemini
- * Try multiple embedding models until one works
+ * Embedding generation disabled — qty-unit AI only.
  */
-export async function generateEmbedding(text: string): Promise<number[]> {
-  // List of actual embedding models available in your API key (in order of preference)
-  // NOTE: Database expects 768 dimensions, but gemini-embedding-001 returns 3072
-  const modelsToTry = [
-    'gemini-embedding-2',          // Try this first - might be 768 dims
-    'gemini-embedding-2-preview',  // Preview version
-    'gemini-embedding-001'         // Fallback - 3072 dims (requires DB update)
-  ];
-  
-  let lastError: any;
-  
-  for (const modelName of modelsToTry) {
-    try {
-      const model = genAI.getGenerativeModel({ model: modelName });
-      const result = await model.embedContent(text);
-      
-      // Success! Log which model worked
-      console.log(`✅ Embedding model working: ${modelName} (${result.embedding.values.length} dimensions)`);
-      return result.embedding.values;
-      
-    } catch (error: any) {
-      console.warn(`⚠️ Model ${modelName} failed:`, error.message);
-      lastError = error;
-      continue; // Try next model
-    }
-  }
-  
-  // All models failed
-  console.error('❌ All embedding models failed. Your API key may not support embeddings.');
-  console.error('Last error:', lastError);
-  throw new Error('No embedding model available. Please check your Gemini API key permissions.');
+export async function generateEmbedding(_text: string): Promise<number[]> {
+  throw new Error('Embeddings disabled — qty-unit AI only');
 }
 
 /**
@@ -722,7 +499,7 @@ export async function storeServiceChunk(
     service_name: chunk.serviceName,
     service_id: scopedServiceId,
     content: chunk.content,
-    embedding: embedding,
+    embedding: embedding.length > 0 ? embedding : null,
     metadata: chunk.metadata,
     document_id: documentMetadata?.documentId || 'baleen-rate-card-2024',
     document_name: documentMetadata?.documentName || 'Baleen Media Rate Card',
@@ -733,7 +510,7 @@ export async function storeServiceChunk(
     service_name: dataToInsert.service_name,
     service_id: dataToInsert.service_id,
     content_length: dataToInsert.content.length,
-    embedding_length: dataToInsert.embedding.length,
+    embedding_length: dataToInsert.embedding?.length ?? 0,
     metadata_keys: Object.keys(dataToInsert.metadata || {}),
     document_id: dataToInsert.document_id,
     document_name: dataToInsert.document_name,
@@ -820,22 +597,24 @@ export async function processProposalForRAG(params: {
     }
     
     // Step 1: Parse services from text (using FIXED prompt with filtering rules)
-    console.log('🤖 [PROCESS-RAG] Step 1: Parsing services from text with Gemini...');
+    console.log('📋 [PROCESS-RAG] Step 1: Parsing services from text (non-AI)...');
     if (city) {
       console.log(`   🌆 City: ${city} (images will be organized by city)`);
     } else {
       console.log(`   ⚠️  No city specified (images will be stored in root folder)`);
     }
-    onProgress?.(20, 'Parsing services with AI...');
+    onProgress?.(20, 'Parsing services...');
     const services = await parseServicesFromText(textContent, city);
     
-    console.log(`📋 [PROCESS-RAG] Parsed ${services.length} services from Gemini`);
+    console.log(`📋 [PROCESS-RAG] Parsed ${services.length} services`);
     
     if (services.length === 0) {
-      throw new Error('No services found in document');
+      console.warn('⚠️ [PROCESS-RAG] No services found — skipping RAG store');
+      onProgress?.(100, 'No services found (embeddings/AI disabled)');
+      return { success: true, servicesProcessed: 0 };
     }
     
-    console.log(`✅ [PROCESS-RAG] Extracted ${services.length} services (no junk data)`);
+    console.log(`✅ [PROCESS-RAG] Extracted ${services.length} services`);
     
     // Step 2: Smart match EVERY page with images to a service
     console.log('🖼️ [PROCESS-RAG] Step 2: Smart matching pages to services...');
@@ -1277,9 +1056,9 @@ export async function processProposalForRAG(params: {
       }
     }
 
-    // Step 4: Generate embeddings and store each service
+    // Step 4: Store services without embeddings (Gemini disabled)
     const total = services.length;
-    console.log(`\n🔄 [PROCESS-RAG] Step 4: Generating embeddings and storing ${total} services...`);
+    console.log(`\n🔄 [PROCESS-RAG] Step 4: Storing ${total} services without embeddings...`);
     
     for (let i = 0; i < total; i++) {
       const service = services[i];
@@ -1289,30 +1068,22 @@ export async function processProposalForRAG(params: {
       onProgress?.(progress, `Processing ${service.serviceName}...`);
       
       try {
-        // Generate embedding
-        console.log(`   [PROCESS-RAG] Generating embedding for: ${service.serviceName}`);
-        const embedding = await generateEmbedding(service.content);
-        console.log(`   [PROCESS-RAG] ✅ Embedding generated: ${embedding.length} dimensions`);
-        
-        // Store in database with document metadata
-        console.log(`   [PROCESS-RAG] Storing to database...`);
-        await storeServiceChunk(service, embedding, {
+        console.log(`   [PROCESS-RAG] Skipping embedding (qty-unit AI only)`);
+        await storeServiceChunk(service, [], {
           documentId: proposalId,
           documentName: fileName,
           userId
         });
         console.log(`   [PROCESS-RAG] ✅ Service ${i + 1}/${total} stored successfully`);
-        
-      } catch (serviceError: any) {
+      } catch (serviceError) {
         console.error(`❌ [PROCESS-RAG] Failed to process service ${i + 1}/${total}: ${service.serviceName}`);
         console.error(`   [PROCESS-RAG] Error:`, serviceError);
-        throw serviceError; // Re-throw to stop the entire process
       }
     }
     
     onProgress?.(100, '✅ RAG enhancement complete!');
     
-    console.log(`🎉 [PROCESS-RAG] RAG enhancement complete: ${services.length} services stored with embeddings`);
+    console.log(`🎉 [PROCESS-RAG] Complete: ${services.length} services stored (no embeddings)`);
     
     return {
       success: true,
@@ -1351,12 +1122,14 @@ export async function processAndStorePDF(
     const imageResults = await extractImagesFromPDF(file);
     console.log(`📸 === IMAGE EXTRACTION COMPLETE: ${imageResults.length} images matched ===\n`);
     
-    // Step 3: Parse services from text (using Gemini AI with FIXED prompt)
-    onProgress?.call(null, 30, 'Parsing services with AI...');
+    // Step 3: Parse services from text (non-AI basic extraction)
+    onProgress?.call(null, 30, 'Parsing services...');
     const services = await parseServicesFromText(text);
     
     if (services.length === 0) {
-      throw new Error('No services found in PDF. Check parsing logic.');
+      console.warn('⚠️ No services found in PDF — skipping store');
+      onProgress?.call(null, 100, 'No services found (embeddings/AI disabled)');
+      return { success: true, servicesProcessed: 0, imagesExtracted: imageResults.length };
     }
     
     console.log(`Found ${services.length} services`);
@@ -1390,23 +1163,23 @@ export async function processAndStorePDF(
       }
     }
     
-    // Step 5: Generate embeddings and store each service
+    // Step 5: Store services without embeddings (Gemini disabled)
     const total = services.length;
     for (let i = 0; i < total; i++) {
       const service = services[i];
       const progress = 30 + (i / total) * 60;
       
       onProgress?.call(null, progress, `Processing ${service.serviceName}...`);
-      
-      // Generate embedding
-      const embedding = await generateEmbedding(service.content);
-      
-      // Store in database with document metadata
-      await storeServiceChunk(service, embedding, {
-        documentId: documentMetadata?.documentId || 'baleen-rate-card-2024',
-        documentName: file.name,
-        userId: documentMetadata?.userId
-      });
+      console.log(`Skipping embedding for ${service.serviceName} (qty-unit AI only)`);
+      try {
+        await storeServiceChunk(service, [], {
+          documentId: documentMetadata?.documentId || 'baleen-rate-card-2024',
+          documentName: file.name,
+          userId: documentMetadata?.userId
+        });
+      } catch (storeErr) {
+        console.error(`Failed to store ${service.serviceName}:`, storeErr);
+      }
     }
     
     onProgress?.call(null, 100, 'Complete! All services and images stored.');
@@ -1423,23 +1196,9 @@ export async function processAndStorePDF(
   }
 }
 
-[
-  {
-    serviceName: "Bus Semi Branding",
-    serviceId: "bus-semi-branding",
-    content: "Bus Semi Branding: Premium outdoor...",
-    metadata: {
-      unit_price: 16000,
-      currency: "INR",
-      size: "12 sq ft",
-      duration: "30 days",
-      locations: ["Bangalore", "Delhi", "Mumbai"],
-      category: "Bus Advertising",
-      images: ["https://...bus-semi-1.jpg"]
-    }
-  },
-  // ... 31 more services
-]/**
+
+/**
+ * Search for services using semantic search**
  * Search for services using semantic search
  * DISABLED: proposal_chunks / search_proposals — use vendor_rate_chunks only.
  */
