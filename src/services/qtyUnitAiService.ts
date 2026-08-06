@@ -4,17 +4,10 @@
  */
 
 import type { QuoteItem } from '../types/quote';
+import { generateContent, TraceContext } from './geminiClient';
 
 const MODEL = 'gemini-3.1-flash-lite';
 const BATCH_SIZE = 20;
-
-function getApiKey(): string {
-  const apiKey = import.meta.env.VITE_GEMINI_API_KEY;
-  if (!apiKey || String(apiKey).trim() === '') {
-    throw new Error('Gemini API key not configured (VITE_GEMINI_API_KEY)');
-  }
-  return String(apiKey).trim();
-}
 
 function isNaLikeUnit(value: string | undefined | null): boolean {
   if (value == null || String(value).trim() === '') return true;
@@ -78,13 +71,11 @@ function parseIndexedUnitMap(raw: string, count: number): Record<number, string>
  */
 async function inferQtyUnitsBatchRest(
   labels: string[],
+  trace?: TraceContext
 ): Promise<Record<string, string>> {
   const unique = [...new Set(labels.map((l) => l.trim()).filter(Boolean))];
   const resultMap: Record<string, string> = {};
   if (unique.length === 0) return resultMap;
-
-  const apiKey = getApiKey();
-  const url = `https://generativelanguage.googleapis.com/v1beta/models/${MODEL}:generateContent?key=${encodeURIComponent(apiKey)}`;
 
   for (let start = 0; start < unique.length; start += BATCH_SIZE) {
     const chunk = unique.slice(start, start + BATCH_SIZE);
@@ -109,56 +100,33 @@ async function inferQtyUnitsBatchRest(
       listBlock,
     ].join('\n');
 
-    const body = {
-      contents: [{ role: 'user', parts: [{ text: prompt }] }],
-      generationConfig: {
-        temperature: 0,
-        maxOutputTokens: 4096,
-        responseMimeType: 'application/json',
-      },
-    };
-
-    console.warn('🏷️ [QtyUnit-AI-EXACT] REST_REQUEST', {
-      model: MODEL,
+    console.warn('🏷️ [QtyUnit-AI-EXACT] REQUEST', {
+      model: 'default',
       chunkStart: start,
       chunkSize: chunk.length,
-      sample: chunk.slice(0, 2),
-      apiKeyLength: apiKey.length,
+      sample: chunk.slice(0, 2)
     });
 
-    let httpStatus = 0;
-    let json: unknown = null;
+    let json: any = null;
+    let response: any = null;
     try {
-      const res = await fetch(url, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(body),
-      });
-      httpStatus = res.status;
-      json = await res.json();
+      const res = await generateContent(
+        prompt,
+        { module: 'QTY_UNIT_EXTRACT', ...trace },
+        undefined,
+        { temperature: 0, maxOutputTokens: 4096, responseMimeType: 'application/json' }
+      );
+      const raw = res.response.text();
+      json = JSON.parse(raw);
+      response = { candidates: [{ finishReason: 'STOP', content: { parts: [{ text: raw }] } }] };
     } catch (err) {
-      console.error('🏷️ [QtyUnit-AI-EXACT] REST_FETCH_FAIL', err);
+      console.error('🏷️ [QtyUnit-AI-EXACT] FETCH_FAIL', err);
       continue;
     }
 
-    console.warn('🏷️ [QtyUnit-AI-EXACT] REST_RESPONSE', {
-      httpStatus,
+    console.warn('🏷️ [QtyUnit-AI-EXACT] RESPONSE', {
       bodyPreview: JSON.stringify(json).slice(0, 1500),
     });
-
-    if (httpStatus < 200 || httpStatus >= 300) {
-      console.error('🏷️ [QtyUnit-AI-EXACT] REST_HTTP_ERROR', { httpStatus, json });
-      continue;
-    }
-
-    const response = json as {
-      candidates?: Array<{
-        finishReason?: string;
-        content?: { parts?: Array<{ text?: string; thought?: boolean }> };
-      }>;
-      promptFeedback?: unknown;
-      error?: unknown;
-    };
 
     if (response.error) {
       console.error('🏷️ [QtyUnit-AI-EXACT] REST_API_ERROR', response.error);
@@ -217,6 +185,7 @@ let enrichInFlight: Promise<QuoteItem[]> | null = null;
  */
 export async function enrichMissingQtyUnitsWithAi(
   items: QuoteItem[],
+  trace?: TraceContext
 ): Promise<QuoteItem[]> {
   if (enrichInFlight) {
     console.warn('🏷️ [QtyUnit-AI-EXACT] join in-flight enrich');
@@ -237,7 +206,7 @@ export async function enrichMissingQtyUnitsWithAi(
     });
 
     const unitByLabel =
-      uniqueMissing.length > 0 ? await inferQtyUnitsBatchRest(uniqueMissing) : {};
+      uniqueMissing.length > 0 ? await inferQtyUnitsBatchRest(uniqueMissing, trace) : {};
 
     const out = items.map((item) => {
       if (!isNaLikeUnit(item.quantityUnit)) return item;
@@ -262,7 +231,8 @@ export async function enrichMissingQtyUnitsWithAi(
 
 export async function inferQtyMeasurementUnitWithAi(
   serviceName: string,
+  trace?: TraceContext
 ): Promise<string | undefined> {
-  const map = await inferQtyUnitsBatchRest([serviceName]);
+  const map = await inferQtyUnitsBatchRest([serviceName], trace);
   return map[serviceName.trim().toLowerCase()];
 }

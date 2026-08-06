@@ -11,10 +11,10 @@ import { useAppStore } from '../store';
  * 3. Enable real-time sync (optional)
  */
 export const useCompanySync = (enableRealtime: boolean = false) => {
-  const syncCompanyFromDatabase = useAppStore((state) => state.syncCompanyFromDatabase);
-  const enableCompanySync = useAppStore((state) => state.enableCompanySync);
-
   useEffect(() => {
+    // Access state directly to prevent "Invalid hook call" if multiple React instances exist
+    const { syncCompanyFromDatabase, enableCompanySync } = useAppStore.getState();
+
     // Initial sync from database
     console.log('🔄 Initializing company database sync...');
     syncCompanyFromDatabase();
@@ -32,5 +32,5 @@ export const useCompanySync = (enableRealtime: boolean = false) => {
         subscription.unsubscribe();
       }
     };
-  }, [syncCompanyFromDatabase, enableCompanySync, enableRealtime]);
+  }, [enableRealtime]);
 };

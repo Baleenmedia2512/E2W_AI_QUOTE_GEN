@@ -97,7 +97,7 @@ function generateRecordId(): string {
 export function calculateCost(
   inputTokens: number,
   outputTokens: number,
-  model: GeminiModel = 'gemini-2.5-flash-lite'
+  model: GeminiModel = 'gemini-3.1-flash-lite'
 ): { inputCost: number; outputCost: number; totalCost: number } {
   const pricing = GEMINI_PRICING[model];
   
@@ -137,7 +137,7 @@ export function trackTokenUsage(params: {
     inputTokens,
     outputTokens,
     processingTimeMs,
-    model = 'gemini-2.5-flash-lite',
+    model = 'gemini-3.1-flash-lite',
     pdfId,
     pdfFileName,
     isFullUpload,
@@ -232,7 +232,7 @@ export function logApiRequest(params: {
   
   console.log('🚀 [API CALL] Gemini Request', {
     operation: params.operationType,
-    model: params.model || 'gemini-2.5-flash-lite',
+    model: params.model || 'gemini-3.1-flash-lite',
     estimatedInputTokens: params.estimatedInputTokens,
     ...params.contextDetails,
     timestamp: new Date().toISOString()

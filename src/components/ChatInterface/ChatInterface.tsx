@@ -897,10 +897,19 @@ const ChatInterface: React.FC = () => {
         >;
         try {
           const { parseChatIntentWithAi } = await import('../../services/chatIntentAiService');
-          intent = await parseChatIntentWithAi(cleanedText, {
-            types: catalogTypes,
-            cities: catalogCities,
-          });
+          intent = await parseChatIntentWithAi(
+            cleanedText, 
+            {
+              types: catalogTypes,
+              cities: catalogCities,
+            },
+            3500,
+            {
+              userId: user?.id || null,
+              userName: user?.full_name || null,
+              userEmail: user?.email || null,
+            }
+          );
         } catch {
           intent = null;
         }

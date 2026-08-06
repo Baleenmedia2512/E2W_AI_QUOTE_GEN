@@ -1,9 +1,10 @@
+import { generateContent, TraceContext } from './geminiClient';
+
 /**
  * AI chat planner — any wording → plan. Never invents prices or types.
  * Catalog types + cities come from DB only (no hardcoded bus/hoarding/led lists).
  */
 
-const MODEL = 'gemini-2.5-flash-lite';
 
 export interface ChatIntentHint {
   kind?: 'greeting' | 'help' | 'quote' | 'clarify_type' | 'city_browse' | 'other' | null;
@@ -23,12 +24,6 @@ export interface ChatIntentHint {
 export interface ChatPlannerCatalog {
   types: string[];
   cities: string[];
-}
-
-function getApiKey(): string | null {
-  const apiKey = import.meta.env.VITE_GEMINI_API_KEY;
-  if (!apiKey || String(apiKey).trim() === '') return null;
-  return String(apiKey).trim();
 }
 
 function normalizeMediaList(raw: unknown): string[] {
@@ -123,21 +118,17 @@ export async function parseChatIntentWithAi(
   userText: string,
   catalog: ChatPlannerCatalog | string[] = [],
   timeoutMs = 3500,
+  trace?: TraceContext
 ): Promise<ChatIntentHint | null> {
-  const apiKey = getApiKey();
-  if (!apiKey || !userText.trim()) return null;
+  if (!userText.trim()) return null;
 
   const types = Array.isArray(catalog) ? catalog : (catalog.types || []);
   const cities = Array.isArray(catalog) ? [] : (catalog.cities || []);
-
-  const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), timeoutMs);
 
   const typeList = types.length > 0 ? types.slice(0, 100).join(' | ') : '(none)';
   const cityList = cities.length > 0 ? cities.slice(0, 40).join(' | ') : '(none)';
 
   try {
-    const url = `https://generativelanguage.googleapis.com/v1beta/models/${MODEL}:generateContent?key=${encodeURIComponent(apiKey)}`;
     const prompt = [
       'You plan steps for an advertising quote chatbot.',
       'Return ONLY compact JSON (no markdown):',
@@ -179,19 +170,16 @@ export async function parseChatIntentWithAi(
       `User: ${userText.trim()}`,
     ].join('\n');
 
-    const res = await fetch(url, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      signal: controller.signal,
-      body: JSON.stringify({
-        contents: [{ role: 'user', parts: [{ text: prompt }] }],
-        generationConfig: { temperature: 0.1, maxOutputTokens: 240 },
-      }),
-    });
+    const reqPromise = generateContent(
+      prompt,
+      { module: 'CHAT_INTENT', ...trace },
+      undefined,
+      { temperature: 0.1, maxOutputTokens: 240 }
+    );
+    const timeoutPromise = new Promise((_, reject) => setTimeout(() => reject(new Error('Timeout')), timeoutMs));
+    const res = await Promise.race([reqPromise, timeoutPromise]) as any;
 
-    if (!res.ok) return null;
-    const data = await res.json();
-    const raw = data?.candidates?.[0]?.content?.parts?.[0]?.text;
+    const raw = res.response.text();
     if (!raw || typeof raw !== 'string') return null;
 
     let jsonText = raw.trim();

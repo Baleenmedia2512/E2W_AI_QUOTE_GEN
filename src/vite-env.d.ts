@@ -7,6 +7,8 @@ declare const __BUILD_TIMESTAMP__: number;
 
 interface ImportMetaEnv {
   readonly VITE_GEMINI_API_KEY: string;
+  readonly VITE_AI_MONITOR_SDK_KEY: string;
+  readonly VITE_AI_MONITOR_BASE_URL: string;
   // Add more env variables here as needed
 }
 

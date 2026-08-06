@@ -33,6 +33,7 @@
     "@ionic/react-router": "^7.8.0",
     "@react-pdf/renderer": "^4.5.1",
     "@supabase/supabase-js": "^2.100.1",
+    "ai-token-monitor": "^1.0.9",
     "bcryptjs": "^3.0.3",
     "framer-motion": "^12.38.0",
     "html2canvas": "^1.4.1",

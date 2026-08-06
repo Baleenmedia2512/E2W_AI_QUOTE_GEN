@@ -245,7 +245,7 @@ export interface DeltaComparison {
 
 // Gemini pricing constants (as of 2026)
 export const GEMINI_PRICING = {
-  'gemini-2.5-flash-lite': {
+  'gemini-3.1-flash-lite': {
     inputPer1M: 0.075,   // $0.075 per 1M input tokens
     outputPer1M: 0.30,   // $0.30 per 1M output tokens
   },
