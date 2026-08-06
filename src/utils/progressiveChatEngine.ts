@@ -2180,11 +2180,23 @@ export function advanceFunnel(
         };
       }
       if (types.length === 1) {
-        sess = {
-          ...sess,
-          mediumType: canonicalizeServiceName(types[0].mediumType || types[0].label),
-        };
-        continue;
+        // Don't auto-lock the single type when the pool also contains untyped services
+        // for the same medium (e.g. plain "Police Booth" alongside "Police Booth Inside").
+        // Auto-locking would silently narrow city options to only the typed variant's cities.
+        const wantedMedium = canonicalizeServiceName(sess.medium || '');
+        const hasUntypedSiblings = pool.some(
+          (s) =>
+            canonicalizeServiceName(getMediumKey(s)) === wantedMedium
+            && !getMediumTypeFromDb(s),
+        );
+        if (!hasUntypedSiblings) {
+          sess = {
+            ...sess,
+            mediumType: canonicalizeServiceName(types[0].mediumType || types[0].label),
+          };
+          continue;
+        }
+        // Untyped siblings exist — skip type auto-lock; city step will include all variants
       }
       // 0 types — skip
     }
