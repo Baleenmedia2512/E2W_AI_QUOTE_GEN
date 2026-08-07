@@ -48,6 +48,20 @@ Before asking the next question, say what the catalogue currently provides.
 | Unknown input | `I couldn't match that with our available advertising services.` + options |
 | Quote ready | `Your quotation is ready.` / `Opening quotation preview.` |
 
+## Catalogue browse questions
+
+Answer listing questions with **DB chips** (chip pick continues into the quote funnel):
+
+| User asks | Response |
+|-----------|----------|
+| What services are available? / `services?` | Distinct medium chips |
+| Which cities are available? / `cities?` | DB city chips (scoped to locked service if any) |
+| What areas are available? | `area_name` chips (scoped to city/service) |
+| What types / options? | Type or medium+type chips |
+| Services in Chennai / Cities for bus | Same lists, scoped |
+
+Never invent rows. Exactly 1 option → auto-lock and continue.
+
 ## Overrides (every message)
 
 - New **service** → update service; **keep city/area**; clear type/direction/candidates for old service; continue
@@ -58,6 +72,11 @@ Before asking the next question, say what the catalogue currently provides.
 ## Context
 
 Remember service, type, city, area, direction, qty, duration. Do not re-ask known fields. Do not restart.
+
+## Implementation notes
+
+* `detectCatalogueBrowseQuery` + `startCatalogueBrowse` in `progressiveChatEngine.ts`.
+* Keep funnel matching rules from `progressive-chat-funnel.mdc`.
 
 ## Quality checklist (before every reply)
 

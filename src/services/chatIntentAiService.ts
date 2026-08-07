@@ -220,6 +220,8 @@ export async function parseChatIntentWithAi(
       '  "bus" → "We currently provide bus advertising services. Which option do you need?"',
       '  "led" → "We currently provide LED advertising options. Which option do you need?"',
       '  "chennai" → "We currently provide the following services in Chennai. Which service would you like?"',
+      '  "what services are available?" → "We currently provide the following advertising services. Which service would you like?"',
+      '  "which cities are available?" → "We currently provide services in these cities. Which city would you like?"',
       '  "bus chennai" → "We currently provide bus advertising services in Chennai. Which option do you need?"',
       '  "near ecr" → "We currently provide the following services near ECR. Which service would you like?"',
       '  "bus semi branding" → "Bus Semi Branding is available in more than one city. Which city do you need?"',

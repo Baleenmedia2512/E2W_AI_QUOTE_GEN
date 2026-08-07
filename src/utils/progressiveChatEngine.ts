@@ -573,6 +573,282 @@ function copyWhichService(session?: ProgressiveSession | null): string {
   }).text;
 }
 
+/** Catalogue Q&A: "what services/cities/areas/types are available?" */
+export type CatalogueBrowseKind = 'services' | 'cities' | 'areas' | 'types';
+
+/**
+ * Detect listing / availability questions (not a plain quote request).
+ * Examples: "what services are available?", "which cities?", "areas available in chennai"
+ */
+export function detectCatalogueBrowseQuery(text: string): CatalogueBrowseKind | null {
+  const t = (text || '').trim();
+  if (!t) return null;
+
+  if (/^services?\??$/i.test(t)) return 'services';
+  if (/^(cities|locations?)\??$/i.test(t)) return 'cities';
+  if (/^areas?\??$/i.test(t)) return 'areas';
+  if (/^(types?|options?)\??$/i.test(t)) return 'types';
+
+  const lower = t.toLowerCase();
+  const listing =
+    /\b(what|which|list|show|tell\s+me)\b/.test(lower)
+    || /\b(available|availability)\b/.test(lower)
+    || /\bdo you (offer|have|provide)\b/.test(lower)
+    || /\bwhat('?s| is) available\b/.test(lower);
+
+  if (!listing) return null;
+
+  // Prefer specific axis (types before services — "service types")
+  if (/\b(service\s+types?|types?|variants?)\b/.test(lower)) return 'types';
+  if (/\b(areas?|localit(?:y|ies)|neighbourhoods?|neighborhoods?)\b/.test(lower)) {
+    return 'areas';
+  }
+  if (/\b(cities|city|locations?|metros?)\b/.test(lower)) return 'cities';
+  if (/\b(services?|products?|media)\b/.test(lower)) return 'services';
+  if (
+    /\bwhat('?s| is) available\b/.test(lower)
+    || /\bdo you (offer|have|provide)\b/.test(lower)
+  ) {
+    return 'services';
+  }
+  return null;
+}
+
+/**
+ * Answer catalogue questions with DB chips — picking a chip continues into the quote funnel.
+ */
+function startCatalogueBrowse(
+  kind: CatalogueBrowseKind,
+  session: ProgressiveSession,
+  services: DbService[],
+  reply?: string | null,
+): ProgressiveTurnResult {
+  const scopedCity = session.city;
+  const scopedMed = session.browseToken || session.medium;
+  let pool = [...services];
+  if (scopedCity) {
+    pool = pool.filter((s) => serviceMatchesCityLabel(s, scopedCity));
+  }
+  // Cities/areas/types can be scoped to a named service; "what services?" lists the full menu
+  if (kind !== 'services' && scopedMed) {
+    const by = filterForBrowseOrFamily(pool, scopedMed);
+    if (by.length) pool = by;
+  }
+
+  if (!pool.length) {
+    if (scopedCity) {
+      return {
+        step: 'no_match',
+        botText: copyUnknownCity(scopedCity, session),
+        options: [],
+        session: stampReplyMeta(session, '', `browse:${kind}:${scopedCity}`),
+      };
+    }
+    return softClarifyNeed(services, session, reply);
+  }
+
+  if (kind === 'services') {
+    const options = uniqueMediumOnlyOptions(pool).slice(0, 40);
+    if (!options.length) {
+      return softClarifyNeed(services, session, reply);
+    }
+    const { text, opener } = composeReply(session, {
+      avail: scopedCity
+        ? `We currently provide the following services in ${scopedCity}.`
+        : 'We currently provide the following advertising services.',
+      ask: 'Which service would you like?',
+      preferredOpeners: ["Here's what we found.", '', 'Hello!'],
+    });
+    return {
+      step: 'pick_type',
+      botText: reply || text,
+      options,
+      allowMulti: true,
+      session: stampReplyMeta(
+        {
+          ...session,
+          // Fresh service pick from catalogue
+          medium: undefined,
+          browseToken: undefined,
+          mediumType: undefined,
+          typesResolved: undefined,
+          candidateServiceIds: pool.map((s) => s.service_id),
+          needsContinueConfirm: false,
+        },
+        opener,
+      ),
+    };
+  }
+
+  if (kind === 'cities') {
+    const options = uniqueCityOptionsFromPool(pool, scopedMed).slice(0, 40);
+    if (!options.length) {
+      return {
+        step: 'no_match',
+        botText: composeReply(session, {
+          avail: scopedMed
+            ? `We're currently not listing cities for ${titleCase(scopedMed)}.`
+            : "We're currently not listing cities.",
+          ask: 'Please choose a service first, or try another question.',
+        }).text,
+        options: uniqueMediumOnlyOptions(services).slice(0, 24),
+        allowMulti: true,
+        session: stampReplyMeta(
+          { ...session, medium: undefined, browseToken: undefined },
+          '',
+          `browse:cities:empty`,
+        ),
+      };
+    }
+    if (options.length === 1) {
+      return advanceFunnel(
+        lockOneCity(
+          {
+            ...session,
+            medium: scopedMed ? canonicalizeServiceName(scopedMed) : session.medium,
+            browseToken: scopedMed ? canonicalizeServiceName(scopedMed) : session.browseToken,
+            candidateServiceIds: pool.map((s) => s.service_id),
+          },
+          pool,
+          options[0].city || options[0].label,
+        ),
+        services,
+        reply
+          || composeReply(session, {
+            avail: `We currently provide${scopedMed ? ` ${titleCase(scopedMed)}` : ''} services in ${options[0].label}.`,
+          }).text,
+      );
+    }
+    const { text, opener } = composeReply(session, {
+      avail: scopedMed
+        ? `We currently provide ${titleCase(scopedMed)} in these cities.`
+        : 'We currently provide services in these cities.',
+      ask: 'Which city would you like?',
+      preferredOpeners: ["Here's what we found.", '', "Let's continue."],
+    });
+    return {
+      step: 'pick_city',
+      botText: reply || text,
+      options,
+      allowMulti: true,
+      session: stampReplyMeta(
+        {
+          ...session,
+          candidateServiceIds: pool.map((s) => s.service_id),
+          needsContinueConfirm: false,
+        },
+        opener,
+      ),
+    };
+  }
+
+  if (kind === 'areas') {
+    const options = uniqueAreaOptionsFromPool(pool, scopedCity, scopedMed).slice(0, 40);
+    if (!options.length) {
+      return {
+        step: 'no_match',
+        botText: composeReply(session, {
+          avail: scopedCity
+            ? `We're currently not listing areas in ${scopedCity}.`
+            : "We're currently not listing areas for that selection.",
+          ask: 'Please choose a city or service, or pick from the options below.',
+        }).text,
+        options: scopedCity
+          ? uniqueMediumOnlyOptions(pool).slice(0, 24)
+          : uniqueCityOptionsFromPool(services).slice(0, 24),
+        allowMulti: true,
+        session: stampReplyMeta(session, '', 'browse:areas:empty'),
+      };
+    }
+    if (options.length === 1) {
+      return advanceFunnel(
+        {
+          ...session,
+          area: options[0].label,
+          placeHint: options[0].label,
+          candidateServiceIds: pool.map((s) => s.service_id),
+        },
+        services,
+        reply
+          || composeReply(session, {
+            avail: `We currently provide services in ${options[0].label}${scopedCity ? ` · ${scopedCity}` : ''}.`,
+          }).text,
+      );
+    }
+    const { text, opener } = composeReply(session, {
+      avail: scopedCity
+        ? `We currently provide services in these areas in ${scopedCity}.`
+        : 'We currently provide services in these areas.',
+      ask: 'Which area would you like?',
+      preferredOpeners: ["Here's what we found.", '', "Let's continue."],
+    });
+    return {
+      step: 'pick_area',
+      botText: reply || text,
+      options,
+      allowMulti: true,
+      session: stampReplyMeta(
+        {
+          ...session,
+          candidateServiceIds: pool.map((s) => s.service_id),
+          needsContinueConfirm: false,
+        },
+        opener,
+      ),
+    };
+  }
+
+  // types
+  const exact = scopedMed && isExactCatalogMedium(scopedMed, services);
+  const options = (
+    exact
+      ? uniqueTypeOnlyOptions(pool, scopedMed)
+      : uniqueMediumLabelsWithExamples(pool)
+  ).slice(0, 40);
+  if (!options.length) {
+    return startCatalogueBrowse('services', session, services, reply);
+  }
+  if (options.length === 1) {
+    return advanceFunnel(
+      {
+        ...session,
+        medium: canonicalizeServiceName(options[0].medium || scopedMed || ''),
+        mediumType: options[0].mediumType
+          ? canonicalizeServiceName(options[0].mediumType)
+          : session.mediumType,
+        typesResolved: true,
+        browseToken: canonicalizeServiceName(options[0].medium || scopedMed || ''),
+        candidateServiceIds: pool.map((s) => s.service_id),
+      },
+      services,
+      reply,
+    );
+  }
+  const { text, opener } = composeReply(session, {
+    avail: scopedMed
+      ? `We currently provide these ${titleCase(scopedMed)} options${scopedCity ? ` in ${scopedCity}` : ''}.`
+      : scopedCity
+        ? `We currently provide these options in ${scopedCity}.`
+        : 'We currently provide these service types.',
+    ask: 'Which option would you like?',
+    preferredOpeners: ["Here's what we found.", '', "Let's continue."],
+  });
+  return {
+    step: 'pick_type',
+    botText: reply || text,
+    options,
+    allowMulti: true,
+    session: stampReplyMeta(
+      {
+        ...session,
+        candidateServiceIds: pool.map((s) => s.service_id),
+        needsContinueConfirm: false,
+      },
+      opener,
+    ),
+  };
+}
+
 /** Labels for every collected batch line (not just the last). */
 function collectedServiceLabels(
   rows: ConfirmationRow[] | undefined,
@@ -4614,6 +4890,7 @@ export function canSkipChatIntentAi(userText: string, services: DbService[]): bo
   if (!t) return true;
   if (/^(hi|hello|hey|hii|hai|howdy|yo|hola)[\s!.]*$/i.test(t)) return true;
   if (/^(thanks|thank\s*you|thx|ok|okay|bye)[\s!.]*$/i.test(t)) return true;
+  if (detectCatalogueBrowseQuery(t)) return true;
   if (isCityOnlyQuery(t, services)) return true;
   if (isLocalityOnlyQuery(t, services)) return true;
   if (parseServiceSegments(t, services).length >= 2) return true;
@@ -4756,6 +5033,35 @@ function resolveProgressiveTextInner(
   }
   if (preservePrior && !city && baseSessionFields.city) {
     // city variable used below — allow prior city to remain via baseSessionFields only
+  }
+
+  // Catalogue Q&A: "what services/cities/areas/types are available?" → chips → quote funnel
+  const browseKind = detectCatalogueBrowseQuery(originalText);
+  if (browseKind && earlySegmentsCheck.length < 2) {
+    return startCatalogueBrowse(
+      browseKind,
+      {
+        ...baseSessionFields,
+        city: city || baseSessionFields.city,
+        area: localityHint || baseSessionFields.area,
+        placeHint: localityHint || baseSessionFields.placeHint,
+        // Scope cities/areas/types to a named service; "what services?" lists the full menu
+        medium:
+          browseKind === 'services'
+            ? undefined
+            : (media[0]
+              ? canonicalizeServiceName(media[0])
+              : baseSessionFields.medium),
+        browseToken:
+          browseKind === 'services'
+            ? undefined
+            : (media[0]
+              ? canonicalizeServiceName(media[0])
+              : baseSessionFields.browseToken),
+      },
+      services,
+      shortReply,
+    );
   }
 
   // Partial service name (e.g. "bus semi") → enter funnel directly (no Did you mean)

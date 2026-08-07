@@ -156,6 +156,36 @@ const cases: Case[] = [
     input: 'Bus and Cab in Chennai',
     expectIncludes: ['not providing', 'Cab', 'Chennai', 'continue'],
   },
+  {
+    name: 'Catalogue — what services are available?',
+    input: 'What services are available?',
+    expectIncludes: ['currently provide', 'following', 'services', 'Which service'],
+    expectStep: 'pick_type',
+  },
+  {
+    name: 'Catalogue — which cities are available?',
+    input: 'Which cities are available?',
+    expectIncludes: ['currently provide', 'cities', 'Which city'],
+    expectStep: 'pick_city',
+  },
+  {
+    name: 'Catalogue — areas available in Chennai',
+    input: 'What areas are available in Chennai?',
+    expectIncludes: ['currently provide', 'areas', 'Chennai'],
+    expectStep: 'pick_area',
+  },
+  {
+    name: 'Catalogue — types available',
+    input: 'What types are available?',
+    expectIncludes: ['currently provide', 'Which option'],
+    expectStep: 'pick_type',
+  },
+  {
+    name: 'Catalogue — cities for bus',
+    input: 'Which cities are available for bus?',
+    expectIncludes: ['currently provide', 'city'],
+    expectStep: 'pick_city',
+  },
 ];
 
 function line(s: string): string {
