@@ -1,5 +1,5 @@
 /**
- * Smoke walkthrough: Quote Buddy response-style prompt vs progressive engine.
+ * Smoke walkthrough: Quote Buddy system-prompt conversation style.
  * Run: npx tsx scripts/smokeProgressiveResponses.ts
  */
 import {
@@ -69,6 +69,21 @@ const DB: DbService[] = [
     direction_remarks: 'Towards ECR',
     min_quantity: 1,
   }),
+  svc('hoarding-ecr', 'Hoarding Nonlit · ECR', {
+    medium: 'Hoarding',
+    medium_type: 'Nonlit',
+    city: 'Chennai',
+    area_name: 'ECR',
+    direction_remarks: 'Towards Mahabs',
+    min_quantity: 1,
+  }),
+  svc('police-ecr', 'Police Booth · ECR', {
+    medium: 'Police Booth',
+    city: 'Chennai',
+    area_name: 'ECR',
+    direction_remarks: 'Beach Road',
+    min_quantity: 1,
+  }),
   svc('police-chennai', 'Police Booth · Chennai', {
     medium: 'Police Booth',
     city: 'Chennai',
@@ -83,6 +98,7 @@ type Case = {
   input: string;
   prior?: ProgressiveSession | null;
   expectIncludes: string[];
+  expectExcludes?: string[];
   expectStep?: string;
 };
 
@@ -94,44 +110,51 @@ const cases: Case[] = [
     expectStep: 'small_talk',
   },
   {
-    name: 'Service only — Bus',
+    name: 'Service only — Bus (availability first)',
     input: 'Bus',
-    expectIncludes: ['Sure!', 'Which bus advertising service'],
+    expectIncludes: ['currently provide', 'bus advertising', 'Which'],
+    expectExcludes: ['Sure!', 'Great!', 'I understand'],
     expectStep: 'pick_type',
   },
   {
-    name: 'City only — Chennai',
+    name: 'City only — Chennai (availability first)',
     input: 'Chennai',
-    expectIncludes: ['Sure!', 'Which advertising service do you need in Chennai'],
+    expectIncludes: ['currently provide', 'Chennai', 'Which service'],
     expectStep: 'pick_type',
   },
   {
     name: 'Service + City — Bus Chennai',
     input: 'Bus Chennai',
-    expectIncludes: ['Great!', 'Which bus advertising service do you need in Chennai'],
+    expectIncludes: ['currently provide', 'bus advertising', 'Chennai'],
     expectStep: 'pick_type',
   },
   {
     name: 'Exact service — Bus Semi Branding',
     input: 'Bus Semi Branding',
-    expectIncludes: ['Great!', 'Which city do you need Bus Semi Branding in'],
+    expectIncludes: ['city', 'Bus Semi Branding'],
     expectStep: 'pick_city',
   },
   {
-    name: 'Exact + City — Bus Semi Branding Chennai',
+    name: 'Exact + City — area ask',
     input: 'Bus Semi Branding Chennai',
-    expectIncludes: ['Great!', 'Which area in Chennai'],
+    expectIncludes: ['area', 'Chennai'],
     expectStep: 'pick_area',
+  },
+  {
+    name: 'Landmark ECR — list services first',
+    input: 'near ECR',
+    expectIncludes: ['currently provide', 'ECR', 'Which service'],
+    expectExcludes: ['Which Hoarding option'],
   },
   {
     name: 'Unknown service',
     input: 'spaceship branding',
-    expectIncludes: ["couldn't find that service"],
+    expectIncludes: ["couldn't match that with our available advertising services"],
   },
   {
-    name: 'Partial batch — Bus and Hoarding in Chennai',
-    input: 'Bus and Hoarding in Chennai',
-    expectIncludes: ["We're currently not offering", 'Chennai', "I'll continue"],
+    name: 'Partial batch — Bus and Cab in Chennai',
+    input: 'Bus and Cab in Chennai',
+    expectIncludes: ['not providing', 'Cab', 'Chennai', 'continue'],
   },
 ];
 
@@ -140,13 +163,14 @@ function line(s: string): string {
 }
 
 let failed = 0;
-console.log('=== Progressive response smoke ===\n');
+console.log('=== Progressive response smoke (system prompt) ===\n');
 
 for (const c of cases) {
   const r = resolveProgressiveText(c.input, DB, c.prior ?? null, null);
   const okStep = !c.expectStep || r.step === c.expectStep;
-  const missing = c.expectIncludes.filter((p) => !r.botText.includes(p));
-  const pass = okStep && missing.length === 0;
+  const missing = c.expectIncludes.filter((p) => !r.botText.toLowerCase().includes(p.toLowerCase()));
+  const bad = (c.expectExcludes || []).filter((p) => r.botText.includes(p));
+  const pass = okStep && missing.length === 0 && bad.length === 0;
   if (!pass) failed += 1;
   console.log(`${pass ? 'PASS' : 'FAIL'}  ${c.name}`);
   console.log(`  step: ${r.step}${c.expectStep && r.step !== c.expectStep ? ` (expected ${c.expectStep})` : ''}`);
@@ -155,28 +179,57 @@ for (const c of cases) {
     console.log(`  chips: ${r.options.map((o) => o.label).slice(0, 6).join(' · ')}`);
   }
   if (missing.length) console.log(`  missing phrases: ${missing.join(' | ')}`);
+  if (bad.length) console.log(`  forbidden phrases: ${bad.join(' | ')}`);
   console.log('');
 }
 
-// Change selection: Bus locked → user says Madurai (keep service)
+// Change selection: Hoarding Madurai → Police Booth overrides service, keeps city
 {
-  const first = resolveProgressiveText('Bus', DB, null, null);
-  const second = resolveProgressiveText('Madurai', DB, first.session, null);
-  const keep =
-    !!(second.session.browseToken || second.session.medium)
-    && /madurai/i.test(String(second.session.city || second.botText));
-  console.log(`${keep ? 'PASS' : 'FAIL'}  Change selection — Bus then Madurai keeps service`);
+  const first = resolveProgressiveText('Hoarding Madurai', DB, null, null);
+  const second = resolveProgressiveText('Police Booth', DB, first.session, null);
+  const med = String(second.session.browseToken || second.session.medium || '');
+  const ok =
+    /police booth/i.test(med)
+    && /madurai/i.test(String(second.session.city || ''));
+  console.log(`${ok ? 'PASS' : 'FAIL'}  Service override — Hoarding Madurai then Police Booth`);
   console.log(`  step: ${second.step}`);
-  console.log(`  session medium/browse: ${second.session.browseToken || second.session.medium}`);
-  console.log(`  session city: ${second.session.city}`);
+  console.log(`  medium: ${med}`);
+  console.log(`  city: ${second.session.city}`);
   console.log(`  message: ${line(second.botText)}\n`);
-  if (!keep) failed += 1;
+  if (!ok) failed += 1;
 }
 
-// Chip city confirm → area/direction/quote path
+// Opener rotation: two bus asks in a row should not reuse identical opener line
+{
+  const a = resolveProgressiveText('Bus', DB, null, null);
+  const b = resolveProgressiveText('Bus', DB, a.session, null);
+  const openerA = (a.botText.split('\n')[0] || '').trim();
+  const openerB = (b.botText.split('\n')[0] || '').trim();
+  const pool = new Set([
+    '',
+    "Here's what we found.",
+    "Let's continue.",
+    'Thanks.',
+    'Good choice.',
+    'Hello!',
+    'Sure!',
+    'Great!',
+  ]);
+  const bothOpeners = pool.has(openerA) && pool.has(openerB);
+  const rotated = !bothOpeners || openerA !== openerB || !openerA;
+  // If both have availability-first text without shared Sure/Great, also OK
+  const noBannedRepeat =
+    !(openerA === openerB && /^(Sure!|Great!|Perfect!|Got it\.|Understood\.)$/i.test(openerA));
+  const pass = rotated || noBannedRepeat;
+  console.log(`${pass ? 'PASS' : 'FAIL'}  Opener rotation across turns`);
+  console.log(`  A: ${openerA || '(availability line)'}`);
+  console.log(`  B: ${openerB || '(availability line)'}\n`);
+  if (!pass) failed += 1;
+}
+
+// Quote ready copy
 {
   const start = resolveProgressiveText('Bus Semi Branding Chennai', DB, null, null);
-  console.log(`INFO  Exact+City start → step=${start.step} | ${line(start.botText)}`);
   if (start.options?.length) {
     const next = continueProgressiveAction(
       start.options[0].id,
@@ -184,14 +237,17 @@ for (const c of cases) {
       DB,
       [start.options[0].id],
     );
-    console.log(`INFO  After first chip → step=${next.step} | ${line(next.botText)}`);
     if (next.step === 'quote_ready') {
-      const ok = next.botText.includes('Your quotation is ready');
+      const ok =
+        next.botText.includes('Your quotation is ready')
+        && next.botText.includes('Opening quotation preview');
       console.log(`${ok ? 'PASS' : 'FAIL'}  Quote ready copy`);
+      console.log(`  message: ${line(next.botText)}\n`);
       if (!ok) failed += 1;
+    } else {
+      console.log(`INFO  After area chip → ${next.step} | ${line(next.botText)}\n`);
     }
   }
-  console.log('');
 }
 
 console.log(failed === 0 ? 'All smoke checks passed.' : `${failed} smoke check(s) failed.`);

@@ -139,6 +139,12 @@ export interface ProgressiveSession {
   collectedRows?: ConfirmationRow[];
   collectedServiceIds?: string[];
   aiReply?: string | null;
+  /** Last bot opening phrase — avoid repeating the same opener twice in a row. */
+  lastOpener?: string | null;
+  /** Rotation index for deterministic opener variety. */
+  openerIdx?: number;
+  /** Last no-match / unavailable message key — avoid identical error loops. */
+  lastErrorKey?: string | null;
   /** Multi-service batch: parsed qty+token segments from one message. */
   segments?: BatchSegment[];
   /** Per service_id quantity from segment parsing. */
@@ -271,44 +277,23 @@ function salesAdLabel(token: string | undefined | null): string {
 }
 
 /**
- * Response style (Quote Buddy AI Response Prompt):
- * Acknowledge → ask only the next missing step → max 2–3 short sentences.
- * Never invent inventory; never say "database" / apologize for no-match.
+ * Response style (Quote Buddy AI System Prompt):
+ * Availability first → ask only next missing step → rotate openings → max 2–3 sentences.
+ * Never invent inventory; never say "database".
  */
+const OPENER_POOL = [
+  '',
+  "Here's what we found.",
+  "Let's continue.",
+  'Thanks.',
+  'Good choice.',
+  'Hello!',
+] as const;
+
 function familyWord(token?: string | null): string {
   const key = canonicalizeServiceName(token || '');
   if (FAMILY_NEEDS_ADS_WORD.has(key)) return key;
   return titleCase(token || 'advertising');
-}
-
-function copyAskType(token?: string | null): string {
-  const key = canonicalizeServiceName(token || '');
-  if (FAMILY_NEEDS_ADS_WORD.has(key)) {
-    return `Sure!\n\nWhich ${key} advertising service do you need?`;
-  }
-  if (token && isExactCatalogMediumShape(token)) {
-    return `Great!\n\nWhich option do you need for ${titleCase(token)}?`;
-  }
-  return `Sure!\n\nWhich ${familyWord(token)} service do you need?`;
-}
-
-function copyAskCities(medium?: string | null): string {
-  const svc = titleCase(medium || 'this service');
-  return `Great!\n\nWhich city do you need ${svc} in?`;
-}
-
-function copyPlaceServices(place: string): string {
-  return `Sure!\n\nWhich advertising service do you need in ${place}?`;
-}
-
-/** Family/service at a place → type ask naming city (Service + City prompt). */
-function copyAskTypeAtPlace(medium: string | undefined | null, place: string): string {
-  const key = canonicalizeServiceName(medium || '');
-  if (FAMILY_NEEDS_ADS_WORD.has(key)) {
-    return `Great!\n\nWhich ${key} advertising service do you need in ${place}?`;
-  }
-  const svc = titleCase(medium || 'this');
-  return `Great!\n\nWhich ${svc} option do you need in ${place}?`;
 }
 
 /** Exact-ish catalog medium: multi-word / not bare family token. */
@@ -318,57 +303,274 @@ function isExactCatalogMediumShape(token: string): boolean {
   return key.includes(' ') || key.length > 12;
 }
 
+function pickOpener(
+  session: ProgressiveSession | null | undefined,
+  preferred: readonly string[] = OPENER_POOL,
+): string {
+  const last = (session?.lastOpener || '').trim();
+  const ordered = preferred.filter((o) => o !== last);
+  const pool = ordered.length ? ordered : [...preferred];
+  const idx = typeof session?.openerIdx === 'number' ? session.openerIdx : 0;
+  return pool[Math.abs(idx) % pool.length] ?? '';
+}
+
+function composeReply(
+  session: ProgressiveSession | null | undefined,
+  parts: { avail?: string | null; ask?: string | null; preferredOpeners?: readonly string[] },
+): { text: string; opener: string } {
+  const opener = pickOpener(session, parts.preferredOpeners || OPENER_POOL);
+  const lines = [opener, parts.avail, parts.ask]
+    .map((s) => (s || '').trim())
+    .filter(Boolean);
+  return { text: lines.join('\n\n'), opener };
+}
+
+function stampReplyMeta(
+  session: ProgressiveSession,
+  opener: string,
+  errorKey?: string | null,
+): ProgressiveSession {
+  return {
+    ...session,
+    lastOpener: opener,
+    openerIdx: ((session.openerIdx || 0) + 1) % 48,
+    lastErrorKey: errorKey === undefined ? session.lastErrorKey : errorKey,
+  };
+}
+
+function withComposedReply(
+  result: ProgressiveTurnResult,
+  parts: { avail?: string | null; ask?: string | null; preferredOpeners?: readonly string[]; errorKey?: string | null },
+): ProgressiveTurnResult {
+  // Prefer fresh availability copy over a stale AI shortReply / wrong-step reply
+  const { text, opener } = composeReply(result.session, parts);
+  return {
+    ...result,
+    botText: text,
+    session: stampReplyMeta(result.session, opener, parts.errorKey),
+  };
+}
+
+function stampResultOpener(result: ProgressiveTurnResult): ProgressiveTurnResult {
+  const first = (result.botText || '').split('\n')[0]?.trim() || '';
+  const known = new Set<string>([
+    ...OPENER_POOL,
+    'Sure!',
+    'Great!',
+    'Perfect!',
+    'Got it.',
+    'Understood.',
+    'I understand',
+  ]);
+  const opener =
+    known.has(first)
+    || /^(Sure!|Great!|Perfect!|Hello!|Thanks\.|Let's continue\.|Here's what we found\.|Good choice\.)$/i.test(first)
+      ? first
+      : (result.session.lastOpener || '');
+  return {
+    ...result,
+    session: stampReplyMeta(result.session, opener),
+  };
+}
+
+function copyAskType(
+  token?: string | null,
+  session?: ProgressiveSession | null,
+): string {
+  const key = canonicalizeServiceName(token || '');
+  const avail = FAMILY_NEEDS_ADS_WORD.has(key)
+    ? `We currently provide ${key} advertising services.`
+    : `We currently provide ${titleCase(token || 'advertising')} options.`;
+  const ask = FAMILY_NEEDS_ADS_WORD.has(key)
+    ? `Which ${key} advertising service do you need?`
+    : token && isExactCatalogMediumShape(token)
+      ? `Which option do you need for ${titleCase(token)}?`
+      : `Which ${familyWord(token)} service would you like?`;
+  return composeReply(session, { avail, ask }).text;
+}
+
+function copyAskCities(
+  medium?: string | null,
+  session?: ProgressiveSession | null,
+): string {
+  const svc = titleCase(medium || 'this service');
+  return composeReply(session, {
+    avail: `This service is available in more than one city.`,
+    ask: `Which city do you need ${svc} in?`,
+  }).text;
+}
+
+function formatPlacePrep(place: string): string {
+  const cleaned = place.replace(/^near\s+/i, '').trim();
+  const parts = cleaned.split(/\s*·\s*/).map((p) => p.trim()).filter(Boolean);
+  const landmark = parts.find((p) => /^(omr|ecr|airport)\b/i.test(p));
+  if (landmark) return `near ${landmark}`;
+  if (/^(omr|ecr|airport)\b/i.test(cleaned)) return `near ${cleaned}`;
+  return `in ${cleaned}`;
+}
+
+function copyPlaceServices(
+  place: string,
+  session?: ProgressiveSession | null,
+): string {
+  return composeReply(session, {
+    avail: `We currently provide the following services ${formatPlacePrep(place)}.`,
+    ask: 'Which service would you like?',
+  }).text;
+}
+
+function copySingleServiceAtPlace(
+  service: string,
+  place: string,
+  session?: ProgressiveSession | null,
+): string {
+  return composeReply(session, {
+    avail: `We currently provide ${titleCase(service)} services ${formatPlacePrep(place)}.`,
+    preferredOpeners: ["Here's what we found.", "Let's continue.", ''],
+  }).text;
+}
+
+/** Family/service at a place → availability + type ask. */
+function copyAskTypeAtPlace(
+  medium: string | undefined | null,
+  place: string,
+  session?: ProgressiveSession | null,
+): string {
+  const key = canonicalizeServiceName(medium || '');
+  const near = formatPlacePrep(place);
+  if (FAMILY_NEEDS_ADS_WORD.has(key)) {
+    return composeReply(session, {
+      avail: `We currently provide ${key} advertising services ${near}.`,
+      ask: `Which ${key} advertising service do you need?`,
+    }).text;
+  }
+  const svc = titleCase(medium || 'this');
+  return composeReply(session, {
+    avail: `We currently provide ${svc} services ${near}.`,
+    ask: `Which ${svc} option would you like?`,
+  }).text;
+}
+
 /** Type-step copy: never reuse place “which service?” reply after medium was auto-locked. */
 function typeStepBotText(
   reply: string | null | undefined,
   medium: string | undefined,
   place?: string | null,
+  session?: ProgressiveSession | null,
 ): string {
   const placeAsk =
     !!reply
     && (/which (advertising )?service/i.test(reply)
-      || /here[’']s what we offer/i.test(reply)
+      || /following services/i.test(reply)
+      || /here[’']s what we (offer|found)/i.test(reply)
       || /looking in /i.test(reply)
       || /^sure!/i.test(reply.trim())
       || /^great!/i.test(reply.trim()));
-  // Prefer step-specific copy over a reply that already answered a different step
   if (place && medium && (!reply || placeAsk || /which city/i.test(reply))) {
-    return copyAskTypeAtPlace(medium, place);
+    return copyAskTypeAtPlace(medium, place, session);
   }
-  if (reply && !placeAsk && !/which city/i.test(reply)) return reply;
-  return copyAskType(medium);
+  if (reply && !placeAsk && !/which city/i.test(reply) && /currently provide/i.test(reply)) {
+    return reply;
+  }
+  return copyAskType(medium, session);
 }
 
-function copyAskArea(city?: string | null, medium?: string | null): string {
+function copyAskArea(
+  city?: string | null,
+  medium?: string | null,
+  session?: ProgressiveSession | null,
+): string {
   const svc = titleCase(medium || 'this service');
   if (city) {
-    return `Great!\n\nWhich area in ${city} do you need ${svc}?`;
+    return composeReply(session, {
+      avail: `${svc} is available in more than one area in ${city}.`,
+      ask: `Which area do you need?`,
+    }).text;
   }
-  return `Great!\n\nWhich area do you need ${svc} in?`;
+  return composeReply(session, {
+    avail: `${svc} covers more than one area.`,
+    ask: 'Which area do you need?',
+  }).text;
 }
 
-function copyAskDirection(_locationLabel: string, _mediumName: string): string {
-  return `Great!\n\nWhich location or direction would you like?`;
+function copyAskDirection(
+  locationLabel: string,
+  mediumName: string,
+  session?: ProgressiveSession | null,
+): string {
+  const loc = locationLabel || 'that area';
+  return composeReply(session, {
+    avail: `${mediumName} in ${loc} has a few sites available.`,
+    ask: 'Which location or direction would you like?',
+  }).text;
 }
 
 function copyQuoteReady(): string {
-  return 'Perfect!\n\nYour quotation is ready.\n\nOpening the quotation preview...';
+  return 'Your quotation is ready.\n\nOpening quotation preview.';
 }
 
-function copyUnknownService(): string {
-  return "Sorry, I couldn't find that service.\n\nPlease choose one of our available advertising services.";
+function copyUnknownService(session?: ProgressiveSession | null): string {
+  return composeReply(session, {
+    avail: "I couldn't match that with our available advertising services.",
+    ask: 'Please choose one of the options below.',
+    preferredOpeners: ['', "Here's what we found.", 'Hello!'],
+  }).text;
 }
 
-function copyUnknownCity(city: string): string {
-  return `We couldn't find services in ${city}.\n\nPlease choose another city.`;
+function copyUnknownCity(city: string, session?: ProgressiveSession | null): string {
+  const key = `city:${canonicalizeServiceName(city)}`;
+  if (session?.lastErrorKey === key) {
+    return composeReply(session, {
+      avail: `Still no services for ${city} in our list.`,
+      ask: 'Please try another city or pick a service first.',
+      preferredOpeners: ["Let's continue.", 'Thanks.', ''],
+    }).text;
+  }
+  return composeReply(session, {
+    avail: `We're currently not providing services in ${city}.`,
+    ask: 'Please choose another city.',
+    preferredOpeners: ['', "Here's what we found."],
+  }).text;
 }
 
-function copyUnknownArea(area: string): string {
-  return `We couldn't find ${area} for this service.\n\nPlease choose another available area.`;
+function copyUnknownArea(area: string, session?: ProgressiveSession | null): string {
+  const key = `area:${canonicalizeServiceName(area)}`;
+  if (session?.lastErrorKey === key) {
+    return composeReply(session, {
+      avail: `Still no match for ${area} with this service.`,
+      ask: 'Please pick another available area.',
+      preferredOpeners: ["Let's continue.", ''],
+    }).text;
+  }
+  return composeReply(session, {
+    avail: `We're currently not providing this service in ${area}.`,
+    ask: 'Please choose another available area.',
+    preferredOpeners: ['', "Here's what we found."],
+  }).text;
 }
 
-function copyNotOfferedInCity(service: string, city: string): string {
-  return `We're currently not offering ${titleCase(service)} in ${city}.`;
+function copyNotOfferedInCity(
+  service: string,
+  city: string,
+  session?: ProgressiveSession | null,
+): string {
+  return composeReply(session, {
+    avail: `We're currently not providing ${titleCase(service)} services in ${city}.`,
+    ask: `Here are the services we currently provide in ${city}.`,
+    preferredOpeners: ['', "Here's what we found.", "Let's continue."],
+  }).text;
+}
+
+function copyGreeting(): string {
+  return "Hi! 👋 I'm here to help you prepare a quotation.\n\nWhat advertising service are you looking for?";
+}
+
+function copyWhichService(session?: ProgressiveSession | null): string {
+  return composeReply(session, {
+    avail: undefined,
+    ask: 'What advertising service are you looking for?',
+    preferredOpeners: ['Hello!', '', "Let's continue."],
+  }).text;
 }
 
 /** Labels for every collected batch line (not just the last). */
@@ -618,14 +820,6 @@ function copyBatchAutoAddedThenAsk(
     ? `Added ${autoLabels.join(', ')}.\n\n`
     : '';
   return `${added}Next — ${nextLabel}${where}.`;
-}
-
-function copyGreeting(): string {
-  return "Hi! 👋 I'm here to help you prepare a quotation.\n\nWhat advertising service are you looking for?";
-}
-
-function copyWhichService(): string {
-  return 'What advertising service are you looking for?';
 }
 
 function matchKnownCityLabel(value: string): string | null {
@@ -1025,15 +1219,20 @@ function startPlaceTypeBrowse(
     ? filterByCity(services, place)
     : filterByLocality(services, place);
   if (!hits.length) {
+    const errKey = `place:${canonicalizeServiceName(place)}`;
     return {
       step: 'no_match',
-      botText: copyUnknownCity(place),
+      botText: copyUnknownCity(place, session),
       options: [],
-      session: {
-        ...session,
-        city: isMetroCity ? place : session.city,
-        area: isMetroCity ? session.area : place,
-      },
+      session: stampReplyMeta(
+        {
+          ...session,
+          city: isMetroCity ? place : session.city,
+          area: isMetroCity ? session.area : place,
+        },
+        '',
+        errKey,
+      ),
     };
   }
   // Multi-city for this place → ask DB city values (OMR / Padur / Chennai as stored)
@@ -1051,18 +1250,25 @@ function startPlaceTypeBrowse(
         label: c,
         city: c,
       }));
+      const { text, opener } = composeReply(session, {
+        avail: `We currently provide services near ${place} across more than one location.`,
+        ask: 'Which city or location should I prepare?',
+      });
       return {
         step: 'pick_city',
-        botText: reply || `Sure!\n\nWhich city or location for ${place} should I prepare?`,
+        botText: reply || text,
         options: cityOpts,
         allowMulti: true,
-        session: {
-          ...session,
-          area: place,
-          placeHint: place,
-          needsContinueConfirm: false,
-          candidateServiceIds: hits.map((h) => h.service_id),
-        },
+        session: stampReplyMeta(
+          {
+            ...session,
+            area: place,
+            placeHint: place,
+            needsContinueConfirm: false,
+            candidateServiceIds: hits.map((h) => h.service_id),
+          },
+          opener,
+        ),
       };
     }
     if (cities.length === 1) {
@@ -1081,6 +1287,17 @@ function startPlaceTypeBrowse(
     }
   }
 
+  const mediumOpts = uniqueMediumOnlyOptions(hits);
+  const placeReply =
+    reply
+    || (mediumOpts.length === 1
+      ? copySingleServiceAtPlace(
+        mediumOpts[0].medium || mediumOpts[0].label,
+        place,
+        session,
+      )
+      : copyPlaceServices(place, session));
+
   return advanceFunnel(
     {
       ...session,
@@ -1088,16 +1305,25 @@ function startPlaceTypeBrowse(
       city: isMetroCity ? place : session.city,
       area: isMetroCity ? session.area : place,
       placeHint: isMetroCity ? session.placeHint : place,
+      medium:
+        mediumOpts.length === 1
+          ? canonicalizeServiceName(mediumOpts[0].medium || '')
+          : session.medium,
+      browseToken:
+        mediumOpts.length === 1
+          ? canonicalizeServiceName(mediumOpts[0].medium || '')
+          : session.browseToken,
       pendingMedia: [],
       candidateServiceIds: hits.map((s) => s.service_id),
       needsContinueConfirm: true,
       pendingCityQueue: undefined,
       workQueue: undefined,
-      collectedRows: [],
-      collectedServiceIds: [],
+      collectedRows: mediumOpts.length === 1 ? (session.collectedRows || []) : [],
+      collectedServiceIds:
+        mediumOpts.length === 1 ? (session.collectedServiceIds || []) : [],
     },
     services,
-    reply || copyPlaceServices(place),
+    placeReply,
   );
 }
 
@@ -1781,6 +2007,12 @@ export function parseServiceSegments(text: string, services: DbService[]): Batch
     const media = detectMediaLocal(stripped, services);
     if (media.length) {
       segments.push({ raw: part, token: media[0], qty, city: partCity });
+      continue;
+    }
+    const tokenKey = canonicalizeServiceName(token);
+    // Keep known family tokens even with zero inventory (so batch can say "not providing")
+    if (FAMILY_NEEDS_ADS_WORD.has(tokenKey) || tokenKey.length >= 4) {
+      segments.push({ raw: part, token, qty, city: partCity });
       continue;
     }
     // Unmatched short place-like token (gandhi) — skip as service segment
@@ -2909,7 +3141,7 @@ function buildDirectionPicker(
     }))
     .sort((a, b) => a.label.localeCompare(b.label));
   const mediumName = titleCase(getMediumKey(hits[0]) || session.medium || 'service');
-  const ask = copyAskDirection(locationLabel || 'that area', mediumName);
+  const ask = copyAskDirection(locationLabel || 'that area', mediumName, session);
   const noted = withBatchUnavailableNote(ask, {
     ...session,
     medium: getMediumKey(hits[0]) || session.medium,
@@ -2983,7 +3215,7 @@ function buildMultiAreaSitePicker(
   const mediumName = titleCase(getMediumKey(hits[0]) || session.medium || 'service');
   return {
     step: 'pick_direction',
-    botText: copyAskDirection(loc, mediumName),
+    botText: copyAskDirection(loc, mediumName, session),
     options,
     allowMulti: true,
     session: {
@@ -3272,7 +3504,7 @@ function withBatchUnavailableNote(
   // Avoid double-prefix if caller already included the note
   if (
     botText.includes(note)
-    || /isn['’]t available in|currently not offering/i.test(botText)
+    || /isn['’]t available in|currently not (offering|providing)/i.test(botText)
   ) {
     return {
       botText,
@@ -3302,9 +3534,9 @@ function formatBatchUnavailableNote(city: string, missing: string[], available: 
           ? `${available[0]} and ${available[1]}`
           : `${available.slice(0, -1).join(', ')} and ${available[available.length - 1]}`;
   if (have) {
-    return `We're currently not offering ${miss} in ${city}.\n\nI'll continue with ${have}.`;
+    return `We're currently not providing ${miss} services in ${city}.\n\nLet's continue with ${have}.`;
   }
-  return `We're currently not offering ${miss} in ${city}.`;
+  return `We're currently not providing ${miss} services in ${city}.`;
 }
 
 /** Lock the only city and continue the funnel (no OK Continue tap). */
@@ -3399,12 +3631,12 @@ export function advanceFunnel(
       const where = [sess.city, sess.area].filter(Boolean).join(' · ');
       const svcLabel = sess.medium || sess.browseToken;
       const fallback = sess.city && svcLabel
-        ? copyNotOfferedInCity(svcLabel, sess.city)
+        ? copyNotOfferedInCity(svcLabel, sess.city, sess)
         : sess.area && svcLabel
-          ? copyUnknownArea(sess.area)
+          ? copyUnknownArea(sess.area, sess)
           : sess.city
-            ? copyUnknownCity(sess.city)
-            : copyUnknownService();
+            ? copyUnknownCity(sess.city, sess)
+            : copyUnknownService(sess);
       return {
         step: 'no_match',
         // Never keep "which type?" when options are empty — that looks like a freeze
@@ -3432,10 +3664,10 @@ export function advanceFunnel(
             || (sess.directionHint
               ? `Sure!\n\nWhich service do you need for ${sess.directionHint}?`
               : where
-                ? copyPlaceServices(where)
+                ? copyPlaceServices(where, sess)
                 : sess.browseToken
-                  ? copyAskType(sess.browseToken)
-                  : 'What advertising service are you looking for?'),
+                  ? copyAskType(sess.browseToken, sess)
+                  : copyWhichService(sess)),
           options: mediums,
           allowMulti: true,
           session: sess,
@@ -3468,7 +3700,7 @@ export function advanceFunnel(
           const place = sess.area || sess.placeHint || sess.city;
           return {
             step: 'pick_type',
-            botText: typeStepBotText(reply, sess.browseToken || sess.medium, place),
+            botText: typeStepBotText(reply, sess.browseToken || sess.medium, place, sess),
             // Thumbs via unique-next only (1 city, ≤1 type, ≤1 direction)
             options: familyOpts,
             allowMulti: true,
@@ -3497,7 +3729,7 @@ export function advanceFunnel(
         const place = sess.area || sess.placeHint || sess.city;
         return {
           step: 'pick_type',
-          botText: typeStepBotText(reply, sess.medium, place),
+          botText: typeStepBotText(reply, sess.medium, place, sess),
           // Elevated/Underground etc. — thumb when that type is unique-next
           options: types,
           allowMulti: true, // Same as city/service chips — multi type → one quote / workQueue
@@ -3550,7 +3782,7 @@ export function advanceFunnel(
           // Multiple distinct DB cities under this place scope → ask those labels
           return {
             step: 'pick_city',
-            botText: reply || copyAskCities(sess.medium),
+            botText: reply || copyAskCities(sess.medium, sess),
             options: cities,
             allowMulti: true,
             session: {
@@ -3564,7 +3796,7 @@ export function advanceFunnel(
           step: 'pick_city',
           botText:
             reply
-            || copyAskCities(sess.medium),
+            || copyAskCities(sess.medium, sess),
           options: cities,
           allowMulti: true, // RULE 2: city/place chips = checkboxes
           session: {
@@ -3599,7 +3831,7 @@ export function advanceFunnel(
           step: 'pick_area',
           botText:
             reply
-            || copyAskArea(sess.city, sess.medium),
+            || copyAskArea(sess.city, sess.medium, sess),
           options: areas,
           allowMulti: true,
           session: sess,
@@ -3704,7 +3936,7 @@ export function advanceFunnel(
     if (products.length > 1) {
       return {
         step: 'related_services',
-        botText: reply || copyAskDirection(where || '', titleCase(sess.medium || 'service')),
+        botText: reply || copyAskDirection(where || '', titleCase(sess.medium || 'service'), sess),
         options: products,
         allowMulti: true,
         session: {
@@ -3716,7 +3948,7 @@ export function advanceFunnel(
 
     return {
       step: 'related_services',
-      botText: reply || copyAskDirection(where || '', titleCase(sess.medium || 'service')),
+      botText: reply || copyAskDirection(where || '', titleCase(sess.medium || 'service'), sess),
       options: uniqueServiceOptions(finalPool),
       allowMulti: true,
       session: {
@@ -4180,8 +4412,13 @@ function mergePriorWithDetected(
     durationText: detected.durationText ?? prior.durationText,
     aiReply: detected.shortReply,
     city: detected.city || prior.city,
-    area: areaFromText || (cityChanged ? undefined : prior.area),
-    placeHint: areaFromText || (cityChanged ? undefined : prior.placeHint),
+    // Service override: keep city; clear area/direction so we don't inherit another product's site
+    area: mediaChanged
+      ? (areaFromText || undefined)
+      : (areaFromText || (cityChanged ? undefined : prior.area)),
+    placeHint: mediaChanged
+      ? (areaFromText || undefined)
+      : (areaFromText || (cityChanged ? undefined : prior.placeHint)),
     medium: newMedia || prior.medium,
     browseToken: newMedia || prior.browseToken || prior.medium,
     mediumType: mediaChanged || cityChanged ? undefined : prior.mediumType,
@@ -4194,6 +4431,8 @@ function mergePriorWithDetected(
       mediaChanged || cityChanged || areaChanged
         ? undefined
         : prior.directionHint,
+    // Service override: drop leftover type/site queue for the previous service
+    workQueue: mediaChanged && !prior.segments?.length ? undefined : prior.workQueue,
     needsContinueConfirm:
       cityChanged || areaChanged || mediaChanged
         ? false
@@ -4209,10 +4448,10 @@ function softClarifyNeed(
   const options = uniqueMediumOnlyOptions(services).slice(0, 24);
   return {
     step: options.length ? 'pick_type' : 'no_match',
-    botText: (reply && reply.trim()) || copyUnknownService(),
+    botText: (reply && reply.trim()) || copyUnknownService(session),
     options,
     allowMulti: options.length > 0,
-    session: { ...session, pendingMedia: [] },
+    session: stampReplyMeta({ ...session, pendingMedia: [] }, ''),
   };
 }
 
@@ -4275,10 +4514,10 @@ function startMediumFlow(
         },
         services,
         reply || (place
-          ? copyAskTypeAtPlace(browseToken, place)
+          ? copyAskTypeAtPlace(browseToken, place, session)
           : session.city
-            ? copyAskTypeAtPlace(browseToken, session.city)
-            : copyAskType(browseToken)),
+            ? copyAskTypeAtPlace(browseToken, session.city, session)
+            : copyAskType(browseToken, session)),
       );
     }
     if (mediums.length === 1) {
@@ -4310,9 +4549,7 @@ function startMediumFlow(
         botText:
           reply && !isAskStepReplyWithoutOptions(reply)
             ? reply
-            : `${copyNotOfferedInCity(browseToken, session.city)}${
-              avail.length ? `\n\nWhich service do you need in ${session.city}?` : ''
-            }`,
+            : `${copyNotOfferedInCity(browseToken, session.city, session)}`,
         options: avail,
         allowMulti: avail.length > 0,
         session: { ...session, pendingMedia: [], medium: undefined, browseToken: undefined },
@@ -4394,7 +4631,9 @@ export function resolveProgressiveText(
   intent?: IntentOverlay | null,
 ): ProgressiveTurnResult {
   logFunnelReq('text', { text: userText, session: prior });
-  const result = resolveProgressiveTextInner(userText, services, prior, intent);
+  const result = stampResultOpener(
+    resolveProgressiveTextInner(userText, services, prior, intent),
+  );
   logFunnelRes(result);
   return result;
 }
@@ -4927,7 +5166,8 @@ function resolveProgressiveTextInner(
         pendingMedia: [],
         medium: canonicalizeServiceName(first),
         browseToken: canonicalizeServiceName(first),
-        city: cityForSession || undefined,
+        // Keep prior city when this message didn't name a city (service override)
+        city: cityForSession || sessionBase.city || undefined,
         // Pass locality when user typed it with the medium (DB may store it as city)
         area: locInText || sessionBase.area,
         placeHint: locInText || undefined,
@@ -5403,11 +5643,13 @@ export function continueProgressiveAction(
     selected: selectedIds,
     session,
   });
-  const result = continueProgressiveActionInner(
-    actionId,
-    session,
-    services,
-    selectedIds,
+  const result = stampResultOpener(
+    continueProgressiveActionInner(
+      actionId,
+      session,
+      services,
+      selectedIds,
+    ),
   );
   logFunnelRes(result);
   return result;
