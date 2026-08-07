@@ -1,0 +1,61 @@
+---
+description: Quote Buddy chatbot response style — short ChatGPT-like replies, acknowledge then ask next missing step only. Do not invent inventory.
+globs: src/utils/progressiveChatEngine.ts,src/services/chatIntentAiService.ts,src/components/ChatInterface/**
+alwaysApply: false
+---
+
+# Quote Buddy AI Response Style
+
+When changing progressive chat copy, intent shortReply, or Chip ask text — follow these rules.
+
+## Core
+
+* Never invent services, cities, areas, directions, prices, quantities, or availability.
+* Use only DB-returned values for chips and availability.
+* If DB has zero rows: say currently not offered (never "No records found", never apologize for inventory gaps).
+* Never ask for information already locked in session.
+* Never restart the conversation when enough state exists — continue from current locks.
+* Max **2–3 short sentences**. Sound like ChatGPT: simple, friendly, direct.
+* Never mention database, AI, JSON, metadata, filters, or internal logic.
+
+## Reply order
+
+1. Acknowledge what the user requested.
+2. Mention only the missing next step.
+3. If 2+ DB options → chips (never ask users to type options).
+4. If exactly 1 option → auto-select and continue.
+5. If complete → quote immediately.
+
+## Funnel
+
+`Service → Type → City → Area → Direction → Quote`
+
+Only ask the next missing step. Never skip backwards or re-ask completed steps.
+
+## Canonical message examples
+
+| Situation | Message |
+|-----------|---------|
+| Greeting | `Hi! 👋 I'm here to help you prepare a quotation.\n\nWhat advertising service are you looking for?` |
+| Service only (`bus`) | `Sure!\n\nWhich bus advertising service do you need?` |
+| City only | `Sure!\n\nWhich advertising service do you need in Chennai?` |
+| Service + city | `Great!\n\nWhich bus advertising service do you need in Chennai?` |
+| Exact service | `Great!\n\nWhich city do you need Bus Semi Branding in?` |
+| Exact + city | `Great!\n\nWhich area in Chennai do you need Bus Semi Branding?` |
+| Direction | `Great!\n\nWhich location or direction would you like?` |
+| Quote ready | `Perfect!\n\nYour quotation is ready.\n\nOpening the quotation preview...` |
+| Not in city | `We're currently not offering {service} in {city}.` (+ chips of available services) |
+| Partial batch | `We're currently not offering Hoarding in Chennai.\n\nI'll continue with Bus.` |
+| Unknown service | `Sorry, I couldn't find that service.\n\nPlease choose one of our available advertising services.` |
+| Unknown city | `We couldn't find services in {city}.\n\nPlease choose another city.` |
+| Unknown area | `We couldn't find {area} for this service.\n\nPlease choose another available area.` |
+
+## Change selection
+
+Free text or chips mid-funnel: update **only** the changed field; keep other valid locks; continue to the next missing step. Never wipe the session.
+
+## Implementation notes
+
+* Engine templates live in `copyAsk*` / `copyGreeting` / `copyQuoteReady` / `formatBatchUnavailableNote` in `progressiveChatEngine.ts`.
+* Gemini `shortReply` examples in `chatIntentAiService.ts` must match this tone.
+* Keep funnel matching rules from `progressive-chat-funnel.mdc` (Type before City, OMR place, batch workQueue, etc.).

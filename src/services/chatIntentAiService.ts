@@ -3,6 +3,8 @@
  * Catalog types + cities come from DB only (no hardcoded bus/hoarding/led lists).
  */
 
+import { canonicalizeServiceName } from '../utils/serviceNameUtils';
+
 const MODEL = 'gemini-2.5-flash-lite';
 
 export interface ChatIntentHint {
@@ -23,6 +25,26 @@ export interface ChatIntentHint {
 export interface ChatPlannerCatalog {
   types: string[];
   cities: string[];
+}
+
+function editDistance(a: string, b: string): number {
+  const m = a.length;
+  const n = b.length;
+  if (!m) return n;
+  if (!n) return m;
+  const dp = new Array(n + 1);
+  for (let j = 0; j <= n; j++) dp[j] = j;
+  for (let i = 1; i <= m; i++) {
+    let prev = dp[0];
+    dp[0] = i;
+    for (let j = 1; j <= n; j++) {
+      const tmp = dp[j];
+      const cost = a[i - 1] === b[j - 1] ? 0 : 1;
+      dp[j] = Math.min(dp[j] + 1, dp[j - 1] + 1, prev + cost);
+      prev = tmp;
+    }
+  }
+  return dp[n];
 }
 
 function getApiKey(): string | null {
@@ -57,12 +79,20 @@ export function resolveMediaAgainstCatalog(
   const catalog = catalogTypes
     .map((t) => ({
       raw: t,
-      key: t.toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim(),
+      key: canonicalizeServiceName(t),
     }))
     .filter((t) => t.key.length >= 1);
 
+  const familyTokens = [
+    ...new Set(
+      catalog
+        .map((c) => c.key.split(/\s+/).filter(Boolean)[0] || '')
+        .filter((w) => w.length >= 3),
+    ),
+  ];
+
   for (const m of media) {
-    const q = m.toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim();
+    const q = canonicalizeServiceName(m);
     if (!q) continue;
 
     const exact = catalog.find((c) => c.key === q);
@@ -74,12 +104,28 @@ export function resolveMediaAgainstCatalog(
     // Single-token family ("bus" / "auto") when catalog has that first word
     const qWords = q.split(/\s+/).filter(Boolean);
     if (qWords.length === 1) {
-      const familyHit = catalog.some((c) => {
-        const first = c.key.split(/\s+/).filter(Boolean)[0] || '';
-        return first === q;
-      });
+      const familyHit = familyTokens.includes(q);
       if (familyHit) {
         if (!out.includes(q)) out.push(q);
+        continue;
+      }
+      // Silent typo vs family token (hording→hoarding, buss already normalized)
+      const maxD = q.length >= 7 ? 2 : 1;
+      let bestTok: string | null = null;
+      let bestD = Infinity;
+      let ties = 0;
+      for (const f of familyTokens) {
+        if (Math.abs(f.length - q.length) > maxD) continue;
+        const d = editDistance(q, f);
+        if (d === 0 || d > maxD) continue;
+        if (d < bestD) {
+          bestD = d;
+          bestTok = f;
+          ties = 1;
+        } else if (d === bestD) ties += 1;
+      }
+      if (bestTok && ties === 1) {
+        if (!out.includes(bestTok)) out.push(bestTok);
         continue;
       }
     }
@@ -166,7 +212,15 @@ export async function parseChatIntentWithAi(
       '- Never put locality/area names (e.g. Anna Nagar, Tenyampet) as city — use areaHint for those.',
       '- areaHint = locality only when user named it; else null.',
       '- qty only if user typed a count (not duration). duration like "3 months" or null.',
-      '- shortReply = ONE short friendly line (max 14 words). No prices.',
+      '- shortReply = ONE short consultative sales line (max 18 words). Sound like ChatGPT: simple, friendly, direct. No prices. No UI jargon (Confirm/click). Max 2-3 short sentences.',
+      '- shortReply must sound like BTL advertising help — never ask bus/auto/metro as vehicle models.',
+      '- Acknowledge → ask only the next missing step. Never invent services/cities/prices.',
+      '- Examples for shortReply:',
+      '  "bus" → "Sure! Which bus advertising service do you need?"',
+      '  "led" → "Sure! Which LED option do you need?"',
+      '  "chennai" → "Sure! Which advertising service do you need in Chennai?"',
+      '  "bus chennai" → "Great! Which bus advertising service do you need in Chennai?"',
+      '  "bus semi branding" → "Great! Which city do you need Bus Semi Branding in?"',
       '- Examples:',
       '  "bus" → kind=quote, media=["bus"], city=null, ambiguous=false',
       '  "apartment demo" → kind=quote, media=["apartment demo"], city=null, areaHint=null',
@@ -175,6 +229,8 @@ export async function parseChatIntentWithAi(
       '  "hoarding near Tenyampet" → kind=quote, media=["hoarding"], city=null, areaHint="Tenyampet"',
       '  "bus stand branding madurai" → kind=clarify_type, ambiguous=true, clarifyHint="bus stand", city="Madurai"',
       '  "chennai" → kind=city_browse, city="Chennai"',
+      '  "give me a quote for chennai" → kind=city_browse, city="Chennai", media=[]',
+      '  "bus 30 and auto 60 and 2 hoarding" → kind=quote, media=["bus","auto","hoarding"], city=null',
       '',
       `User: ${userText.trim()}`,
     ].join('\n');
@@ -212,7 +268,7 @@ export async function parseChatIntentWithAi(
     }
 
     let shortReply = parsed.shortReply ? String(parsed.shortReply).trim() : null;
-    if (shortReply && shortReply.length > 90) shortReply = shortReply.slice(0, 87) + '…';
+    if (shortReply && shortReply.length > 120) shortReply = shortReply.slice(0, 117) + '…';
 
     return {
       kind: ambiguous ? 'clarify_type' : (parsed.kind || 'quote'),
