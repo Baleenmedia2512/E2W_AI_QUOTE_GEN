@@ -1,5 +1,5 @@
 import { QuoteItem } from '../types/quote';
-import { canonicalizeServiceName } from './serviceNameUtils';
+import { canonicalizeServiceName, MEDIA_PLURAL_MAP } from './serviceNameUtils';
 import {
   DbService,
   extractCityHint,
@@ -49,18 +49,7 @@ function titleCaseCity(key: string): string {
 }
 
 /** Plural → singular map for vehicle/category keywords only. */
-const PLURAL_NORMALIZE_MAP: Record<string, string> = {
-  buses: 'bus',
-  autos: 'auto',
-  cabs: 'cab',
-  tempos: 'tempo',
-  vans: 'van',
-  hoardings: 'hoarding',
-  shelters: 'shelter',
-  vehicles: 'vehicle',
-  trains: 'train',
-  billboards: 'billboard',
-};
+const PLURAL_NORMALIZE_MAP: Record<string, string> = { ...MEDIA_PLURAL_MAP };
 
 /** Extract meaningful query words (supports single-word queries like "bus"). */
 export function extractQueryWords(query: string): string[] {
@@ -1003,7 +992,8 @@ export function mergeGroupedServicesByCategory<
 }
 
 /** Read minimum order quantity from vendor top-level metadata only (never pricing.min_qty). */
-export function getMinQuantityFromDbService(svc: DbService): number | null {
+export function getMinQuantityFromDbService(svc: DbService | null | undefined): number | null {
+  if (!svc) return null;
   const m = svc.metadata || {};
   const raw =
     (m as { min_qty?: number | string }).min_qty ??

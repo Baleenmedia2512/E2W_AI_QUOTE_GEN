@@ -1607,7 +1607,8 @@ function startPlaceTypeBrowse(
  * Chip thumbnail URL from DB metadata — prefer reference image, else first images[].
  * Returns undefined when none (chip stays text-only).
  */
-export function getChipImageUrl(svc: DbService): string | undefined {
+export function getChipImageUrl(svc: DbService | null | undefined): string | undefined {
+  if (!svc) return undefined;
   const meta = svc.metadata;
   if (!meta) return undefined;
   const images = meta.images;
@@ -1698,7 +1699,8 @@ function chipImageIfUniqueNext(
   return count === 1 ? firstChipImage(rows) : undefined;
 }
 
-export function getMediumKey(svc: DbService): string {
+export function getMediumKey(svc: DbService | null | undefined): string {
+  if (!svc) return 'service';
   const meta = svc.metadata as { medium?: string; medium_type?: string } | undefined;
   const medium = String(meta?.medium || '').trim();
   if (medium && medium.toUpperCase() !== 'NA') {
@@ -1715,7 +1717,8 @@ export function getMediumKey(svc: DbService): string {
  * DB medium_type for funnel Type step — metadata.medium_type only.
  * Skip blank / NA / direction-like junk; never invent from service_id or whitelist.
  */
-export function getMediumTypeFromDb(svc: DbService): string | null {
+export function getMediumTypeFromDb(svc: DbService | null | undefined): string | null {
+  if (!svc) return null;
   const meta = svc.metadata as {
     medium_type?: string;
     mediumType?: string;
@@ -4491,6 +4494,7 @@ function buildRowsForServices(
   const rows: ConfirmationRow[] = [];
 
   for (const svc of selected) {
+    if (!svc?.service_id && !svc?.service_name) continue;
     const minQty = getMinQuantityFromDbService(svc);
     const metro =
       extractRealCityFromDbService(svc)
@@ -4908,8 +4912,12 @@ export function resolveProgressiveText(
   intent?: IntentOverlay | null,
 ): ProgressiveTurnResult {
   logFunnelReq('text', { text: userText, session: prior });
+  // Drop holes / corrupt cloud rows so getMediumKey(undefined) never fires mid-batch
+  const safeServices = (services || []).filter(
+    (s): s is DbService => !!s && !!(s.service_id || s.service_name),
+  );
   const result = stampResultOpener(
-    resolveProgressiveTextInner(userText, services, prior, intent),
+    resolveProgressiveTextInner(userText, safeServices, prior, intent),
   );
   logFunnelRes(result);
   return result;
@@ -5757,7 +5765,9 @@ function finalizeSelection(
   // Same-medium type leftovers on workQueue (Frontlit → Nonlit): never "Next up: Hoarding".
   const isMultiServiceBatch = !!(session.segments && session.segments.length >= 2);
   const currentMedEarly = canonicalizeServiceName(
-    session.medium || getMediumKey(selected[0]) || '',
+    session.medium
+    || (selected[0] ? getMediumKey(selected[0]) : '')
+    || '',
   );
   const placeLockedQuote =
     !!(session.placeHint || session.area) && !isMultiServiceBatch;
@@ -5953,7 +5963,9 @@ export function continueProgressiveAction(
     continueProgressiveActionInner(
       actionId,
       session,
-      services,
+      (services || []).filter(
+        (s): s is DbService => !!s && !!(s.service_id || s.service_name),
+      ),
       selectedIds,
     ),
   );
