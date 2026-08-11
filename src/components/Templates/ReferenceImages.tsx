@@ -7,6 +7,7 @@ import {
   collectServiceRemarks,
   hasMeaningfulMaterial,
 } from '../../utils/specMaterial';
+import { formatReviewerDisplayName } from '../../utils/reviewDisplay';
 
 interface ExtractedPage {
   pageNumber: number;
@@ -2276,6 +2277,18 @@ export const ReferenceImages: React.FC<ReferenceImagesProps> = (props) => {
       return directLookupPages;
     }
 
+    // Quote item(s) have a known service_id, but this rate has no cloud image/spec
+    // pages (e.g. Excel Auto Semi / ROTN with empty images[]). Do NOT fall through
+    // to keyword matching — that dumped unrelated catalog photos into preview.
+    const hasKnownServiceId =
+      resolvedServiceIds.size > 0 || (items || []).some((i) => !!i.serviceId);
+    if (hasKnownServiceId && useDirectLookup) {
+      console.log(
+        '⛔ [DirectLookup] service_id known but no image pages — hiding Reference Images (no keyword fallback)',
+      );
+      return [];
+    }
+
     if (!resolvedPages || resolvedPages.length === 0) {
       console.log('❌ ReferenceImages: No proposal pages available');
       return [];
@@ -2294,7 +2307,7 @@ export const ReferenceImages: React.FC<ReferenceImagesProps> = (props) => {
     console.log('✅ ReferenceImages: Filtered to', filtered.length, 'pages');
     
     return filtered;
-  }, [directLookupPages, resolvedPages, items]);
+  }, [directLookupPages, resolvedPages, items, resolvedServiceIds, useDirectLookup]);
   // This is separate from filteredPages so spec/ref image logic is completely unaffected.
   const reviewPages = useMemo(() => {
     if (directLookupPages) {
@@ -2731,8 +2744,12 @@ export const ReferenceImages: React.FC<ReferenceImagesProps> = (props) => {
   // engine to place the block on a page where its actual rendered height
   // overflows into the footer overlay.
   //
-  // Additionally: only set ready=true once filteredPages is non-empty. The
-  // initial render happens with filteredPages=[] (proposalPages still loading
+  // Additionally: only set ready=true once filteredPages is non-empty — unless
+  // the quote already has a known service_id and intentionally has zero image
+  // pages (Excel Auto Semi / ROTN). In that case report empty refs and ready=true
+  // so PDF export does not hang waiting for images that will never arrive.
+  //
+  // Initial render happens with filteredPages=[] (proposalPages still loading
   // from IndexedDB). If we set ready=true on that empty state, waitForPdfReady
   // returns immediately and measureSectionBlocks captures a too-small height
   // for the spec / refImages blocks (heading only, no content).
@@ -2740,10 +2757,14 @@ export const ReferenceImages: React.FC<ReferenceImagesProps> = (props) => {
     if (containerRef.current) {
       containerRef.current.setAttribute('data-pdf-ready', 'false');
     }
-    // Wait for real data before becoming ready. If there are no filtered pages
-    // yet, stay false — the next render (when proposalPages arrives) will
-    // re-trigger this effect with non-empty filteredPages.
-    if (filteredPages.length === 0 || refImagesLoading) return;
+
+    const knownServiceNoImages =
+      filteredPages.length === 0 &&
+      (resolvedServiceIds.size > 0 || (items || []).some((i) => !!i.serviceId)) &&
+      !!(proposalPages && proposalPages.some((p) => p.serviceId));
+
+    // Wait for real data before becoming ready — except intentional no-image rates.
+    if ((filteredPages.length === 0 && !knownServiceNoImages) || refImagesLoading) return;
     const tid = setTimeout(() => {
       if (containerRef.current) {
         containerRef.current.setAttribute('data-pdf-ready', 'true');
@@ -2753,6 +2774,19 @@ export const ReferenceImages: React.FC<ReferenceImagesProps> = (props) => {
       // Collect final resolved data and notify CorporateMinimalPDF via callback
       // AND write into the DOM store so pdfExportService can read it.
       if (props.onDataReady && props.serviceKey !== undefined) {
+        if (knownServiceNoImages) {
+          props.onDataReady(props.serviceKey, {
+            refImages: [],
+            specImages: [],
+            specFields: [],
+            specGroups: [],
+            review: null,
+          });
+          console.log(
+            `📤 [ReferenceImages->PDF] key="${props.serviceKey}" — no image pages for known service_id`,
+          );
+          return;
+        }
         const finalRef = lazyCroppedRefImages.length > 0 ? lazyCroppedRefImages
                       : refImagesLoading                 ? []
                       :                                    refImageUrls;
@@ -2783,15 +2817,32 @@ export const ReferenceImages: React.FC<ReferenceImagesProps> = (props) => {
       }
     }, 500);
     return () => clearTimeout(tid);
-  }, [geminiReview, lazyCroppedRefImages, lazyCroppedSpecImage, lazyCroppedPureSpecImages, filteredPages, specGroups, refImageUrls, refImagesLoading, hasSpecContent, specImageUrl]);
+  }, [
+    geminiReview,
+    lazyCroppedRefImages,
+    lazyCroppedSpecImage,
+    lazyCroppedPureSpecImages,
+    filteredPages,
+    specGroups,
+    refImageUrls,
+    refImagesLoading,
+    hasSpecContent,
+    specImageUrl,
+    resolvedServiceIds,
+    items,
+    proposalPages,
+    props.onDataReady,
+    props.serviceKey,
+    finalReview,
+  ]);
   // ─────────────────────────────────────────────────────────────────────────
 
-  if (!resolvedPages || resolvedPages.length === 0) {
+  if ((!resolvedPages || resolvedPages.length === 0) && filteredPages.length === 0) {
     console.log('❌ ReferenceImages: No proposal pages, returning null');
     return null;
   }
   if (filteredPages.length === 0) {
-    console.log('⚠️ ReferenceImages: No filtered pages found');
+    console.log('⚠️ ReferenceImages: No filtered pages found — hiding Reference Image(s)');
     return null;
   }
 
@@ -3147,9 +3198,13 @@ export const ReferenceImages: React.FC<ReferenceImagesProps> = (props) => {
           </h3>
           <div className="review-card">
             <div className="review-header">
-              <span className="review-avatar">{finalReview.reviewerName.charAt(0).toUpperCase()}</span>
+              <span className="review-avatar">
+                {formatReviewerDisplayName(finalReview.reviewerName).charAt(0)}
+              </span>
               <div className="review-meta">
-                <span className="review-name">{finalReview.reviewerName}</span>
+                <span className="review-name">
+                  {formatReviewerDisplayName(finalReview.reviewerName)}
+                </span>
                 <span className="review-stars">
                   {'★'.repeat(finalReview.starCount)}{'☆'.repeat(Math.max(0, 5 - finalReview.starCount))}
                 </span>

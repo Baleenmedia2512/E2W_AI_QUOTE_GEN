@@ -246,15 +246,19 @@ export function resolveServiceIdsForItems(
   proposalPages: Array<{ serviceId?: string; serviceName?: string; city?: string; sourceName?: string }>,
 ): Set<string> {
   const ids = new Set<string>();
-  if (!items.length || !proposalPages.length) return ids;
+  if (!items.length) return ids;
+
+  // Always keep explicit quote serviceIds (including rates with no image pages).
+  for (const item of items) {
+    if (item.serviceId) ids.add(item.serviceId);
+  }
+
+  if (!proposalPages.length) return ids;
 
   const cityHint = extractCityHint(items.map((i) => i.description).join(' '));
 
   for (const item of items) {
-    if (item.serviceId) {
-      ids.add(item.serviceId);
-      continue;
-    }
+    if (item.serviceId) continue;
     const name = extractServiceNameFromItem(item);
     if (!name) continue;
     const canonical = canonicalizeServiceName(name);

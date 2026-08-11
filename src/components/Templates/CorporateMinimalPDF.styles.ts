@@ -1066,6 +1066,16 @@ export const s = StyleSheet.create({
     lineHeight: 1.25,
   },
 
+  /** Section title once per group (General T&C / Mobile Van Chennai). */
+  termSectionHeading: {
+    fontSize: PDF_FONT.termText,
+    color: C.burgundy,
+    fontWeight: 700,
+    lineHeight: 1.25,
+    marginTop: 4,
+    marginBottom: 2,
+  },
+
   termBody: {
     fontSize: PDF_FONT.termText,
     color: C.bodyGrey,
@@ -1102,29 +1112,51 @@ export const s = StyleSheet.create({
   bankRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    marginBottom: 4,
+    marginBottom: 5,
+    width: '100%',
+  },
+  /** Fixed label column — keeps colon/value vertically aligned (single line). */
+  bankLabelCol: {
+    width: 168,
+    flexGrow: 0,
+    flexShrink: 0,
   },
   bankLabel: {
-    width: 130,
-    fontSize: PDF_FONT.bankLabel,
+    fontSize: 11.5,
     fontWeight: 700,
     color: C.darkText,
     textAlign: 'left',
   },
   bankColon: {
-    width: 12,
-    fontSize: PDF_FONT.bankLabel,
+    width: 14,
+    fontSize: 11.5,
     fontWeight: 700,
     color: C.darkText,
     textAlign: 'left',
+    flexGrow: 0,
+    flexShrink: 0,
   },
   bankValue: {
-    flex: 1,
-    fontSize: PDF_FONT.bankValue,
+    flexGrow: 1,
+    flexShrink: 1,
+    fontSize: 11.5,
     color: C.bodyText,
     textAlign: 'left',
-    paddingLeft: 84,
-    paddingRight: 6,
+    paddingLeft: 6,
+  },
+  bankLine: {
+    fontSize: 11.5,
+    marginBottom: 5,
+    color: C.darkText,
+    lineHeight: 1.4,
+  },
+  bankLineLabel: {
+    fontWeight: 700,
+    color: C.darkText,
+  },
+  bankLineValue: {
+    fontWeight: 400,
+    color: C.bodyText,
   },
 
   // ── System Generated Notice ───────────────────────────────────────────────

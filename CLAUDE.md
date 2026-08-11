@@ -79,7 +79,7 @@
 ┌─────────────────────────────────────────────────────────────┐
 │                    EXTERNAL SERVICES                         │
 ├─────────────────────────────────────────────────────────────┤
-│  - Google Gemini API (gemini-2.5-flash-lite)               │
+│  - Google Gemini API (gemini-3.1-flash-lite)               │
 │  - Capacitor Native APIs (Android/iOS)                      │
 └─────────────────────────────────────────────────────────────┘
 ```
@@ -291,7 +291,7 @@ src/
 ### Artificial Intelligence
 - **@google/generative-ai 0.24.1** - Google Gemini AI SDK
 - **Models**:
-  - **gemini-2.5-flash-lite** - Fast, cost-effective generative AI for quote generation
+  - **gemini-3.1-flash-lite** - Fast, cost-effective generative AI for quote generation
   - **text-embedding-004** - Vector embeddings for semantic search (768 dimensions)
 - **Use Cases**: Quote generation, proposal analysis, semantic search with RAG, multi-document search
 
@@ -1290,7 +1290,7 @@ Generates PDF from HTML element and saves to device.
 
 #### Google Gemini API
 
-**Endpoint**: `https://generativelanguage.googleapis.com/v1/models/gemini-2.5-flash-lite:generateContent`
+**Endpoint**: `https://generativelanguage.googleapis.com/v1/models/gemini-3.1-flash-lite:generateContent`
 
 **Authentication**: API Key in header (`x-goog-api-key`)
 

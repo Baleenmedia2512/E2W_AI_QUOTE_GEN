@@ -1,10 +1,15 @@
 import React, { useState, useRef, useEffect, useMemo, useCallback } from 'react';
 import { useHistory } from 'react-router-dom';
+import { useToast } from '@chakra-ui/react';
 import { useAppStore } from '../store';
 import { CorporateMinimal } from '../components/Templates/CorporateMinimal';
 import { exportToPDF } from '../services/pdfExportService';
 import { ExtractedPage, ServiceReadyData } from '../types';
-import { resolveServiceIdsForItems } from '../utils/serviceResolver';
+import {
+  extractCityHint,
+  extractServiceNameFromItem,
+  resolveServiceIdFromCatalog,
+} from '../utils/serviceResolver';
 import { ServicePdfData, PdfExportMode } from '../components/Templates/CorporateMinimalPDF';
 import { isMultiServiceQuote } from '../utils/quoteGrouping';
 import {
@@ -12,6 +17,8 @@ import {
   scrollToPreviewSection,
 } from '../utils/previewNavigation';
 import QuoteFlowNav from '../components/QuoteWizard/QuoteFlowNav';
+import { EMPTY_CLIENT } from '../components/ClientInfoForm/ClientEditDrawer';
+import { ClientInfo } from '../types/client';
 import './QuotePreviewPage.css';
 
 // ═══════════════════════════════════════════════════════════════════════
@@ -30,6 +37,7 @@ export const QuotePreviewPage: React.FC = () => {
     selectedTemplate,
     setSelectedTemplate,
     setCurrentQuote,
+    setClientInfo,
     proposal,
     activeProposals,
     restoreActiveProposals,
@@ -37,6 +45,15 @@ export const QuotePreviewPage: React.FC = () => {
     cloudServicePages,      // NEW: Cloud service pages from proposal_chunks
     loadCloudServices,      // NEW: Load cloud services function
   } = useAppStore();
+
+  const toast = useToast();
+
+  /** Allow preview without saved client — edit via inline Name / Phone / Email */
+  const effectiveClient: ClientInfo = clientInfo || EMPTY_CLIENT;
+  const clientReady = !!(
+    effectiveClient.name.trim()
+    && /^\d{10}$/.test(effectiveClient.phone.trim())
+  );
 
   // Build flat merged pages — reactive to activeProposals (populated after async restore)
   const mergedActiveImages = useMemo<ExtractedPage[]>(() => {
@@ -133,17 +150,17 @@ export const QuotePreviewPage: React.FC = () => {
   
   const [pageImages, setPageImages] = useState<ExtractedPage[]>(mergedAllImages);
 
-  // Early validation and redirect
+  // Early validation — quote + company required; client is editable on this page
   useEffect(() => {
-    if (!currentQuote || !companyInfo || !clientInfo) {
+    if (!currentQuote || !companyInfo) {
       console.warn('⚠️ Missing required data for preview...');
       if (!companyInfo) {
         history.push('/company-settings');
-      } else if (!clientInfo || !currentQuote) {
-        history.push(!currentQuote ? '/' : '/quote');
+      } else if (!currentQuote) {
+        history.push('/');
       }
     }
-  }, [currentQuote, companyInfo, clientInfo, history]);
+  }, [currentQuote, companyInfo, history]);
 
   // On mount: Load data in background (non-blocking)
   useEffect(() => {
@@ -206,26 +223,78 @@ export const QuotePreviewPage: React.FC = () => {
     }
   }, [cloudServicePages, activeProposals, mergedAllImages]);
 
-  // Stamp serviceId on quote items at preview time (covers old quotes saved before this field existed)
+  // Stamp serviceId from the FULL vendor catalog (includes rates with no images).
+  // Never resolve against cloudServicePages alone — that pool only contains services
+  // that already have image/spec pages, so Auto Semi / ROTN without images got a
+  // sibling serviceId and showed unrelated photos.
   useEffect(() => {
-    if (!currentQuote?.items?.length || !cloudServicePages?.length) return;
+    if (!currentQuote?.items?.length) return;
     const needsEnrich = currentQuote.items.some((i) => !i.serviceId);
     if (!needsEnrich) return;
 
-    const enrichedItems = currentQuote.items.map((item) => {
-      if (item.serviceId) return item;
-      const ids = resolveServiceIdsForItems([item], cloudServicePages);
-      if (ids.size === 0) return item;
-      const serviceId = [...ids][0];
-      const page = cloudServicePages.find((p) => p.serviceId === serviceId);
-      return { ...item, serviceId, serviceName: page?.serviceName || item.serviceName };
-    });
+    let cancelled = false;
+    (async () => {
+      const {
+        getVendorRatesCache,
+        loadVendorRatesFromCloud,
+        vendorRatesToDbServices,
+      } = await import('../services/vendorRateService');
+      let rates = getVendorRatesCache();
+      if (!rates.length) {
+        try {
+          rates = await loadVendorRatesFromCloud();
+        } catch (err) {
+          console.warn('🔗 [QuotePreview] Vendor catalog load failed for serviceId enrich:', err);
+          return;
+        }
+      }
+      if (cancelled) return;
 
-    if (enrichedItems.some((item, i) => item.serviceId !== currentQuote.items[i].serviceId)) {
-      console.log('🔗 [QuotePreview] Enriched quote items with serviceId');
-      setCurrentQuote({ ...currentQuote, items: enrichedItems });
-    }
-  }, [currentQuote, cloudServicePages, setCurrentQuote]);
+      const catalog = vendorRatesToDbServices(rates);
+      if (!catalog.length) return;
+
+      const { currentQuote: latest, setCurrentQuote: setQuote } = useAppStore.getState();
+      if (!latest?.items?.length) return;
+
+      const enrichedItems = latest.items.map((item) => {
+        if (item.serviceId) return item;
+        const name =
+          extractServiceNameFromItem(item) ||
+          item.serviceName ||
+          item.title ||
+          item.description;
+        const cityHint =
+          (item.city || '').trim().toLowerCase() ||
+          extractCityHint(
+            [item.city, item.description, item.serviceName, item.title]
+              .filter(Boolean)
+              .join(' '),
+          );
+        const resolved = resolveServiceIdFromCatalog(name, catalog, cityHint);
+        if (!resolved) return item;
+        return {
+          ...item,
+          serviceId: resolved.serviceId,
+          serviceName: resolved.serviceName || item.serviceName,
+        };
+      });
+
+      if (
+        enrichedItems.some(
+          (item, i) => item.serviceId !== latest.items[i].serviceId,
+        )
+      ) {
+        console.log(
+          '🔗 [QuotePreview] Enriched quote items with serviceId from vendor catalog',
+        );
+        setQuote({ ...latest, items: enrichedItems });
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [currentQuote, setCurrentQuote]);
 
   // Fill missing quantityUnit via isolated AI — preview page only (no RAG)
   const qtyUnitAiQuoteIdRef = useRef<string | null>(null);
@@ -397,12 +466,11 @@ export const QuotePreviewPage: React.FC = () => {
   console.log('Quote Items:', currentQuote?.items);
   console.log('Quote Items Length:', currentQuote?.items?.length);
 
-  // Check if all required data is available
-  if (!currentQuote || !companyInfo || !clientInfo) {
+  // Check if quote + company are available (client edited on this page)
+  if (!currentQuote || !companyInfo) {
     console.error('❌ Missing required data for preview');
     console.error('Missing Quote:', !currentQuote);
     console.error('Missing Company:', !companyInfo);
-    console.error('Missing Client:', !clientInfo);
     
     return (
       <div className="preview-error">
@@ -410,23 +478,17 @@ export const QuotePreviewPage: React.FC = () => {
           <h2>Missing Information</h2>
           <p>Please complete all required steps before previewing your quote.</p>
           <p style={{ fontSize: '14px', marginTop: '16px', color: '#666' }}>
-            {!currentQuote && '• Quote data is missing'}<br />
-            {!companyInfo && '• Company information is missing'}<br />
-            {!clientInfo && '• Client information is missing'}
+            {!currentQuote && '• Quote data is missing'}
+            <br />
+            {!companyInfo && '• Company information is missing'}
           </p>
           <button
             onClick={() =>
-              history.push(
-                !companyInfo ? '/company-settings' : !clientInfo ? '/quote' : '/'
-              )
+              history.push(!companyInfo ? '/company-settings' : '/')
             }
             className="back-button"
           >
-            {!companyInfo
-              ? 'Go to Company Settings'
-              : !clientInfo
-              ? 'Go to Client Info'
-              : 'Go to Chat'}
+            {!companyInfo ? 'Go to Company Settings' : 'Go to Chat'}
           </button>
         </div>
       </div>
@@ -435,7 +497,7 @@ export const QuotePreviewPage: React.FC = () => {
 
   const templateData = {
     company: companyInfo,
-    client: clientInfo,
+    client: effectiveClient,
     quote: currentQuote,
     proposalPages: pageImages,
     proposalPageMap,
@@ -467,6 +529,7 @@ export const QuotePreviewPage: React.FC = () => {
         onDataChange={(next) => {
           setCurrentQuote(next.quote);
         }}
+        onClientChange={(info) => setClientInfo(info)}
         onNavigateToSection={handleNavigateToSection}
       />
     );
@@ -474,6 +537,17 @@ export const QuotePreviewPage: React.FC = () => {
 
   const handleExportPDF = async (mode: PdfExportMode = 'full') => {
     console.log(`📄 Export PDF clicked (mode: ${mode})`);
+
+    if (!clientReady) {
+      toast({
+        title: 'Client details required',
+        description: 'Enter a client name and exactly 10-digit phone number in Quote Prepared For before downloading.',
+        status: 'warning',
+        duration: 3500,
+        isClosable: true,
+      });
+      return;
+    }
 
     if (!previewRef.current) {
       alert('Preview content not loaded. Please refresh and try again.');
@@ -496,7 +570,7 @@ export const QuotePreviewPage: React.FC = () => {
         previewRef.current,
         currentQuote.quoteNumber,
         selectedTemplate,
-        clientInfo?.name,
+        effectiveClient.name,
         docIds.length > 0 ? docIds : undefined,
         mode,
       );
@@ -529,7 +603,7 @@ export const QuotePreviewPage: React.FC = () => {
         onDownloadPdfMode={handleExportPDF}
         multiDownloadOptions={!!currentQuote && isMultiServiceQuote(currentQuote.items)}
         isDownloading={isExporting}
-        canDownload={isContentReady && !isExporting}
+        canDownload={isContentReady && !isExporting && clientReady}
       />
 
       {/* Secondary toolbar: TOC toggle + zoom */}

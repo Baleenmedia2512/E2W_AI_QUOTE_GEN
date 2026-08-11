@@ -97,9 +97,20 @@ export interface Message {
     city?: string;
     medium?: string;
     group?: string;
+    /** Optional DB reference thumbnail for chip UI. */
+    imageUrl?: string;
   }>;
   progressiveAllowMulti?: boolean;
   progressiveAutoConfirmed?: string[];
+  /** Batch: service currently being asked about (one chip). */
+  progressiveCurrentService?: string;
+  /** Batch: services already added to the quote (grows after each Confirm). */
+  progressiveQuotedServices?: string[];
+  /** Batch: how many services left after the current one. */
+  progressiveBatchRemaining?: number;
+  /** Services requested but not offered in the locked city (Cab in Madurai). */
+  progressiveUnavailable?: string[];
+  progressiveUnavailableCity?: string;
   progressiveBelowMin?: Array<{
     service: string;
     requested: number;
@@ -136,6 +147,7 @@ export interface Message {
       city?: string;
       candidateServiceIds?: string[];
     }>;
+    batchServiceLabels?: string[];
   };
 
   // DEPRECATED (kept for backward compatibility)

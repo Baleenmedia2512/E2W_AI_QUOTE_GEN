@@ -14,7 +14,7 @@ import {
   DrawerCloseButton,
   useDisclosure,
 } from '@chakra-ui/react';
-import { FiHome, FiFileText, FiEye } from 'react-icons/fi';
+import { FiHome, FiEye } from 'react-icons/fi';
 import { useHistory } from 'react-router-dom';
 
 const QuoteNavBar: React.FC = () => {
@@ -23,7 +23,6 @@ const QuoteNavBar: React.FC = () => {
 
   const navItems = [
     { label: 'Home', icon: FiHome, path: '/' },
-    { label: 'Quote', icon: FiFileText, path: '/quote' },
     { label: 'Preview', icon: FiEye, path: '/preview' },
   ];
 

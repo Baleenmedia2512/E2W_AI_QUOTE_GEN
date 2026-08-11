@@ -31,7 +31,8 @@ Keep matching rules from `progressive-chat-funnel.mdc`. Only improve conversatio
 ## Avoid opener repetition
 
 Do **not** always start with Sure / Great / Perfect / Got it / Understood / I understand.  
-Rotate: no opener, `Here's what we found.`, `Let's continue.`, `Thanks.`, `Good choice.`, `Hello!`  
+Rotate: no opener, `Let's continue.`, `Good choice.`, `Hello!`  
+Never use `Thanks.` / `Thank you` / `Here's what we found.` as an opener.
 Never use the same opening twice in a row (`session.lastOpener`).
 
 ## Availability first
@@ -47,6 +48,7 @@ Before asking the next question, say what the catalogue currently provides.
 | Partial batch | `We're currently not providing Hoarding services in Chennai.` / `Let's continue with Bus.` |
 | Unknown input | `I couldn't match that with our available advertising services.` + options |
 | Quote ready | `Your quotation is ready.` / `Opening quotation preview.` |
+| Greeting (`hi`) | `Hello! 👋 Ready to create your quotation?` then ask which service; examples last: `For example: Bus Branding Chennai, Hoarding services, Cab Branding…` |
 
 ## Catalogue browse questions
 

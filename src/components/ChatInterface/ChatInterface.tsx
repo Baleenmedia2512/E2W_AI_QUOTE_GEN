@@ -19,12 +19,14 @@ import { useAppStore } from '../../store';
 import { useAuthStore } from '../../store/authStore';
 import { Message } from '../../types/chat';
 import { Quote } from '../../types/quote';
-import { saveChatHistory, loadChatHistory } from '../../utils/localStorage';
+import { saveChatHistory, loadChatHistory, clearChatHistory } from '../../utils/localStorage';
 import { SpeechRecognition } from '@capacitor-community/speech-recognition';
 import { Capacitor } from '@capacitor/core';
 import { KNOWN_CITY_LIST, type ServiceQuantity } from '../../utils/serviceNameUtils';
 import { resolveServiceIdFromCatalog } from '../../utils/serviceResolver';
 import { computeQuoteItemTotal } from '../../utils/durationUtils';
+import { ChatChipThumb } from './ChatChipThumb';
+import { ChipImageLightbox, closeChipImagePreview } from './ChipImageLightbox';
 import {
   buildCityServiceListFromDb,
   buildCloudSegmentCityPlan,
@@ -66,6 +68,28 @@ import {
 // ═══════════════════════════════════════════════════════════════════════
 const USE_CLOUD_DATA = true;
 const USE_PROGRESSIVE_CHAT = true;
+
+/**
+ * Drop chip thumbnail URLs from prior turns so decoded images don't linger
+ * when the user continues chatting (keeps labels / checkboxes, frees memory).
+ */
+function stripChipImagesFromMessages(
+  messages: Message[],
+  keepMessageId?: string | null,
+): Message[] {
+  let changed = false;
+  const next = messages.map((m) => {
+    if (keepMessageId && m.id === keepMessageId) return m;
+    const opts = m.progressiveOptions;
+    if (!opts?.length || !opts.some((o) => o.imageUrl)) return m;
+    changed = true;
+    return {
+      ...m,
+      progressiveOptions: opts.map(({ imageUrl: _drop, ...rest }) => rest),
+    };
+  });
+  return changed ? next : messages;
+}
 
 const SUGGESTION_PROMPTS = [
   'Give quote for bus branding',
@@ -242,6 +266,9 @@ const ChatInterface: React.FC = () => {
   // Progressive chat session (city → area → min-qty → quote)
   const [progressiveSession, setProgressiveSession] = useState<ProgressiveSession | null>(null);
   const [progressiveMultiSelect, setProgressiveMultiSelect] = useState<Record<string, string[]>>({});
+  /** Progressive checklist page size — rendering 90+ chips freezes the main thread. */
+  const [progressiveChipVisible, setProgressiveChipVisible] = useState<Record<string, number>>({});
+  const PROGRESSIVE_CHIP_PAGE = 24;
   /** messageId → serviceKey currently being edited on min-qty card */
   const [minQtyEditingKey, setMinQtyEditingKey] = useState<Record<string, string | null>>({});
   /** messageId → serviceKey → draft string while typing */
@@ -397,12 +424,35 @@ const ChatInterface: React.FC = () => {
   // Load chat history on mount
   useEffect(() => {
     const history = loadChatHistory();
-    if (history && history.length > 0) {
-      setMessages(history.map(msg => ({
-        ...msg,
-        timestamp: new Date(msg.timestamp),
-      })));
+    if (!history || history.length === 0) return;
+
+    // Drop turns that still carry legacy mega batch-group UUID dumps (freeze on paint)
+    const safe = history.filter((msg) => {
+      const opts = msg?.progressiveOptions;
+      if (!Array.isArray(opts)) return true;
+      if (opts.length > 48) return false;
+      return !opts.some((o: { id?: string }) => String(o?.id || '').length > 200);
+    });
+
+    if (safe.length === 0) {
+      clearChatHistory();
+      return;
     }
+    if (safe.length < history.length) {
+      saveChatHistory(safe);
+    }
+    setMessages(
+      stripChipImagesFromMessages(
+        safe.map((msg) => ({
+          ...msg,
+          timestamp: new Date(msg.timestamp),
+        })),
+        // Keep thumbs only on the latest progressive chip message (if any)
+        [...safe].reverse().find((m) =>
+          m.progressiveOptions?.some((o: { imageUrl?: string }) => !!o.imageUrl),
+        )?.id,
+      ),
+    );
   }, []);
 
   // Save chat history when messages change
@@ -412,10 +462,33 @@ const ChatInterface: React.FC = () => {
     }
   }, [messages]);
 
-  // Scroll to bottom when messages change
+  // Scroll to bottom when messages change — avoid scrollIntoView (it can scroll
+  // ancestors / fight the fixed composer and leave the input unfocusable).
   useEffect(() => {
-    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+    const end = messagesEndRef.current;
+    const scroller = end?.closest?.('.qb-chat-scroll') as HTMLElement | null;
+    if (scroller) {
+      scroller.scrollTop = scroller.scrollHeight;
+      return;
+    }
+    end?.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
   }, [messages, isLoading]);
+
+  // After a plain text reply (no chips), put caret back in the composer
+  useEffect(() => {
+    if (isLoading) return;
+    if (messages.length === 0) return;
+    const last = messages[messages.length - 1];
+    if (!last || last.role !== 'assistant') return;
+    if (last.progressiveOptions && last.progressiveOptions.length > 0) return;
+    if (last.progressiveBelowMin && last.progressiveBelowMin.length > 0) return;
+    if (document.querySelector('[aria-label="Close image preview"]')) return;
+
+    const t = window.setTimeout(() => {
+      inputRef.current?.focus({ preventScroll: true });
+    }, 50);
+    return () => window.clearTimeout(t);
+  }, [isLoading, messages]);
 
   // Handle keyboard appearance on mobile - adjust viewport
   useEffect(() => {
@@ -521,6 +594,8 @@ const ChatInterface: React.FC = () => {
       pushToHistory(text);
     }
     setInputValue('');
+    // Ensure image lightbox never traps the composer after send
+    closeChipImagePreview();
     sendMessageWithContent(text);
   };
 
@@ -642,7 +717,7 @@ const ChatInterface: React.FC = () => {
     result: ProgressiveTurnResult,
   ) => {
     setProgressiveSession(result.session);
-    // Never quote while Continue (Yes/No) is showing — wait for yes_generate
+    // Never quote while Continue (OK) is showing — wait for yes_generate
     if (
       result.quoteRows
       && result.quoteRows.length > 0
@@ -651,11 +726,35 @@ const ChatInterface: React.FC = () => {
     ) {
       // Skip "Creating your quote..." interim message — go straight to quote
       if (userMessage) {
-        setMessages((prev) => [...prev, userMessage]);
+        setMessages((prev) => [...stripChipImagesFromMessages(prev), userMessage]);
       }
       await generateQuoteFromProgressiveRows(result.quoteRows, result.session.originalText);
       return;
     }
+
+    const sess = result.session;
+    const isBatch =
+      (sess.batchServiceLabels?.length ?? 0) >= 2
+      || (sess.segments?.length ?? 0) >= 2
+      || (sess.workQueue?.length ?? 0) > 0;
+    const tokenRaw = (sess.browseToken || sess.medium || '').trim();
+    const currentService = isBatch && tokenRaw
+      ? (
+        (sess.batchServiceLabels || []).find(
+          (l) => l.toLowerCase() === tokenRaw.toLowerCase(),
+        )
+        || tokenRaw.replace(/\b\w/g, (c) => c.toUpperCase())
+      )
+      : undefined;
+    const quotedServices = isBatch
+      ? [
+          ...new Set(
+            (sess.collectedRows || [])
+              .map((r) => (r.service || '').split('·')[0].trim())
+              .filter(Boolean),
+          ),
+        ]
+      : undefined;
 
     const assistantMsg: Message = {
       id: (Date.now() + 1).toString(),
@@ -667,12 +766,24 @@ const ChatInterface: React.FC = () => {
       progressiveOptions: result.options,
       progressiveAllowMulti: result.allowMulti,
       progressiveSession: result.session,
-      progressiveAutoConfirmed: result.autoConfirmedList,
+      progressiveAutoConfirmed: isBatch
+        ? undefined
+        : (result.autoConfirmedList?.length
+          ? result.autoConfirmedList
+          : result.session.batchServiceLabels),
+      progressiveCurrentService: currentService,
+      progressiveQuotedServices: quotedServices,
+      progressiveBatchRemaining: isBatch ? (sess.workQueue?.length ?? 0) : undefined,
+      progressiveUnavailable: result.session.batchUnavailableLabels,
+      progressiveUnavailableCity: result.session.city,
       progressiveBelowMin: result.belowMinDetails,
     };
-    setMessages((prev) =>
-      userMessage ? [...prev, userMessage, assistantMsg] : [...prev, assistantMsg],
-    );
+    setMessages((prev) => {
+      const stripped = stripChipImagesFromMessages(prev);
+      return userMessage
+        ? [...stripped, userMessage, assistantMsg]
+        : [...stripped, assistantMsg];
+    });
   };
 
   const generateQuoteFromProgressiveRows = async (
@@ -696,7 +807,7 @@ const ChatInterface: React.FC = () => {
           {
             id: Date.now().toString(),
             role: 'assistant',
-            content: `Could not build quote: ${result.message}`,
+            content: `I couldn't build that quote: ${result.message}. Happy to try again if you'd like.`,
             timestamp: new Date(),
             isError: true,
           },
@@ -710,13 +821,13 @@ const ChatInterface: React.FC = () => {
         {
           id: (Date.now() + 1).toString(),
           role: 'assistant',
-          content: '✓ Your quote is ready!',
+          content: 'Your quotation is ready.\n\nOpening quotation preview.',
           timestamp: new Date(),
         },
       ]);
       setProgressiveSession(null);
       setTimeout(() => {
-        history.push('/quote');
+        history.push('/preview');
       }, 1000);
     } catch (err) {
       setMessages((prev) => [
@@ -884,31 +995,83 @@ const ChatInterface: React.FC = () => {
       pushToHistory(cleanedText);
       setIsLoading(true);
       setError(null);
-      setMessages((prev) => [...prev, userMessage]);
+      closeChipImagePreview();
+      // Clear prior chip thumbs immediately so the UI stays responsive
+      setMessages((prev) => [...stripChipImagesFromMessages(prev), userMessage]);
       try {
         const { loadAllServicesFromCloud } = await import('../../services/supabaseProposalService');
-        const { getCatalogTypeKeys, getCatalogCities } = await import('../../utils/progressiveChatEngine');
+        const {
+          getCatalogTypeKeys,
+          getCatalogCities,
+          canSkipChatIntentAi,
+        } = await import('../../utils/progressiveChatEngine');
         const dbServices = (await loadAllServicesFromCloud()) || [];
         const catalogTypes = getCatalogTypeKeys(dbServices);
         const catalogCities = getCatalogCities(dbServices);
 
+        // Let the typing indicator paint before heavy sync matching (prevents "Page Unresponsive")
+        await new Promise<void>((r) => {
+          if (typeof requestAnimationFrame === 'function') {
+            requestAnimationFrame(() => requestAnimationFrame(() => r()));
+          } else {
+            setTimeout(r, 0);
+          }
+        });
+
         let intent = null as Awaited<
           ReturnType<typeof import('../../services/chatIntentAiService').parseChatIntentWithAi>
         >;
-        try {
-          const { parseChatIntentWithAi } = await import('../../services/chatIntentAiService');
-          intent = await parseChatIntentWithAi(cleanedText, {
-            types: catalogTypes,
-            cities: catalogCities,
-          });
-        } catch {
-          intent = null;
+        // Skip Gemini for clear city / media / multi-service — was blocking every send ~3.5s
+        const skipAi = canSkipChatIntentAi(cleanedText, dbServices);
+        console.log('[funnel-debug] chatIntentGate', {
+          text: cleanedText,
+          skipAi,
+          catalogTypeCount: catalogTypes.length,
+          catalogCityCount: catalogCities.length,
+          serviceCount: dbServices.length,
+          sampleMediums: catalogTypes.slice(0, 20),
+        });
+        if (!skipAi) {
+          try {
+            const { parseChatIntentWithAi } = await import('../../services/chatIntentAiService');
+            intent = await parseChatIntentWithAi(
+              cleanedText,
+              { types: catalogTypes, cities: catalogCities },
+              2000,
+            );
+          } catch (err) {
+            console.log('[funnel-debug] chatIntentError', err);
+            intent = null;
+          }
         }
+        console.log('[funnel-debug] chatIntentResult', {
+          skipped: skipAi,
+          intent: intent
+            ? {
+                kind: intent.kind,
+                media: intent.media,
+                medium: intent.medium,
+                city: intent.city,
+                areaHint: intent.areaHint,
+                directionHint: intent.directionHint,
+                ambiguous: intent.ambiguous,
+                clarifyHint: intent.clarifyHint,
+                shortReply: intent.shortReply,
+              }
+            : null,
+        });
+
+        // Yield again before sync resolve (mega multi-service lists)
+        await new Promise<void>((r) => setTimeout(r, 0));
+
+        // Typed messages always start a fresh funnel — pause prior locks (min-qty / city / medium).
+        // Chip Confirm / Yes-No still continue via message.progressiveSession.
+        setProgressiveSession(null);
 
         const result = resolveProgressiveText(
           cleanedText,
           dbServices,
-          progressiveSession,
+          null,
           intent
             ? {
                 kind: intent.kind,
@@ -916,6 +1079,7 @@ const ChatInterface: React.FC = () => {
                 medium: intent.medium,
                 city: intent.city,
                 areaHint: intent.areaHint,
+                directionHint: intent.directionHint,
                 ambiguous: intent.ambiguous,
                 clarifyHint: intent.clarifyHint,
                 qty: intent.qty,
@@ -982,8 +1146,8 @@ const ChatInterface: React.FC = () => {
             id: (Date.now() + 1).toString(),
             role: 'assistant',
             content: lists.length === 1
-              ? `Here are all services available in ${lists[0].city}. Tap any to start a quote:`
-              : `Here are services available in: ${lists.map(l => l.city).join(', ')}. Tap any to start:`,
+              ? `I understand you're looking in ${lists[0].city}. Here's everything we offer — tap any to start a quote:`
+              : `I understand — here's what we offer in ${lists.map(l => l.city).join(', ')}. Tap any to start a quote:`,
             timestamp: new Date(),
             isCityServiceList: true,
             cityServiceList: lists,
@@ -1034,8 +1198,8 @@ const ChatInterface: React.FC = () => {
                 id: pickerMsgId,
                 role: 'assistant',
                 content: cloudCities.length >= 2
-                  ? '🏙️ This service is available in multiple cities. Please select your city:'
-                  : '🏙️ Please select your city to see available services:',
+                  ? 'I understand — this service is available in multiple cities. Which city should I prepare for?'
+                  : 'I understand — please select your city and I’ll show what’s available:',
                 timestamp: new Date(),
                 isCityPicker: true,
               };
@@ -1075,7 +1239,7 @@ const ChatInterface: React.FC = () => {
             const pickerMsg: Message = {
               id: pickerMsgId,
               role: 'assistant',
-              content: '🏙️ Please select the city for each service below:',
+              content: 'I understand — please select the city for each service below so I can prepare your quote:',
               timestamp: new Date(),
               isCityPicker: true,
             };
@@ -1156,7 +1320,7 @@ const ChatInterface: React.FC = () => {
               const assistantMsg = prepareMultipleMatchMessage({
                 id: assistantId,
                 role: 'assistant',
-                content: '🔀 Multiple services found. Select all you need:',
+                content: 'I understand — a few matching services came up. Select all you need for the quote:',
                 timestamp: new Date(),
                 isMultipleMatch: true,
                 groupedServices: mergeGroupedServicesByCategory(cloudResult.vagueGroups),
@@ -1193,7 +1357,7 @@ const ChatInterface: React.FC = () => {
                   kept: cloudResult.validSegmentLabels,
                 });
               }
-              setMessages(prev => [...prev, userMessage]);
+              setMessages(prev => [...stripChipImagesFromMessages(prev), userMessage]);
               setInputValue('');
               setUnavailableServices(cloudResult.preAlerts);
               if (cloudResult.validSegmentLabels.length === 0) {
@@ -1223,7 +1387,7 @@ const ChatInterface: React.FC = () => {
               if (cloudResult.preAlerts.length > 0) {
                 setUnavailableServices(cloudResult.preAlerts);
               }
-              setMessages(prev => [...prev, userMessage]);
+              setMessages(prev => [...stripChipImagesFromMessages(prev), userMessage]);
               const confirmRows = rowsFromCloudBelowMin(
                 cloudResult.validSegmentLabels,
                 cloudResult.belowMinSegments.map((bm) => ({
@@ -1256,7 +1420,7 @@ const ChatInterface: React.FC = () => {
               cloudResult.vagueGroups.length === 0 &&
               cloudResult.belowMinSegments.length === 0
             ) {
-              setMessages(prev => [...prev, userMessage]);
+              setMessages(prev => [...stripChipImagesFromMessages(prev), userMessage]);
               setInputValue('');
               const confirmRows = labelsToConfirmRows(cloudResult.validSegmentLabels);
               if (confirmRows.length > 0) {
@@ -1272,7 +1436,8 @@ const ChatInterface: React.FC = () => {
     }
     // ─────────────────────────────────────────────────────────────────────────
 
-    setMessages(prev => [...prev, userMessage]);
+    closeChipImagePreview();
+    setMessages(prev => [...stripChipImagesFromMessages(prev), userMessage]);
     setIsLoading(true);
     setError(null);
 
@@ -1517,8 +1682,8 @@ const ChatInterface: React.FC = () => {
         id: msgId,
         role: 'assistant',
         content: mergedGroups.length === 1
-          ? `🔀 Multiple services found in ${mergedGroups[0].vehicleType.split('|')[1] || 'your city'}. Select all you need:`
-          : `🔀 Multiple services found across ${mergedGroups.length} groups. Select all you need:`,
+          ? `I understand — a few matching services in ${mergedGroups[0].vehicleType.split('|')[1] || 'your city'}. Select all you need for the quote:`
+          : `I understand — matching services across ${mergedGroups.length} groups. Select all you need for the quote:`,
         timestamp: new Date(),
         isMultipleMatch: true,
         groupedServices: mergedGroups,
@@ -1551,7 +1716,7 @@ const ChatInterface: React.FC = () => {
     const assistantMsg = prepareMultipleMatchMessage({
       id: msgId,
       role: 'assistant',
-      content: `🔀 Multiple services found across ${mergedGroups.length} group${mergedGroups.length !== 1 ? 's' : ''}. Select all you need:`,
+      content: `I understand — matching services across ${mergedGroups.length} group${mergedGroups.length !== 1 ? 's' : ''}. Select all you need for the quote:`,
       timestamp: new Date(),
       isMultipleMatch: true,
       groupedServices: mergedGroups,
@@ -1583,7 +1748,7 @@ const ChatInterface: React.FC = () => {
     const pickerMsg: Message = {
       id: pickerMsgId,
       role: 'assistant',
-      content: '🏙️ Multiple city rate cards are loaded. Please select the city for each service below:',
+      content: 'I understand — multiple city rate cards are loaded. Please select the city for each service below:',
       timestamp: new Date(),
       isCityPicker: true,
     };
@@ -1729,7 +1894,7 @@ const ChatInterface: React.FC = () => {
     updatedQuote.gstAmount = newGst;
     updatedQuote.total = newSubtotal + newGst;
     setCurrentQuote(updatedQuote);
-    setTimeout(() => { history.push('/quote'); }, 1500);
+    setTimeout(() => { history.push('/preview'); }, 1500);
   };
 
   // Handle min qty warning: user chooses to use minimum quantities
@@ -1830,11 +1995,11 @@ const ChatInterface: React.FC = () => {
     const quoteReadyMessage: Message = {
       id: (Date.now() + 2).toString(),
       role: 'assistant',
-      content: '✓ Quote generated with minimum quantities! Redirecting to quote preview...',
+      content: '✓ Quote ready with catalogue minimums — taking you to the preview.',
       timestamp: new Date(),
     };
     setMessages(prev => [...prev, quoteReadyMessage]);
-    setTimeout(() => { history.push('/quote'); }, 1500);
+    setTimeout(() => { history.push('/preview'); }, 1500);
   };
 
   // Handle clicking a service suggestion button (auto-sends as new message)
@@ -2074,7 +2239,8 @@ const ChatInterface: React.FC = () => {
       content: displayRequest,
       timestamp: new Date(),
     };
-    setMessages(prev => [...prev, userMessage]);
+    closeChipImagePreview();
+    setMessages(prev => [...stripChipImagesFromMessages(prev), userMessage]);
     setIsLoading(true);
     setError(null);
 
@@ -2108,11 +2274,11 @@ const ChatInterface: React.FC = () => {
             const quoteReadyMessage: Message = {
               id: (Date.now() + 1).toString(),
               role: 'assistant',
-              content: '✓ Your Quote generated successfully!',
+              content: 'Your quotation is ready.\n\nOpening quotation preview.',
               timestamp: new Date(),
             };
             setMessages(prev => [...prev, quoteReadyMessage]);
-            setTimeout(() => { history.push('/quote'); }, 1500);
+            setTimeout(() => { history.push('/preview'); }, 1500);
             setIsLoading(false);
             return;
           }
@@ -2120,7 +2286,7 @@ const ChatInterface: React.FC = () => {
           const failMsg: Message = {
             id: (Date.now() + 1).toString(),
             role: 'assistant',
-            content: `Could not build quote from rate card: ${result.message}. Please verify the service exists in your uploaded proposals.`,
+            content: `I couldn't build the quote from the rate card: ${result.message}. Please check the service exists in your uploaded proposals, and I'll try again.`,
             timestamp: new Date(),
           };
           setMessages(prev => [...prev, failMsg]);
@@ -2135,7 +2301,7 @@ const ChatInterface: React.FC = () => {
           id: (Date.now() + 1).toString(),
           role: 'assistant',
           content:
-            'Could not load rate-card services from the cloud catalog. Chat AI is disabled — please retry after services load, or check your connection.',
+            'I couldn’t load rate-card services from the cloud catalog just now. Please retry once they load, or check your connection — happy to pick up from there.',
           timestamp: new Date(),
         };
         setMessages(prev => [...prev, failMsg]);
@@ -2156,7 +2322,7 @@ const ChatInterface: React.FC = () => {
       const errorMessage: Message = {
         id: (Date.now() + 1).toString(),
         role: 'assistant',
-        content: `Sorry, quote generation failed: ${errText}`,
+        content: `Sorry — quote generation didn't go through (${errText}). Happy to try again whenever you're ready.`,
         timestamp: new Date(),
       };
       setMessages(prev => [...prev, errorMessage]);
@@ -2257,7 +2423,7 @@ const ChatInterface: React.FC = () => {
             const errorMessage: Message = {
               id: Date.now().toString(),
               role: 'assistant',
-              content: `Voice input error: ${err.message || 'Could not access microphone'}`,
+              content: `Voice input ran into an issue: ${err.message || 'Could not access the microphone'}. You're welcome to type instead.`,
               timestamp: new Date(),
               isError: true,
             };
@@ -2295,7 +2461,7 @@ const ChatInterface: React.FC = () => {
           const errorMessage: Message = {
             id: Date.now().toString(),
             role: 'assistant',
-            content: 'Voice input is not supported in this browser.',
+            content: 'Voice input isn’t supported in this browser — you’re welcome to type your brief instead.',
             timestamp: new Date(),
             isError: true,
           };
@@ -2366,6 +2532,8 @@ const ChatInterface: React.FC = () => {
           overflowY="auto"
           minH="0"
           w="100%"
+          position="relative"
+          zIndex={0}
           sx={{ 
             '::-webkit-scrollbar': { 
               width: '6px',
@@ -2434,16 +2602,25 @@ const ChatInterface: React.FC = () => {
                             <HStack spacing={2} mb={message.isError ? 1 : 0} align="flex-start">
                               {message.isError && <Text fontSize="16px">❌</Text>}
                               <Text 
-                                fontSize="14px"
+                                fontSize="13.2px"
                                 whiteSpace="pre-wrap"
                                 lineHeight="1.55"
-                                fontWeight={message.role === 'user' ? '500' : (message.isError ? '600' : '500')}
+                                fontWeight={
+                                  message.role === 'user'
+                                    ? '500'
+                                    : (message.isError ? '630' : '555')
+                                }
                                 letterSpacing="normal"
                                 flex={1}
                                 color={
                                   message.role === 'user'
                                     ? 'white'
                                     : (message.isError ? 'red.700' : 'gray.800')
+                                }
+                                className={
+                                  message.role === 'assistant'
+                                    ? 'qb-assistant-text'
+                                    : undefined
                                 }
                               >
                                 {message.content}
@@ -2571,6 +2748,56 @@ const ChatInterface: React.FC = () => {
                             </Box>
                           )}
 
+                          {/* Batch: skipped services only (no “Now choosing” banner) */}
+                          {message.isProgressiveChat
+                            && message.progressiveUnavailable
+                            && message.progressiveUnavailable.length > 0 && (
+                            <Box
+                              mt={3}
+                              mb={message.progressiveOptions?.length ? 0 : 1}
+                              px={3}
+                              py={2.5}
+                              borderRadius="xl"
+                              border="1px solid"
+                              borderColor="gray.200"
+                              bg="gray.50"
+                            >
+                              <Text
+                                fontSize="10px"
+                                fontWeight="700"
+                                color="gray.500"
+                                textTransform="uppercase"
+                                letterSpacing="0.06em"
+                                mb={1.5}
+                              >
+                                Skipped
+                                {message.progressiveUnavailableCity
+                                  ? ` — not in ${message.progressiveUnavailableCity}`
+                                  : ''}
+                              </Text>
+                              <Flex flexWrap="wrap" gap={1.5}>
+                                {message.progressiveUnavailable.map((name) => (
+                                  <Text
+                                    key={`miss-${name}`}
+                                    as="span"
+                                    px={2.5}
+                                    py={1}
+                                    fontSize="12px"
+                                    fontWeight="500"
+                                    color="gray.500"
+                                    bg="white"
+                                    border="1px dashed"
+                                    borderColor="gray.300"
+                                    borderRadius="full"
+                                    lineHeight="1.2"
+                                  >
+                                    {name}
+                                  </Text>
+                                ))}
+                              </Flex>
+                            </Box>
+                          )}
+
                           {/* Progressive chat option chips */}
                           {message.isProgressiveChat && message.progressiveOptions && message.progressiveOptions.length > 0 && (
                             <Box mt={3}>
@@ -2659,6 +2886,7 @@ const ChatInterface: React.FC = () => {
                                   >
                                     {(() => {
                                       const opts = message.progressiveOptions!;
+                                      const visibleN = progressiveChipVisible[message.id] || PROGRESSIVE_CHIP_PAGE;
                                       const hasGroups = opts.some((o) => o.group);
                                       // Group options for horizontal rows under section headers
                                       const sections: Array<{ group: string | null; items: typeof opts }> = [];
@@ -2673,7 +2901,19 @@ const ChatInterface: React.FC = () => {
                                         }
                                         for (const [g, items] of map) sections.push({ group: g, items });
                                       }
-                                      return sections.map((sec) => (
+                                      // Flatten with visible cap (keeps group headers for shown items only)
+                                      let shown = 0;
+                                      const limited = sections.map((sec) => {
+                                        if (shown >= visibleN) return { ...sec, items: [] as typeof opts };
+                                        const room = visibleN - shown;
+                                        const items = sec.items.slice(0, room);
+                                        shown += items.length;
+                                        return { ...sec, items };
+                                      }).filter((sec) => sec.items.length > 0);
+                                      const hasMore = opts.length > visibleN;
+                                      return (
+                                        <>
+                                          {limited.map((sec) => (
                                         <Box key={sec.group || '_all'} mb={sec.group ? 2.5 : 0}>
                                           {sec.group && (
                                             <Text
@@ -2691,6 +2931,8 @@ const ChatInterface: React.FC = () => {
                                           <Box display="flex" flexWrap="wrap" gap={2}>
                                             {sec.items.map((opt) => {
                                               const isSelected = (progressiveMultiSelect[message.id] || []).includes(opt.id);
+                                              // Engine sets imageUrl only for unique-next chips (medium/type/city/area/direction)
+                                              const showThumb = !!opt.imageUrl;
                                               return (
                                                 <Box
                                                   key={opt.id}
@@ -2699,8 +2941,9 @@ const ChatInterface: React.FC = () => {
                                                   display="inline-flex"
                                                   alignItems="center"
                                                   gap={2}
-                                                  px={3}
-                                                  py={2}
+                                                  px={showThumb ? 2 : 3}
+                                                  pl={showThumb ? 1.5 : undefined}
+                                                  py={showThumb ? 1.5 : 2}
                                                   borderRadius="full"
                                                   border="1.5px solid"
                                                   borderColor={isSelected ? 'brand.500' : 'gray.200'}
@@ -2745,6 +2988,13 @@ const ChatInterface: React.FC = () => {
                                                       <Text fontSize="9px" color="white" fontWeight="700" lineHeight="1">✓</Text>
                                                     )}
                                                   </Box>
+                                                  {showThumb ? (
+                                                    <ChatChipThumb
+                                                      url={opt.imageUrl!}
+                                                      label={opt.label}
+                                                      size={28}
+                                                    />
+                                                  ) : null}
                                                   <Text
                                                     fontSize="13px"
                                                     fontWeight="500"
@@ -2760,7 +3010,26 @@ const ChatInterface: React.FC = () => {
                                             })}
                                           </Box>
                                         </Box>
-                                      ));
+                                          ))}
+                                          {hasMore && (
+                                            <Button
+                                              mt={2}
+                                              size="xs"
+                                              variant="ghost"
+                                              color="brand.600"
+                                              fontWeight="600"
+                                              onClick={() =>
+                                                setProgressiveChipVisible((prev) => ({
+                                                  ...prev,
+                                                  [message.id]: (prev[message.id] || PROGRESSIVE_CHIP_PAGE) + PROGRESSIVE_CHIP_PAGE,
+                                                }))
+                                              }
+                                            >
+                                              Show more ({opts.length - visibleN} left)
+                                            </Button>
+                                          )}
+                                        </>
+                                      );
                                     })()}
                                   </Box>
 
@@ -2801,28 +3070,85 @@ const ChatInterface: React.FC = () => {
                                   </Box>
                                 </Box>
                               ) : (
-                                <Box display="flex" flexWrap="wrap" gap={2}>
-                                  {message.progressiveOptions.map((opt) => (
-                                    <Button
-                                      key={opt.id}
-                                      size="sm"
-                                      variant="outline"
-                                      borderColor="gray.200"
-                                      color="gray.700"
-                                      bg="white"
-                                      borderRadius="full"
-                                      fontWeight="500"
-                                      fontSize="13px"
-                                      px={3}
-                                      h="34px"
-                                      boxShadow="0 1px 2px rgba(0, 0, 0, 0.04)"
-                                      _hover={{ borderColor: 'brand.400', color: 'brand.700', bg: 'brand.50' }}
-                                      isDisabled={isLoading}
-                                      onClick={() => void handleProgressiveOptionClick(message, opt.id)}
-                                    >
-                                      {opt.label}
-                                    </Button>
-                                  ))}
+                                <Box>
+                                  {(() => {
+                                    const opts = message.progressiveOptions!;
+                                    const isYesNo = opts.every(
+                                      (o) =>
+                                        o.id === 'yes_generate'
+                                        || o.id === 'no_generate'
+                                        || o.id === 'yes'
+                                        || o.id === 'no'
+                                        || o.id === 'yes_min'
+                                        || o.id === 'no_min',
+                                    );
+                                    const previewUrl = isYesNo
+                                      ? opts.find((o) => o.imageUrl)?.imageUrl
+                                      : undefined;
+                                    const previewLabel =
+                                      opts.find((o) => o.imageUrl)?.medium
+                                      || opts.find((o) => o.imageUrl)?.label
+                                      || 'Reference';
+                                    return (
+                                      <>
+                                        {previewUrl ? (
+                                          <Box
+                                            mb={2.5}
+                                            display="flex"
+                                            justifyContent="flex-start"
+                                          >
+                                            <ChatChipThumb
+                                              url={previewUrl}
+                                              label={previewLabel}
+                                              size={96}
+                                              radius="md"
+                                            />
+                                          </Box>
+                                        ) : null}
+                                        <Box display="flex" flexWrap="wrap" gap={2}>
+                                          {opts.map((opt) => {
+                                            const showThumb = !isYesNo && !!opt.imageUrl;
+                                            return (
+                                              <Button
+                                                key={opt.id}
+                                                size="sm"
+                                                variant="outline"
+                                                borderColor="gray.200"
+                                                color="gray.700"
+                                                bg="white"
+                                                borderRadius="full"
+                                                fontWeight="500"
+                                                fontSize="13px"
+                                                px={showThumb ? 2 : 3}
+                                                h={showThumb ? '40px' : '34px'}
+                                                pl={showThumb ? 1.5 : undefined}
+                                                boxShadow="0 1px 2px rgba(0, 0, 0, 0.04)"
+                                                _hover={{
+                                                  borderColor: 'brand.400',
+                                                  color: 'brand.700',
+                                                  bg: 'brand.50',
+                                                }}
+                                                isDisabled={isLoading}
+                                                onClick={() =>
+                                                  void handleProgressiveOptionClick(message, opt.id)
+                                                }
+                                              >
+                                                <HStack spacing={1.5}>
+                                                  {showThumb ? (
+                                                    <ChatChipThumb
+                                                      url={opt.imageUrl!}
+                                                      label={opt.label}
+                                                    />
+                                                  ) : null}
+                                                  <Text as="span">{opt.label}</Text>
+                                                </HStack>
+                                              </Button>
+                                            );
+                                          })}
+                                        </Box>
+                                      </>
+                                    );
+                                  })()}
                                 </Box>
                               )}
                             </Box>
@@ -3258,6 +3584,8 @@ const ChatInterface: React.FC = () => {
                                               <img
                                                 src={imgUrl}
                                                 alt={`${result.service_name} - Image ${imgIdx + 1}`}
+                                                loading="lazy"
+                                                decoding="async"
                                                 style={{
                                                   width: '100%',
                                                   height: '100%',
@@ -3765,6 +4093,10 @@ Generate a detailed quote based on the above information.`;
           alignSelf={messages.length === 0 ? { base: 'stretch', md: 'center' } : 'stretch'}
           mx={messages.length === 0 ? { base: 0, md: 'auto' } : 0}
           flexShrink={0}
+          position="relative"
+          zIndex={20}
+          isolation="isolate"
+          pointerEvents="auto"
           px={{ base: 2, md: messages.length === 0 ? 4 : 4 }}
           pt={messages.length === 0 ? { base: 2, md: 4 } : { base: 2, md: 3 }}
           pb={
@@ -3789,7 +4121,7 @@ Generate a detailed quote based on the above information.`;
             borderColor="brand.500"
             borderRadius={{ base: '28px', md: 'full' }}
             position="relative"
-            zIndex={999}
+            zIndex={1}
             transition="box-shadow 0.2s ease, border-color 0.2s ease"
             _hover={{ borderColor: 'brand.600' }}
             _focusWithin={{
@@ -3816,7 +4148,7 @@ Generate a detailed quote based on the above information.`;
               }}
               onKeyDown={handleInputKeyDown}
               onFocus={(e) => {
-                e.target.select();
+                // Mobile keyboard: keep field visible — don't select-all (that hides the caret)
                 if (Capacitor.isNativePlatform() || window.innerWidth <= 768) {
                   setTimeout(() => {
                     e.target.scrollIntoView({
@@ -3829,7 +4161,7 @@ Generate a detailed quote based on the above information.`;
               }}
               placeholder="Give me a quote for…"
               aria-label="Message input"
-              disabled={isLoading}
+              // Never disable — a stuck loading flag used to leave the field dead
               variant="unstyled"
               flex={1}
               minW={0}
@@ -3841,10 +4173,6 @@ Generate a detailed quote based on the above information.`;
                 color: 'gray.500',
                 fontSize: { base: '13px', md: '15px' },
                 fontWeight: '400',
-              }}
-              _disabled={{
-                color: 'gray.400',
-                cursor: 'not-allowed',
               }}
               sx={{
                 '&::placeholder': {
@@ -4076,6 +4404,8 @@ Generate a detailed quote based on the above information.`;
           </Flex>
         )}
       </VStack>
+
+      <ChipImageLightbox />
 
       {/* Confirmation Table Modal — shown after min qty (if any) and before Gemini */}
       {confirmationTable && (

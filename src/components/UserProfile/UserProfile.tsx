@@ -108,15 +108,6 @@ export const UserProfile: React.FC = () => {
         <MenuItem onClick={() => history.push('/company-settings')}>
           Company Settings
         </MenuItem>
-        {/* AI Token Usage — hidden for now
-        <MenuDivider />
-        <MenuItem 
-          icon={<Text fontSize="sm">📊</Text>}
-          onClick={() => history.push('/token-usage')}
-        >
-          AI Token Usage
-        </MenuItem>
-        */}
         <MenuDivider />
         <MenuItem onClick={handleLogout} color="red.600">
           Logout

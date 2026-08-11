@@ -19,7 +19,7 @@ import {
   VStack,
 } from '@chakra-ui/react';
 import { HamburgerIcon, MoonIcon, SunIcon } from '@chakra-ui/icons';
-import { FiHome, FiFileText, FiEye } from 'react-icons/fi';
+import { FiHome, FiEye } from 'react-icons/fi';
 import { useHistory } from 'react-router-dom';
 
 interface LayoutProps {
@@ -37,7 +37,6 @@ const Layout: React.FC<LayoutProps> = ({ title, children }) => {
 
   const navigationItems = [
     { name: 'Home', icon: FiHome, path: '/' },
-    { name: 'Quote', icon: FiFileText, path: '/quote' },
     { name: 'Preview', icon: FiEye, path: '/preview' },
   ];
 

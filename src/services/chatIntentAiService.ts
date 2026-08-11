@@ -4,8 +4,13 @@
  */
 
 import { canonicalizeServiceName } from '../utils/serviceNameUtils';
+import {
+  reportAiTelemetry,
+  usageFromGeminiResponse,
+} from './aiTokenMonitor';
 
-const MODEL = 'gemini-2.5-flash-lite';
+const MODEL = 'gemini-3.1-flash-lite';
+const TELEMETRY_MODULE = 'chat_intent';
 
 export interface ChatIntentHint {
   kind?: 'greeting' | 'help' | 'quote' | 'clarify_type' | 'city_browse' | 'other' | null;
@@ -14,6 +19,8 @@ export interface ChatIntentHint {
   medium?: string | null;
   city?: string | null;
   areaHint?: string | null;
+  /** Raw site/direction phrase extracted from the user's wording. */
+  directionHint?: string | null;
   /** True when feature/place is ambiguous (led, bus stand, outdoor…) — ask type from DB. */
   ambiguous?: boolean;
   clarifyHint?: string | null;
@@ -178,6 +185,7 @@ export async function parseChatIntentWithAi(
 
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), timeoutMs);
+  const startedAt = Date.now();
 
   const typeList = types.length > 0 ? types.slice(0, 100).join(' | ') : '(none)';
   const cityList = cities.length > 0 ? cities.slice(0, 40).join(' | ') : '(none)';
@@ -187,7 +195,7 @@ export async function parseChatIntentWithAi(
     const prompt = [
       'You plan steps for an advertising quote chatbot.',
       'Return ONLY compact JSON (no markdown):',
-      '{"kind":"greeting"|"help"|"quote"|"clarify_type"|"city_browse"|"other","media":string[],"city":string|null,"areaHint":string|null,"ambiguous":boolean,"clarifyHint":string|null,"qty":number|null,"duration":string|null,"shortReply":string}',
+      '{"kind":"greeting"|"help"|"quote"|"clarify_type"|"city_browse"|"other","media":string[],"city":string|null,"areaHint":string|null,"directionHint":string|null,"ambiguous":boolean,"clarifyHint":string|null,"qty":number|null,"duration":string|null,"shortReply":string}',
       '',
       'SERVICE TYPES IN DATABASE:',
       typeList,
@@ -197,7 +205,7 @@ export async function parseChatIntentWithAi(
       '',
       'Rules:',
       '- Never invent prices. Never invent types/cities not related to the lists above.',
-      '- kind=greeting for hi/hello/hey.',
+      '- kind=greeting for hi/hello/hey/hlo/hii.',
       '- kind=help for help/how-to.',
       '- kind=city_browse when user only names a city.',
       '- kind=clarify_type + ambiguous=true when the user gives a FEATURE or place phrase that spans MANY types',
@@ -211,9 +219,11 @@ export async function parseChatIntentWithAi(
       '- city = one of CITIES list ONLY when user named that city; otherwise null. Never invent a city.',
       '- Never put locality/area names (e.g. Anna Nagar, Tenyampet) as city — use areaHint for those.',
       '- areaHint = locality only when user named it; else null.',
+      '- directionHint = only the raw site/direction phrase the user named, such as "Gemini Fly Over"; otherwise null.',
+      '- Do not invent or correct directionHint. It will be validated against catalog direction_remarks by the application.',
       '- qty only if user typed a count (not duration). duration like "3 months" or null.',
       '- shortReply = ONE short sales line (max 18 words). Sound like ChatGPT: natural, friendly, professional. No prices. No UI jargon. Max 2-3 short sentences.',
-      '- Never start every reply with Sure/Great/Perfect/I understand — rotate naturally (Here\'s what we found / Let\'s continue / Thanks / or no opener).',
+      '- Never start every reply with Sure/Great/Perfect/I understand/Thanks/Here\'s what we found — rotate naturally (Let\'s continue / Good choice / or no opener). Never use Thanks/Thank you/Here\'s what we found as an opener.',
       '- Always mention what the catalogue currently provides BEFORE asking the next missing step.',
       '- Never invent services/cities/prices. Never say database.',
       '- Examples for shortReply:',
@@ -231,6 +241,7 @@ export async function parseChatIntentWithAi(
       '  "led" → kind=clarify_type, ambiguous=true, media=[], clarifyHint="led"',
       '  "bus and auto madurai" → kind=quote, media=["bus","auto"], city="Madurai"',
       '  "hoarding near Tenyampet" → kind=quote, media=["hoarding"], city=null, areaHint="Tenyampet"',
+      '  "hoarding near Gemini Fly Over" → kind=quote, media=["hoarding"], city=null, areaHint=null, directionHint="Gemini Fly Over"',
       '  "bus stand branding madurai" → kind=clarify_type, ambiguous=true, clarifyHint="bus stand", city="Madurai"',
       '  "chennai" → kind=city_browse, city="Chennai"',
       '  "give me a quote for chennai" → kind=city_browse, city="Chennai", media=[]',
@@ -249,10 +260,30 @@ export async function parseChatIntentWithAi(
       }),
     });
 
-    if (!res.ok) return null;
+    if (!res.ok) {
+      reportAiTelemetry({
+        model: MODEL,
+        module: TELEMETRY_MODULE,
+        latency: Date.now() - startedAt,
+        status: 'FAILED',
+        errorMessage: `HTTP ${res.status}`,
+      });
+      return null;
+    }
     const data = await res.json();
+    const usage = usageFromGeminiResponse(data);
     const raw = data?.candidates?.[0]?.content?.parts?.[0]?.text;
-    if (!raw || typeof raw !== 'string') return null;
+    if (!raw || typeof raw !== 'string') {
+      reportAiTelemetry({
+        model: MODEL,
+        module: TELEMETRY_MODULE,
+        latency: Date.now() - startedAt,
+        status: 'FAILED',
+        usage,
+        errorMessage: 'Empty Gemini response',
+      });
+      return null;
+    }
 
     let jsonText = raw.trim();
     const fence = jsonText.match(/```(?:json)?\s*([\s\S]*?)```/i);
@@ -274,6 +305,14 @@ export async function parseChatIntentWithAi(
     let shortReply = parsed.shortReply ? String(parsed.shortReply).trim() : null;
     if (shortReply && shortReply.length > 120) shortReply = shortReply.slice(0, 117) + '…';
 
+    reportAiTelemetry({
+      model: MODEL,
+      module: TELEMETRY_MODULE,
+      latency: Date.now() - startedAt,
+      status: 'SUCCESS',
+      usage,
+    });
+
     return {
       kind: ambiguous ? 'clarify_type' : (parsed.kind || 'quote'),
       media,
@@ -283,13 +322,23 @@ export async function parseChatIntentWithAi(
         cities,
       ),
       areaHint: parsed.areaHint ? String(parsed.areaHint).trim() : null,
+      directionHint: parsed.directionHint
+        ? String(parsed.directionHint).trim().slice(0, 160)
+        : null,
       ambiguous,
       clarifyHint: parsed.clarifyHint ? String(parsed.clarifyHint).trim() : null,
       qty: parsed.qty != null && Number.isFinite(Number(parsed.qty)) ? Number(parsed.qty) : null,
       duration: parsed.duration ? String(parsed.duration) : null,
       shortReply,
     };
-  } catch {
+  } catch (error) {
+    reportAiTelemetry({
+      model: MODEL,
+      module: TELEMETRY_MODULE,
+      latency: Date.now() - startedAt,
+      status: 'FAILED',
+      errorMessage: error instanceof Error ? error.message : String(error),
+    });
     return null;
   } finally {
     clearTimeout(timer);

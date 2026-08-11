@@ -1,6 +1,6 @@
 import React from 'react';
 import { Box, HStack, VStack, Text, Icon } from '@chakra-ui/react';
-import { FiHome, FiFileText, FiFolder, FiEye } from 'react-icons/fi';
+import { FiHome, FiFolder, FiEye } from 'react-icons/fi';
 import { useHistory, useLocation } from 'react-router-dom';
 import './BottomNav.css';
 
@@ -13,7 +13,6 @@ interface NavItem {
 const navItems: NavItem[] = [
   { path: '/', icon: FiHome, label: 'Chat' },
   { path: '/documents', icon: FiFolder, label: 'Docs' },
-  { path: '/quote', icon: FiFileText, label: 'Client' },
   { path: '/preview', icon: FiEye, label: 'Preview' },
 ];
 

@@ -12,52 +12,90 @@ When changing quote chat matching, intent, or Chip UI — especially `src/utils/
 **Service → Type → City → Area → Direction → Quote**
 
 - Ask **Type before City**. Never ask City, then Type, then City again.
-- 2+ options → ask; 0/NA → skip; exactly 1 city → Yes/No **Continue** (“We currently offer … in X only”) — never silent auto-city → quote.
+- 2+ options → ask; 0/NA → skip; exactly 1 city → **auto-lock** and continue (no OK Continue tap).
+- Chip/ask lists use **only** DB field values: `medium` · `medium_type` · `city` · `area_name` · `direction_remarks` (skip blank/NA; no medium_type whitelist).
+- **Exact catalog medium locked** → ask only that medium’s `medium_type` values. Never remount the family medium list (no special-case product names).
+- Bare family token (not an exact medium) → ask distinct `medium` values from matching DB rows.
+- Batch multi-service: after type/site Confirm, **keep `workQueue`** and continue next pending service — never clear the queue and jump to a final quote while services remain. Handoff copy = **“Now choosing …”** (not “Next — …”, which sounds like “next Auto”).
 
 ## City UI
 
 - 2+ cities/places → **checkboxes** (`allowMulti: true`) + Confirm.
+- **City chips = what DB stores in `metadata.city`** (OMR, Padur, Chennai, …). If city blank → use `area_name`. Never invent Chennai when inventory only has OMR/Padur.
 - Multi-city Confirm → **one quote** with a line per resolvable city (or workQueue then one quote) — never orphan “Next — …” dead-ends.
+- Multi-area Confirm → auto-include areas with **exactly 1 site**; show **site checkboxes** only for areas with **2+ sites** (`Area · direction`, `allowMulti`); Confirm → one quote merging auto + picked. Exactly 1 site total / every area single-site → quote (no direction ask).
+- 2+ **type** chips (Frontlit / Nonlit / family options) → also **checkboxes** + Confirm (same as city).
 
 ## Place / OMR (critical)
 
 Queries like `near omr hoarding`:
 
-1. Lock **area** (OMR) + medium; ask **Type** first if 2+ types.
-2. After Type → **Continue** for that place’s metro only (e.g. Chennai).
-3. **Keep** `area` / `placeHint`; **skip** area re-ask; go to Direction.
-4. Never reopen full city list (no Coimbatore) after place is known.
+1. Lock place by matching **`metadata.city` OR `area_name`** (never `direction_remarks`).
+2. Ask **Type** first if 2+ types.
+3. After Type → City Confirm uses **DB city label(s)** in that pool (e.g. OMR) — never force Chennai metro invent.
+4. **Keep** `area` / `placeHint`; skip area re-ask when already locked; go to Direction.
+5. Never reopen unrelated city list after place is known.
+6. **No type-append / “Next up: Hoarding”:** Multi-type Confirm (Frontlit + Nonlit) on the **same** medium → **one union site list** → Confirm → **one quote**. Never queue Nonlit as a second Hoarding round on `workQueue`.
+7. **Never show a type/area ask with empty chips.** If place+service has no rows, say not available — do not reuse “which type?” copy with `options: []`.
 
 **Type chip** (`medium:…|type`) on the **same** medium MUST preserve `city`, `area`, `placeHint`, `candidateServiceIds`.
 
-**New medium** chip MAY clear stale place/candidates.
+**Place-first browse** (`omr` / `ecr` → service chips): picking a **new medium** (e.g. Police Booth) MUST **keep** `area` / `placeHint` → city Confirm for that place’s metro only (Chennai). Never reopen Hosur/Madurai/full city list.
+
+**New medium** chip MAY clear stale place/candidates only when **no** place is locked (no `placeHint` / area from place browse).
 
 ## Place / area vs direction_remarks (critical)
 
 - Place matching (`filterByLocality`, `filterHitsBySessionLocation`, locality detect) uses **only** area_name / locality / city metadata.
 - **Never** match place from `direction_remarks` (e.g. `ARCOT ROAD VIRUGAMBAKKAM TOWARDS VADAPALANI` is **not** hoarding in Vadapalani).
 - `direction_remarks` are only for: Direction step chips, and `detectDirectionInText` for multi-word sites (e.g. “Gemini Flyover”).
+- When user names a **direction** (e.g. `kannagi`) that matches inventory: Continue must use the **full** `direction_remarks` and **one** location (metro city only) — e.g. “We found Police Booth at [full direction] in Chennai. Shall I continue?” — never “Kannagi … (Omr / Chennai)”.
+- **Type must not invent from site text:** `getMediumTypeFromDb` — prefer `metadata.medium_type`; name/id fallback for `inside`/`outside`/`interior` only when medium is metro/train. Never treat “Court Inside” / Police Booth direction as a Type chip (Metro Train Inside still OK).
 
 ## Batch multi-service + Metro (critical)
 
-- Batch **city** chips for Metro = **known metros only** (Chennai). Never Anna Nagar / Vanagaram as Metro cities.
-- **Bus Shelter / site media**: keep **locality/place** chips (Anna Nagar, …) — do not auto-collapse to Chennai and skip the city ask.
-- After Metro city Confirm: show **one list of all metro family chips** — Metro Station — Elevated, Metro Station — Underground, Train Inside, Train Wrap (include Train* even when the medium name has no “metro”).
-- Apartment / Padur-style locality-as-city chips remain OK outside Metro batch city rule.
+- Long `and`-lists: **dedupe** family duplicates first (`metro station elevated` keeps, bare `metro` drops).
+- **No mega service×city checkbox grid.** Process **one service at a time** through Type → City → Area → Direction; ask only when that step has **2+** options; then `Now choosing …` for the following service; one quote at the end.
+- Services with **exactly one city**: group in copy (“These are available only in Chennai…”) and **auto-lock** — never OK Continue one-by-one for each.
+- **Shared city** in text (`bus, auto in chennai`): apply city to all segments; do **not** re-open city chips; sequential funnel in that city. If only some services exist there, say so.
+- After Metro city/type: family chips Station Elevated/Underground + Train Inside + Train Wrap.
+- City step for shelter/apartment may still show locality/area chips when 2+; metro/family use known metros only.
 
 ## Metro / family tokens (critical)
 
 - `metro`, `bus`, `led`, `booth` = **service family**, never a direction/site match.
 - Do **not** match these via substring in `direction_remarks` or long `service_name` lines (e.g. bus shelter titled “…Metro Station…”).
-- Continue Yes/No: keep `needsContinueConfirm` until **Yes** — never show “quote ready” without a click.
+- Continue OK after place browse still uses chips for service pick; single remaining city auto-locks (no OK tap).
 - Query `led`: show LED matches **and** Non LED siblings of the same product (e.g. Mobile Van LED + Mobile Van Non LED).
 
 ## Do not “fix” with these regressions
 
 - Do **not** defer Type until after City (that caused double city ask and broke OMR).
 - Madurai / Police Booth: fix via **city pool = same medium (+ mediumType) filters** as matching (`poolForCityOptions`), not by delaying Type.
-- `detectCityInText` = **known metros only** (not Padur / Vadapalani / Hosur / OMR as typed cities).
+- `detectCityInText` = **known metros only for typed phrases** (“in chennai”). **City chips** show raw `metadata.city` (OMR/Padur OK); blank city → `area_name`. Never invent Chennai.
 
 ## Out of scope (unless product asks)
 
-Fuzzy place typos, booth/gandhi gate special cases, service Did-you-mean for clear services like `bus semi`.
+Fuzzy **place** typos (OMR / Padur / other city misspellings), booth/gandhi gate special cases.
+**Exception (product):** common Madurai typos (`maddurai`, `maduari`, `madhurai`, …) resolve via `CITY_TYPO_ALIASES` in `detectCityInText` so shared-city batch lock works.
+(Service-word plurals + light media typos are **in scope** — silent fix against catalog medium tokens only; never fuzzy cities/areas/directions except the Madurai aliases above.)
+
+**Failed place query (product):** `near vadaplani` (typo / unknown) must **not** keep a prior city/service session (e.g. Hoarding · Coimbatore direction chips). Clear locks and say place not found + service chips (`detectUnresolvedPlaceAttempt` → `replyUnresolvedPlace`).
+
+## Batch shared-city unavailable (product)
+
+When user names a city (`police booth and cab in madurai` / `maddurai`): services **not** in that city must **not** be auto-included from another metro. Say e.g. “We’re currently not offering Cab in Madurai. Continuing with Police Booth.” and continue only with available services (`startBatchWithCityLock`).
+
+## Mixed-city batch (product)
+
+`bus shelter 4 and cab 50 madurai and auto in chennai`:
+- Split on `and` / `,` / `&` / `+`.
+- **Shared city lock only when every named segment agrees on one metro** (`bus and auto in chennai`). Never pick the first city in the full string and force it on all segments.
+- Per-segment city: Cab→Madurai, Auto→Chennai; parts with no city stay unlocked until ask/auto.
+- If a service has **zero** inventory in its named city → **don’t add** it; say not providing there; continue with the rest. Never `scoped = hits` fallback to other cities.
+- Type / medium chip with city already locked (**keep `session.city`**) — never clear city and re-ask Chennai/Rotn.
+
+Shared multi-city list (`bus and auto in madurai and chennai`):
+- Treat Madurai+Chennai as **candidates for the whole batch** (not lock only the first metro).
+- Cities with no inventory → note + skip; if exactly one usable city → continue there.
+- If 2+ usable cities → city checkboxes once for the batch.

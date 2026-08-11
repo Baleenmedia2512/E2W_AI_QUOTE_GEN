@@ -1378,6 +1378,25 @@
   min-width: 0;
 }
 
+.template-corporate-minimal .terms-section .terms-sections {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.template-corporate-minimal .terms-section .terms-subsection {
+  margin: 0;
+}
+
+.template-corporate-minimal .terms-section .term-section-heading {
+  font-size: 13px;
+  font-weight: 800;
+  color: #750926;
+  letter-spacing: 0.02em;
+  margin: 0 0 6px 0;
+  text-transform: none;
+}
+
 .template-corporate-minimal .terms-section .term-service-label {
   font-weight: 800;
   color: #750926;

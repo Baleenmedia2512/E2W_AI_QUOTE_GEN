@@ -4,9 +4,14 @@
  */
 
 import type { QuoteItem } from '../types/quote';
+import {
+  reportAiTelemetry,
+  usageFromGeminiResponse,
+} from './aiTokenMonitor';
 
 const MODEL = 'gemini-3.1-flash-lite';
 const BATCH_SIZE = 20;
+const TELEMETRY_MODULE = 'qty_unit_inference';
 
 function getApiKey(): string {
   const apiKey = import.meta.env.VITE_GEMINI_API_KEY;
@@ -128,6 +133,7 @@ async function inferQtyUnitsBatchRest(
 
     let httpStatus = 0;
     let json: unknown = null;
+    const startedAt = Date.now();
     try {
       const res = await fetch(url, {
         method: 'POST',
@@ -138,6 +144,13 @@ async function inferQtyUnitsBatchRest(
       json = await res.json();
     } catch (err) {
       console.error('🏷️ [QtyUnit-AI-EXACT] REST_FETCH_FAIL', err);
+      reportAiTelemetry({
+        model: MODEL,
+        module: TELEMETRY_MODULE,
+        latency: Date.now() - startedAt,
+        status: 'FAILED',
+        errorMessage: err instanceof Error ? err.message : String(err),
+      });
       continue;
     }
 
@@ -146,8 +159,18 @@ async function inferQtyUnitsBatchRest(
       bodyPreview: JSON.stringify(json).slice(0, 1500),
     });
 
+    const usage = usageFromGeminiResponse(json);
+
     if (httpStatus < 200 || httpStatus >= 300) {
       console.error('🏷️ [QtyUnit-AI-EXACT] REST_HTTP_ERROR', { httpStatus, json });
+      reportAiTelemetry({
+        model: MODEL,
+        module: TELEMETRY_MODULE,
+        latency: Date.now() - startedAt,
+        status: 'FAILED',
+        usage,
+        errorMessage: `HTTP ${httpStatus}`,
+      });
       continue;
     }
 
@@ -162,8 +185,24 @@ async function inferQtyUnitsBatchRest(
 
     if (response.error) {
       console.error('🏷️ [QtyUnit-AI-EXACT] REST_API_ERROR', response.error);
+      reportAiTelemetry({
+        model: MODEL,
+        module: TELEMETRY_MODULE,
+        latency: Date.now() - startedAt,
+        status: 'FAILED',
+        usage,
+        errorMessage: 'Gemini API error',
+      });
       continue;
     }
+
+    reportAiTelemetry({
+      model: MODEL,
+      module: TELEMETRY_MODULE,
+      latency: Date.now() - startedAt,
+      status: 'SUCCESS',
+      usage,
+    });
 
     const texts: string[] = [];
     for (const c of response.candidates || []) {

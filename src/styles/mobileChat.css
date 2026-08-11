@@ -173,6 +173,11 @@
     width: auto !important;
   }
 
+  /* ~5% bolder than default 500 for AI reply body text */
+  .qb-chat-scroll .qb-assistant-text {
+    font-weight: 525 !important;
+  }
+
   @keyframes qbMsgIn {
     from {
       opacity: 0;
@@ -197,6 +202,12 @@
     padding: 0 !important;
     background: transparent !important;
     align-self: auto !important;
+    pointer-events: auto !important;
+  }
+
+  /* Message list can extend under the fixed composer — never steal taps */
+  .qb-chat-scroll {
+    pointer-events: auto;
   }
 
   .qb-composer__bar {

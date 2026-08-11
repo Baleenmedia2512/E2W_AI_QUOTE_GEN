@@ -529,9 +529,9 @@
 .preview-container {
   flex: 1;
   overflow: auto;
-  padding: 8px 12px 80px;
+  padding: 24px 16px 80px;
   display: flex;
-  justify-content: stretch;
+  justify-content: center;
   align-items: flex-start;
   background: #F1F5F9;
   position: relative;
@@ -542,26 +542,31 @@
 .preview-wrapper {
   transform-origin: top center;
   transition: transform 0.3s cubic-bezier(0.4, 0, 0.2, 1);
-  min-height: 100%;
-  width: 100%;
+  /* Shrink-wrap to A4 page so scale() stays centered */
+  width: fit-content;
+  max-width: 100%;
+  margin: 0 auto;
   display: flex;
   justify-content: center;
+  align-items: flex-start;
 }
 
 .preview-content {
   background: white;
   box-shadow: 0 4px 24px rgba(0, 0, 0, 0.08);
   border-radius: 4px;
-  margin: 0;
-  width: 100%;
-  max-width: 100%;
+  margin: 0 auto;
+  /* A4 paper width — centered in grey workspace */
+  width: 210mm;
+  max-width: min(210mm, 100%);
+  box-sizing: border-box;
 }
 
-/* Screen preview: use full available width (PDF export keeps A4 via .pdf-export-mode) */
+/* Screen preview: keep A4, center pages; PDF export still uses .pdf-export-mode */
 .preview-content .template-corporate-minimal {
-  max-width: 100% !important;
+  max-width: 210mm !important;
   width: 100% !important;
-  margin: 0 !important;
+  margin: 0 auto !important;
   box-sizing: border-box;
 }
 
@@ -698,19 +703,29 @@
   }
 
   .preview-container {
-    padding: 12px 0 80px;
+    padding: 12px 10px 100px;
+    justify-content: center;
   }
 
   .preview-wrapper {
     transform: none !important;
     width: 100%;
+    max-width: 100%;
+    margin: 0 auto;
   }
 
   .preview-content {
     width: 100%;
     max-width: 100%;
-    box-shadow: none;
-    border-radius: 0;
+    margin: 0 auto;
+    box-shadow: 0 2px 12px rgba(0, 0, 0, 0.06);
+    border-radius: 8px;
+  }
+
+  .preview-content .template-corporate-minimal {
+    max-width: 100% !important;
+    width: 100% !important;
+    margin: 0 auto !important;
   }
 
   .modal-content {

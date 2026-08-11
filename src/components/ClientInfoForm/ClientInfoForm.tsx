@@ -60,8 +60,8 @@ const ClientInfoForm: React.FC<ClientInfoFormProps> = ({ onSubmit, onBack, initi
     // MANDATORY: Phone
     if (!formData.phone.trim()) {
       newErrors.phone = 'Phone is required';
-    } else if (!/^\+?[\d\s-()]+$/.test(formData.phone)) {
-      newErrors.phone = 'Invalid phone number';
+    } else if (!/^\d{10}$/.test(formData.phone.trim())) {
+      newErrors.phone = 'Phone number must contain exactly 10 digits';
     }
 
     // OPTIONAL: Email (validate format only if provided)
@@ -241,7 +241,9 @@ const ClientInfoForm: React.FC<ClientInfoFormProps> = ({ onSubmit, onBack, initi
                 </FormLabel>
                 <Input
                   value={formData.phone}
-                  onChange={(e) => handleInputChange('phone', e.target.value)}
+                  onChange={(e) =>
+                    handleInputChange('phone', e.target.value.replace(/\D/g, '').slice(0, 10))
+                  }
                   onFocus={(e) => { const t = e.target; setTimeout(() => t.select(), 300); }}
                   placeholder="+1 (555) 000-0000"
                   type="tel"

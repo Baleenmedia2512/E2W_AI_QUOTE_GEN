@@ -36,6 +36,8 @@ export interface TemplateProps {
   data: TemplateData;
   editable?: boolean;
   onDataChange?: (data: TemplateData) => void;
+  /** Preview-only: update client from inline Name / Phone / Email fields. */
+  onClientChange?: (client: ClientInfo) => void;
   /** Preview-only: jump to a section (TOC / exec summary service link). */
   onNavigateToSection?: (sectionId: string) => void;
 }

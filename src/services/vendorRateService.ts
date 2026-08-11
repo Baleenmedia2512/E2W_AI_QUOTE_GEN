@@ -31,9 +31,19 @@ const FILLER_TOKENS = new Set([
 ]);
 
 let vendorRatesCache: VendorRateRow[] = [];
+let vendorRatesCacheAt = 0;
+const VENDOR_RATES_CACHE_TTL_MS = 60_000;
+let vendorRatesInflight: Promise<VendorRateRow[]> | null = null;
 
 export function getVendorRatesCache(): VendorRateRow[] {
   return vendorRatesCache;
+}
+
+/** Drop in-memory vendor cache (e.g. after upload). */
+export function invalidateVendorRatesCache(): void {
+  vendorRatesCache = [];
+  vendorRatesCacheAt = 0;
+  vendorRatesInflight = null;
 }
 
 function isNaLike(value: unknown): boolean {
@@ -353,82 +363,81 @@ export function normalizeVendorRateRow(row: Record<string, unknown>): VendorRate
 }
 
 export async function loadVendorRatesFromCloud(): Promise<VendorRateRow[]> {
-  try {
-    let data: Record<string, unknown>[] | null = null;
-    let error: { message: string } | null = null;
-
-    const ranked = await supabase
-      .from('vendor_rate_chunks')
-      .select('*')
-      .eq('preferred_vendor_rank', 1);
-
-    if (ranked.error) {
-      console.warn(
-        '⚠️ [vendor_rate_chunks] Rank filter failed, loading all then filtering client-side:',
-        ranked.error.message,
-      );
-      const all = await supabase.from('vendor_rate_chunks').select('*');
-      data = (all.data || []) as Record<string, unknown>[];
-      error = all.error;
-    } else {
-      data = (ranked.data || []) as Record<string, unknown>[];
-    }
-
-    if (error) {
-      console.warn(
-        '⚠️ [vendor_rate_chunks] Unavailable — full fallback to proposal_chunks:',
-        error.message,
-      );
-      vendorRatesCache = [];
-      return [];
-    }
-
-    const rank1Rows = (data || []).filter((row) => {
-      const rank = Number(
-        row.preferred_vendor_rank ??
-          (row.metadata as Record<string, unknown> | undefined)?.preferred_vendor_rank,
-      );
-      if (!Number.isFinite(rank)) return true;
-      return rank === 1;
-    });
-
-    const rows = rank1Rows
-      .map((row) => normalizeVendorRateRow(row))
-      .filter((r): r is VendorRateRow => r != null)
-      .map(sanitizeVendorPipeFields);
-
-    vendorRatesCache = rows;
-    console.log(
-      `💰 [vendor_rate_chunks] Rank=1: ${rank1Rows.length}; usable: ${rows.length}` +
-        (rank1Rows.length > rows.length
-          ? ` (${rank1Rows.length - rows.length} skipped — no usable pricing)`
-          : ''),
-    );
-    if (rows.length > 0) {
-      console.log(
-        '💰 [vendor_rate_chunks] Sample:',
-        rows.slice(0, 3).map((r) => ({
-          service_id: r.service_id,
-          medium: r.medium,
-          medium_type: r.medium_type,
-          rate_key: r.rate_key,
-          city: r.city,
-          direction: r.direction_remarks,
-          vendor: r.vendor_name,
-          display_price: r.pricing?.display_price,
-          hasTerms: !!r.terms,
-          imageCount: r.images?.length ?? 0,
-          hasReview: !!r.review,
-          hasSpecifications: !!r.specifications && Object.keys(r.specifications).length > 0,
-        })),
-      );
-    }
-    return rows;
-  } catch (err) {
-    console.warn('⚠️ [vendor_rate_chunks] Load failed — full fallback to proposal_chunks:', err);
-    vendorRatesCache = [];
-    return [];
+  const now = Date.now();
+  if (
+    vendorRatesCache.length > 0
+    && now - vendorRatesCacheAt < VENDOR_RATES_CACHE_TTL_MS
+  ) {
+    return vendorRatesCache;
   }
+  if (vendorRatesInflight) return vendorRatesInflight;
+
+  vendorRatesInflight = (async () => {
+    try {
+      let data: Record<string, unknown>[] | null = null;
+      let error: { message: string } | null = null;
+
+      const ranked = await supabase
+        .from('vendor_rate_chunks')
+        .select('*')
+        .eq('preferred_vendor_rank', 1);
+
+      if (ranked.error) {
+        console.warn(
+          '⚠️ [vendor_rate_chunks] Rank filter failed, loading all then filtering client-side:',
+          ranked.error.message,
+        );
+        const all = await supabase.from('vendor_rate_chunks').select('*');
+        data = (all.data || []) as Record<string, unknown>[];
+        error = all.error;
+      } else {
+        data = (ranked.data || []) as Record<string, unknown>[];
+      }
+
+      if (error) {
+        console.warn(
+          '⚠️ [vendor_rate_chunks] Unavailable — full fallback to proposal_chunks:',
+          error.message,
+        );
+        vendorRatesCache = [];
+        vendorRatesCacheAt = 0;
+        return [];
+      }
+
+      const rank1Rows = (data || []).filter((row) => {
+        const rank = Number(
+          row.preferred_vendor_rank ??
+            (row.metadata as Record<string, unknown> | undefined)?.preferred_vendor_rank,
+        );
+        if (!Number.isFinite(rank)) return true;
+        return rank === 1;
+      });
+
+      const rows = rank1Rows
+        .map((row) => normalizeVendorRateRow(row))
+        .filter((r): r is VendorRateRow => r != null)
+        .map(sanitizeVendorPipeFields);
+
+      vendorRatesCache = rows;
+      vendorRatesCacheAt = Date.now();
+      console.log(
+        `💰 [vendor_rate_chunks] Rank=1: ${rank1Rows.length}; usable: ${rows.length}` +
+          (rank1Rows.length > rows.length
+            ? ` (${rank1Rows.length - rows.length} skipped — no usable pricing)`
+            : ''),
+      );
+      return rows;
+    } catch (err) {
+      console.warn('⚠️ [vendor_rate_chunks] Load failed — full fallback to proposal_chunks:', err);
+      vendorRatesCache = [];
+      vendorRatesCacheAt = 0;
+      return [];
+    } finally {
+      vendorRatesInflight = null;
+    }
+  })();
+
+  return vendorRatesInflight;
 }
 
 function citiesMatch(a: string, b: string): boolean {
@@ -1028,27 +1037,35 @@ function displayNameFromVendor(v: VendorRateRow): string {
 
   let base = '';
 
-  // 1) Prefer clean rate_key / medium-id slug (kebab) — only when not a city-collapsed stub
-  const slugSource =
-    (rateKey && !rateKey.includes('|') ? rateKey : '') ||
-    (/^[a-z0-9]+(?:-[a-z0-9]+)+$/i.test(rawMedium) ? rawMedium : '');
-
-  if (slugSource) {
-    let slug = slugSource.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '');
-    const city = cityFromRateKey(slug);
-    if (city) slug = slug.slice(0, -(city.length + 1));
-    // Strip trailing medium_type from slug for base label (re-added below as " — Type")
-    const typeSlug = normalizeMediumTypeToken(v.medium_type);
-    if (typeSlug && slug.endsWith(`-${typeSlug}`)) {
-      slug = slug.slice(0, -(typeSlug.length + 1));
-    }
-    base = titleCaseWords(slug.split('-'));
-  }
-
-  // 2) Fallback: short clean medium name only
-  if (!base && rawMedium && !isPollutedMediumLabel(rawMedium)) {
+  // 1) Prefer clean medium field (short product name)
+  if (rawMedium && !isPollutedMediumLabel(rawMedium)) {
     base = titleCaseWords(rawMedium.split(/[\s–—\-/]+/));
   }
+
+  // 2) Fallback: clean rate_key / medium-id slug (kebab) — strip city + type suffixes
+  if (!base) {
+    const slugSource =
+      (rateKey && !rateKey.includes('|') ? rateKey : '') ||
+      (/^[a-z0-9]+(?:-[a-z0-9]+)+$/i.test(rawMedium) ? rawMedium : '');
+
+    if (slugSource) {
+      let slug = slugSource.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '');
+      const city = cityFromRateKey(slug);
+      if (city) slug = slug.slice(0, -(city.length + 1));
+      const typeSlug = normalizeMediumTypeToken(v.medium_type);
+      if (typeSlug && slug.endsWith(`-${typeSlug}`)) {
+        slug = slug.slice(0, -(typeSlug.length + 1));
+      }
+      // Drop trailing direction/area fragments (towards-*, flyover, road tokens after first 1–3 words)
+      const parts = slug.split('-').filter(Boolean);
+      const cutAt = parts.findIndex((p, i) =>
+        i > 0 && /^(towards|near|flyover|opp|opposite|junction)$/i.test(p),
+      );
+      const keep = cutAt >= 0 ? parts.slice(0, cutAt) : parts.slice(0, Math.min(parts.length, 4));
+      base = titleCaseWords(keep.length ? keep : parts);
+    }
+  }
+
   if (!base) base = 'Service';
 
   const typeSlug = normalizeMediumTypeToken(v.medium_type);
@@ -1060,15 +1077,8 @@ function displayNameFromVendor(v: VendorRateRow): string {
     }
   }
 
-  // Site location so Power house / Mettupalayam etc. are distinguishable in lists
-  const location = pickString(v.direction_remarks, v.area_name);
-  if (location) {
-    const locCanon = canonicalizeServiceName(location);
-    if (locCanon && !canonicalizeServiceName(label).includes(locCanon)) {
-      label = `${label} · ${location}`;
-    }
-  }
-
+  // Do NOT append area/direction here — those belong in structured PDF headings only.
+  // (Appending them caused "Hoarding … — Area · Dir — Hoarding City Dir" duplicates.)
   return label;
 }
 

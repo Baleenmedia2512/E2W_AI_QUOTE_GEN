@@ -12,6 +12,8 @@ import {
 import { formatUnitRateInr } from './rateDisplay';
 import { listOneTimeAddOnComponents } from './dbPricingUtils';
 import { resolveDbServiceForQuoteItem } from './quoteEditValidation';
+import { canonicalizeServiceName } from './serviceNameUtils';
+import { formatServiceHeadingDisplay } from './serviceHeading';
 
 export interface ServiceGroup {
   serviceType: string;
@@ -412,11 +414,11 @@ export function buildPricingBreakdownLines(items: QuoteItem[]): {
  */
 export const DEFAULT_GENERAL_TERMS = [
   'Prices are exclusive of GST',
-  'Ad. Material shall be shared by the client or Design charges extra applicable',
-  '100% Upfront payment required for releasing the Ads',
-  'Printed colors may look different from digital design',
-  'Client must approved the final design before printing. Once approved, Baleen Media will not be responsible for any design errors.',
-  'If the client stops the campaign during campaign period, no refund will be provided'
+  'Ad material shall be provided by the client. Otherwise, design charges will be applicable.',
+  '100% upfront payment is required before releasing the ads.',
+  'Printed colors may differ from the digital design.',
+  'The client must approve the final design before printing. Once approved, Baleen Media will not be responsible for any design errors.',
+  'If the client stops the campaign during the campaign period, no refund will be provided.',
 ];
 
 /**
@@ -761,13 +763,17 @@ export function filterNotesByServiceType(notes: string | undefined, serviceType:
 
 /**
  * Get a clean heading for a service group.
- * group.serviceType is now the specific service name (e.g. "Bus Semi Branding",
- * "Bus Shelter Panel - Lit") so we return it directly.
+ * Order: Medium · Type · City · Area · Direction — deduped, ALL CAPS.
  */
 export function getServiceGroupHeading(group: ServiceGroup): string {
-  if (group.city?.trim() && group.city !== '—') {
-    const cityLabel = group.city.charAt(0).toUpperCase() + group.city.slice(1);
-    return `${cityLabel} — ${group.serviceType}`;
-  }
-  return group.serviceType;
+  const primary = group.items.find((i) => !isOneTimeLineDescription(i.description)) || group.items[0];
+  const raw =
+    (primary?.serviceName || '').trim()
+    || extractServiceType(primary?.description || group.serviceType || '');
+  const withCity =
+    group.city?.trim() && group.city !== '—'
+    && !canonicalizeServiceName(raw).includes(canonicalizeServiceName(group.city))
+      ? `${raw} · ${group.city}`
+      : raw;
+  return formatServiceHeadingDisplay(withCity);
 }

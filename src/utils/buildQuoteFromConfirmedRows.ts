@@ -133,7 +133,7 @@ export function buildQuoteFromConfirmedRows(
     id: Date.now().toString(),
     quoteNumber: `QT-${Date.now().toString().slice(-6)}`,
     date: new Date().toISOString(),
-    validUntil: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString(),
+    validUntil: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString(),
     items: quoteItems,
     subtotal,
     gstEnabled: true,
