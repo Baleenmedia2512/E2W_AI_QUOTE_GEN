@@ -66,14 +66,17 @@ Never invent rows. Exactly 1 option → auto-lock and continue.
 
 ## Overrides (every message)
 
-- New **service** → update service; **keep city/area**; clear type/direction/candidates for old service; continue
-- New **city** → update city; keep service; clear area/direction
-- New **area** → update area; keep service; continue
-- Landmark (`near OMR` / ECR / Airport) → area search; list available services first — never jump straight to “Which Hoarding option?”
+- **Different** catalog **service name** → **full funnel reset**. Keep only entities **explicitly in this message**.
+- **Same** service name again (e.g. type `hoarding` while already in Hoarding) → **continue**; keep type/city/area/direction; do **not** re-ask Frontlit/Nonlit. If city was not chosen yet → **stay on city chips** (never jump to Chennai areas). Overlay any new entities in the message.
+- No service in message → treat text as answer/update to the current flow (city / area / direction / type / qty).
+- New **city** → update city; keep service; clear area/direction (unless also provided in the message).
+- New **area** → update area; keep service + city; **clear direction** and other area-dependent fields. Same area again → do **not** clear direction.
+- New **direction** → update direction only; continue.
+- Landmark (`near OMR` / ECR / Airport) with no service → area/place browse; list available services first.
 
 ## Context
 
-Remember service, type, city, area, direction, qty, duration. Do not re-ask known fields. Do not restart.
+Remember service, type, city, area, direction, qty, duration. Do not re-ask known fields. Do not reset the whole conversation on every message — only fields affected by the user’s change.
 
 ## Implementation notes
 

@@ -22,7 +22,7 @@ import { Quote } from '../../types/quote';
 import { saveChatHistory, loadChatHistory, clearChatHistory } from '../../utils/localStorage';
 import { SpeechRecognition } from '@capacitor-community/speech-recognition';
 import { Capacitor } from '@capacitor/core';
-import { KNOWN_CITY_LIST, type ServiceQuantity } from '../../utils/serviceNameUtils';
+import { canonicalizeServiceName, KNOWN_CITY_LIST, type ServiceQuantity } from '../../utils/serviceNameUtils';
 import { resolveServiceIdFromCatalog } from '../../utils/serviceResolver';
 import { computeQuoteItemTotal } from '../../utils/durationUtils';
 import { ChatChipThumb } from './ChatChipThumb';
@@ -56,8 +56,14 @@ import {
 import type { DbService } from '../../utils/serviceResolver';
 import {
   continueProgressiveAction,
+  detectLocalityInText,
+  detectMediaLocal,
+  isNewServiceSwitch,
+  matchFreeTextToProgressiveOption,
+  parseQtyFromText,
   resolveMinQtyEdits,
   resolveProgressiveText,
+  type ProgressiveOption,
   type ProgressiveSession,
   type ProgressiveTurnResult,
 } from '../../utils/progressiveChatEngine';
@@ -1064,14 +1070,108 @@ const ChatInterface: React.FC = () => {
         // Yield again before sync resolve (mega multi-service lists)
         await new Promise<void>((r) => setTimeout(r, 0));
 
-        // Typed messages always start a fresh funnel — pause prior locks (min-qty / city / medium).
-        // Chip Confirm / Yes-No still continue via message.progressiveSession.
-        setProgressiveSession(null);
+        // Stateful funnel: keep prior locks unless this message switches service.
+        // Prefer session from last progressive bot turn (survives remount / history).
+        const lastProgMsg = [...messages].reverse().find(
+          (m) => m.role === 'assistant' && m.progressiveSession,
+        );
+        const priorSession: ProgressiveSession | null =
+          progressiveSession
+          || (lastProgMsg?.progressiveSession as ProgressiveSession | undefined)
+          || null;
+
+        // ── Typed chip / yes-no / min-qty reply → same as tapping ──
+        // Skip when message names a *different* catalog service (fresh switch).
+        // Also skip chip match on bare same-service echo ("hoarding" while in Hoarding)
+        // so area chips that carry medium=hoarding are not mistaken for a pick.
+        const localMedia = detectMediaLocal(cleanedText, dbServices);
+        const namesCatalogService = isNewServiceSwitch(priorSession, localMedia);
+        const mediaKey = canonicalizeServiceName(localMedia[0] || '');
+        const textKey = canonicalizeServiceName(cleanedText);
+        const priorMedKey = canonicalizeServiceName(
+          priorSession?.medium || priorSession?.browseToken || '',
+        );
+        // Bare echo of the *active* family/medium ("hoarding", "auto") — skip chip
+        // match so area chips carrying medium=hoarding are not stolen.
+        // More-specific picks ("auto full" while browseToken=auto) must still match chips.
+        const sameServiceBareEcho =
+          !!priorSession
+          && !!mediaKey
+          && !!priorMedKey
+          && !namesCatalogService
+          && !detectLocalityInText(cleanedText, dbServices)
+          && (
+            textKey === priorMedKey
+            || mediaKey === priorMedKey
+          )
+          && !(
+            textKey.length > priorMedKey.length
+            && (
+              textKey.startsWith(`${priorMedKey} `)
+              || mediaKey.startsWith(`${priorMedKey} `)
+            )
+          );
+        if (
+          priorSession
+          && lastProgMsg?.progressiveOptions?.length
+          && !namesCatalogService
+          && !sameServiceBareEcho
+        ) {
+          // Area/place answers (omr, near ecr) must refine the funnel — never
+          // mistype-match a long direction chip that merely starts with "OMR".
+          const localityAnswer = detectLocalityInText(cleanedText, dbServices);
+          const matched = localityAnswer
+            ? null
+            : matchFreeTextToProgressiveOption(
+              cleanedText,
+              lastProgMsg.progressiveOptions as ProgressiveOption[],
+            );
+          if (matched) {
+            const result = continueProgressiveAction(
+              matched.id,
+              priorSession,
+              dbServices,
+            );
+            await appendProgressiveResult(null, result);
+            return;
+          }
+
+          // Min-qty card: "use 5" / "5" / "qty 50" → pencil-edit path
+          if (
+            lastProgMsg.progressiveStep === 'min_qty_confirm'
+            && lastProgMsg.progressiveBelowMin?.length
+          ) {
+            const qtyOnly = cleanedText.match(
+              /^(?:use|set|change\s+to|make\s+it|qty|quantity)?\s*(\d+)\s*$/i,
+            );
+            const typedQty = qtyOnly
+              ? parseInt(qtyOnly[1], 10)
+              : parseQtyFromText(cleanedText);
+            if (typedQty != null && typedQty > 0) {
+              const details = lastProgMsg.progressiveBelowMin;
+              const edits: Record<string, number> = {};
+              for (const d of details) {
+                edits[d.serviceId || d.service] = typedQty;
+              }
+              const result = resolveMinQtyEdits(priorSession, edits, details);
+              setProgressiveSession(result.session);
+              if (result.quoteRows?.length) {
+                await generateQuoteFromProgressiveRows(
+                  result.quoteRows,
+                  result.session.originalText,
+                );
+                return;
+              }
+              await appendProgressiveResult(null, result);
+              return;
+            }
+          }
+        }
 
         const result = resolveProgressiveText(
           cleanedText,
           dbServices,
-          null,
+          priorSession,
           intent
             ? {
                 kind: intent.kind,

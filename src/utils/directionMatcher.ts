@@ -148,6 +148,17 @@ export function scoreDirectionMatch(
     || qWords.some((qw) => word.includes(qw) && qw.length >= 4),
   );
   const landmarkHits = matchedWords.length;
+  // A short typed landmark can contain a one-character typo (e.g. "navalur"
+  // for the DB direction "Navallur"). Keep this conservative: only compare
+  // words of at least six characters and allow one edit.
+  if (qWords.length === 1 && qWords[0].length >= 6) {
+    const typedWord = qWords[0];
+    const typoHit = dWords.find(
+      (word) => word.length >= 6
+        && levenshteinDistance(typedWord, word) <= 1,
+    );
+    if (typoHit) return 0.88;
+  }
   if (landmarkHits >= 2) {
     return 0.92;
   }

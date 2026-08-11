@@ -40,9 +40,11 @@ Queries like `near omr hoarding`:
 
 **Type chip** (`medium:…|type`) on the **same** medium MUST preserve `city`, `area`, `placeHint`, `candidateServiceIds`.
 
-**Place-first browse** (`omr` / `ecr` → service chips): picking a **new medium** (e.g. Police Booth) MUST **keep** `area` / `placeHint` → city Confirm for that place’s metro only (Chennai). Never reopen Hosur/Madurai/full city list.
+**Typed free-text service (product):** If the user types a **different** catalog **service**, **fully reset** the funnel and start that service from the beginning (keep only entities in the new message). If they type the **same** active service again (e.g. `hoarding` while Hoarding is locked), **continue** the funnel — keep type/city/area/direction; do not re-ask answered steps. Area-only / city-only / type-only answers (no service name) continue the active funnel; area change clears direction only. **Place change outside locked city** (e.g. Hoarding·Chittoor then typed `omr`): clear the incompatible city and re-scope to that place’s DB city — never glue `Chittoor · Omr`.
 
-**New medium** chip MAY clear stale place/candidates only when **no** place is locked (no `placeHint` / area from place browse).
+**Place-first browse chips** (`omr` / `ecr` → service chips): picking a **new medium via chip** MAY keep `area` / `placeHint` from the place browse (chip path). Typed service names follow the free-text switch rule above.
+
+**New medium** chip MAY clear stale place/candidates when **no** place is locked (no `placeHint` / area from place browse).
 
 ## Place / area vs direction_remarks (critical)
 
@@ -98,4 +100,4 @@ When user names a city (`police booth and cab in madurai` / `maddurai`): service
 Shared multi-city list (`bus and auto in madurai and chennai`):
 - Treat Madurai+Chennai as **candidates for the whole batch** (not lock only the first metro).
 - Cities with no inventory → note + skip; if exactly one usable city → continue there.
-- If 2+ usable cities → city checkboxes once for the batch.
+- If 2+ usable cities **already named in the message** → **use them all** (no city re-ask / no second Confirm). Keep `medium`/`browseToken`. Per city: Area/Direction only when 2+ DB options.
