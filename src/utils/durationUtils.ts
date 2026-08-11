@@ -218,7 +218,7 @@ export function computeQuoteItemTotal(item: {
   description?: string;
 }): number {
   const qty = Number.isFinite(item.quantity) ? item.quantity : 0;
-  const oneTimeQty = Number.isFinite(item.oneTimeQuantity) ? item.oneTimeQuantity : qty;
+  const oneTimeQty = Number.isFinite(item.oneTimeQuantity) ? (item.oneTimeQuantity ?? 0) : qty;
   const rawRate = item.rate ?? item.unitPrice ?? 0;
   const rate = Number.isFinite(rawRate) ? rawRate : 0;
 
