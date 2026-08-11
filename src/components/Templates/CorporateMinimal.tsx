@@ -36,7 +36,7 @@ import { formatQuoteDate } from '../../utils/dateFormat';
 import { PreparedForClientFields } from '../ClientInfoForm/PreparedForClientFields';
 import './CorporateMinimal.css';
 
-type ExecEditField = 'quantity' | 'duration' | 'requiringCharge' | 'oneTimeCharge';
+type ExecEditField = 'quantity' | 'duration' | 'requiringCharge' | 'oneTimeCharge' | 'oneTimeQuantity';
 
 const EMPTY_FLOORS: VendorEditFloors = {
   minQty: null,
@@ -331,11 +331,11 @@ const BreakdownFormulaBody: React.FC<{
         <div className="breakdown-edit-qty-row">
           <span className="breakdown-edit-times" aria-hidden>×</span>
           <ExecNumberCell
-            value={row.quantity}
+            value={row.oneTimeQuantity}
             editable
             compact
             bordered
-            onCommit={(n) => onCommit(row, 'quantity', n)}
+            onCommit={(n) => onCommit(row, 'oneTimeQuantity', n)}
           />
           <span className="breakdown-rate-unit"> ({qtyUnit})</span>
         </div>
@@ -536,7 +536,7 @@ export const CorporateMinimal: React.FC<TemplateProps> = ({
       }
 
       let validationField: 'quantity' | 'duration' | 'displayRate' | 'pfRate';
-      if (field === 'quantity') validationField = 'quantity';
+      if (field === 'quantity' || field === 'oneTimeQuantity') validationField = 'quantity';
       else if (field === 'duration') validationField = 'duration';
       else if (field === 'requiringCharge') validationField = 'displayRate';
       else validationField = 'pfRate';
@@ -581,6 +581,9 @@ export const CorporateMinimal: React.FC<TemplateProps> = ({
       );
       const nextQuote = recalcQuoteTotals({ ...quote, items: nextItems });
       onDataChange({ ...data, quote: nextQuote });
+      if (field === 'oneTimeQuantity') {
+        showFloorToast('Printing & Fixing quantity changed. Please update the Display quantity separately if required.');
+      }
     },
     [data, onDataChange, quote, showFloorToast],
   );

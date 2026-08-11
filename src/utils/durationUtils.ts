@@ -210,6 +210,7 @@ export function computeRecurringLineTotal(
  */
 export function computeQuoteItemTotal(item: {
   quantity: number;
+  oneTimeQuantity?: number;
   rate?: number;
   unitPrice?: number;
   duration?: number;
@@ -217,11 +218,12 @@ export function computeQuoteItemTotal(item: {
   description?: string;
 }): number {
   const qty = Number.isFinite(item.quantity) ? item.quantity : 0;
+  const oneTimeQty = Number.isFinite(item.oneTimeQuantity) ? item.oneTimeQuantity : qty;
   const rawRate = item.rate ?? item.unitPrice ?? 0;
   const rate = Number.isFinite(rawRate) ? rawRate : 0;
 
   if (item.description && isOneTimeLineDescription(item.description)) {
-    return qty * rate;
+    return oneTimeQty * rate;
   }
 
   const days = toCampaignDays(item.duration, item.durationUnit);

@@ -61,6 +61,8 @@ export interface ExecutiveSummaryRow {
   /** Raw catalog service_id for vendor lookup / grouping */
   catalogServiceId?: string;
   quantity: number;
+  /** Independent quantity used by Printing/Fixing/Mounting. */
+  oneTimeQuantity: number;
   quantityUnit?: string;
   /** Display duration value (months when exact ×30, else days) */
   duration?: number;
@@ -175,6 +177,10 @@ export function buildExecutiveSummaryRows(items: QuoteItem[]): ExecutiveSummaryR
       serviceId,
       catalogServiceId: rawServiceId,
       quantity: primary.quantity,
+      oneTimeQuantity:
+        group.find((i) => isOneTimeLineDescription(i.description))?.oneTimeQuantity ??
+        group.find((i) => isOneTimeLineDescription(i.description))?.quantity ??
+        primary.quantity,
       quantityUnit: primary.quantityUnit,
       duration: displayDur?.value,
       durationUnit: displayDur?.unit,
@@ -379,7 +385,7 @@ export function buildPricingBreakdownLines(items: QuoteItem[]): {
       const pricing = (svc?.metadata?.pricing || undefined) as Record<string, unknown> | undefined;
       const { titlePrefix, formula, components } = buildOneTimeFormula(
         unitRate,
-        qty,
+        row.oneTimeQuantity,
         unitForFormula,
         pricing,
         pfItem.oneTimeComponents,

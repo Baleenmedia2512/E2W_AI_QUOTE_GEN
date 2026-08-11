@@ -758,7 +758,7 @@ function normalizeRecurringToDailyDays(
 export function applyExecutiveSummaryFieldEdit(
   items: QuoteItem[],
   primaryItemId: string,
-  field: 'quantity' | 'duration' | 'requiringCharge' | 'oneTimeCharge',
+  field: 'quantity' | 'duration' | 'requiringCharge' | 'oneTimeCharge' | 'oneTimeQuantity',
   value: number,
   floors?: Pick<VendorEditFloors, 'displayPriceFloor' | 'displayPriceIsDaily'>,
 ): QuoteItem[] {
@@ -771,9 +771,17 @@ export function applyExecutiveSummaryFieldEdit(
 
     const isOneTime = isOneTimeLineDescription(item.description);
 
+    if (field === 'oneTimeQuantity') {
+      if (!isOneTime) return item;
+      return recalcItemTotal({ ...item, oneTimeQuantity: value });
+    }
+
     if (field === 'quantity') {
       // Normalize display lines so a qty edit also repairs corrupt month/day rates
-      const base = isOneTime ? item : normalizeRecurringToDailyDays(item, floors);
+      if (isOneTime) {
+        return recalcItemTotal({ ...item, oneTimeQuantity: value });
+      }
+      const base = normalizeRecurringToDailyDays(item, floors);
       return recalcItemTotal({ ...base, quantity: value });
     }
 
