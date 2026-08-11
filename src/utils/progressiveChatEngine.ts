@@ -1098,6 +1098,7 @@ function replyUnresolvedPlace(
     allowMulti: options.length > 0,
     session: {
       originalText,
+      qty: null,
       // Fresh session — do not keep prior Hoarding/Coimbatore locks
       pendingMedia: [],
       collectedRows: [],
@@ -3158,7 +3159,7 @@ function startBatchMultiSelect(
   const sharedMultiCities = extractSharedBatchCities(originalText, segments);
   if (sharedMultiCities?.length) {
     const clearSegs = dedupeBatchSegments(
-      segments.map((s) => ({ ...s, city: undefined })),
+      segments.map((s) => ({ ...s, city: null })),
     );
     return startBatchWithCityCandidates(
       clearSegs,
@@ -3573,7 +3574,7 @@ function startBatchWithCityCandidates(
     allowMulti: true,
     session: {
       ...session,
-      segments: deduped.map((s) => ({ ...s, city: undefined })),
+      segments: deduped.map((s) => ({ ...s, city: null })),
       city: undefined,
       medium: undefined,
       browseToken: undefined,

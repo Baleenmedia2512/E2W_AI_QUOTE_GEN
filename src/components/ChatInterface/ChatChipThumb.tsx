@@ -60,12 +60,12 @@ export const ChatChipThumb: React.FC<ChatChipThumbProps> = React.memo(
         bg="gray.100"
         cursor="zoom-in"
         title="View image"
-        onClick={(e) => {
+        onClick={(e: React.MouseEvent) => {
           e.preventDefault();
           e.stopPropagation();
           openChipImagePreview(url, label);
         }}
-        onMouseDown={(e) => {
+        onMouseDown={(e: React.MouseEvent) => {
           // Prevent parent button/chip from treating this as a select press
           e.stopPropagation();
         }}

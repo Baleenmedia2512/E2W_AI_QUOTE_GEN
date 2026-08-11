@@ -14,7 +14,7 @@ import {
   DrawerCloseButton,
   useDisclosure,
 } from '@chakra-ui/react';
-import { FiHome, FiEye } from 'react-icons/fi';
+import { FiHome, FiEye, FiFileText } from 'react-icons/fi';
 import { useHistory } from 'react-router-dom';
 
 const QuoteNavBar: React.FC = () => {
