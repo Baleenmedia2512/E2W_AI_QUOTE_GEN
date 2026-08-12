@@ -2040,7 +2040,44 @@ export function parseDurationFromText(text: string): string | null {
  * The value is validated against the DB by the caller; this only prevents an
  * unknown location from silently becoming "no location".
  */
-function extractExplicitLocationPhrase(text: string): string | null {
+function extractExplicitLocationPhrase(
+  text: string,
+  services: DbService[] = [],
+): string | null {
+  // Service-segment parsing has priority. If a multi-service request already
+  // contains a DB-backed city (for example, both segments resolve to Chennai),
+  // never reinterpret the service wording after "for" as a place.
+  if (
+    services.length > 0
+    && parseServiceSegments(text, services).some((segment) => !!segment.city)
+  ) {
+    return null;
+  }
+
+  // A valid DB city later in the same quote phrase means `for` is introducing
+  // services, e.g. "quote for no parking boards and hoarding in Chennai".
+  // Do not reinterpret the service text before that city as a location.
+  if (/\bfor\b/i.test(text) && detectCityInText(text, services)) {
+    return null;
+  }
+
+  // `for` commonly introduces the requested service:
+  // "quote for no parking boards and hoarding in Chennai".
+  // Resolve the complete remainder before extracting a place, otherwise the
+  // first service phrase can be incorrectly reported as a location.
+  const forMatch = text.match(/\bfor\s+(.+?)\s*$/i);
+  const forRemainder = forMatch?.[1]?.trim();
+  if (forRemainder && services.length > 0) {
+    const remainderCity = detectCityInText(forRemainder, services);
+    if (
+      matchSegmentHits(services, forRemainder, remainderCity)
+        .length > 0
+      || parseServiceSegments(forRemainder, services).length >= 1
+    ) {
+      return null;
+    }
+  }
+
   const match = text.match(
     // "for Kaniyakumari" is also a location form in quote requests
     // ("bus and auto for Kaniyakumari"). The boundary prevents duration
@@ -2048,6 +2085,23 @@ function extractExplicitLocationPhrase(text: string): string | null {
     /\b(?:in|at|near|around|for)\s+([a-z][a-z\s.-]*?)(?=$|[,.!?]|\s+\d|\s+(?:for|with|and)\b)/i,
   );
   const value = match?.[1]?.trim().replace(/\s+/g, ' ');
+  const valueKey = canonicalizeServiceName(value || '');
+  const valueWords = valueKey.split(/\s+/).filter((word) => word.length >= 2);
+  const isCatalogService = services.some((service) => {
+    const serviceKey = canonicalizeServiceName(
+      (service.service_name || '').split(/[·—–|]/)[0] || '',
+    );
+    if (serviceKey === valueKey) return true;
+    const hay = canonicalizeServiceName(
+      `${getMediumKey(service)} ${(service.service_name || '').split(/[·—–|]/)[0] || ''}`,
+    ).split(/\s+/);
+    return valueWords.length > 1 && valueWords.every((word) => hay.includes(word));
+  });
+  const isCatalogMediaPhrase =
+    !!value && services.length > 0 && detectMediaLocal(value, services).length > 0;
+  // "quote for Metro Station Branding" uses "for" before a service, not a
+  // location. Only an unmatched phrase can continue as an explicit place.
+  if (isCatalogService || isCatalogMediaPhrase) return null;
   return value && value.length >= 3 ? value : null;
 }
 
@@ -3281,7 +3335,11 @@ export function parseServiceSegments(text: string, services: DbService[]): Batch
   // For a shared location list, remove the location suffix before splitting
   // service clauses. Otherwise "Dubai" in "... Chennai, Madurai, and Dubai"
   // becomes a fake service segment.
-  const sharedLocationMatch = normalized.match(/\b(?:in|at|for)\s+(.+?)\s*$/i);
+  const sharedLocationMatch = normalized.match(/\b(in|at|for)\s+(.+?)\s*$/i);
+  const sharedLocationPrefix = sharedLocationMatch?.index != null
+    ? normalized.slice(0, sharedLocationMatch.index).trim()
+    : '';
+  const sharedLocationPreposition = sharedLocationMatch?.[1]?.toLowerCase();
   const sharedLocationValues = sharedLocationMatch?.[1]
     ?.replace(/[.!?]+$/g, '')
     .split(/\s*(?:,|\band\b|&|\+)\s*/i)
@@ -3289,7 +3347,14 @@ export function parseServiceSegments(text: string, services: DbService[]): Batch
     .filter((value) => /^[a-z][a-z\s.-]{2,}$/i.test(value)) || [];
   const hasSharedLocationSuffix =
     sharedLocationValues.length >= 2
-    && !sharedLocationValues.some((value) => isExactCatalogMedium(value, services));
+    && !sharedLocationValues.some((value) => isExactCatalogMedium(value, services))
+    // "quote for service A and service B in Chennai" is a service phrase,
+    // not a shared location suffix. `for` is a location cue only when the
+    // preceding text already contains a catalog service.
+    && (
+      sharedLocationPreposition !== 'for'
+      || detectMediaLocal(sharedLocationPrefix, services).length > 0
+    );
   const serviceText = hasSharedLocationSuffix && sharedLocationMatch?.index != null
     ? normalized.slice(0, sharedLocationMatch.index).trim()
     : normalized;
@@ -3297,7 +3362,21 @@ export function parseServiceSegments(text: string, services: DbService[]): Batch
     .split(/\s*(?:\band\b|,|&|\+)\s*/i)
     .map((p) => p.trim())
     .filter((p) => p.length > 1);
-  if (parts.length < 2) return [];
+  if (parts.length < 2) {
+    logFunnelDebug('parseServiceSegments', {
+      text,
+      normalized,
+      sharedLocationPreposition,
+      sharedLocationPrefix,
+      sharedLocationValues,
+      hasSharedLocationSuffix,
+      parts,
+      partsJson: JSON.stringify(parts),
+      segmentsJson: '[]',
+      segments: [],
+    });
+    return [];
+  }
 
   // City per part only. Shared city applies when exactly ONE metro is named across parts
   // ("bus and auto in chennai"). Mixed ("cab madurai and auto in chennai") → no smear.
@@ -3363,7 +3442,26 @@ export function parseServiceSegments(text: string, services: DbService[]): Batch
     segments.push({ raw: part, token, qty, city: partCity });
   }
 
-  return segments.length >= 2 ? segments : [];
+  const result = segments.length >= 2 ? segments : [];
+  logFunnelDebug('parseServiceSegments', {
+    text,
+    normalized,
+    serviceText,
+    sharedLocationPreposition,
+    sharedLocationPrefix,
+    sharedLocationValues,
+    hasSharedLocationSuffix,
+    parts,
+    partsJson: JSON.stringify(parts),
+    segmentsJson: JSON.stringify(result),
+    segments: result.map((segment) => ({
+      raw: segment.raw,
+      token: segment.token,
+      qty: segment.qty,
+      city: segment.city,
+    })),
+  });
+  return result;
 }
 
 /** Trailing / unmatched short place hint from a multi-service message (e.g. "… and gandhi"). */
@@ -4220,11 +4318,50 @@ function startBatchWithCityLock(
     seenTok.add(key);
 
     let hits = matchSegmentHits(services, token, city);
+    const strictHitIds = hits.map((hit) => hit.service_id);
     if (!hits.length) {
       hits = filterForBrowseOrFamily(services, token).filter((s) =>
         serviceMatchesCityLabel(s, city),
       );
     }
+    if (!hits.length) {
+      // Final DB-only fallback for service rows whose catalog medium key is
+      // broader than the displayed service name (for example, "Auto" rows
+      // named "Auto Back Sticker"). Keep the city filter strict.
+      const tokenWords = canonicalizeServiceName(token)
+        .split(/\s+/)
+        .filter((word) => word.length >= 2 && !STOP_WORDS.has(word));
+      hits = services.filter((service) => {
+        if (!serviceMatchesCityLabel(service, city)) return false;
+        const hay = canonicalizeServiceName(
+          `${getMediumKey(service)} ${(service.service_name || '').split(/[·—–|]/)[0] || ''}`,
+        ).split(/\s+/);
+        return tokenWords.length > 0 && tokenWords.every((word) => hay.includes(word));
+      });
+    }
+    logFunnelDebug('batchCityServiceMatch', {
+      city,
+      raw: seg.raw,
+      inputToken: seg.token,
+      refinedToken: token,
+      normalizedKey: key,
+      strictHitIds,
+      finalHitIds: hits.map((hit) => hit.service_id),
+      finalHitNames: hits.map((hit) => hit.service_name),
+      cityRows: services
+        .filter((service) => serviceMatchesCityLabel(service, city))
+        .filter((service) => canonicalizeServiceName(
+          `${getMediumKey(service)} ${(service.service_name || '').split(/[·—–|]/)[0] || ''}`,
+        ).includes(key))
+        .slice(0, 10)
+        .map((service) => ({
+          id: service.service_id,
+          name: service.service_name,
+          metadataCity: getMetaCityRaw(service),
+          dbCity: getDbCityLabel(service),
+          area: getMetaAreaRaw(service),
+        })),
+    });
     if (!hits.length) {
       missingLabels.push(titleCase(token));
       continue;
@@ -4995,7 +5132,6 @@ function buildDirectionPicker(
   });
   // Keep multi-city workQueue (Police Booth Chennai → Hosur → Madurai).
   // Clear only type leftovers / place-OMR union so we never "Next up: Hoarding".
-  const keepCityQueue = workQueueHasOtherCities(session);
   return {
     step: 'pick_direction',
     botText: noted.botText,
@@ -5073,9 +5209,10 @@ function buildMultiAreaSitePicker(
       area: undefined,
       needsContinueConfirm: false,
       candidateServiceIds: hits.map((s) => s.service_id),
-      // Same-city multi-area site pick: drop type leftovers; keep other cities
-      workQueue: keepCityQueue ? session.workQueue : undefined,
-      pendingCityQueue: keepCityQueue ? session.pendingCityQueue : undefined,
+      // Preserve every pending batch item. The current service may have
+      // multiple areas while another requested service is still waiting.
+      workQueue: session.workQueue,
+      pendingCityQueue: session.pendingCityQueue,
     },
   };
 }
@@ -7113,11 +7250,12 @@ function resolveProgressiveTextInner(
     const resolved = resolveMediaAgainstCatalog(media, catalogTypes);
     if (resolved.length) media = resolved;
   }
+  const batchSegmentsBeforeLocation = parseServiceSegments(originalText, services);
 
   // An explicit location must never be silently discarded. If it is not
   // present in the DB-backed city/area vocabulary, stop before any generic
   // service match can reach quote_ready.
-  const explicitLocation = extractExplicitLocationPhrase(originalText);
+  const explicitLocation = extractExplicitLocationPhrase(originalText, services);
   // When a request contains both a place clause and an explicit city clause
   // (for example, "bus shelter near Gemini Flyover and auto in Chennai"),
   // keep the city evidence even though `city` is intentionally cleared for
@@ -7126,9 +7264,18 @@ function resolveProgressiveTextInner(
   const knownLocation =
     city
     || explicitCityInText
+    || batchSegmentsBeforeLocation.find((segment) => !!segment.city)?.city
     || detectLocalityInText(originalText, services)
     || detectDbCityInText(originalText, services);
-  if (media.length > 0 && explicitLocation && !knownLocation) {
+  if (
+    media.length > 0
+    && explicitLocation
+    && !knownLocation
+    // A multi-service parse has already established its own city/area
+    // boundaries; never reject the whole batch using one global location
+    // phrase (for example "for no parking boards and hoarding in Chennai").
+    && batchSegmentsBeforeLocation.length < 2
+  ) {
     const serviceLabel = media
       .map((value) => String(value).trim())
       .filter(Boolean)
@@ -7210,8 +7357,6 @@ function resolveProgressiveTextInner(
   // constraint. For example, "bus shelter near Gemini Flyover and auto in
   // Chennai" has two independent scopes and must not be rejected as one
   // request near Gemini Flyover.
-  const batchSegmentsBeforeLocation = parseServiceSegments(originalText, services);
-
   // Explicit place requests are stricter than city requests. Do not let a
   // parent city (for example Chennai) make a service appear available near a
   // place (for example OMR) when the DB has no matching area/locality row.
@@ -9235,8 +9380,6 @@ function continueProgressiveActionInner(
           return finalizeSelection(autoLocked, {
             ...session,
             needsContinueConfirm: false,
-            workQueue: undefined,
-            pendingCityQueue: undefined,
           }, services);
         }
 
@@ -9252,8 +9395,10 @@ function continueProgressiveActionInner(
         return buildMultiAreaSitePicker(needPick, {
           ...session,
           needsContinueConfirm: false,
-          workQueue: undefined,
-          pendingCityQueue: undefined,
+          // Keep remaining batch services (for example No Parking Board)
+          // while the current service's multi-area sites are being selected.
+          workQueue: session.workQueue,
+          pendingCityQueue: session.pendingCityQueue,
           collectedRows: [...(session.collectedRows || []), ...autoRows],
           collectedServiceIds: [
             ...(session.collectedServiceIds || []),
