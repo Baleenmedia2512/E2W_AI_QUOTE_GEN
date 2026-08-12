@@ -31,7 +31,11 @@ export const clearCompanyInfo = (): void => {
 // Session storage for chat history
 const CHAT_HISTORY_KEY = 'ai_quote_gen_chat_history';
 
-/** Drop chip thumbnails from persisted history — avoids reloading full-res images on refresh. */
+/**
+ * Drop progressive chip thumbnails from persisted history (memory on refresh).
+ * Keep MULTIPLE_MATCH groupedServices.imageUrl — those are per-catalog service
+ * cards and must survive session restore.
+ */
 function stripChipImagesForStorage(messages: any[]): any[] {
   return messages.map((msg) => {
     let next = msg;
@@ -52,6 +56,18 @@ function stripChipImagesForStorage(messages: any[]): any[] {
             return rest;
           },
         ),
+      };
+    }
+    // Preserve groupedServices[].imageUrl / serviceId for service-list cards.
+    if (Array.isArray(next?.groupedServices)) {
+      next = {
+        ...next,
+        groupedServices: next.groupedServices.map((g: Record<string, unknown>) => ({
+          ...g,
+          services: Array.isArray(g.services)
+            ? (g.services as Array<Record<string, unknown>>).map((s) => ({ ...s }))
+            : g.services,
+        })),
       };
     }
     // Never persist batchGroupMap (can be large); session is in memory for active turn

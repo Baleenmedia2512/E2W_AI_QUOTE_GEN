@@ -8,6 +8,7 @@ import { searchLeads } from '../../services/leadService';
 interface PreparedForClientFieldsProps {
   client: ClientInfo;
   onChange: (client: ClientInfo) => void;
+  showValidation?: boolean;
 }
 
 /**
@@ -16,7 +17,10 @@ interface PreparedForClientFieldsProps {
 export const PreparedForClientFields: React.FC<PreparedForClientFieldsProps> = ({
   client,
   onChange,
+  showValidation = false,
 }) => {
+  const nameMissing = !(client.name || '').trim();
+  const phoneMissing = !/^\d{10}$/.test((client.phone || '').trim());
   const [nameQuery, setNameQuery] = useState(client.name || '');
 
   useEffect(() => {
@@ -73,7 +77,7 @@ export const PreparedForClientFields: React.FC<PreparedForClientFieldsProps> = (
       <SimpleGrid columns={{ base: 1, md: 3 }} spacing={3}>
         <FormControl>
           <FormLabel fontSize="12px" mb={1} color="gray.600">
-            Name
+            Name <Box as="span" color="red.500">*</Box>
           </FormLabel>
           <AutocompleteInput
             value={nameQuery}
@@ -85,11 +89,12 @@ export const PreparedForClientFields: React.FC<PreparedForClientFieldsProps> = (
             onSearch={onSearch}
             placeholder="Search or type name..."
             size="sm"
+            isInvalid={nameMissing}
           />
         </FormControl>
         <FormControl>
           <FormLabel fontSize="12px" mb={1} color="gray.600">
-            Phone
+            Phone <Box as="span" color="red.500">*</Box>
           </FormLabel>
           <Input
             size="sm"
@@ -97,6 +102,14 @@ export const PreparedForClientFields: React.FC<PreparedForClientFieldsProps> = (
             onChange={(e) => patch({ phone: e.target.value.replace(/\D/g, '').slice(0, 10) })}
             placeholder="Phone"
             bg="white"
+            borderWidth="2px"
+            borderColor={phoneMissing ? 'red.300' : undefined}
+            borderRadius="12px"
+            _hover={{ borderColor: 'red.300' }}
+            _focus={{
+              borderColor: phoneMissing ? 'red.500' : 'blue.500',
+              boxShadow: phoneMissing ? '0 0 0 3px rgba(201, 31, 61, 0.15)' : undefined,
+            }}
           />
         </FormControl>
         <FormControl>
@@ -110,6 +123,7 @@ export const PreparedForClientFields: React.FC<PreparedForClientFieldsProps> = (
             onChange={(e) => patch({ email: e.target.value })}
             placeholder="Email"
             bg="white"
+            borderRadius="8px"
           />
         </FormControl>
       </SimpleGrid>

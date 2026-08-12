@@ -1443,26 +1443,29 @@
 }
 .template-corporate-minimal .bank-details-table {
   width: 100%;
+  max-width: 620px;
+  margin: 0 auto;
   border-collapse: collapse;
   font-size: 15px;
   color: #1a1a2e;
 }
 .template-corporate-minimal .bank-details-table .bank-label {
-  padding: 5px 8px 5px 0;
+  padding: 5px 12px 5px 0;
   font-weight: 700;
   white-space: nowrap;
-  text-align: left;
-  width: 150px;
+  text-align: right;
+  width: 42%;
 }
 .template-corporate-minimal .bank-details-table .bank-colon {
-  padding: 5px 8px 5px 0;
+  padding: 5px 12px;
   font-weight: 700;
-  width: 14px;
-  text-align: left;
+  width: 24px;
+  text-align: center;
 }
 .template-corporate-minimal .bank-details-table .bank-value {
-  padding: 5px 8px 5px 170px;
+  padding: 5px 0 5px 12px;
   text-align: left;
+  width: 42%;
 }
 
 /* ─── System Generated Notice ─── */

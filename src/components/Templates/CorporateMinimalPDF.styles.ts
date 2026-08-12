@@ -1089,7 +1089,9 @@ export const s = StyleSheet.create({
     marginTop: 8,
     marginBottom: 10,
     paddingVertical: 10,
-    paddingHorizontal: 14,
+    // Match the preview card's breathing room and keep the aligned
+    // three-column bank table away from the card edge.
+    paddingHorizontal: 40,
     backgroundColor: '#f4f7fb',
     borderWidth: 1,
     borderColor: '#d6e0ec',
@@ -1112,12 +1114,13 @@ export const s = StyleSheet.create({
   bankRow: {
     flexDirection: 'row',
     alignItems: 'center',
+    justifyContent: 'center',
     marginBottom: 5,
     width: '100%',
   },
   /** Fixed label column — keeps colon/value vertically aligned (single line). */
   bankLabelCol: {
-    width: 168,
+    width: 190,
     flexGrow: 0,
     flexShrink: 0,
   },
@@ -1125,14 +1128,14 @@ export const s = StyleSheet.create({
     fontSize: 11.5,
     fontWeight: 700,
     color: C.darkText,
-    textAlign: 'left',
+    textAlign: 'right',
   },
   bankColon: {
-    width: 14,
+    width: 24,
     fontSize: 11.5,
     fontWeight: 700,
     color: C.darkText,
-    textAlign: 'left',
+    textAlign: 'center',
     flexGrow: 0,
     flexShrink: 0,
   },
@@ -1142,7 +1145,7 @@ export const s = StyleSheet.create({
     fontSize: 11.5,
     color: C.bodyText,
     textAlign: 'left',
-    paddingLeft: 6,
+    paddingLeft: 12,
   },
   bankLine: {
     fontSize: 11.5,

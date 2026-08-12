@@ -175,10 +175,9 @@ export const AutocompleteInput: React.FC<AutocompleteInputProps> = ({
           onKeyDown={handleKeyDown}
           placeholder={placeholder}
           isDisabled={isDisabled}
-          isInvalid={isInvalid}
           bg="white"
           borderWidth="2px"
-          borderColor={isInvalid ? 'red.500' : 'gray.300'}
+          borderColor={isInvalid ? 'red.300' : 'gray.300'}
           fontWeight="500"
           _hover={{ 
             borderColor: 'red.300', 

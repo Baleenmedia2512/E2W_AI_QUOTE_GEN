@@ -2,6 +2,9 @@ export interface ServiceSuggestion {
   name: string;
   category: string;
   similarity?: string;
+  /** First reference image belonging to this exact catalog service. */
+  imageUrl?: string;
+  serviceId?: string;
   /** Per-service qty when multiple segments share one category group */
   requestedQuantity?: number;
 }

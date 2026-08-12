@@ -1,6 +1,7 @@
 import React, { useState, useRef, useEffect } from 'react';
 import {
   Box,
+  Image,
   Input,
   VStack,
   HStack,
@@ -12,6 +13,7 @@ import {
   Flex,
   Icon,
   Checkbox,
+  SimpleGrid,
 } from '@chakra-ui/react';
 import { FiSend, FiCheck, FiMic, FiChevronUp, FiChevronDown, FiX, FiEdit2 } from 'react-icons/fi';
 import { useHistory } from 'react-router-dom';
@@ -26,7 +28,7 @@ import { canonicalizeServiceName, KNOWN_CITY_LIST, type ServiceQuantity } from '
 import { resolveServiceIdFromCatalog } from '../../utils/serviceResolver';
 import { computeQuoteItemTotal } from '../../utils/durationUtils';
 import { ChatChipThumb } from './ChatChipThumb';
-import { ChipImageLightbox, closeChipImagePreview } from './ChipImageLightbox';
+import { ChipImageLightbox, closeChipImagePreview, openChipImagePreview } from './ChipImageLightbox';
 import {
   buildCityServiceListFromDb,
   buildCloudSegmentCityPlan,
@@ -147,7 +149,6 @@ const ChatInterface: React.FC = () => {
   const history = useHistory();
   const { proposal, setCurrentQuote, activeProposals, loadCloudServices } = useAppStore();
   const [messages, setMessages] = useState<Message[]>([]);
-  const [inputValue, setInputValue] = useState('');
   const [isLoading, setIsLoading] = useState(false);
   const [_error, setError] = useState<string | null>(null);
   const [isRecording, setIsRecording] = useState(false);
@@ -155,6 +156,24 @@ const ChatInterface: React.FC = () => {
   const recognitionRef = useRef<any>(null);
   // Cache: service key (lowercase) -> minimum quantity, persists across messages in the same session
   const minQtyCacheRef = useRef<Map<string, number>>(new Map());
+  // The catalog is immutable for the lifetime of this chat. Reusing it avoids
+  // downloading and rebuilding the same service list on every user message.
+  const catalogCacheRef = useRef<DbService[] | null>(null);
+  const catalogLoadRef = useRef<Promise<DbService[]> | null>(null);
+
+  const getCachedDbServices = async (): Promise<DbService[]> => {
+    if (catalogCacheRef.current) return catalogCacheRef.current;
+    if (!catalogLoadRef.current) {
+      const { loadAllServicesFromCloud } = await import('../../services/supabaseProposalService');
+      catalogLoadRef.current = loadAllServicesFromCloud()
+        .then((services) => services || [])
+        .finally(() => {
+          catalogLoadRef.current = null;
+        });
+    }
+    catalogCacheRef.current = await catalogLoadRef.current;
+    return catalogCacheRef.current;
+  };
   /** Locked confirm rows for the current generate request (scoped Gemini context). */
   const confirmedRowsRef = useRef<Array<{ service: string; qty: number | string; city: string }> | null>(null);
 
@@ -164,6 +183,19 @@ const ChatInterface: React.FC = () => {
   const [historyIndex, setHistoryIndex] = useState(-1);
   const [draftInput, setDraftInput] = useState('');
   const inputRef = useRef<HTMLInputElement>(null);
+  /**
+   * Keep the draft out of ChatInterface state. The previous controlled input
+   * updated this 5k-line component on every keystroke, including the message
+   * history and all of its interactive chips.
+   */
+  const getInputValue = () => inputRef.current?.value ?? '';
+  const setInputValue = (next: string | ((previous: string) => string)) => {
+    const current = inputRef.current?.value ?? '';
+    const value = typeof next === 'function' ? next(current) : next;
+    if (inputRef.current) {
+      inputRef.current.value = value;
+    }
+  };
   const prevUserIdRef = useRef<string | undefined>(undefined);
   // ──────────────────────────────────────────────────────────────────────────
 
@@ -463,9 +495,12 @@ const ChatInterface: React.FC = () => {
 
   // Save chat history when messages change
   useEffect(() => {
-    if (messages.length > 0) {
-      saveChatHistory(messages);
-    }
+    if (messages.length === 0) return;
+    // Avoid serializing the complete conversation synchronously on every
+    // keystroke/turn. The latest state is still persisted after the user
+    // pauses briefly.
+    const timer = window.setTimeout(() => saveChatHistory(messages), 400);
+    return () => window.clearTimeout(timer);
   }, [messages]);
 
   // Scroll to bottom when messages change — avoid scrollIntoView (it can scroll
@@ -479,6 +514,16 @@ const ChatInterface: React.FC = () => {
     }
     end?.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
   }, [messages, isLoading]);
+
+  const scrollChatToLatest = () => {
+    const end = messagesEndRef.current;
+    const scroller = end?.closest?.('.qb-chat-scroll') as HTMLElement | null;
+    if (scroller) {
+      scroller.scrollTop = scroller.scrollHeight;
+      return;
+    }
+    end?.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+  };
 
   // After a plain text reply (no chips), put caret back in the composer
   useEffect(() => {
@@ -590,10 +635,10 @@ const ChatInterface: React.FC = () => {
   };
   // ──────────────────────────────────────────────────────────────────────────
 
-  // Thin wrapper: reads inputValue from state and delegates to sendMessageWithContent
+  // Thin wrapper: reads the isolated draft and delegates to sendMessageWithContent
   const handleSendMessage = () => {
-    if (!inputValue.trim() || isLoading) return;
-    const text = inputValue;
+    const text = getInputValue();
+    if (!text.trim() || isLoading) return;
     // Don't save pure city-only queries (e.g. "chennai", "madurai") — they just open
     // the service list and are not useful to recall via arrow-up history.
     if (detectCityOnlyQuery(text).length === 0) {
@@ -611,14 +656,14 @@ const ChatInterface: React.FC = () => {
 
     const el = inputRef.current;
     const cursorPos = el?.selectionStart ?? 0;
-    const valueLen = inputValue.length;
+    const valueLen = getInputValue().length;
 
     if (e.key === 'ArrowUp' && cursorPos === 0) {
       e.preventDefault();
       const newIdx = historyIndex === -1
         ? inputHistory.length - 1
         : Math.max(0, historyIndex - 1);
-      if (historyIndex === -1) setDraftInput(inputValue);
+      if (historyIndex === -1) setDraftInput(getInputValue());
       setHistoryIndex(newIdx);
       setInputValue(inputHistory[newIdx].text);
       setTimeout(() => {
@@ -866,8 +911,7 @@ const ChatInterface: React.FC = () => {
 
     setIsLoading(true);
     try {
-      const { loadAllServicesFromCloud } = await import('../../services/supabaseProposalService');
-      const dbServices = (await loadAllServicesFromCloud()) || [];
+      const dbServices = await getCachedDbServices();
       const result = continueProgressiveAction(optionId, session, dbServices);
       // No echo bubble for chip selections — bot's reply conveys what was chosen
       await appendProgressiveResult(null, result);
@@ -887,19 +931,16 @@ const ChatInterface: React.FC = () => {
 
     setIsLoading(true);
     try {
-      const { loadAllServicesFromCloud } = await import('../../services/supabaseProposalService');
-      const dbServices = (await loadAllServicesFromCloud()) || [];
+      const dbServices = await getCachedDbServices();
       const result = continueProgressiveAction(
         selected[0],
         session,
         dbServices,
         selected,
       );
-      setProgressiveMultiSelect((prev) => {
-        const next = { ...prev };
-        delete next[message.id];
-        return next;
-      });
+      // Keep the selection snapshot so the completed checklist remains
+      // visibly selected after the funnel advances. The card is made
+      // read-only by the render layer once a newer progressive message exists.
       // No echo bubble for confirm — bot's reply confirms the selection
       await appendProgressiveResult(null, result);
     } finally {
@@ -1011,7 +1052,15 @@ const ChatInterface: React.FC = () => {
           getCatalogCities,
           canSkipChatIntentAi,
         } = await import('../../utils/progressiveChatEngine');
-        const dbServices = (await loadAllServicesFromCloud()) || [];
+        if (!catalogCacheRef.current) {
+          catalogLoadRef.current ??= loadAllServicesFromCloud()
+            .then((services) => services || [])
+            .finally(() => {
+              catalogLoadRef.current = null;
+            });
+          catalogCacheRef.current = await catalogLoadRef.current;
+        }
+        const dbServices = catalogCacheRef.current;
         const catalogTypes = getCatalogTypeKeys(dbServices);
         const catalogCities = getCatalogCities(dbServices);
 
@@ -2571,6 +2620,11 @@ const ChatInterface: React.FC = () => {
     }
   };
 
+  const latestProgressiveId = [...messages]
+    .reverse()
+    .find((message) => message.role === 'assistant' && message.isProgressiveChat)
+    ?.id;
+
   return (
     <Box
       className="qb-chat-root"
@@ -2636,14 +2690,17 @@ const ChatInterface: React.FC = () => {
           zIndex={0}
           sx={{ 
             '::-webkit-scrollbar': { 
-              width: '6px',
+              width: '16px',
+              height: '16px',
             },
             '::-webkit-scrollbar-track': {
               background: 'transparent',
             },
             '::-webkit-scrollbar-thumb': {
-              background: 'gray.300',
-              borderRadius: '3px',
+              background: '#b8c0cc',
+              border: '3px solid transparent',
+              backgroundClip: 'padding-box',
+              borderRadius: '8px',
             },
           }}
         >
@@ -2653,6 +2710,14 @@ const ChatInterface: React.FC = () => {
                   <Box
                     key={message.id}
                     className={`qb-msg-row${message.role === 'assistant' ? ' qb-msg-row--assistant' : ''}`}
+                    sx={{
+                      // Let the browser skip layout/paint work for rows far
+                      // outside the viewport while retaining their height and
+                      // all existing interaction/state behavior.
+                      contentVisibility: 'auto',
+                      contain: 'layout paint style',
+                      containIntrinsicSize: '0 120px',
+                    }}
                     alignSelf={message.role === 'user' ? 'flex-end' : 'flex-start'}
                     maxW={{
                       base: message.role === 'user' ? '80%' : '92%',
@@ -2662,7 +2727,7 @@ const ChatInterface: React.FC = () => {
                   >
                     <Box>
                         {!message.isCityPicker && !message.isMultipleMatch && <Box>
-                          <Box
+                          {message.content && <Box
                             bgGradient={message.role === 'user' 
                               ? 'linear(135deg, #dc2626 0%, #be123c 50%, #9f1239 100%)' 
                               : undefined
@@ -2739,7 +2804,7 @@ const ChatInterface: React.FC = () => {
                                 minute: '2-digit',
                               })}
                             </Text>
-                          </Box>
+                          </Box>}
 
                           {/* Soft note for single-city services is already in message.content */}
 
@@ -2765,7 +2830,7 @@ const ChatInterface: React.FC = () => {
                                     <Text fontSize="12px" fontWeight="600" color="gray.700">{item.service}</Text>
                                     <HStack mt={0.5} spacing={3} align="flex-end">
                                       <Box>
-                                        <Text fontSize="10px" color="gray.500" fontWeight="500">Requested</Text>
+                                  <Text fontSize="10px" color="gray.500" fontWeight="500">Requested Qty</Text>
                                         <HStack spacing={1} align="center">
                                           {isEditing ? (
                                             <Input
@@ -2836,7 +2901,7 @@ const ChatInterface: React.FC = () => {
                                       </Box>
                                       <Text fontSize="16px" color="gray.300" pb="2px">→</Text>
                                       <Box>
-                                        <Text fontSize="10px" color="gray.500" fontWeight="500">Minimum</Text>
+                                  <Text fontSize="10px" color="gray.500" fontWeight="500">Minimum Qty</Text>
                                         <Text fontSize="13px" fontWeight="700" color="green.600">
                                           {item.minimum.toLocaleString()}
                                         </Text>
@@ -2904,6 +2969,15 @@ const ChatInterface: React.FC = () => {
                               {message.progressiveAllowMulti ? (
                                 /* Scrollable checklist — fixed ~10 rows visible */
                                 <Box
+                                  sx={{
+                                    // Once the funnel advances, preserve the
+                                    // old checklist visually but prevent it
+                                    // from mutating state again.
+                                    pointerEvents:
+                                      message.id === latestProgressiveId ? 'auto' : 'none',
+                                    opacity:
+                                      message.id === latestProgressiveId ? 1 : 0.62,
+                                  }}
                                   border="1px solid"
                                   borderColor="brand.100"
                                   borderRadius="xl"
@@ -2971,10 +3045,10 @@ const ChatInterface: React.FC = () => {
                                     </Text>
                                   </HStack>
 
-                                  {/* Horizontal wrap checklist (groups as section headers) */}
+                                  {/* Compact square-thumb checklist (groups as section headers) */}
                                   <Box
                                     overflowY="auto"
-                                    maxH="280px"
+                                    maxH="320px"
                                     px={2.5}
                                     py={2.5}
                                     bg="gray.50"
@@ -2988,7 +3062,6 @@ const ChatInterface: React.FC = () => {
                                       const opts = message.progressiveOptions!;
                                       const visibleN = progressiveChipVisible[message.id] || PROGRESSIVE_CHIP_PAGE;
                                       const hasGroups = opts.some((o) => o.group);
-                                      // Group options for horizontal rows under section headers
                                       const sections: Array<{ group: string | null; items: typeof opts }> = [];
                                       if (!hasGroups) {
                                         sections.push({ group: null, items: opts });
@@ -3001,7 +3074,6 @@ const ChatInterface: React.FC = () => {
                                         }
                                         for (const [g, items] of map) sections.push({ group: g, items });
                                       }
-                                      // Flatten with visible cap (keeps group headers for shown items only)
                                       let shown = 0;
                                       const limited = sections.map((sec) => {
                                         if (shown >= visibleN) return { ...sec, items: [] as typeof opts };
@@ -3011,6 +3083,7 @@ const ChatInterface: React.FC = () => {
                                         return { ...sec, items };
                                       }).filter((sec) => sec.items.length > 0);
                                       const hasMore = opts.length > visibleN;
+                                      const THUMB = 56;
                                       return (
                                         <>
                                           {limited.map((sec) => (
@@ -3028,23 +3101,22 @@ const ChatInterface: React.FC = () => {
                                               {sec.group}
                                             </Text>
                                           )}
-                                          <Box display="flex" flexWrap="wrap" gap={2}>
+                                          <SimpleGrid columns={{ base: 1, sm: 2 }} spacing={2}>
                                             {sec.items.map((opt) => {
                                               const isSelected = (progressiveMultiSelect[message.id] || []).includes(opt.id);
-                                              // Engine sets imageUrl only for unique-next chips (medium/type/city/area/direction)
                                               const showThumb = !!opt.imageUrl;
                                               return (
                                                 <Box
                                                   key={opt.id}
                                                   as="button"
                                                   type="button"
-                                                  display="inline-flex"
+                                                  display="flex"
                                                   alignItems="center"
                                                   gap={2}
-                                                  px={showThumb ? 2 : 3}
-                                                  pl={showThumb ? 1.5 : undefined}
-                                                  py={showThumb ? 1.5 : 2}
-                                                  borderRadius="full"
+                                                  textAlign="left"
+                                                  px={2}
+                                                  py={1.5}
+                                                  borderRadius="12px"
                                                   border="1.5px solid"
                                                   borderColor={isSelected ? 'brand.500' : 'gray.200'}
                                                   bg={isSelected ? 'brand.50' : 'white'}
@@ -3089,26 +3161,49 @@ const ChatInterface: React.FC = () => {
                                                     )}
                                                   </Box>
                                                   {showThumb ? (
-                                                    <ChatChipThumb
-                                                      url={opt.imageUrl!}
-                                                      label={opt.label}
-                                                      size={28}
-                                                    />
+                                                    <Box
+                                                      flexShrink={0}
+                                                      w={`${THUMB}px`}
+                                                      h={`${THUMB}px`}
+                                                      borderRadius="8px"
+                                                      bg="gray.100"
+                                                      overflow="hidden"
+                                                      onClick={(e: React.MouseEvent) => {
+                                                        e.preventDefault();
+                                                        e.stopPropagation();
+                                                        openChipImagePreview(opt.imageUrl!, opt.label);
+                                                      }}
+                                                      cursor="zoom-in"
+                                                      title="View image"
+                                                    >
+                                                      <Image
+                                                        src={opt.imageUrl}
+                                                        alt={opt.label}
+                                                        w="100%"
+                                                        h="100%"
+                                                        objectFit="cover"
+                                                        loading="lazy"
+                                                        fallback={
+                                                          <Box w="100%" h="100%" bg="gray.100" />
+                                                        }
+                                                      />
+                                                    </Box>
                                                   ) : null}
                                                   <Text
+                                                    flex="1"
                                                     fontSize="13px"
-                                                    fontWeight="500"
+                                                    fontWeight="600"
                                                     color={isSelected ? 'brand.700' : 'gray.700'}
-                                                    maxW="240px"
                                                     noOfLines={2}
                                                     textAlign="left"
+                                                    lineHeight="1.35"
                                                   >
                                                     {opt.label}
                                                   </Text>
                                                 </Box>
                                               );
                                             })}
-                                          </Box>
+                                          </SimpleGrid>
                                         </Box>
                                           ))}
                                           {hasMore && (
@@ -3189,6 +3284,7 @@ const ChatInterface: React.FC = () => {
                                       opts.find((o) => o.imageUrl)?.medium
                                       || opts.find((o) => o.imageUrl)?.label
                                       || 'Reference';
+                                    const useImageCards = !isYesNo && opts.some((o) => !!o.imageUrl);
                                     return (
                                       <>
                                         {previewUrl ? (
@@ -3205,10 +3301,79 @@ const ChatInterface: React.FC = () => {
                                             />
                                           </Box>
                                         ) : null}
-                                        <Box display="flex" flexWrap="wrap" gap={2}>
-                                          {opts.map((opt) => {
-                                            const showThumb = !isYesNo && !!opt.imageUrl;
-                                            return (
+                                        {useImageCards ? (
+                                          <SimpleGrid columns={{ base: 1, sm: 2 }} spacing={2}>
+                                            {opts.map((opt) => (
+                                              <Box
+                                                key={opt.id}
+                                                as="button"
+                                                type="button"
+                                                display="flex"
+                                                alignItems="center"
+                                                gap={2}
+                                                textAlign="left"
+                                                px={2}
+                                                py={1.5}
+                                                borderRadius="12px"
+                                                border="1.5px solid"
+                                                borderColor="gray.200"
+                                                bg="white"
+                                                boxShadow="0 1px 2px rgba(0, 0, 0, 0.04)"
+                                                cursor={isLoading ? 'not-allowed' : 'pointer'}
+                                                _hover={{
+                                                  borderColor: 'brand.400',
+                                                  bg: 'brand.50',
+                                                  boxShadow: '0 2px 6px rgba(201, 31, 61, 0.12)',
+                                                }}
+                                                transition="all 0.15s ease"
+                                                disabled={isLoading}
+                                                onClick={() =>
+                                                  void handleProgressiveOptionClick(message, opt.id)
+                                                }
+                                              >
+                                                {opt.imageUrl ? (
+                                                  <Box
+                                                    flexShrink={0}
+                                                    w="56px"
+                                                    h="56px"
+                                                    borderRadius="8px"
+                                                    bg="gray.100"
+                                                    overflow="hidden"
+                                                    cursor="zoom-in"
+                                                    title="View image"
+                                                    onClick={(e: React.MouseEvent) => {
+                                                      e.preventDefault();
+                                                      e.stopPropagation();
+                                                      openChipImagePreview(opt.imageUrl!, opt.label);
+                                                    }}
+                                                  >
+                                                    <Image
+                                                      src={opt.imageUrl}
+                                                      alt={opt.label}
+                                                      w="100%"
+                                                      h="100%"
+                                                      objectFit="cover"
+                                                      loading="lazy"
+                                                      fallback={<Box w="100%" h="100%" bg="gray.100" />}
+                                                    />
+                                                  </Box>
+                                                ) : null}
+                                                <Text
+                                                  flex="1"
+                                                  fontSize="13px"
+                                                  fontWeight="600"
+                                                  color="gray.700"
+                                                  noOfLines={2}
+                                                  lineHeight="1.35"
+                                                >
+                                                  {opt.label}
+                                                </Text>
+                                              </Box>
+                                            ))}
+                                          </SimpleGrid>
+                                        ) : (
+                                          <Box display="flex" flexWrap="wrap" gap={2}>
+                                            {opts.map((opt) => (
                                               <Button
                                                 key={opt.id}
                                                 size="sm"
@@ -3219,9 +3384,8 @@ const ChatInterface: React.FC = () => {
                                                 borderRadius="full"
                                                 fontWeight="500"
                                                 fontSize="13px"
-                                                px={showThumb ? 2 : 3}
-                                                h={showThumb ? '40px' : '34px'}
-                                                pl={showThumb ? 1.5 : undefined}
+                                                px={3}
+                                                h="34px"
                                                 boxShadow="0 1px 2px rgba(0, 0, 0, 0.04)"
                                                 _hover={{
                                                   borderColor: 'brand.400',
@@ -3233,19 +3397,11 @@ const ChatInterface: React.FC = () => {
                                                   void handleProgressiveOptionClick(message, opt.id)
                                                 }
                                               >
-                                                <HStack spacing={1.5}>
-                                                  {showThumb ? (
-                                                    <ChatChipThumb
-                                                      url={opt.imageUrl!}
-                                                      label={opt.label}
-                                                    />
-                                                  ) : null}
-                                                  <Text as="span">{opt.label}</Text>
-                                                </HStack>
+                                                <Text as="span">{opt.label}</Text>
                                               </Button>
-                                            );
-                                          })}
-                                        </Box>
+                                            ))}
+                                          </Box>
+                                        )}
                                       </>
                                     );
                                   })()}
@@ -3374,27 +3530,62 @@ const ChatInterface: React.FC = () => {
                                         {allShownSelected ? 'Clear shown' : 'Select shown'}
                                       </Button>
                                     </HStack>
-                                    <VStack align="stretch" spacing={2}>
+                                    <SimpleGrid columns={{ base: 1, sm: 2 }} spacing={2}>
                                       {visibleServices.map((svc, sIdx) => {
                                         const isChecked = selectedForGroup.includes(svc.name);
                                         return (
                                           <Box
                                             key={`${svc.name}-${sIdx}`}
-                                            p={3}
+                                            display="flex"
+                                            alignItems="center"
+                                            gap={2}
+                                            px={2}
+                                            py={1.5}
                                             borderRadius="12px"
                                             border="2px solid"
                                             borderColor={isChecked ? 'blue.400' : 'gray.200'}
                                             bg={isChecked ? 'blue.50' : 'white'}
+                                            transition="all 0.15s ease"
+                                            _hover={{ borderColor: isChecked ? 'blue.500' : 'blue.300', boxShadow: 'sm' }}
                                           >
+                                            {svc.imageUrl ? (
+                                              <Box
+                                                flexShrink={0}
+                                                w="56px"
+                                                h="56px"
+                                                borderRadius="8px"
+                                                bg="gray.100"
+                                                overflow="hidden"
+                                                cursor="zoom-in"
+                                                title="View image"
+                                                onClick={(e: React.MouseEvent) => {
+                                                  e.preventDefault();
+                                                  e.stopPropagation();
+                                                  openChipImagePreview(svc.imageUrl!, svc.name);
+                                                }}
+                                              >
+                                                <Image
+                                                  src={svc.imageUrl}
+                                                  alt={svc.name}
+                                                  w="100%"
+                                                  h="100%"
+                                                  objectFit="cover"
+                                                  loading="lazy"
+                                                  fallback={<Box w="100%" h="100%" bg="gray.100" />}
+                                                />
+                                              </Box>
+                                            ) : null}
                                             <Checkbox
+                                              flex="1"
                                               isChecked={isChecked}
                                               onChange={(e) => handleServiceCheckbox(message.id, group.vehicleType, svc.name, e.target.checked)}
                                               colorScheme="blue"
                                               size="md"
-                                              spacing={3}
+                                              spacing={2}
                                               cursor="pointer"
+                                              alignItems="flex-start"
                                             >
-                                              <Text fontSize="13px" fontWeight="500" color={isChecked ? 'blue.700' : 'gray.700'}>
+                                              <Text fontSize="13px" fontWeight="600" color={isChecked ? 'blue.700' : 'gray.700'} noOfLines={2}>
                                                 {svc.name}
                                                 {svc.requestedQuantity != null && svc.requestedQuantity > 0
                                                   ? ` (qty ${svc.requestedQuantity})`
@@ -3404,7 +3595,7 @@ const ChatInterface: React.FC = () => {
                                           </Box>
                                         );
                                       })}
-                                    </VStack>
+                                    </SimpleGrid>
                                     {remaining > 0 && (
                                       <Button
                                         mt={2}
@@ -4232,13 +4423,15 @@ Generate a detailed quote based on the above information.`;
             <Input
               className="qb-composer__input"
               ref={inputRef}
-              value={inputValue}
+              defaultValue=""
               onChange={(e) => {
-                setInputValue(e.target.value);
                 if (historyIndex !== -1) {
                   setHistoryIndex(-1);
                   setDraftInput('');
                 }
+                // Keep the most recent assistant response visible while the
+                // user types, especially when the mobile keyboard is open.
+                scrollChatToLatest();
               }}
               onKeyPress={(e) => {
                 if (e.key === 'Enter' && !e.shiftKey) {
@@ -4340,7 +4533,7 @@ Generate a detailed quote based on the above information.`;
                         historyIndex === -1
                           ? inputHistory.length - 1
                           : Math.max(0, historyIndex - 1);
-                      if (historyIndex === -1) setDraftInput(inputValue);
+                      if (historyIndex === -1) setDraftInput(getInputValue());
                       setHistoryIndex(newIdx);
                       setInputValue(inputHistory[newIdx].text);
                       setTimeout(() => {
@@ -4417,9 +4610,13 @@ Generate a detailed quote based on the above information.`;
               data-send-btn
               icon={isLoading ? <Spinner size="sm" color="white" thickness="3px" /> : <FiSend size={20} />}
               onClick={handleSendMessage}
-              isDisabled={!inputValue.trim() || isLoading}
-              bg={inputValue.trim() && !isLoading ? 'brand.500' : 'gray.200'}
-              color={inputValue.trim() && !isLoading ? 'white' : 'gray.500'}
+              // Draft text is intentionally uncontrolled so typing does not
+              // rerender the full chat. handleSendMessage still guards empty
+              // drafts; keep the button clickable so its state never becomes
+              // stale between parent renders.
+              isDisabled={isLoading}
+              bg={!isLoading ? 'brand.500' : 'gray.200'}
+              color={!isLoading ? 'white' : 'gray.500'}
               h={{ base: '44px', md: '40px' }}
               w={{ base: '44px', md: '40px' }}
               minW={{ base: '44px', md: '40px' }}
@@ -4427,7 +4624,7 @@ Generate a detailed quote based on the above information.`;
               flexShrink={0}
               fontSize={{ base: '16px', md: '16px' }}
               _hover={{
-                bg: inputValue.trim() && !isLoading ? 'brand.600' : 'gray.300',
+                bg: !isLoading ? 'brand.600' : 'gray.300',
               }}
               _focusVisible={{
                 outline: '2px solid',

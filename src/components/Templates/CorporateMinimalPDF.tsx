@@ -1064,7 +1064,8 @@ const TermRow: React.FC<{ term: DisplayTerm }> = ({ term }) => (
  */
 const TermsBlock: React.FC<{
   terms: DisplayTerm[];
-}> = ({ terms }) => {
+  hideGeneralHeading?: boolean;
+}> = ({ terms, hideGeneralHeading = false }) => {
   if (!terms || terms.length === 0) return null;
   const sections = groupDisplayTermsBySection(terms);
   if (sections.length === 0) return null;
@@ -1095,7 +1096,7 @@ const TermsBlock: React.FC<{
         <View style={hasContinuation ? s.termsSectionStart : s.termsSection}>
           {firstTerm
             ? renderSectionBody(firstSection, {
-                includeHeading: true,
+                includeHeading: !(hideGeneralHeading && firstSection.title === 'General'),
                 terms: [firstTerm],
               })
             : null}
@@ -1142,7 +1143,7 @@ const BankDetails: React.FC = () => {
 
   return (
     <View style={s.bankCard}>
-      <Text style={s.bankCardTitle}>BANK DETAILS</Text>
+      <Text style={s.bankCardTitle}>Our Bank Details</Text>
       <View style={s.bankCardDivider} />
       {rows.map((row) => (
         <View key={row.label} style={s.bankRow} wrap={false}>
@@ -1407,7 +1408,7 @@ const CorporateMinimalPDF: React.FC<CorporateMinimalPDFProps> = ({ data, pdfData
       DEFAULT_GENERAL_TERMS.map((text) => ({ text, labels: [] })),
     );
     return generalTerms.length > 0 ? (
-      <TermsBlock terms={generalTerms} />
+      <TermsBlock terms={generalTerms} hideGeneralHeading={exportMode === 'summary'} />
     ) : null;
   })();
 

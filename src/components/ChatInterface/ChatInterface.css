@@ -258,19 +258,32 @@
 }
 
 /* Scrollbar styling */
-.messages-container::-webkit-scrollbar {
-  width: 6px;
+.messages-container::-webkit-scrollbar,
+.qb-chat-scroll::-webkit-scrollbar {
+  width: 16px !important;
+  height: 16px !important;
 }
 
-.messages-container::-webkit-scrollbar-track {
+.messages-container,
+.qb-chat-scroll {
+  scrollbar-width: auto;
+  scrollbar-color: #b8c0cc transparent;
+}
+
+.messages-container::-webkit-scrollbar-track,
+.qb-chat-scroll::-webkit-scrollbar-track {
   background: transparent;
 }
 
-.messages-container::-webkit-scrollbar-thumb {
-  background: var(--ion-color-medium-tint);
-  border-radius: 3px;
+.messages-container::-webkit-scrollbar-thumb,
+.qb-chat-scroll::-webkit-scrollbar-thumb {
+  background: #b8c0cc;
+  border: 3px solid transparent;
+  background-clip: padding-box;
+  border-radius: 8px;
 }
 
-.messages-container::-webkit-scrollbar-thumb:hover {
+.messages-container::-webkit-scrollbar-thumb:hover,
+.qb-chat-scroll::-webkit-scrollbar-thumb:hover {
   background: var(--ion-color-medium);
 }

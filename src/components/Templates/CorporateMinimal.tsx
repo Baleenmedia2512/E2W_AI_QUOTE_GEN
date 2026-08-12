@@ -447,6 +447,7 @@ export const CorporateMinimal: React.FC<TemplateProps> = ({
   editable = false,
   onDataChange,
   onClientChange,
+  showClientValidation = false,
   onNavigateToSection,
 }) => {
   const { company, client, quote } = data;
@@ -1045,6 +1046,7 @@ export const CorporateMinimal: React.FC<TemplateProps> = ({
         <PreparedForClientFields
           client={client}
           onChange={onClientChange}
+          showValidation={showClientValidation}
         />
       );
     }

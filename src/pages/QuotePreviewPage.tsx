@@ -82,6 +82,7 @@ export const QuotePreviewPage: React.FC = () => {
   }, [activeProposals]);
 
   const [isExporting, setIsExporting] = useState(false);
+  const [showClientValidation, setShowClientValidation] = useState(false);
   const [isRestoring, setIsRestoring] = useState(false); // Set to false to avoid blocking
   const [isContentReady, setIsContentReady] = useState(true); // Set to true for immediate display
   const [zoom, setZoom] = useState(100);
@@ -526,10 +527,16 @@ export const QuotePreviewPage: React.FC = () => {
       <CorporateMinimal
         data={templateData}
         editable
+        showClientValidation={showClientValidation}
         onDataChange={(next) => {
           setCurrentQuote(next.quote);
         }}
-        onClientChange={(info) => setClientInfo(info)}
+        onClientChange={(info) => {
+          setClientInfo(info);
+          if (info.name.trim() && /^\d{10}$/.test(info.phone.trim())) {
+            setShowClientValidation(false);
+          }
+        }}
         onNavigateToSection={handleNavigateToSection}
       />
     );
@@ -539,13 +546,17 @@ export const QuotePreviewPage: React.FC = () => {
     console.log(`📄 Export PDF clicked (mode: ${mode})`);
 
     if (!clientReady) {
-      toast({
-        title: 'Client details required',
-        description: 'Enter a client name and exactly 10-digit phone number in Quote Prepared For before downloading.',
-        status: 'warning',
-        duration: 3500,
-        isClosable: true,
-      });
+      setShowClientValidation(true);
+      if (!toast.isActive('client-details-required')) {
+        toast({
+          id: 'client-details-required',
+          title: 'Missing details',
+          description: 'Please enter the client name and 10-digit phone number.',
+          status: 'warning',
+          duration: 3500,
+          isClosable: true,
+        });
+      }
       return;
     }
 
@@ -583,6 +594,17 @@ export const QuotePreviewPage: React.FC = () => {
     }
   };
 
+  const handleDownloadPDF = async () => {
+    const hasExecutiveSummary = !!currentQuote && isMultiServiceQuote(currentQuote.items);
+    if (!hasExecutiveSummary) {
+      await handleExportPDF('full');
+      return;
+    }
+
+    await handleExportPDF('summary');
+    await handleExportPDF('detailed');
+  };
+
   const handleZoomIn = () => {
     setZoom(prev => Math.min(prev + 10, 150));
   };
@@ -599,11 +621,11 @@ export const QuotePreviewPage: React.FC = () => {
     <div className="quote-preview-page">
       <QuoteFlowNav
         step="preview"
-        onDownloadPdf={() => handleExportPDF('full')}
-        onDownloadPdfMode={handleExportPDF}
-        multiDownloadOptions={!!currentQuote && isMultiServiceQuote(currentQuote.items)}
+        onDownloadPdf={handleDownloadPDF}
         isDownloading={isExporting}
-        canDownload={isContentReady && !isExporting && clientReady}
+        // Keep the button visible and let handleExportPDF show the validation
+        // popup when required client details are missing.
+        canDownload={isContentReady && !isExporting}
       />
 
       {/* Secondary toolbar: TOC toggle + zoom */}
@@ -715,35 +737,14 @@ export const QuotePreviewPage: React.FC = () => {
 
       {isContentReady && (
         <div className="mobile-actions">
-          {currentQuote && isMultiServiceQuote(currentQuote.items) ? (
-            <>
-              <button
-                type="button"
-                onClick={() => handleExportPDF('summary')}
-                className="mobile-action-btn"
-                disabled={isExporting}
-              >
-                {isExporting ? 'Downloading...' : 'Summary Only'}
-              </button>
-              <button
-                type="button"
-                onClick={() => handleExportPDF('detailed')}
-                className="mobile-action-btn primary"
-                disabled={isExporting}
-              >
-                {isExporting ? 'Downloading...' : 'Detailed Summary'}
-              </button>
-            </>
-          ) : (
-            <button
-              type="button"
-              onClick={() => handleExportPDF('full')}
-              className="mobile-action-btn primary"
-              disabled={isExporting}
-            >
-              {isExporting ? 'Downloading...' : 'Download PDF'}
-            </button>
-          )}
+          <button
+            type="button"
+            onClick={handleDownloadPDF}
+            className="mobile-action-btn primary"
+            disabled={isExporting}
+          >
+            {isExporting ? 'Downloading...' : 'Download PDF'}
+          </button>
         </div>
       )}
     </div>

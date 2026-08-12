@@ -664,7 +664,13 @@ export interface CloudPreGeminiResult {
   vagueGroups: Array<{
     vehicleType: string;
     requestedQuantity: number;
-    services: Array<{ name: string; category: string }>;
+    services: Array<{
+      name: string;
+      category: string;
+      serviceId?: string;
+      imageUrl?: string;
+      requestedQuantity?: number;
+    }>;
   }>;
   belowMinSegments: Array<{
     rawSegment: string;
@@ -883,6 +889,23 @@ export function getMatchingServicesForCity(
   return matched;
 }
 
+/** First usable reference/thumbnail URL from one DB service row (exact match only). */
+export function getServiceListImageUrl(svc: DbService | null | undefined): string | undefined {
+  if (!svc?.metadata) return undefined;
+  const images = svc.metadata.images;
+  if (Array.isArray(images) && images.length > 0) {
+    const ref = images.find((i) => {
+      const t = (i.type || '').toLowerCase();
+      return t === 'reference' || t === 'reference_image' || t.includes('ref');
+    });
+    const url = String(ref?.url || images[0]?.url || '').trim();
+    if (url) return url;
+  }
+  const single = (svc.metadata as { reference_image?: unknown }).reference_image;
+  if (typeof single === 'string' && single.trim()) return single.trim();
+  return undefined;
+}
+
 /** Build checkbox service entries from DB rows for one city. */
 export function buildGroupedServicesFromDb(
   query: string,
@@ -892,7 +915,7 @@ export function buildGroupedServicesFromDb(
 ): {
   vehicleType: string;
   requestedQuantity: number;
-  services: Array<{ name: string; category: string; serviceId?: string; requestedQuantity?: number }>;
+  services: Array<{ name: string; category: string; serviceId?: string; imageUrl?: string; requestedQuantity?: number }>;
 } | null {
   const matched = getMatchingServicesForCity(query, city, services);
   if (matched.length === 0) return null;
@@ -907,15 +930,34 @@ export function buildGroupedServicesFromDb(
   const groupLabel = baseWord.charAt(0).toUpperCase() + baseWord.slice(1);
   const cityLabel = city.charAt(0).toUpperCase() + city.slice(1);
 
+  const mapped = ordered.map((svc) => {
+    const imageUrl = getServiceListImageUrl(svc);
+    if (MULTI_SVC_DEBUG) {
+      console.log('[MultiSvcDebug] service-list image', {
+        name: formatServiceDisplayName(svc),
+        service_id: svc.service_id,
+        imageUrl: imageUrl || null,
+        found: Boolean(imageUrl),
+      });
+    } else if (!imageUrl) {
+      console.warn(
+        `[service-list] no image for "${formatServiceDisplayName(svc)}" (${svc.service_id || 'no-id'})`,
+      );
+    }
+    return {
+      name: formatServiceDisplayName(svc),
+      serviceId: svc.service_id,
+      // Exact matched DB row only — never borrow another service/area/direction image.
+      imageUrl,
+      category: groupLabel,
+      requestedQuantity: qty,
+    };
+  });
+
   return {
     vehicleType: `${groupLabel}|${cityLabel}`,
     requestedQuantity: qty,
-    services: ordered.map((svc) => ({
-      name: formatServiceDisplayName(svc),
-      serviceId: svc.service_id,
-      category: groupLabel,
-      requestedQuantity: qty,
-    })),
+    services: mapped,
   };
 }
 
@@ -943,7 +985,13 @@ export function mergeGroupedServicesByCategory<
   T extends {
     vehicleType: string;
     requestedQuantity?: number;
-    services: Array<{ name: string; category: string; serviceId?: string; requestedQuantity?: number }>;
+    services: Array<{
+      name: string;
+      category: string;
+      serviceId?: string;
+      imageUrl?: string;
+      requestedQuantity?: number;
+    }>;
   },
 >(groups: T[]): T[] {
   if (!groups.length) return groups;
@@ -952,6 +1000,7 @@ export function mergeGroupedServicesByCategory<
   for (const g of groups) {
     const key = normalizeGroupedServiceKey(g.vehicleType);
     const category = key.split('|')[0];
+    // Spread preserves imageUrl / serviceId from buildGroupedServicesFromDb.
     const servicesWithQty = g.services.map((s) => ({
       ...s,
       category,
@@ -982,6 +1031,8 @@ export function mergeGroupedServicesByCategory<
         existing.services[idx] = {
           ...prev,
           ...s,
+          // Keep whichever imageUrl is present after merge.
+          imageUrl: s.imageUrl || prev.imageUrl,
           requestedQuantity: s.requestedQuantity ?? prev.requestedQuantity,
         };
       }

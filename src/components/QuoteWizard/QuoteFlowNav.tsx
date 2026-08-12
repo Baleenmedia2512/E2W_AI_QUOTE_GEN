@@ -9,15 +9,10 @@ import {
   Icon,
   Badge,
   Image,
-  Menu,
-  MenuButton,
-  MenuList,
-  MenuItem,
 } from '@chakra-ui/react';
-import { FiArrowLeft, FiArrowRight, FiChevronDown, FiDownload, FiFileText, FiLayers } from 'react-icons/fi';
+import { FiArrowLeft, FiArrowRight, FiDownload } from 'react-icons/fi';
 import { useHistory } from 'react-router-dom';
 import { UserProfile } from '../UserProfile';
-import type { PdfExportMode } from '../Templates/CorporateMinimalPDF';
 
 export type QuoteFlowStep = 'chat' | 'client' | 'preview';
 
@@ -32,9 +27,6 @@ interface QuoteFlowNavProps {
    * Multi-service: Summary Only / Detailed Summary.
    * When set with `multiDownloadOptions`, the header shows a dropdown.
    */
-  onDownloadPdfMode?: (mode: PdfExportMode) => void;
-  /** Show Summary Only + Detailed Summary instead of a single Download button */
-  multiDownloadOptions?: boolean;
   isDownloading?: boolean;
   canDownload?: boolean;
   rightExtra?: React.ReactNode;
@@ -60,8 +52,6 @@ const QuoteFlowNav: React.FC<QuoteFlowNavProps> = ({
   hasQuote = false,
   onNext,
   onDownloadPdf,
-  onDownloadPdfMode,
-  multiDownloadOptions = false,
   isDownloading = false,
   canDownload = true,
   rightExtra,
@@ -186,60 +176,7 @@ const QuoteFlowNav: React.FC<QuoteFlowNavProps> = ({
               </Button>
             )}
 
-            {showDownload && multiDownloadOptions && onDownloadPdfMode && (
-              <Menu placement="bottom-end" isLazy>
-                <MenuButton
-                  as={Button}
-                  leftIcon={<Icon as={FiDownload} boxSize={3.5} />}
-                  rightIcon={<Icon as={FiChevronDown} boxSize={3} />}
-                  bg="brand.500"
-                  color="white"
-                  isLoading={isDownloading}
-                  isDisabled={!canDownload || isDownloading}
-                  aria-label="Download PDF"
-                  {...navPillProps}
-                  _hover={{ bg: 'brand.600' }}
-                  _active={{ bg: 'brand.600' }}
-                >
-                  <Text as="span" display={{ base: 'none', sm: 'inline' }}>
-                    Download PDF
-                  </Text>
-                  <Text as="span" display={{ base: 'inline', sm: 'none' }}>
-                    PDF
-                  </Text>
-                </MenuButton>
-                <MenuList
-                  minW="220px"
-                  py={1}
-                  borderRadius="10px"
-                  boxShadow="0 8px 24px rgba(0,0,0,0.12)"
-                  zIndex={1100}
-                >
-                  <MenuItem
-                    icon={<Icon as={FiFileText} boxSize={4} color="brand.500" />}
-                    fontSize="sm"
-                    fontWeight="500"
-                    py={2.5}
-                    onClick={() => onDownloadPdfMode('summary')}
-                    isDisabled={!canDownload || isDownloading}
-                  >
-                    Summary Only
-                  </MenuItem>
-                  <MenuItem
-                    icon={<Icon as={FiLayers} boxSize={4} color="brand.500" />}
-                    fontSize="sm"
-                    fontWeight="500"
-                    py={2.5}
-                    onClick={() => onDownloadPdfMode('detailed')}
-                    isDisabled={!canDownload || isDownloading}
-                  >
-                    Detailed Summary
-                  </MenuItem>
-                </MenuList>
-              </Menu>
-            )}
-
-            {showDownload && !(multiDownloadOptions && onDownloadPdfMode) && (
+            {showDownload && (
               <Button
                 leftIcon={<Icon as={FiDownload} boxSize={3.5} />}
                 bg="brand.500"

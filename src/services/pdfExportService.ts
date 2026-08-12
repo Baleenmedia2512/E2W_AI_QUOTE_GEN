@@ -1,4 +1,4 @@
-﻿/**
+/**
  * pdfExportService.ts  (React-PDF version)
  *
  * Replaces the html2canvas + jsPDF pipeline with @react-pdf/renderer.
@@ -9,7 +9,7 @@
  *  3. Build pdfData[] directly from metadata.images
  *  4. Falls back to DOM store (ReferenceImages) if DB has no images for a service
  *  5. Render CorporateMinimalPDF to a blob — zero Gemini calls
- *  6. Mobile: save to Documents + open in native viewer
+ *  6. Mobile: save without prompting and open in the platform's download/documents location
  *  7. Web: browser download
  */
 
@@ -627,10 +627,14 @@ export const exportToPDF = async (
       const base64 = btoa(
         new Uint8Array(arrayBuffer).reduce((data, byte) => data + String.fromCharCode(byte), ''),
       );
+      const isAndroid = Capacitor.getPlatform() === 'android';
       const result = await Filesystem.writeFile({
-        path: `QuoteBuddy/${filename}`,
+        // Android exposes the shared Downloads folder through ExternalStorage.
+        // iOS has no shared Downloads directory, so Documents is the closest
+        // system-managed location and does not show a folder picker.
+        path: isAndroid ? `Download/QuoteBuddy/${filename}` : `QuoteBuddy/${filename}`,
         data: base64,
-        directory: Directory.Documents,
+        directory: isAndroid ? Directory.ExternalStorage : Directory.Documents,
         recursive: true,
       });
       await FileOpener.open({ filePath: result.uri, contentType: 'application/pdf' });

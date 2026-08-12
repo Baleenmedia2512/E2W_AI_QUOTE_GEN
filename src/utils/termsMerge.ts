@@ -758,7 +758,7 @@ export interface DisplayTermSection {
 
 /**
  * Group ordered display terms into sections.
- * Empty labels → "General T&C"; otherwise the service label prefix.
+ * Empty labels → "General"; otherwise the service label prefix.
  */
 export function groupDisplayTermsBySection(terms: DisplayTerm[]): DisplayTermSection[] {
   const sections: DisplayTermSection[] = [];
@@ -767,7 +767,7 @@ export function groupDisplayTermsBySection(terms: DisplayTerm[]): DisplayTermSec
   for (const term of terms) {
     const title =
       term.labels.length === 0
-        ? 'General T&C'
+        ? 'General'
         : formatServiceLabelPrefix(term.labels) ||
           term.labels.join(' & ') ||
           'Service';
