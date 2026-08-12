@@ -5130,6 +5130,7 @@ function buildDirectionPicker(
     medium: getMediumKey(hits[0]) || session.medium,
     candidateServiceIds: hits.map((s) => s.service_id),
   });
+  const keepCityQueue = workQueueHasOtherCities(session);
   // Keep multi-city workQueue (Police Booth Chennai → Hosur → Madurai).
   // Clear only type leftovers / place-OMR union so we never "Next up: Hoarding".
   return {
