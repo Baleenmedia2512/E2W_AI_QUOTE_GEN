@@ -10,6 +10,7 @@ import { segmentBreakdownFormula } from '../../utils/breakdownFormulaDisplay';
 import {
   applyExecutiveSummaryFieldEdit,
   applyOneTimeComponentEdit,
+  floorToastTitle,
   getVendorEditFloors,
   mergeFloorsWithQuoteItem,
   recalcQuoteTotals,
@@ -495,7 +496,7 @@ export const CorporateMinimal: React.FC<TemplateProps> = ({
   const showFloorToast = useCallback(
     (message: string) => {
       toast({
-        title: message.includes('margin') ? 'Below margin' : 'Below minimum',
+        title: floorToastTitle(message),
         description: message,
         status: 'warning',
         duration: 4000,
@@ -583,7 +584,12 @@ export const CorporateMinimal: React.FC<TemplateProps> = ({
       const nextQuote = recalcQuoteTotals({ ...quote, items: nextItems });
       onDataChange({ ...data, quote: nextQuote });
       if (field === 'oneTimeQuantity') {
-        showFloorToast('Printing & Fixing quantity changed. Please update the Display quantity separately if required.');
+        const componentNames = (row.oneTimeComponents || []).map((component) => component.label);
+        const componentLabel =
+          componentNames.length > 1
+            ? `${componentNames.slice(0, -1).join(', ')} & ${componentNames[componentNames.length - 1]}`
+            : componentNames[0] || 'One-time';
+        showFloorToast(`${componentLabel} quantity changed.`);
       }
     },
     [data, onDataChange, quote, showFloorToast],

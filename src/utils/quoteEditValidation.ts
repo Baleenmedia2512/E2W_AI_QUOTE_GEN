@@ -463,6 +463,20 @@ function validatePfOnlyRate(params: {
 }
 
 /**
+ * Toast heading for a floor/margin failure.
+ * "Below minimum" is only for quantity below the vendor min — not duration,
+ * rates, or informational messages like "One-time quantity changed."
+ */
+export function floorToastTitle(message: string): string | undefined {
+  const m = (message || '').toLowerCase();
+  if (m.includes('margin')) return 'Below margin';
+  if (m.includes('minimum quantity') || m.includes('quantity must be at least')) {
+    return 'Below minimum';
+  }
+  return undefined;
+}
+
+/**
  * Validate a single edit against vendor floors / package cost margin.
  * Margin uses DB unit costs vs live sell total:
  *   cost = display_unit_cost_per_day×qty×days + (printing+mounting)×qty

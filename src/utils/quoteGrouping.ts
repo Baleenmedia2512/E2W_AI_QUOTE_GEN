@@ -78,6 +78,8 @@ export interface ExecutiveSummaryRow {
   ratePeriod?: 'per_day' | 'per_month';
   /** Printing & Fixing / one-time unit rate (excl. GST) */
   oneTimeCharge: number;
+  /** Optional one-time component breakdown used by inline summary edits. */
+  oneTimeComponents?: { label: string; amount: number }[];
   /** Combined line totals excl. GST */
   amountExclGst: number;
   remark?: string;

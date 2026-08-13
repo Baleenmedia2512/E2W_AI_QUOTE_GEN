@@ -36,6 +36,7 @@ import {
   quoteHasAnyDuration,
 } from '../../utils/durationUtils';
 import {
+  floorToastTitle,
   getVendorEditFloors,
   rateFieldForLineDescription,
   resolveDbServiceForQuoteItem,
@@ -105,7 +106,7 @@ const QuotePreview: React.FC<QuotePreviewProps> = ({ quote, onUpdate, onSave }) 
 
   const showFloorToast = (message: string) => {
     toast({
-      title: message.includes('margin') ? 'Below margin' : 'Below minimum',
+      title: floorToastTitle(message),
       description: message,
       status: 'warning',
       duration: 4000,
