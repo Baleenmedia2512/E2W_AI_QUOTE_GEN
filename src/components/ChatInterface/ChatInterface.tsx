@@ -506,13 +506,28 @@ const ChatInterface: React.FC = () => {
   // Scroll to bottom when messages change — avoid scrollIntoView (it can scroll
   // ancestors / fight the fixed composer and leave the input unfocusable).
   useEffect(() => {
-    const end = messagesEndRef.current;
-    const scroller = end?.closest?.('.qb-chat-scroll') as HTMLElement | null;
-    if (scroller) {
-      scroller.scrollTop = scroller.scrollHeight;
-      return;
-    }
-    end?.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+    let firstFrame = 0;
+    let secondFrame = 0;
+    const scrollLatest = () => {
+      const end = messagesEndRef.current;
+      const scroller = end?.closest?.('.qb-chat-scroll') as HTMLElement | null;
+      if (scroller) {
+        scroller.scrollTop = scroller.scrollHeight;
+        return;
+      }
+      end?.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+    };
+
+    // Progressive cards can grow after their images/grid finish layout.
+    firstFrame = window.requestAnimationFrame(() => {
+      scrollLatest();
+      secondFrame = window.requestAnimationFrame(scrollLatest);
+    });
+
+    return () => {
+      window.cancelAnimationFrame(firstFrame);
+      window.cancelAnimationFrame(secondFrame);
+    };
   }, [messages, isLoading]);
 
   const scrollChatToLatest = () => {

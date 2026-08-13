@@ -1196,8 +1196,12 @@ function copyNotOfferedInCityAskCities(
   }).text;
 }
 
-function copyGreeting(): string {
-  return compactFunnelReply('Ready to create your quotation?', 'Which service do you need?');
+function copyGreeting(userText?: string): string {
+  const greeting = /^hello\b/i.test((userText || '').trim()) ? 'Hello' : 'Hi';
+  return compactFunnelReply(
+    `${greeting} 👋  Which service do you need?`,
+    'E.g., bus branding, cab branding, or hoarding Services',
+  );
 }
 
 function copyWhichService(session?: ProgressiveSession | null): string {
@@ -1980,7 +1984,7 @@ function isSmallTalk(text: string): ProgressiveTurnResult | null {
     || /^(good\s+(morning|afternoon|evening))[\s!.]*$/i.test(t)) {
     return {
       step: 'small_talk',
-      botText: copyGreeting(),
+      botText: copyGreeting(t),
       options: [],
       session,
     };
@@ -7255,7 +7259,7 @@ function resolveProgressiveTextInner(
   if (intent?.kind === 'greeting') {
     return {
       step: 'small_talk',
-      botText: intent.shortReply || copyGreeting(),
+      botText: copyGreeting(originalText),
       options: [],
       session: { originalText, qty: null, aiReply: intent.shortReply },
     };
