@@ -226,20 +226,21 @@ export async function parseChatIntentWithAi(
       '- directionHint = only the raw site/direction phrase the user named, such as "Gemini Fly Over"; otherwise null.',
       '- Do not invent or correct directionHint. It will be validated against catalog direction_remarks by the application.',
       '- qty only if user typed a count (not duration). duration like "3 months" or null.',
-      '- shortReply = ONE short sales line (max 18 words). Sound like ChatGPT: natural, friendly, professional. No prices. No UI jargon. Max 2-3 short sentences.',
+      '- shortReply = max 2 lines and max 12 words total. No opener (no Good choice/Sure/Great). No prices. No UI jargon. Never truncate catalog names.',
       '- For an unknown explicit location, shortReply must not claim availability; use an empty string and let the application provide the unavailable-location message.',
-      '- Never start every reply with Sure/Great/Perfect/I understand/Thanks/Here\'s what we found — rotate naturally (Let\'s continue / Good choice / or no opener). Never use Thanks/Thank you/Here\'s what we found as an opener.',
-      '- Always mention what the catalogue currently provides BEFORE asking the next missing step.',
+      '- Never start replies with Sure/Great/Perfect/I understand/Thanks/Here\'s what we found/Good choice/Let\'s continue/Hello.',
+      '- Line 1: what is available. Line 2: the next question. Chips show the options — do not list them in the text.',
       '- Never invent services/cities/prices. Never say database.',
       '- Examples for shortReply:',
-      '  "bus" → "We currently provide bus advertising services. Which option do you need?"',
-      '  "led" → "We currently provide LED advertising options. Which option do you need?"',
-      '  "chennai" → "We currently provide the following services in Chennai. Which service would you like?"',
-      '  "what services are available?" → "We currently provide the following advertising services. Which service would you like?"',
-      '  "which cities are available?" → "We currently provide services in these cities. Which city would you like?"',
-      '  "bus chennai" → "We currently provide bus advertising services in Chennai. Which option do you need?"',
-      '  "near ecr" → "We currently provide the following services near ECR. Which service would you like?"',
-      '  "bus semi branding" → "Bus Semi Branding is available in more than one city. Which city do you need?"',
+      '  "bus" → "Bus advertising options available.\\nWhich option do you need?"',
+      '  "led" → "LED options available.\\nWhich option do you need?"',
+      '  "chennai" → "Services available in Chennai.\\nWhich service do you need?"',
+      '  "what services are available?" → "Advertising services available.\\nWhich service do you need?"',
+      '  "which cities are available?" → "Available in these cities.\\nWhich city do you need?"',
+      '  "bus chennai" → "Bus advertising options available.\\nWhich option do you need?"',
+      '  "near ecr" → "Services available near ECR.\\nWhich service do you need?"',
+      '  "bus semi branding" → "Available in more than one city.\\nWhich city do you need?"',
+      '  "need quote for metro station" → "Metro Station options available.\\nWhich option do you need?"',
       '- Examples:',
       '  "bus" → kind=quote, media=["bus"], city=null, ambiguous=false',
       '  "apartment demo" → kind=quote, media=["apartment demo"], city=null, areaHint=null',
@@ -308,7 +309,11 @@ export async function parseChatIntentWithAi(
     }
 
     let shortReply = parsed.shortReply ? String(parsed.shortReply).trim() : null;
-    if (shortReply && shortReply.length > 120) shortReply = shortReply.slice(0, 117) + '…';
+    if (shortReply) {
+      const lines = shortReply.split(/\n+/).map((s) => s.trim()).filter(Boolean);
+      const words = lines.join(' ').split(/\s+/).filter(Boolean);
+      if (lines.length > 2 || words.length > 12) shortReply = null;
+    }
 
     reportAiTelemetry({
       model: MODEL,

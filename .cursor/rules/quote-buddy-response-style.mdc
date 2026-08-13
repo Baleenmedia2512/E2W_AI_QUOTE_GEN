@@ -24,31 +24,28 @@ Keep matching rules from `progressive-chat-funnel.mdc`. Only improve conversatio
 
 ## Style
 
-- ChatGPT-like: natural, friendly, professional, concise, human
-- Max **2–3 short sentences**
+- ChatGPT-like: natural, friendly, professional, concise
+- **Max 2 lines and max 12 words total** (chips/options are outside this limit)
+- Never add filler openers (`Good choice.`, `Sure!`, `Hello!`, `Let's continue.`)
+- Never truncate catalog names mid-word; drop filler instead
 - Never sound robotic; never mention database / AI / JSON / metadata
-
-## Avoid opener repetition
-
-Do **not** always start with Sure / Great / Perfect / Got it / Understood / I understand.  
-Rotate: no opener, `Let's continue.`, `Good choice.`, `Hello!`  
-Never use `Thanks.` / `Thank you` / `Here's what we found.` as an opener.
-Never use the same opening twice in a row (`session.lastOpener`).
 
 ## Availability first
 
-Before asking the next question, say what the catalogue currently provides.
+Line 1 says what is available. Line 2 asks the next missing step. Chips show the options.
 
 | Situation | Pattern |
 |-----------|---------|
-| Multi services at place | `We currently provide the following services near/in {place}.` + chips + `Which service would you like?` |
-| Single service at place | `We currently provide {service} services near/in {place}.` + auto-continue |
-| Family in city | `We currently provide bus advertising services in Chennai.` + `Which … do you need?` |
-| Unavailable | `We're currently not providing {service} services in {city}.` + available chips |
-| Partial batch | `We're currently not providing Hoarding services in Chennai.` / `Let's continue with Bus.` |
-| Unknown input | `I couldn't match that with our available advertising services.` + options |
+| Type ask (Metro Station) | `Metro Station options available.` / `Which option do you need?` |
+| Family (bus) | `bus advertising options available.` / `Which option do you need?` |
+| Multi services at place | `Services available near OMR.` / `Which service do you need?` |
+| City ask | `Available in more than one city.` / `Which city do you need?` |
+| Area ask | `Available in more than one area.` / `Which area do you need?` |
+| Direction ask | `Sites available in Adyar.` / `Which location do you need?` |
+| Unavailable | `Not providing Cab in Madurai.` / `Please choose an option below.` |
+| Partial batch | `Cab isn't in Madurai. Continuing in Chennai.` / `Which Bus option?` |
 | Quote ready | `Your quotation is ready.` / `Opening quotation preview.` |
-| Greeting (`hi`) | `Hello! 👋 Ready to create your quotation?` then ask which service; examples last: `For example: Bus Branding Chennai, Hoarding services, Cab Branding…` |
+| Greeting (`hi`) | `Ready to create your quotation?` / `Which service do you need?` |
 
 ## Catalogue browse questions
 

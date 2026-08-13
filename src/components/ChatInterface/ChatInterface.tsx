@@ -872,7 +872,7 @@ const ChatInterface: React.FC = () => {
         {
           id: (Date.now() + 1).toString(),
           role: 'assistant',
-          content: 'Your quotation is ready.\n\nOpening quotation preview.',
+          content: 'Your quotation is ready.\nOpening quotation preview.',
           timestamp: new Date(),
         },
       ]);
@@ -2423,7 +2423,7 @@ const ChatInterface: React.FC = () => {
             const quoteReadyMessage: Message = {
               id: (Date.now() + 1).toString(),
               role: 'assistant',
-              content: 'Your quotation is ready.\n\nOpening quotation preview.',
+              content: 'Your quotation is ready.\nOpening quotation preview.',
               timestamp: new Date(),
             };
             setMessages(prev => [...prev, quoteReadyMessage]);

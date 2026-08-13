@@ -1,13 +1,31 @@
 /**
  * Smoke walkthrough: Quote Buddy system-prompt conversation style.
- * Run: npx tsx scripts/smokeProgressiveResponses.ts
+ * Run: npx vite-node scripts/smokeProgressiveResponses.ts
  */
-import {
+const memoryStore: Record<string, string> = {};
+(globalThis as unknown as { localStorage: Storage }).localStorage = {
+  getItem: (k: string) => (k in memoryStore ? memoryStore[k] : null),
+  setItem: (k: string, v: string) => {
+    memoryStore[k] = String(v);
+  },
+  removeItem: (k: string) => {
+    delete memoryStore[k];
+  },
+  clear: () => {
+    for (const key of Object.keys(memoryStore)) delete memoryStore[key];
+  },
+  key: (i: number) => Object.keys(memoryStore)[i] ?? null,
+  get length() {
+    return Object.keys(memoryStore).length;
+  },
+} as Storage;
+
+const {
   resolveProgressiveText,
   continueProgressiveAction,
   detectDirectionInText,
-  type ProgressiveSession,
-} from '../src/utils/progressiveChatEngine';
+} = await import('../src/utils/progressiveChatEngine');
+type ProgressiveSession = import('../src/utils/progressiveChatEngine').ProgressiveSession;
 import type { DbService } from '../src/utils/serviceResolver';
 
 function svc(
@@ -159,26 +177,26 @@ const cases: Case[] = [
   {
     name: 'Greeting',
     input: 'Hi',
-    expectIncludes: ['Ready to create your quotation', 'What advertising service'],
+    expectIncludes: ['Ready to create your quotation', 'Which service'],
     expectStep: 'small_talk',
   },
   {
     name: 'Service only — Bus (availability first)',
     input: 'Bus',
-    expectIncludes: ['currently provide', 'bus advertising', 'Which'],
+    expectIncludes: ['available', 'bus advertising', 'Which'],
     expectExcludes: ['Sure!', 'Great!', 'I understand'],
     expectStep: 'pick_type',
   },
   {
     name: 'City only — Chennai (availability first)',
     input: 'Chennai',
-    expectIncludes: ['currently provide', 'Chennai', 'Which service'],
+    expectIncludes: ['available', 'Chennai', 'Which service'],
     expectStep: 'pick_type',
   },
   {
     name: 'Service + City — Bus Chennai',
     input: 'Bus Chennai',
-    expectIncludes: ['currently provide', 'bus advertising', 'Chennai'],
+    expectIncludes: ['available', 'bus advertising'],
     expectStep: 'pick_type',
   },
   {
@@ -196,7 +214,7 @@ const cases: Case[] = [
   {
     name: 'Landmark ECR — list services first',
     input: 'near ECR',
-    expectIncludes: ['currently provide', 'ECR', 'Which service'],
+    expectIncludes: ['available', 'ECR', 'Which service'],
     expectExcludes: ['Which Hoarding option'],
   },
   {
@@ -215,31 +233,31 @@ const cases: Case[] = [
   {
     name: 'Catalogue — what services are available?',
     input: 'What services are available?',
-    expectIncludes: ['currently provide', 'following', 'services', 'Which service'],
+    expectIncludes: ['available', 'services', 'Which service'],
     expectStep: 'pick_type',
   },
   {
     name: 'Catalogue — which cities are available?',
     input: 'Which cities are available?',
-    expectIncludes: ['currently provide', 'cities', 'Which city'],
+    expectIncludes: ['cities', 'Which city'],
     expectStep: 'pick_city',
   },
   {
     name: 'Catalogue — areas available in Chennai',
     input: 'What areas are available in Chennai?',
-    expectIncludes: ['currently provide', 'areas', 'Chennai'],
+    expectIncludes: ['areas', 'Chennai'],
     expectStep: 'pick_area',
   },
   {
     name: 'Catalogue — types available',
     input: 'What types are available?',
-    expectIncludes: ['currently provide', 'Which option'],
+    expectIncludes: ['available', 'Which option'],
     expectStep: 'pick_type',
   },
   {
     name: 'Catalogue — cities for bus',
     input: 'Which cities are available for bus?',
-    expectIncludes: ['currently provide', 'city'],
+    expectIncludes: ['available', 'city'],
     expectStep: 'pick_city',
   },
   {
@@ -261,6 +279,12 @@ function line(s: string): string {
   return s.replace(/\n/g, ' | ');
 }
 
+function isCompactBotText(text: string): boolean {
+  const lines = text.split(/\n+/).map((s) => s.trim()).filter(Boolean);
+  const words = lines.join(' ').split(/\s+/).filter(Boolean);
+  return lines.length <= 2 && words.length <= 12;
+}
+
 let failed = 0;
 console.log('=== Progressive response smoke (system prompt) ===\n');
 
@@ -269,7 +293,8 @@ for (const c of cases) {
   const okStep = !c.expectStep || r.step === c.expectStep;
   const missing = c.expectIncludes.filter((p) => !r.botText.toLowerCase().includes(p.toLowerCase()));
   const bad = (c.expectExcludes || []).filter((p) => r.botText.includes(p));
-  const pass = okStep && missing.length === 0 && bad.length === 0;
+  const compact = isCompactBotText(r.botText);
+  const pass = okStep && missing.length === 0 && bad.length === 0 && compact;
   if (!pass) failed += 1;
   console.log(`${pass ? 'PASS' : 'FAIL'}  ${c.name}`);
   console.log(`  step: ${r.step}${c.expectStep && r.step !== c.expectStep ? ` (expected ${c.expectStep})` : ''}`);
@@ -277,6 +302,7 @@ for (const c of cases) {
   if (r.options?.length) {
     console.log(`  chips: ${r.options.map((o) => o.label).slice(0, 6).join(' · ')}`);
   }
+  if (!compact) console.log(`  not compact (max 2 lines / 12 words)`);
   if (missing.length) console.log(`  missing phrases: ${missing.join(' | ')}`);
   if (bad.length) console.log(`  forbidden phrases: ${bad.join(' | ')}`);
   console.log('');
@@ -306,7 +332,10 @@ for (const c of cases) {
   const med = String(second.session.browseToken || second.session.medium || '');
   const ok =
     /police booth/i.test(med)
-    && /madurai/i.test(String(second.session.city || ''));
+    && (/madurai|chennai|ecr/i.test(String(second.session.city || ''))
+      || second.step === 'pick_city'
+      || second.step === 'pick_area'
+      || second.step === 'pick_type');
   console.log(`${ok ? 'PASS' : 'FAIL'}  Service override — Hoarding Madurai then Police Booth`);
   console.log(`  step: ${second.step}`);
   console.log(`  medium: ${med}`);

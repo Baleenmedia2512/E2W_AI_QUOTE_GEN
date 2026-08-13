@@ -248,6 +248,62 @@ results.push(runCase(
 ));
 
 results.push(runCase(
+  'MSC 3b — Bus Semi in Madurai only: do not quote other-city inventory',
+  (check) => {
+    const r = text('bus semi in madurai');
+    check(
+      r.step !== 'quote_ready' && r.step !== 'min_qty_confirm',
+      `must not quote Bus Semi for Madurai; step=${r.step} text=${r.botText}`,
+    );
+    check(
+      botMentions(r, /not (providing|offering)/i) || r.step === 'pick_city' || r.step === 'no_match',
+      `must say not in Madurai; step=${r.step} text=${r.botText}`,
+    );
+    check(
+      !same(r.session.city, F.chennai),
+      `must not silently lock Chennai; city=${r.session.city}`,
+    );
+    const quoteCities = (r.quoteRows || r.session.collectedRows || [])
+      .map((row) => row.city)
+      .filter(Boolean);
+    check(
+      !quoteCities.some((c) => same(c, F.chennai)),
+      `must not add Chennai rows for a Madurai-only ask; rows=${quoteCities.join('|')}`,
+    );
+  },
+));
+
+results.push(runCase(
+  'MSC 3c — quote for bus and auto: for is not a city',
+  (check) => {
+    for (const q of [
+      'give quote for bus and auto',
+      'i need aquote for bus and auto',
+      'i need a quote for bus and auto',
+    ]) {
+      const r = text(q);
+      check(
+        !botMentions(r, /in bus or auto/i),
+        `"${q}" must not treat services as cities; text=${r.botText}`,
+      );
+      check(
+        r.step !== 'no_match' || !botMentions(r, /not offering bus or auto in bus/i),
+        `"${q}" must start Bus/Auto funnel; step=${r.step} text=${r.botText}`,
+      );
+      check(
+        r.step === 'pick_type'
+        || r.step === 'pick_city'
+        || r.step === 'pick_area'
+        || r.step === 'pick_direction'
+        || r.step === 'min_qty_confirm'
+        || r.step === 'quote_ready',
+        `"${q}" should ask type/city; step=${r.step} text=${r.botText}`,
+      );
+    }
+  },
+));
+
+results.push(runCase(
   'MSC 4 — Bus and Auto in Chennai: shared city lock, no city re-ask',
   (check) => {
     const r = text('bus and auto in chennai');
@@ -265,6 +321,41 @@ results.push(runCase(
       || r.step === 'quote_ready',
       `start sequential/type funnel in Chennai; step=${r.step}`,
     );
+  },
+));
+
+results.push(runCase(
+  'MSC 4b — bus and auto echo keeps Chennai and Bus type chips',
+  (check) => {
+    const first = text('bus and auto in chennai');
+    check(same(first.session.city, F.chennai), `first city Chennai: got ${first.session.city}`);
+    check(first.step !== 'pick_city', `first must not ask city; step=${first.step}`);
+    const echo = text('bus and auto', DB, first.session);
+    check(
+      same(echo.session.city, F.chennai),
+      `echo keeps Chennai: got ${echo.session.city}`,
+    );
+    check(
+      echo.step !== 'pick_city',
+      `echo must not ask Auto city; step=${echo.step} text=${echo.botText}`,
+    );
+    check(
+      !/which auto city/i.test(echo.botText || ''),
+      `must not ask Auto city while Bus is active; text=${echo.botText}`,
+    );
+    const labels = optionLabels(echo);
+    const dup = labels.filter((l, i) => labels.findIndex((x) => same(x, l)) !== i);
+    check(!dup.length, `no duplicate chips: ${labels.join('|')}`);
+    if (echo.step === 'pick_type') {
+      check(
+        labels.some((l) => /bus/i.test(l)),
+        `type chips should be Bus options; got ${labels.join('|')}`,
+      );
+      check(
+        !labels.some((l) => /^auto\b/i.test(l)),
+        `must not mix Auto chips into Bus type ask; got ${labels.join('|')}`,
+      );
+    }
   },
 ));
 
@@ -1086,6 +1177,112 @@ results.push(runCase(
       );
       assertExactBusSemi('F intent media=bus', r);
     }
+  },
+));
+
+results.push(runCase(
+  'MSC 22 — Queued services: multi-location Confirm must continue to next service',
+  (check) => {
+    const city = F.chennai;
+    const multiAreaMediums = (catalog.mediums || [])
+      .map((medium) => ({
+        medium,
+        areas: catalog.areasForMediumCity(medium, city),
+      }))
+      .filter((entry) => entry.areas.length >= 2);
+
+    const first = multiAreaMediums.find((entry) =>
+      canonicalizeServiceName(entry.medium).includes('hoarding'),
+    ) || multiAreaMediums[0];
+    const second = multiAreaMediums.find((entry) =>
+      canonicalizeServiceName(entry.medium) !== canonicalizeServiceName(first?.medium || ''),
+    );
+
+    if (!first || !second) {
+      check(true, 'skip — need 2 catalog mediums with 2+ areas in the same city');
+      return;
+    }
+
+    const medA = first.medium;
+    const medB = second.medium;
+    let r = text(`${medA} and ${medB} in ${city}`);
+    check(
+      r.step !== 'no_match',
+      `batch should start; step=${r.step} text=${r.botText}`,
+    );
+
+    let confirmedMultiLocation = false;
+    for (let i = 0; i < 24; i++) {
+      if (r.step === 'quote_ready' || (r.quoteRows && r.quoteRows.length)) break;
+      if (r.step === 'min_qty_confirm') {
+        r = continueProgressiveAction('yes_min', r.session, DB);
+        continue;
+      }
+      const opts = r.options || [];
+      if (!opts.length) break;
+
+      const areaOpts = opts.filter((o) => String(o.id || '').startsWith('area:'));
+      const cityOpts = opts.filter((o) => String(o.id || '').startsWith('city:'));
+      const dirOpts = opts.filter((o) => String(o.id || '').startsWith('direction:'));
+
+      if (areaOpts.length >= 2) {
+        const ids = areaOpts.slice(0, 2).map((o) => o.id);
+        r = continueProgressiveAction(ids[0], r.session, DB, ids);
+        confirmedMultiLocation = true;
+        continue;
+      }
+      if (dirOpts.length >= 2 && confirmedMultiLocation) {
+        const ids = dirOpts.slice(0, 2).map((o) => o.id);
+        r = continueProgressiveAction(ids[0], r.session, DB, ids);
+        break;
+      }
+      if (cityOpts.length >= 2 && (r.session.workQueue || []).length > 0 && r.session.medium) {
+        const ids = cityOpts.slice(0, 2).map((o) => o.id);
+        r = continueProgressiveAction(ids[0], r.session, DB, ids);
+        confirmedMultiLocation = true;
+        continue;
+      }
+
+      const id = opts[0].id;
+      r = continueProgressiveAction(id, r.session, DB, [id]);
+    }
+
+    check(
+      confirmedMultiLocation,
+      `should reach a 2+ location Confirm for ${medA}; step=${r.step} `
+      + `opts=${optionLabels(r).join('|')}`,
+    );
+    if (!confirmedMultiLocation) return;
+
+    const queued = (r.session.workQueue || []).map(
+      (w) => canonicalizeServiceName(w.medium || w.browseToken || ''),
+    );
+    const active = canonicalizeServiceName(mediumOf(r.session));
+    const rows = r.quoteRows || r.session.collectedRows || r.session.pendingRows || [];
+    const rowMedia = rows.map((row) =>
+      canonicalizeServiceName(String(row.service || '')),
+    );
+    const medAKey = canonicalizeServiceName(medA);
+    const medBKey = canonicalizeServiceName(medB);
+    const stillOnSecond =
+      active.includes(medBKey) || medBKey.includes(active)
+      || queued.some((q) => q.includes(medBKey) || medBKey.includes(q));
+    const quoteHasBoth =
+      rowMedia.some((m) => m.includes(medAKey) || medAKey.includes(m))
+      && rowMedia.some((m) => m.includes(medBKey) || medBKey.includes(m));
+
+    check(
+      r.step !== 'quote_ready' || quoteHasBoth,
+      `multi-location Confirm must not quote only ${medA}; `
+      + `step=${r.step} active=${active} queue=${queued.join('|') || '(empty)'} `
+      + `rows=${rowMedia.join('|') || '(none)'}`,
+    );
+    check(
+      stillOnSecond || quoteHasBoth || r.step === 'pick_type'
+      || r.step === 'pick_city' || r.step === 'pick_area' || r.step === 'pick_direction',
+      `must continue to ${medB} after ${medA} locations; `
+      + `step=${r.step} active=${active} queue=${queued.join('|') || '(empty)'}`,
+    );
   },
 ));
 
