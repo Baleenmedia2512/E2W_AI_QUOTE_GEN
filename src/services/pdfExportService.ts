@@ -568,7 +568,7 @@ export const exportToPDF = async (
   clientName?: string,
   documentIds?: string[],      // proposal document IDs to load images from DB
   exportMode: PdfExportMode = 'full',
-): Promise<void> => {
+): Promise<{ pdfBlob: Blob; filename: string }> => {
   const originalCursor = document.body.style.cursor;
   document.body.style.cursor = 'wait';
 
@@ -621,32 +621,33 @@ export const exportToPDF = async (
     const suffix = exportMode === 'summary' ? '_Summary' : exportMode === 'detailed' ? '_Detailed Summary' : '';
     const filename = `${dateStr}_${clientStr}_${quoteNumber}${suffix}.pdf`;
 
-    if (isMobile()) {
-      // ── Mobile: save to Documents folder and open ──────────────────
-      const arrayBuffer = await blob.arrayBuffer();
-      const base64 = btoa(
-        new Uint8Array(arrayBuffer).reduce((data, byte) => data + String.fromCharCode(byte), ''),
-      );
-      const isAndroid = Capacitor.getPlatform() === 'android';
-      const result = await Filesystem.writeFile({
-        // Android exposes the shared Downloads folder through ExternalStorage.
-        // iOS has no shared Downloads directory, so Documents is the closest
-        // system-managed location and does not show a folder picker.
-        path: isAndroid ? `Download/QuoteBuddy/${filename}` : `QuoteBuddy/${filename}`,
-        data: base64,
-        directory: isAndroid ? Directory.ExternalStorage : Directory.Documents,
-        recursive: true,
-      });
-      await FileOpener.open({ filePath: result.uri, contentType: 'application/pdf' });
-    } else {
-      // ── Web: browser download ───────────────────────────────────────
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement('a');
-      a.href = url;
-      a.download = filename;
-      a.click();
-      setTimeout(() => URL.revokeObjectURL(url), 10000);
-    }
+      if (isMobile()) {
+        // ── Mobile: save to Documents folder and open ──────────────────
+        const arrayBuffer = await blob.arrayBuffer();
+        const base64 = btoa(
+          new Uint8Array(arrayBuffer).reduce((data, byte) => data + String.fromCharCode(byte), ''),
+        );
+        const isAndroid = Capacitor.getPlatform() === 'android';
+        const result = await Filesystem.writeFile({
+          // Android exposes the shared Downloads folder through ExternalStorage.
+          // iOS has no shared Downloads directory, so Documents is the closest
+          // system-managed location and does not show a folder picker.
+          path: isAndroid ? `Download/QuoteBuddy/${filename}` : `QuoteBuddy/${filename}`,
+          data: base64,
+          directory: isAndroid ? Directory.ExternalStorage : Directory.Documents,
+          recursive: true,
+        });
+        await FileOpener.open({ filePath: result.uri, contentType: 'application/pdf' });
+      } else {
+        // ── Web: browser download ───────────────────────────────────────
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = filename;
+        a.click();
+        setTimeout(() => URL.revokeObjectURL(url), 10000);
+      }
+      return { pdfBlob: blob, filename };
   } finally {
     document.body.style.cursor = originalCursor;
   }

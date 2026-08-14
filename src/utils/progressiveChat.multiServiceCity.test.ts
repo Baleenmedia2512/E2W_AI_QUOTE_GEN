@@ -360,6 +360,62 @@ results.push(runCase(
 ));
 
 results.push(runCase(
+  'MSC 4c — bus shelter → bus is NOT same-batch echo (restart list)',
+  (check) => {
+    const shelterMed = catalog.mediums.find((m) =>
+      canonicalizeServiceName(m).includes('bus shelter'),
+    );
+    check(!!shelterMed, 'DB must include a Bus Shelter medium');
+    if (!shelterMed) return;
+
+    const first = text(
+      `50 ${F.busSemi} and 1000 ${F.auto} and 200 ${F.cab} and 5 bus shelter`,
+    );
+    check(
+      (first.session.segments?.length || 0) >= 2
+        || (first.session.workQueue?.length || 0) > 0
+        || !!first.session.medium
+        || !!first.session.browseToken,
+      `first batch should start a funnel; step=${first.step}`,
+    );
+    const priorToks = (first.session.segments || []).map((s) =>
+      canonicalizeServiceName(s.token),
+    );
+    check(
+      priorToks.some((t) => t.includes('shelter')),
+      `first segments should include bus shelter; got ${priorToks.join('|')}`,
+    );
+
+    // Changed last service: bus shelter → bare bus (different product)
+    const changed = text(
+      `50 ${F.busSemi} and 1000 ${F.auto} and 200 ${F.cab} and 5 bus`,
+      DB,
+      first.session,
+    );
+    const nextToks = (changed.session.segments || []).map((s) =>
+      canonicalizeServiceName(s.token),
+    );
+    check(
+      nextToks.some((t) => t === 'bus' || t.startsWith('bus '))
+        && !nextToks.some((t) => t.includes('shelter')),
+      `changed list must queue Bus not Bus Shelter; got ${nextToks.join('|')} `
+        + `step=${changed.step} medium=${mediumOf(changed.session)}`,
+    );
+    // Must not keep the old shelter token on the active/queued batch
+    const queueToks = (changed.session.workQueue || []).map((w) =>
+      canonicalizeServiceName(w.browseToken || w.medium || ''),
+    );
+    const active = canonicalizeServiceName(mediumOf(changed.session));
+    check(
+      !active.includes('shelter')
+        && !queueToks.some((t) => t.includes('shelter')),
+      `must not keep Bus Shelter after service-name change; `
+        + `active=${active} queue=${queueToks.join('|')}`,
+    );
+  },
+));
+
+results.push(runCase(
   'MSC 5 — Shared multi-city for mediums that exist in both cities',
   (check) => {
     // Live DB: Bus/Auto are not both in Madurai — use Police Booth (or discovered pair).

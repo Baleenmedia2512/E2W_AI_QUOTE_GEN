@@ -2,8 +2,10 @@ import React, { useState, useRef, useEffect, useMemo, useCallback } from 'react'
 import { useHistory } from 'react-router-dom';
 import { useToast } from '@chakra-ui/react';
 import { useAppStore } from '../store';
+import { useAuthStore } from '../store/authStore';
 import { CorporateMinimal } from '../components/Templates/CorporateMinimal';
 import { exportToPDF } from '../services/pdfExportService';
+import { sendQuoteEmail } from '../services/quoteEmailService';
 import { ExtractedPage, ServiceReadyData } from '../types';
 import {
   extractCityHint,
@@ -47,6 +49,7 @@ export const QuotePreviewPage: React.FC = () => {
   } = useAppStore();
 
   const toast = useToast();
+  const { user } = useAuthStore();
 
   /** Allow preview without saved client — edit via inline Name / Phone / Email */
   const effectiveClient: ClientInfo = clientInfo || EMPTY_CLIENT;
@@ -542,7 +545,7 @@ export const QuotePreviewPage: React.FC = () => {
     );
   };
 
-  const handleExportPDF = async (mode: PdfExportMode = 'full') => {
+  const handleExportPDF = async (mode: PdfExportMode = 'full'): Promise<{ pdfBlob: Blob; filename: string } | undefined> => {
     console.log(`📄 Export PDF clicked (mode: ${mode})`);
 
     if (!clientReady) {
@@ -577,7 +580,7 @@ export const QuotePreviewPage: React.FC = () => {
         .map((p) => p.id)
         .filter(Boolean) as string[];
 
-      await exportToPDF(
+      const { pdfBlob, filename } = await exportToPDF(
         previewRef.current,
         currentQuote.quoteNumber,
         selectedTemplate,
@@ -586,25 +589,92 @@ export const QuotePreviewPage: React.FC = () => {
         mode,
       );
       console.log('✅ PDF exported successfully');
+      return { pdfBlob, filename };
     } catch (error) {
       console.error('❌ PDF export error:', error);
       alert(`Failed to export PDF: ${error instanceof Error ? error.message : 'Unknown error'}`);
     } finally {
       setIsExporting(false);
     }
+    return undefined;
   };
 
   const handleDownloadPDF = async () => {
-    const hasExecutiveSummary = !!currentQuote && isMultiServiceQuote(currentQuote.items);
-    if (!hasExecutiveSummary) {
-      await handleExportPDF('full');
-      return;
-    }
+    if (isExporting || isSendingEmail) return;
 
-    await handleExportPDF('summary');
-    await handleExportPDF('detailed');
+    setIsExporting(true);
+    const hasExecutiveSummary = !!currentQuote && isMultiServiceQuote(currentQuote.items);
+    let pdfAttachments: { pdfBlob: Blob; filename: string }[] = [];
+
+    try {
+      if (!hasExecutiveSummary) {
+        const pdfResult = await handleExportPDF('full');
+        if (pdfResult) pdfAttachments = [pdfResult];
+      } else {
+        const summaryResult = await handleExportPDF('summary');
+        const detailedResult = await handleExportPDF('detailed');
+        if (summaryResult) pdfAttachments.push(summaryResult);
+        if (detailedResult) pdfAttachments.push(detailedResult);
+      }
+
+      if (!pdfAttachments.length) {
+        toast({
+          title: 'PDF Export Failed',
+          description: 'Could not generate PDF. Please try again.',
+          status: 'error',
+          duration: 5000,
+          isClosable: true,
+        });
+        return;
+      }
+
+      setIsSendingEmail(true);
+      const downloadedByName = user?.full_name || 'Unknown User';
+
+      const emailSendResult = await sendQuoteEmail({
+        pdfAttachments,
+        quote: currentQuote!,
+        client: effectiveClient,
+        company: companyInfo!,
+        downloadedBy: downloadedByName,
+      });
+
+      if (emailSendResult.success) {
+        toast({
+          title: 'PDF Downloaded & Emailed',
+          description:
+            pdfAttachments.length > 1
+              ? 'Both PDFs were downloaded and sent in one email to the internal team.'
+              : 'The PDF has been downloaded and sent to the internal team.',
+          status: 'success',
+          duration: 5000,
+          isClosable: true,
+        });
+      } else {
+        toast({
+          title: 'Email Notification Failed',
+          description: `PDF downloaded, but internal email notification failed: ${emailSendResult.message}`,
+          status: 'warning',
+          duration: 9000,
+          isClosable: true,
+        });
+      }
+    } catch (error) {
+      console.error('❌ PDF download or email error:', error);
+      toast({
+        title: 'Error',
+        description: `Failed to complete operation: ${error instanceof Error ? error.message : 'Unknown error'}`,
+        status: 'error',
+        duration: 9000,
+        isClosable: true,
+      });
+    } finally {
+      setIsExporting(false);
+      setIsSendingEmail(false);
+    }
   };
 
+  const [isSendingEmail, setIsSendingEmail] = useState(false); // NEW STATE
   const handleZoomIn = () => {
     setZoom(prev => Math.min(prev + 10, 150));
   };

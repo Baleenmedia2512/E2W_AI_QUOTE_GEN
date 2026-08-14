@@ -1762,6 +1762,106 @@ function partitionBatchWork(
   return { needAsk, seedRows, seedIds, autoLabels };
 }
 
+/**
+ * Start multi-service batch: first work item enters the funnel; rest stay on workQueue.
+ * Never auto-seed later services into collectedRows — process one service at a time.
+ */
+function launchSequentialBatchWork(
+  workItems: BatchWorkItem[],
+  segments: BatchSegment[] | undefined,
+  session: ProgressiveSession,
+  services: DbService[],
+  opts: {
+    reply?: string | null;
+    unavailableNote?: string;
+    availLabels?: string[];
+    missingLabels?: string[];
+    qtyByServiceId?: Record<string, number>;
+    batchUnavailableLabels?: string[];
+    lockedCity?: string;
+  },
+): ProgressiveTurnResult {
+  if (!workItems.length) {
+    return {
+      step: 'no_match',
+      botText: opts.unavailableNote || copyUnknownService(),
+      options: [],
+      session,
+    };
+  }
+
+  const [askFirst, ...askRest] = workItems;
+  const qtyByServiceId = opts.qtyByServiceId || { ...(session.qtyByServiceId || {}) };
+  const availLabels = opts.availLabels
+    || workItems.map((w) => titleCase(w.browseToken || w.medium));
+  const firstLabel = titleCase(askFirst.browseToken || askFirst.medium);
+  const sessionCity = opts.lockedCity || askFirst.city;
+
+  const askLine = sessionCity
+    ? copyBatchStart(sessionCity, workItems.length, firstLabel, availLabels)
+    : copyBatchAutoAddedThenAsk([], firstLabel, undefined, availLabels);
+
+  let intro = '';
+  if (opts.unavailableNote) {
+    intro = joinNoteAndAsk(opts.unavailableNote, askLine);
+  } else if (opts.missingLabels?.length) {
+    intro = joinNoteAndAsk(`Couldn't match ${opts.missingLabels[0]}.`, askLine);
+  } else {
+    intro = askLine;
+  }
+
+  const exact = isExactCatalogMedium(askFirst.medium, services);
+  const result = startMediumFlow(
+    askFirst.medium,
+    {
+      ...session,
+      city: sessionCity,
+      medium: exact ? askFirst.medium : undefined,
+      browseToken: askFirst.browseToken || askFirst.medium,
+      mediumType: undefined,
+      typesResolved: undefined,
+      qty: askFirst.qty,
+      qtyByServiceId,
+      segments,
+      candidateServiceIds: askFirst.candidateServiceIds,
+      workQueue: askRest,
+      collectedRows: [...(session.collectedRows || [])],
+      collectedServiceIds: [...(session.collectedServiceIds || [])],
+      pendingMedia: [],
+      pendingCityQueue: undefined,
+      needsContinueConfirm: false,
+      area: undefined,
+      placeHint: undefined,
+      directionHint: undefined,
+      batchGroupMap: undefined,
+      batchServiceLabels: availLabels,
+      batchUnavailableLabels: opts.batchUnavailableLabels,
+      batchUnavailableNote: opts.unavailableNote,
+      batchUnavailableSpoken: false,
+    },
+    services,
+    opts.reply || intro.trim(),
+  );
+  const noted = withBatchUnavailableNote(result.botText, {
+    ...result.session,
+    batchUnavailableNote: opts.unavailableNote || result.session.batchUnavailableNote,
+    batchUnavailableSpoken: false,
+  });
+  const prompted = withBatchStepPrompt(
+    { ...result, botText: noted.botText, session: noted.session },
+    intro.trim(),
+  );
+  return {
+    ...prompted,
+    session: {
+      ...prompted.session,
+      batchServiceLabels: availLabels,
+      batchUnavailableLabels: opts.batchUnavailableLabels,
+      batchUnavailableNote: opts.unavailableNote,
+    },
+  };
+}
+
 function copyBatchAutoAddedThenAsk(
   autoLabels: string[],
   nextLabel: string,
@@ -3796,129 +3896,18 @@ function startBatchSequentialFunnel(
       .join('\n');
   }
 
-  // Auto-add services with no choice; only queue items that need an ask
-  const { needAsk, seedRows, seedIds, autoLabels } = partitionBatchWork(
-    workItems,
-    services,
-    session,
+  void first;
+  void rest;
+  return launchSequentialBatchWork(workItems, segments, session, services, {
+    reply,
+    unavailableNote,
+    availLabels,
+    missingLabels,
     qtyByServiceId,
-  );
-
-  if (!needAsk.length) {
-    if (seedRows.length) {
-      const finalized = finalizeSelection([], {
-        ...session,
-        qtyByServiceId,
-        segments,
-        collectedRows: seedRows,
-        collectedServiceIds: seedIds,
-        workQueue: undefined,
-        pendingMedia: [],
-        needsContinueConfirm: false,
-        batchUnavailableLabels: cityUnavailable.length
-          ? cityUnavailable.map((u) => u.label)
-          : undefined,
-        batchUnavailableNote: unavailableNote,
-        batchUnavailableSpoken: false,
-        batchServiceLabels: availLabels,
-      }, services);
-      const noted = withBatchUnavailableNote(finalized.botText, {
-        ...finalized.session,
-        batchUnavailableNote: unavailableNote,
-        batchUnavailableSpoken: false,
-      });
-      return { ...finalized, botText: noted.botText, session: noted.session };
-    }
-  }
-
-  const askFirst = needAsk[0] || first;
-  const askRest = needAsk.length ? needAsk.slice(1) : rest;
-  const firstLabel = titleCase(askFirst.browseToken || askFirst.medium);
-
-  let intro = '';
-  if (unavailableNote) {
-    intro = unavailableNote;
-  }
-  if (missingLabels.length && !intro) {
-    intro = `Couldn't match ${missingLabels[0]}.`;
-  }
-  // Type before City: never ask a later service's city while starting this service's type step.
-  if (autoLabels.length || needAsk.length) {
-    intro = joinNoteAndAsk(
-      intro,
-      copyBatchAutoAddedThenAsk(
-        autoLabels,
-        firstLabel,
-        askFirst.city,
-        availLabels,
-      ),
-    );
-  } else if (askFirst.city) {
-    intro = joinNoteAndAsk(
-      intro,
-      copyBatchStart(askFirst.city, workItems.length, firstLabel, availLabels),
-    );
-  } else if (!intro.trim()) {
-    intro = `Starting ${firstLabel}.`;
-  }
-  const exact = isExactCatalogMedium(askFirst.medium, services);
-  const allLabels = workItems.map((w) => titleCase(w.browseToken || w.medium));
-  const result = startMediumFlow(
-    askFirst.medium,
-    {
-      ...session,
-      city: askFirst.city,
-      medium: exact ? askFirst.medium : undefined,
-      browseToken: askFirst.browseToken || askFirst.medium,
-      mediumType: undefined,
-      qty: askFirst.qty,
-      qtyByServiceId,
-      segments,
-      candidateServiceIds: askFirst.candidateServiceIds,
-      workQueue: askRest,
-      collectedRows: seedRows,
-      collectedServiceIds: seedIds,
-      pendingMedia: [],
-      pendingCityQueue: undefined,
-      needsContinueConfirm: false,
-      typesResolved: undefined,
-      area: undefined,
-      placeHint: undefined,
-      directionHint: undefined,
-      batchGroupMap: undefined,
-      batchServiceLabels: allLabels,
-      batchUnavailableLabels: cityUnavailable.length
-        ? cityUnavailable.map((u) => u.label)
-        : undefined,
-      batchUnavailableNote: unavailableNote,
-      batchUnavailableSpoken: false,
-    },
-    services,
-    reply || intro.trim(),
-  );
-  const noted = withBatchUnavailableNote(result.botText, {
-    ...result.session,
-    batchUnavailableNote: unavailableNote || result.session.batchUnavailableNote,
     batchUnavailableLabels: cityUnavailable.length
       ? cityUnavailable.map((u) => u.label)
-      : result.session.batchUnavailableLabels,
-    batchUnavailableSpoken: false,
+      : undefined,
   });
-  return {
-    ...result,
-    botText: noted.botText,
-    autoConfirmedList: autoLabels.length ? autoLabels : allLabels,
-    session: {
-      ...noted.session,
-      batchServiceLabels: allLabels,
-      batchUnavailableLabels: cityUnavailable.length
-        ? cityUnavailable.map((u) => u.label)
-        : undefined,
-      batchUnavailableNote: unavailableNote,
-      collectedRows: seedRows.length ? seedRows : noted.session.collectedRows,
-      collectedServiceIds: seedIds.length ? seedIds : noted.session.collectedServiceIds,
-    },
-  };
 }
 
 /**
@@ -4407,104 +4396,21 @@ function startBatchWithCityLock(
     candidateServiceIds: a.hits.map((h) => h.service_id),
   }));
 
-  const { needAsk, seedRows, seedIds, autoLabels } = partitionBatchWork(
-    workItems,
-    services,
-    session,
-    qtyByServiceId,
-  );
-
   let unavailableNote: string | undefined = session.batchUnavailableNote?.trim() || undefined;
   if (missingLabels.length && availLabels.length) {
     const perCity = formatBatchUnavailableNote(city, missingLabels, availLabels);
     unavailableNote = unavailableNote ? joinNoteAndAsk(unavailableNote, perCity) : perCity;
   }
 
-  if (!needAsk.length) {
-    if (seedRows.length) {
-      return finalizeSelection([], {
-        ...session,
-        city,
-        qtyByServiceId,
-        segments,
-        collectedRows: seedRows,
-        collectedServiceIds: seedIds,
-        workQueue: undefined,
-        pendingMedia: [],
-        needsContinueConfirm: false,
-        batchUnavailableLabels: missingLabels.length ? missingLabels : undefined,
-        batchUnavailableNote: unavailableNote,
-      }, services);
-    }
-  }
-
-  const askFirst = needAsk[0] || workItems[0];
-  const askRest = needAsk.length ? needAsk.slice(1) : workItems.slice(1);
-  const firstLabel = titleCase(askFirst.browseToken || askFirst.medium);
-
-  let intro = '';
-  if (unavailableNote) {
-    intro = joinNoteAndAsk(
-      unavailableNote,
-      `Which ${firstLabel} option?`,
-    );
-  } else {
-    intro = copyBatchAutoAddedThenAsk(autoLabels, firstLabel, city, availLabels);
-  }
-
-  // Exact catalog medium → lock; family (bus) → browseToken asks type chips
-  const exact = isExactCatalogMedium(askFirst.medium, services);
-  const result = startMediumFlow(
-    askFirst.medium,
-    {
-      ...session,
-      city,
-      medium: exact ? askFirst.medium : undefined,
-      browseToken: askFirst.browseToken || askFirst.medium,
-      qty: askFirst.qty,
-      qtyByServiceId,
-      segments,
-      candidateServiceIds: askFirst.candidateServiceIds,
-      workQueue: askRest,
-      collectedRows: seedRows,
-      collectedServiceIds: seedIds,
-      pendingMedia: [],
-      pendingCityQueue: undefined,
-      needsContinueConfirm: false,
-      area: undefined,
-      placeHint: undefined,
-      batchServiceLabels: availLabels,
-      batchUnavailableLabels: missingLabels.length ? missingLabels : undefined,
-      batchUnavailableNote: unavailableNote,
-      batchUnavailableSpoken: false,
-    },
-    services,
-    reply || intro.trim(),
-  );
-  const noted = withBatchUnavailableNote(result.botText, {
-    ...result.session,
-    batchUnavailableNote: unavailableNote || result.session.batchUnavailableNote,
-    batchUnavailableLabels: missingLabels.length
-      ? missingLabels
-      : result.session.batchUnavailableLabels,
-    batchUnavailableSpoken: false,
+  return launchSequentialBatchWork(workItems, segments, { ...session, city, qtyByServiceId }, services, {
+    reply,
+    unavailableNote,
+    availLabels,
+    missingLabels,
+    qtyByServiceId,
+    batchUnavailableLabels: missingLabels.length ? missingLabels : undefined,
+    lockedCity: city,
   });
-  const prompted = withBatchStepPrompt(
-    { ...result, botText: noted.botText, session: noted.session },
-    intro.trim(),
-  );
-  return {
-    ...prompted,
-    autoConfirmedList: autoLabels.length ? autoLabels : availLabels,
-    session: {
-      ...prompted.session,
-      batchServiceLabels: availLabels,
-      batchUnavailableLabels: missingLabels.length ? missingLabels : undefined,
-      batchUnavailableNote: unavailableNote,
-      collectedRows: seedRows.length ? seedRows : prompted.session.collectedRows,
-      collectedServiceIds: seedIds.length ? seedIds : prompted.session.collectedServiceIds,
-    },
-  };
 }
 
 /** Family match: "bus" → bus full/semi; not bus stand. Name fallback uses same rule. */
@@ -6567,18 +6473,53 @@ function priorHasFunnelLocks(prior?: ProgressiveSession | null): boolean {
   );
 }
 
-function tokensInSameFamily(a: string, b: string): boolean {
+/**
+ * Same catalog product for batch-echo compare.
+ * Allows family refine (bus ↔ bus semi, bus shelter ↔ bus shelter double panel).
+ * Never treats different products as the same (bus ↛ bus shelter).
+ */
+function sameBatchServiceToken(a: string, b: string): boolean {
   const left = canonicalizeServiceName(a);
   const right = canonicalizeServiceName(b);
   if (!left || !right) return false;
   if (left === right) return true;
   if (isSameMediumFamily(left, right) || isSameMediumFamily(right, left)) return true;
-  const leftHead = left.split(/\s+/)[0] || '';
-  const rightHead = right.split(/\s+/)[0] || '';
-  return leftHead.length >= 3 && leftHead === rightHead;
+
+  const lw = left.split(/\s+/).filter(Boolean);
+  const rw = right.split(/\s+/).filter(Boolean);
+  let i = 0;
+  while (i < lw.length && i < rw.length && lw[i] === rw[i]) i += 1;
+  if (i === 0) return false;
+  const isStyleWord = (w: string) =>
+    MEDIUM_STYLE_TOKENS.has(w) || w === 'double' || w === 'single';
+  return lw.slice(i).every(isStyleWord) && rw.slice(i).every(isStyleWord);
 }
 
-/** Same multi-service list as the active batch (e.g. "bus and auto" after "bus and auto in chennai"). */
+/** Ordered service tokens from the active batch (prefer original segments). */
+function priorBatchServiceTokens(prior: ProgressiveSession): string[] {
+  const fromSegs = (prior.segments || [])
+    .map((s) => canonicalizeServiceName(s.token))
+    .filter(Boolean);
+  if (fromSegs.length >= 2) return fromSegs;
+
+  const out: string[] = [];
+  const cur = canonicalizeServiceName(prior.browseToken || prior.medium || '');
+  if (cur) out.push(cur);
+  for (const w of prior.workQueue || []) {
+    const t = canonicalizeServiceName(w.browseToken || w.medium || '');
+    if (t) out.push(t);
+  }
+  if (out.length >= 2) return out;
+
+  return (prior.batchServiceLabels || [])
+    .map((label) => canonicalizeServiceName(label))
+    .filter(Boolean);
+}
+
+/**
+ * Same multi-service list as the active batch (e.g. "bus and auto" after "bus and auto in chennai").
+ * Service-name change (bus shelter → bus) is NOT an echo — restart that batch.
+ */
 function isSameBatchEcho(
   prior: ProgressiveSession | null | undefined,
   segs: Array<{ token: string }>,
@@ -6588,17 +6529,13 @@ function isSameBatchEcho(
     .map((s) => canonicalizeServiceName(s.token))
     .filter(Boolean);
   if (incoming.length < 2) return false;
-  const priorParts = [
-    prior.browseToken,
-    prior.medium,
-    ...(prior.pendingMedia || []),
-    ...(prior.workQueue || []).map((w) => w.browseToken || w.medium),
-    ...(prior.segments || []).map((s) => s.token),
-    ...(prior.batchServiceLabels || []),
-  ].filter(Boolean) as string[];
-  if (!priorParts.length) return false;
-  return incoming.every((token) =>
-    priorParts.some((part) => tokensInSameFamily(part, token)),
+  const priorToks = priorBatchServiceTokens(prior);
+  if (priorToks.length < 2) return false;
+  // Added / removed a service → new list
+  if (priorToks.length !== incoming.length) return false;
+  // Pair by order: same products only (not first-word family glue)
+  return priorToks.every((token, index) =>
+    sameBatchServiceToken(token, incoming[index] || ''),
   );
 }
 

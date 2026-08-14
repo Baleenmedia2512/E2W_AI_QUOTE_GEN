@@ -1,5 +1,18 @@
 import React, { useState, useCallback, useEffect, useRef } from 'react';
-import { useToast } from '@chakra-ui/react';
+import {
+  Button,
+  HStack,
+  Modal,
+  ModalBody,
+  ModalCloseButton,
+  ModalContent,
+  ModalFooter,
+  ModalHeader,
+  ModalOverlay,
+  Text,
+  useToast,
+  VStack,
+} from '@chakra-ui/react';
 import { TemplateProps } from '../../types';
 import { QuoteItem } from '../../types/quote';
 import { ReferenceImages } from './ReferenceImages';
@@ -38,6 +51,17 @@ import { PreparedForClientFields } from '../ClientInfoForm/PreparedForClientFiel
 import './CorporateMinimal.css';
 
 type ExecEditField = 'quantity' | 'duration' | 'requiringCharge' | 'oneTimeCharge' | 'oneTimeQuantity';
+type ExecEditMeta = {
+  hasDisplayRental?: boolean;
+};
+
+type OneTimeQuantityConfirmState = {
+  primaryItemId: string;
+  serviceLabel: string;
+  previousValue: number;
+  nextValue: number;
+  displayValue: number;
+};
 
 const EMPTY_FLOORS: VendorEditFloors = {
   minQty: null,
@@ -230,14 +254,20 @@ const BreakdownFormulaBody: React.FC<{
   line: PricingBreakdownLine;
   canEdit: boolean;
   isEditing: boolean;
-  onCommit: (row: ExecutiveSummaryRow, field: ExecEditField, value: number) => void;
+  onCommit: (
+    row: ExecutiveSummaryRow,
+    field: ExecEditField,
+    value: number,
+    meta?: ExecEditMeta,
+  ) => void;
   onCommitOneTimeComponent?: (
     row: ExecutiveSummaryRow,
     components: { label: string; amount: number }[],
     label: string,
     value: number,
   ) => void;
-}> = ({ line, canEdit, isEditing, onCommit, onCommitOneTimeComponent }) => {
+  hasDisplayRental?: boolean;
+}> = ({ line, canEdit, isEditing, onCommit, onCommitOneTimeComponent, hasDisplayRental }) => {
   const formula = line.descriptionLines.slice(1).join(' ') || '';
   const row = line.editRow;
 
@@ -336,7 +366,7 @@ const BreakdownFormulaBody: React.FC<{
             editable
             compact
             bordered
-            onCommit={(n) => onCommit(row, 'oneTimeQuantity', n)}
+            onCommit={(n) => onCommit(row, 'oneTimeQuantity', n, { hasDisplayRental })}
           />
           <span className="breakdown-rate-unit"> ({qtyUnit})</span>
         </div>
@@ -376,14 +406,20 @@ const BreakdownDescCell: React.FC<{
   line: PricingBreakdownLine;
   canEdit: boolean;
   amountBlock: React.ReactNode;
-  onCommit: (row: ExecutiveSummaryRow, field: ExecEditField, value: number) => void;
+  onCommit: (
+    row: ExecutiveSummaryRow,
+    field: ExecEditField,
+    value: number,
+    meta?: ExecEditMeta,
+  ) => void;
   onCommitOneTimeComponent?: (
     row: ExecutiveSummaryRow,
     components: { label: string; amount: number }[],
     label: string,
     value: number,
   ) => void;
-}> = ({ line, canEdit, amountBlock, onCommit, onCommitOneTimeComponent }) => {
+  hasDisplayRental?: boolean;
+}> = ({ line, canEdit, amountBlock, onCommit, onCommitOneTimeComponent, hasDisplayRental }) => {
   const [isEditing, setIsEditing] = useState(false);
   const title = line.descriptionLines[0] || '';
   const formula = line.descriptionLines.slice(1).join(' ') || null;
@@ -430,6 +466,7 @@ const BreakdownDescCell: React.FC<{
               isEditing={isEditing}
               onCommit={onCommit}
               onCommitOneTimeComponent={onCommitOneTimeComponent}
+              hasDisplayRental={hasDisplayRental}
             />
           </>
         ) : (
@@ -458,6 +495,8 @@ export const CorporateMinimal: React.FC<TemplateProps> = ({
   const [reviewsByKey, setReviewsByKey] = useState<
     Record<string, CustomerReview | null>
   >({});
+  const [pendingOneTimeQuantityConfirm, setPendingOneTimeQuantityConfirm] =
+    useState<OneTimeQuantityConfirmState | null>(null);
 
   const handleServiceDataReady = useCallback(
     (
@@ -507,8 +546,29 @@ export const CorporateMinimal: React.FC<TemplateProps> = ({
     [toast],
   );
 
+  const cancelOneTimeQuantityChange = useCallback(() => {
+    if (!onDataChange || !pendingOneTimeQuantityConfirm) {
+      setPendingOneTimeQuantityConfirm(null);
+      return;
+    }
+
+    const restoredItems = applyExecutiveSummaryFieldEdit(
+      quote.items,
+      pendingOneTimeQuantityConfirm.primaryItemId,
+      'oneTimeQuantity',
+      pendingOneTimeQuantityConfirm.previousValue,
+    );
+    const restoredQuote = recalcQuoteTotals({ ...quote, items: restoredItems });
+    onDataChange({ ...data, quote: restoredQuote });
+    setPendingOneTimeQuantityConfirm(null);
+  }, [data, onDataChange, pendingOneTimeQuantityConfirm, quote]);
+
+  const confirmOneTimeQuantityChange = useCallback(() => {
+    setPendingOneTimeQuantityConfirm(null);
+  }, []);
+
   const commitExecEdit = useCallback(
-    async (row: ExecutiveSummaryRow, field: ExecEditField, value: number) => {
+    async (row: ExecutiveSummaryRow, field: ExecEditField, value: number, meta?: ExecEditMeta) => {
       if (!onDataChange) return;
 
       const primary =
@@ -584,12 +644,15 @@ export const CorporateMinimal: React.FC<TemplateProps> = ({
       const nextQuote = recalcQuoteTotals({ ...quote, items: nextItems });
       onDataChange({ ...data, quote: nextQuote });
       if (field === 'oneTimeQuantity') {
-        const componentNames = (row.oneTimeComponents || []).map((component) => component.label);
-        const componentLabel =
-          componentNames.length > 1
-            ? `${componentNames.slice(0, -1).join(', ')} & ${componentNames[componentNames.length - 1]}`
-            : componentNames[0] || 'One-time';
-        showFloorToast(`${componentLabel} quantity changed.`);
+        if (meta?.hasDisplayRental && row.quantity !== value) {
+          setPendingOneTimeQuantityConfirm({
+            primaryItemId: primary.id,
+            serviceLabel: row.serviceId,
+            previousValue: row.oneTimeQuantity,
+            nextValue: value,
+            displayValue: row.quantity,
+          });
+        }
       }
     },
     [data, onDataChange, quote, showFloorToast],
@@ -959,6 +1022,13 @@ export const CorporateMinimal: React.FC<TemplateProps> = ({
           </thead>
           <tbody>
             {detailLines.map((line, idx) => {
+              const hasDisplayRental =
+                line.kind === 'onetime' &&
+                detailLines.some(
+                  (candidate) =>
+                    candidate.kind === 'display' &&
+                    candidate.editRow?.id === line.editRow?.id,
+                );
               const amountBlock = (
                 <div className="breakdown-amount-stack">
                   <div className="breakdown-amount-inline">{formatCurrency(line.amount)}</div>
@@ -974,9 +1044,10 @@ export const CorporateMinimal: React.FC<TemplateProps> = ({
                       amountBlock={amountBlock}
                       onCommit={commitExecEdit}
                       onCommitOneTimeComponent={commitOneTimeComponentEdit}
+                      hasDisplayRental={hasDisplayRental}
                     />
-                  </td>
-                </tr>
+                </td>
+              </tr>
               );
             })}
             <tr className="breakdown-summary-block">
@@ -1119,6 +1190,49 @@ export const CorporateMinimal: React.FC<TemplateProps> = ({
     </div>
   );
 
+  const renderOneTimeQuantityConfirmModal = () => {
+    if (!pendingOneTimeQuantityConfirm) return null;
+
+    const { serviceLabel, previousValue, nextValue, displayValue } = pendingOneTimeQuantityConfirm;
+
+    return (
+      <Modal
+        isOpen
+        onClose={cancelOneTimeQuantityChange}
+        isCentered
+        closeOnOverlayClick
+        closeOnEsc
+      >
+        <ModalOverlay />
+        <ModalContent mx={4} borderRadius="xl">
+          <ModalHeader pb={2}>Confirm quantity change</ModalHeader>
+          <ModalCloseButton />
+          <ModalBody py={4}>
+            <VStack align="stretch" spacing={3}>
+              <Text>
+                One-time quantity changed from <strong>{previousValue}</strong> to{' '}
+                <strong>{nextValue}</strong> for <strong>{serviceLabel}</strong>.
+              </Text>
+              <Text>
+                Display Rental quantity is still <strong>{displayValue}</strong>. Is this okay?
+              </Text>
+            </VStack>
+          </ModalBody>
+          <ModalFooter pt={2}>
+            <HStack spacing={3}>
+              <Button variant="outline" onClick={cancelOneTimeQuantityChange}>
+                Cancel
+              </Button>
+              <Button colorScheme="blue" onClick={confirmOneTimeQuantityChange}>
+                OK
+              </Button>
+            </HStack>
+          </ModalFooter>
+        </ModalContent>
+      </Modal>
+    );
+  };
+
   // Single service quote (original behavior)
   if (!isMultiService) {
     const singleTotal = 3;
@@ -1128,6 +1242,7 @@ export const CorporateMinimal: React.FC<TemplateProps> = ({
     );
     return (
       <>
+        {renderOneTimeQuantityConfirmModal()}
         <div id="pdf-page-1" className="template-corporate-minimal">
           <div data-pdf-block="atomic" style={{ paddingBottom: '1px' }}>
             {renderHeader()}
@@ -1218,6 +1333,7 @@ export const CorporateMinimal: React.FC<TemplateProps> = ({
 
   return (
     <>
+      {renderOneTimeQuantityConfirmModal()}
       {/* Page 1: Summary Page */}
       <div id="pdf-page-summary" className="template-corporate-minimal">
         <div data-pdf-block="atomic" style={{ paddingBottom: '1px' }}>
@@ -1366,5 +1482,3 @@ export const CorporateMinimal: React.FC<TemplateProps> = ({
     </>
   );
 };
-
-
