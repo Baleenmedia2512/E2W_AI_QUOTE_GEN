@@ -1069,6 +1069,8 @@ export interface ConfirmationRow {
   city: string;
   /** Optional — when set, quote build uses this exact catalog row */
   serviceId?: string;
+  /** Optional duration override selected by the minimum-duration warning. */
+  durationDays?: number;
 }
 
 /** Min-qty check for confirm-table rows BEFORE sending to Gemini. */

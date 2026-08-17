@@ -26,7 +26,11 @@ import { SpeechRecognition } from '@capacitor-community/speech-recognition';
 import { Capacitor } from '@capacitor/core';
 import { canonicalizeServiceName, KNOWN_CITY_LIST, type ServiceQuantity } from '../../utils/serviceNameUtils';
 import { resolveServiceIdFromCatalog } from '../../utils/serviceResolver';
-import { computeQuoteItemTotal } from '../../utils/durationUtils';
+import {
+  computeQuoteItemTotal,
+  parseDurationFromUserText,
+  toCampaignDays,
+} from '../../utils/durationUtils';
 import { ChatChipThumb } from './ChatChipThumb';
 import { ChipImageLightbox, closeChipImagePreview, openChipImagePreview } from './ChipImageLightbox';
 import {
@@ -46,6 +50,8 @@ import {
   MULTI_SVC_DEBUG,
   runCloudPreGeminiValidation,
   validateQuoteItemsAgainstDbMinQty,
+  validateConfirmationRowsMinQty,
+  type MinQtyViolation,
   VEHICLE_CATEGORY_PATTERN,
 } from '../../utils/cloudQuoteValidation';
 import {
@@ -54,6 +60,8 @@ import {
   mergeDirectPartsIntoGroupedServices,
   parseMessageToConfirmRows,
   rowsFromCloudBelowMin,
+  type MinDurationViolation,
+  validateConfirmationRowsMinDuration,
 } from '../../utils/confirmedQuotePipeline';
 import type { DbService } from '../../utils/serviceResolver';
 import {
@@ -241,13 +249,13 @@ const ChatInterface: React.FC = () => {
   // Confirmation table state: shown after service selection, before final Gemini call
   const [confirmationTable, setConfirmationTable] = useState<{
     messageId: string;
-    rows: Array<{ service: string; qty: number | string; city: string }>;
+    rows: Array<{ service: string; qty: number | string; city: string; durationDays?: number }>;
     originalUserInput: string;
     /** When set, Edit returns to the min-qty modal instead of closing the flow. */
     minQtySnapshot?: {
       items: Array<{ description: string; requested: number; originalRequested: number; minimum: number }>;
       aboveMinItems?: Array<{ description: string; requested: number; minimum: number }>;
-      pendingRows: Array<{ service: string; qty: number | string; city: string }>;
+      pendingRows: Array<{ service: string; qty: number | string; city: string; durationDays?: number }>;
       messageId: string;
       originalUserInput: string;
     };
@@ -265,7 +273,7 @@ const ChatInterface: React.FC = () => {
 
   // Pending rows after min-qty modal → opens confirm table (not direct Gemini)
   const [pendingConfirmGeneration, setPendingConfirmGeneration] = useState<{
-    rows: Array<{ service: string; qty: number | string; city: string }>;
+    rows: Array<{ service: string; qty: number | string; city: string; durationDays?: number }>;
     originalUserInput: string;
     messageId: string;
   } | null>(null);
@@ -281,6 +289,18 @@ const ChatInterface: React.FC = () => {
     aboveMinItems?: Array<{ description: string; requested: number; minimum: number }>;
     pendingQuote: Quote | null;
   } | null>(null);
+
+  const [minDurationWarning, setMinDurationWarning] = useState<{
+    items: MinDurationViolation[];
+  } | null>(null);
+  const [pendingDurationInput, setPendingDurationInput] = useState<{
+    rows: Array<{ service: string; qty: number | string; city: string; durationDays?: number }>;
+    originalUserInput: string;
+    messageId: string;
+    violations: MinDurationViolation[];
+  } | null>(null);
+  const [editingDurationIndex, setEditingDurationIndex] = useState<number | null>(null);
+  const [editedDuration, setEditedDuration] = useState<string>('');
 
   // State to track which item is being edited in the min qty warning modal
   const [editingItemIndex, setEditingItemIndex] = useState<number | null>(null);
@@ -312,6 +332,9 @@ const ChatInterface: React.FC = () => {
   /** messageId → serviceKey → draft string while typing */
   const [minQtyDrafts, setMinQtyDrafts] = useState<Record<string, Record<string, string>>>({});
   const minQtyApplyLock = useRef(false);
+  const [minDurationDrafts, setMinDurationDrafts] = useState<Record<string, Record<string, string>>>({});
+  const [minDurationEditingKey, setMinDurationEditingKey] = useState<Record<string, string | null>>({});
+  const minDurationApplyLock = useRef(false);
   /** Gemini EXACT_MATCH hint only — cloud gate handles validation first. */
   const isFullySpecifiedRequest = (userRequest: string): boolean => {
     if (isMultiSegmentQuoteRequest(userRequest)) {
@@ -548,6 +571,7 @@ const ChatInterface: React.FC = () => {
     if (!last || last.role !== 'assistant') return;
     if (last.progressiveOptions && last.progressiveOptions.length > 0) return;
     if (last.progressiveBelowMin && last.progressiveBelowMin.length > 0) return;
+    if (last.progressiveBelowMinDuration && last.progressiveBelowMinDuration.length > 0) return;
     if (document.querySelector('[aria-label="Close image preview"]')) return;
 
     const t = window.setTimeout(() => {
@@ -709,10 +733,10 @@ const ChatInterface: React.FC = () => {
   };
   // ──────────────────────────────────────────────────────────────────────────
 
-  /** Min-qty gate then confirm table (shared: modal proceed, cloud valid segments, checkboxes). */
+  /** Quantity and duration gates, then confirm table. */
   const applyMinQtyGateOrConfirmTable = async (
     messageId: string,
-    rows: Array<{ service: string; qty: number | string; city: string }>,
+    rows: Array<{ service: string; qty: number | string; city: string; durationDays?: number }>,
     originalUserInput: string,
   ) => {
     let dbServices: DbService[] = [];
@@ -724,7 +748,12 @@ const ChatInterface: React.FC = () => {
         console.warn('⚠️ Min-qty gate skipped — could not load cloud catalog');
       }
     }
-    const gate = gateMinQtyBeforeConfirm(rows, dbServices);
+    const gate = gateMinQtyBeforeConfirm(rows, dbServices, originalUserInput);
+    console.log('[DurationDebug] pre-confirm gate', {
+      originalUserInput,
+      gateType: gate.type,
+      rows,
+    });
     if (gate.type === 'min_qty') {
       // Compute above-min rows for display (green rows) — display-only, not used by handlers
       const violationDescs = new Set(gate.violations.map(v => v.description.toLowerCase()));
@@ -741,8 +770,10 @@ const ChatInterface: React.FC = () => {
         });
       setPendingConfirmGeneration({ rows: gate.rows, originalUserInput, messageId });
       setMinQtyWarning({ items: gate.violations, aboveMinItems, pendingQuote: null as any });
+    } else if (gate.type === 'min_duration') {
+      showDurationWarningInChat(gate.rows, originalUserInput, gate.violations);
     } else {
-      setConfirmationTable({ messageId, rows: gate.rows, originalUserInput });
+      await executeConfirmedGeneration(gate.rows, originalUserInput, messageId);
     }
   };
 
@@ -852,8 +883,171 @@ const ChatInterface: React.FC = () => {
     });
   };
 
+  const durationWarningDetails = (violations: MinDurationViolation[]) =>
+    violations.map((item) => {
+      const dashIdx = item.description.lastIndexOf(' - ');
+      return {
+        service: dashIdx !== -1 ? item.description.slice(0, dashIdx) : item.description,
+        requested: item.requested,
+        minimum: item.minimum,
+        serviceId: item.serviceId,
+      };
+    });
+
+  const qtyWarningDetails = (
+    violations: MinQtyViolation[],
+    rows: Array<{ service: string; serviceId?: string }>,
+  ) =>
+    violations.map((item) => {
+      const dashIdx = item.description.lastIndexOf(' - ');
+      const service = dashIdx !== -1 ? item.description.slice(0, dashIdx) : item.description;
+      const row = rows.find((r) =>
+        (r.serviceId && item.description.toLowerCase().includes(r.service.toLowerCase()))
+        || r.service.toLowerCase() === service.toLowerCase()
+        || item.description.toLowerCase().includes(r.service.toLowerCase()),
+      );
+      return {
+        service,
+        requested: item.requested,
+        minimum: item.minimum,
+        serviceId: row?.serviceId,
+      };
+    });
+
+  const showQtyWarningInChat = (
+    rows: Array<{ service: string; qty: number | string; city: string; serviceId?: string; durationDays?: number }>,
+    originalUserInput: string,
+    violations: MinQtyViolation[],
+  ) => {
+    const details = qtyWarningDetails(violations, rows);
+    const last = messages[messages.length - 1];
+    const reuseId = last?.progressiveStep === 'min_qty_confirm'
+      ? last.id
+      : Date.now().toString();
+    const nextDrafts: Record<string, string> = {};
+    for (const item of details) {
+      nextDrafts[item.serviceId || item.service] = String(item.requested);
+    }
+    const session = {
+      ...(progressiveSession || { originalText: originalUserInput, qty: null }),
+      originalText: originalUserInput,
+      pendingRows: rows,
+    };
+    setPendingConfirmGeneration({ rows, originalUserInput, messageId: reuseId });
+    setPendingDurationInput(null);
+    setProgressiveSession(session as ProgressiveSession);
+    setMinQtyDrafts((drafts) => ({ ...drafts, [reuseId]: nextDrafts }));
+    setMinQtyEditingKey((keys) => ({ ...keys, [reuseId]: null }));
+    const assistantMsg: Message = {
+      id: reuseId,
+      role: 'assistant',
+      content: '',
+      timestamp: new Date(),
+      isProgressiveChat: true,
+      progressiveStep: 'min_qty_confirm',
+      progressiveAllowMulti: false,
+      progressiveBelowMin: details,
+      progressiveOptions: [
+        { id: 'yes_min', label: 'Yes, use minimums' },
+        { id: 'no_min', label: "No, I'll adjust" },
+      ],
+      progressiveSession: session,
+    };
+    setMessages((prev) => {
+      const prevLast = prev[prev.length - 1];
+      if (prevLast?.progressiveStep === 'min_qty_confirm') {
+        return prev.map((message, index) => (index === prev.length - 1 ? assistantMsg : message));
+      }
+      return [...prev, assistantMsg];
+    });
+  };
+
+  const showDurationWarningInChat = (
+    rows: Array<{ service: string; qty: number | string; city: string; serviceId?: string; durationDays?: number }>,
+    originalUserInput: string,
+    violations: MinDurationViolation[],
+  ) => {
+    const details = durationWarningDetails(violations);
+    const last = messages[messages.length - 1];
+    const reuseId = last?.progressiveStep === 'min_duration_confirm'
+      ? last.id
+      : Date.now().toString();
+    const nextDrafts: Record<string, string> = {};
+    for (const item of details) {
+      nextDrafts[item.serviceId || item.service] = String(item.requested);
+    }
+    const session = {
+      ...(progressiveSession || { originalText: originalUserInput, qty: null }),
+      originalText: originalUserInput,
+      pendingRows: rows,
+    };
+    setPendingConfirmGeneration({ rows, originalUserInput, messageId: reuseId });
+    setPendingDurationInput(null);
+    setMinDurationWarning(null);
+    setProgressiveSession(session as ProgressiveSession);
+    setMinDurationDrafts((drafts) => ({ ...drafts, [reuseId]: nextDrafts }));
+    setMinDurationEditingKey((keys) => ({ ...keys, [reuseId]: null }));
+    const assistantMsg: Message = {
+      id: reuseId,
+      role: 'assistant',
+      content: '',
+      timestamp: new Date(),
+      isProgressiveChat: true,
+      progressiveStep: 'min_duration_confirm',
+      progressiveAllowMulti: false,
+      progressiveBelowMinDuration: details,
+      progressiveOptions: [
+        { id: 'yes_min_duration', label: 'Yes, use minimums' },
+        { id: 'no_min_duration', label: "No, I'll adjust" },
+      ],
+      progressiveSession: session,
+    };
+    setMessages((prev) => {
+      const prevLast = prev[prev.length - 1];
+      if (prevLast?.progressiveStep === 'min_duration_confirm') {
+        return prev.map((message, index) => (index === prev.length - 1 ? assistantMsg : message));
+      }
+      return [...prev, assistantMsg];
+    });
+  };
+
+  const rowMatchesAdjustDetail = (
+    row: { service: string; serviceId?: string },
+    item: { service: string; serviceId?: string },
+  ) =>
+    (item.serviceId && row.serviceId && item.serviceId === row.serviceId)
+    || item.service.toLowerCase() === row.service.toLowerCase()
+    || row.service.toLowerCase().includes(item.service.toLowerCase())
+    || item.service.toLowerCase().includes(row.service.toLowerCase());
+
+  const applyDurationToWarnedRows = (
+    rows: Array<{ service: string; qty: number | string; city: string; serviceId?: string; durationDays?: number }>,
+    details: Array<{ service: string; requested: number; minimum: number; serviceId?: string }>,
+    days: number,
+  ) => {
+    if (!details.length) return rows.map((row) => ({ ...row, durationDays: days }));
+    return rows.map((row) => (
+      details.some((item) => rowMatchesAdjustDetail(row, item))
+        ? { ...row, durationDays: days }
+        : row
+    ));
+  };
+
+  const applyQtyToWarnedRows = (
+    rows: Array<{ service: string; qty: number | string; city: string; serviceId?: string; durationDays?: number }>,
+    details: Array<{ service: string; requested: number; minimum: number; serviceId?: string }>,
+    qty: number,
+  ) => {
+    if (!details.length) return rows.map((row) => ({ ...row, qty }));
+    return rows.map((row) => (
+      details.some((item) => rowMatchesAdjustDetail(row, item))
+        ? { ...row, qty }
+        : row
+    ));
+  };
+
   const generateQuoteFromProgressiveRows = async (
-    rows: Array<{ service: string; qty: number | string; city: string; serviceId?: string }>,
+    rows: Array<{ service: string; qty: number | string; city: string; serviceId?: string; durationDays?: number }>,
     originalUserInput: string,
   ) => {
     setIsLoading(true);
@@ -862,8 +1056,31 @@ const ChatInterface: React.FC = () => {
       const { loadAllServicesFromCloud } = await import('../../services/supabaseProposalService');
       const { buildQuoteFromConfirmedRows } = await import('../../utils/buildQuoteFromConfirmedRows');
       const dbServices = (await loadAllServicesFromCloud()) || [];
+      const uniqueRows = dedupeConfirmationRows(rows);
+      const qtyViolations = validateConfirmationRowsMinQty(uniqueRows, dbServices);
+      if (qtyViolations.length > 0) {
+        showQtyWarningInChat(uniqueRows, originalUserInput, qtyViolations);
+        setIsLoading(false);
+        return;
+      }
+      const durationViolations = validateConfirmationRowsMinDuration(
+        uniqueRows,
+        dbServices,
+        originalUserInput,
+      );
+      console.log('[DurationDebug] progressive gate', {
+        originalUserInput,
+        rows: uniqueRows,
+        violationCount: durationViolations.length,
+        durationViolations,
+      });
+      if (durationViolations.length > 0) {
+        showDurationWarningInChat(uniqueRows, originalUserInput, durationViolations);
+        setIsLoading(false);
+        return;
+      }
       const result = buildQuoteFromConfirmedRows(
-        dedupeConfirmationRows(rows),
+        uniqueRows,
         dbServices,
         originalUserInput,
       );
@@ -911,6 +1128,105 @@ const ChatInterface: React.FC = () => {
     }
   };
 
+  type AdjustPendingRow = {
+    service: string;
+    qty: number | string;
+    city: string;
+    serviceId?: string;
+    durationDays?: number;
+  };
+
+  const getAdjustRows = (source?: Message | null): AdjustPendingRow[] =>
+    (source?.progressiveSession?.pendingRows
+      || progressiveSession?.pendingRows
+      || pendingConfirmGeneration?.rows
+      || pendingDurationInput?.rows
+      || []) as AdjustPendingRow[];
+
+  const getAdjustOriginalText = (source?: Message | null): string =>
+    source?.progressiveSession?.originalText
+    || progressiveSession?.originalText
+    || pendingConfirmGeneration?.originalUserInput
+    || pendingDurationInput?.originalUserInput
+    || '';
+
+  const applyTypedQtyAndContinue = async (qty: number, source?: Message | null) => {
+    const rows = getAdjustRows(source);
+    const details = source?.progressiveBelowMin || [];
+    const updated = applyQtyToWarnedRows(rows, details, qty);
+    setPendingDurationInput(null);
+    await generateQuoteFromProgressiveRows(updated, getAdjustOriginalText(source));
+  };
+
+  const applyTypedDurationAndContinue = async (days: number, source?: Message | null) => {
+    const rows = getAdjustRows(source);
+    const details = source?.progressiveBelowMinDuration
+      || pendingDurationInput?.violations.map((item) => ({
+        service: item.description,
+        requested: item.requested,
+        minimum: item.minimum,
+        serviceId: item.serviceId,
+      }))
+      || [];
+    const updated = applyDurationToWarnedRows(rows, details, days);
+    setPendingDurationInput(null);
+    setMinDurationWarning(null);
+    await generateQuoteFromProgressiveRows(updated, getAdjustOriginalText(source));
+  };
+
+  const askQtyOrDaysClarify = (value: number, source?: Message | null) => {
+    const session = {
+      ...(source?.progressiveSession || progressiveSession || { originalText: getAdjustOriginalText(source), qty: null }),
+      pendingRows: getAdjustRows(source),
+    };
+    const assistantMsg: Message = {
+      id: Date.now().toString(),
+      role: 'assistant',
+      content: `Did you mean ${value} qty or ${value} days?`,
+      timestamp: new Date(),
+      isProgressiveChat: true,
+      progressiveStep: 'qty_or_duration_clarify',
+      progressiveAllowMulti: false,
+      progressiveOptions: [
+        { id: `adjust_as_qty:${value}`, label: `${value} qty` },
+        { id: `adjust_as_days:${value}`, label: `${value} days` },
+      ],
+      progressiveBelowMin: source?.progressiveBelowMin,
+      progressiveBelowMinDuration: source?.progressiveBelowMinDuration,
+      progressiveSession: session,
+    };
+    setProgressiveSession(session as ProgressiveSession);
+    setMessages((prev) => [...prev, assistantMsg]);
+  };
+
+  const parseQtyOrDurationAdjust = (
+    text: string,
+  ):
+    | { kind: 'qty'; value: number }
+    | { kind: 'duration'; days: number }
+    | { kind: 'ambiguous'; value: number }
+    | { kind: 'none' } => {
+    const t = text.trim();
+    const qtyExplicit = t.match(
+      /^(?:use|set|change\s+to|make\s+it|give)?\s*(?:(\d+)\s*(?:qty|quantity|units?|pcs|nos?\.?)|(?:qty|quantity|units?)\s*[:=]?\s*(\d+))\s*$/i,
+    );
+    if (qtyExplicit) {
+      const n = parseInt(qtyExplicit[1] || qtyExplicit[2], 10);
+      if (Number.isFinite(n) && n > 0) return { kind: 'qty', value: n };
+    }
+    const parsed = parseDurationFromUserText(t);
+    const days = toCampaignDays(parsed?.value, parsed?.unit);
+    if (days != null && days > 0 && /\d+\s*(days?|months?|mos?\.?)/i.test(t)) {
+      return { kind: 'duration', days };
+    }
+    const bare = t.match(/^(?:use|set|change\s+to|make\s+it|give|for)?\s*(\d+)\s*$/i);
+    if (bare) {
+      const n = parseInt(bare[1], 10);
+      if (Number.isFinite(n) && n > 0) return { kind: 'ambiguous', value: n };
+    }
+    return { kind: 'none' };
+  };
+
   const handleProgressiveOptionClick = async (
     message: Message,
     optionId: string,
@@ -918,6 +1234,75 @@ const ChatInterface: React.FC = () => {
     if (isLoading) return;
     const session = message.progressiveSession || progressiveSession;
     if (!session) return;
+
+    const qtyChip = optionId.match(/^adjust_as_qty:(\d+)$/);
+    if (qtyChip) {
+      await applyTypedQtyAndContinue(parseInt(qtyChip[1], 10), message);
+      return;
+    }
+    const daysChip = optionId.match(/^adjust_as_days:(\d+)$/);
+    if (daysChip) {
+      await applyTypedDurationAndContinue(parseInt(daysChip[1], 10), message);
+      return;
+    }
+
+    if (optionId === 'no_min') {
+      window.setTimeout(() => {
+        inputRef.current?.focus({ preventScroll: true });
+      }, 50);
+      return;
+    }
+
+    if (optionId === 'yes_min_duration') {
+      const details = message.progressiveBelowMinDuration || [];
+      const rows = (session.pendingRows || pendingConfirmGeneration?.rows || []) as Array<{
+        service: string;
+        qty: number | string;
+        city: string;
+        serviceId?: string;
+        durationDays?: number;
+      }>;
+      const updatedRows = rows.map((row) => {
+        const match = details.find((item) =>
+          (item.serviceId && row.serviceId && item.serviceId === row.serviceId)
+          || item.service.toLowerCase() === row.service.toLowerCase()
+          || row.service.toLowerCase().includes(item.service.toLowerCase())
+          || item.service.toLowerCase().includes(row.service.toLowerCase()),
+        );
+        return match ? { ...row, durationDays: match.minimum } : row;
+      });
+      setPendingDurationInput(null);
+      setMinDurationWarning(null);
+      setPendingConfirmGeneration(null);
+      await generateQuoteFromProgressiveRows(updatedRows, session.originalText);
+      return;
+    }
+
+    if (optionId === 'no_min_duration') {
+      const details = message.progressiveBelowMinDuration || [];
+      const rows = (session.pendingRows || pendingConfirmGeneration?.rows || []) as Array<{
+        service: string;
+        qty: number | string;
+        city: string;
+        serviceId?: string;
+        durationDays?: number;
+      }>;
+      setPendingDurationInput({
+        rows,
+        originalUserInput: session.originalText,
+        messageId: message.id,
+        violations: details.map((item) => ({
+          description: item.service,
+          requested: item.requested,
+          minimum: item.minimum,
+          serviceId: item.serviceId,
+        })),
+      });
+      window.setTimeout(() => {
+        inputRef.current?.focus({ preventScroll: true });
+      }, 50);
+      return;
+    }
 
     if (message.progressiveAllowMulti) {
       // Toggle handled in chip UI — do not navigate yet
@@ -1032,9 +1417,125 @@ const ChatInterface: React.FC = () => {
     }
   };
 
+  const applyMinDurationPencilEdits = async (message: Message) => {
+    if (isLoading || minDurationApplyLock.current) return;
+    const session = message.progressiveSession || progressiveSession;
+    const details = message.progressiveBelowMinDuration;
+    if (!session || !details?.length) return;
+
+    const drafts = minDurationDrafts[message.id] || {};
+    const rows = (session.pendingRows || pendingConfirmGeneration?.rows || []) as Array<{
+      service: string;
+      qty: number | string;
+      city: string;
+      serviceId?: string;
+      durationDays?: number;
+    }>;
+    const stillBelow: Array<{ service: string; requested: number; minimum: number; serviceId?: string }> = [];
+    let changed = false;
+    const updatedRows = rows.map((row) => {
+      const item = details.find((detail) =>
+        (detail.serviceId && row.serviceId && detail.serviceId === row.serviceId)
+        || detail.service.toLowerCase() === row.service.toLowerCase()
+        || row.service.toLowerCase().includes(detail.service.toLowerCase())
+        || detail.service.toLowerCase().includes(row.service.toLowerCase()),
+      );
+      if (!item) return row;
+      const key = minQtyItemKey(item);
+      const raw = drafts[key];
+      if (raw == null || String(raw).trim() === '') {
+        return { ...row, durationDays: item.requested };
+      }
+      const n = parseInt(String(raw).replace(/,/g, ''), 10);
+      if (!Number.isFinite(n) || n <= 0) return row;
+      changed = true;
+      if (n < item.minimum) {
+        stillBelow.push({ ...item, requested: n });
+      }
+      return { ...row, durationDays: n };
+    });
+
+    if (!changed) {
+      setMinDurationEditingKey((prev) => ({ ...prev, [message.id]: null }));
+      return;
+    }
+
+    minDurationApplyLock.current = true;
+    setIsLoading(true);
+    setMinDurationEditingKey((prev) => ({ ...prev, [message.id]: null }));
+    try {
+      setProgressiveSession({ ...session, pendingRows: updatedRows });
+      if (stillBelow.length > 0) {
+        setMessages((prev) =>
+          prev.map((m) =>
+            m.id === message.id
+              ? {
+                  ...m,
+                  progressiveBelowMinDuration: stillBelow,
+                  progressiveOptions: [
+                    { id: 'yes_min_duration', label: 'Yes, use minimums' },
+                    { id: 'no_min_duration', label: "No, I'll adjust" },
+                  ],
+                  progressiveSession: { ...session, pendingRows: updatedRows },
+                  timestamp: new Date(),
+                }
+              : m,
+          ),
+        );
+        const nextDrafts: Record<string, string> = {};
+        for (const item of stillBelow) {
+          nextDrafts[minQtyItemKey(item)] = String(item.requested);
+        }
+        setMinDurationDrafts((prev) => ({ ...prev, [message.id]: nextDrafts }));
+        return;
+      }
+      setPendingDurationInput(null);
+      setMinDurationWarning(null);
+      await generateQuoteFromProgressiveRows(updatedRows, session.originalText);
+    } finally {
+      setIsLoading(false);
+      minDurationApplyLock.current = false;
+    }
+  };
+
   // Core send logic — accepts text directly, no reliance on inputValue state
   const sendMessageWithContent = async (text: string) => {
     if (!text.trim() || isLoading) return;
+
+    // Qty / duration adjust: "5 qty" → quantity, "5 days" → duration,
+    // bare "5" → ask which. Then re-run min qty then min duration gates.
+    const lastAssistant = [...messages].reverse().find((m) => m.role === 'assistant');
+    const inMinAdjust =
+      !!pendingDurationInput
+      || lastAssistant?.progressiveStep === 'min_qty_confirm'
+      || lastAssistant?.progressiveStep === 'min_duration_confirm'
+      || lastAssistant?.progressiveStep === 'qty_or_duration_clarify'
+      || (lastAssistant?.progressiveBelowMin?.length ?? 0) > 0
+      || (lastAssistant?.progressiveBelowMinDuration?.length ?? 0) > 0;
+    if (inMinAdjust && lastAssistant) {
+      const parsedAdjust = parseQtyOrDurationAdjust(text.trim());
+      if (parsedAdjust.kind !== 'none') {
+        setInputValue('');
+        pushToHistory(text.trim());
+        const adjustUserMsg: Message = {
+          id: Date.now().toString(),
+          role: 'user',
+          content: text.trim(),
+          timestamp: new Date(),
+        };
+        setMessages((prev) => [...prev, adjustUserMsg]);
+        if (parsedAdjust.kind === 'ambiguous') {
+          askQtyOrDaysClarify(parsedAdjust.value, lastAssistant);
+          return;
+        }
+        if (parsedAdjust.kind === 'qty') {
+          await applyTypedQtyAndContinue(parsedAdjust.value, lastAssistant);
+          return;
+        }
+        await applyTypedDurationAndContinue(parsedAdjust.days, lastAssistant);
+        return;
+      }
+    }
 
     // Strip internal bypass flags (never shown to user or sent to Gemini)
     const isQtyOverride = text.includes('[QTY_OVERRIDE]');
@@ -1198,37 +1699,6 @@ const ChatInterface: React.FC = () => {
             );
             await appendProgressiveResult(null, result);
             return;
-          }
-
-          // Min-qty card: "use 5" / "5" / "qty 50" → pencil-edit path
-          if (
-            lastProgMsg.progressiveStep === 'min_qty_confirm'
-            && lastProgMsg.progressiveBelowMin?.length
-          ) {
-            const qtyOnly = cleanedText.match(
-              /^(?:use|set|change\s+to|make\s+it|qty|quantity)?\s*(\d+)\s*$/i,
-            );
-            const typedQty = qtyOnly
-              ? parseInt(qtyOnly[1], 10)
-              : parseQtyFromText(cleanedText);
-            if (typedQty != null && typedQty > 0) {
-              const details = lastProgMsg.progressiveBelowMin;
-              const edits: Record<string, number> = {};
-              for (const d of details) {
-                edits[d.serviceId || d.service] = typedQty;
-              }
-              const result = resolveMinQtyEdits(priorSession, edits, details);
-              setProgressiveSession(result.session);
-              if (result.quoteRows?.length) {
-                await generateQuoteFromProgressiveRows(
-                  result.quoteRows,
-                  result.session.originalText,
-                );
-                return;
-              }
-              await appendProgressiveResult(null, result);
-              return;
-            }
           }
         }
 
@@ -1966,8 +2436,75 @@ const ChatInterface: React.FC = () => {
     setEditedQuantity('');
   };
 
+  const handleMinDurationEdit = (index: number) => {
+    if (!minDurationWarning) return;
+    setEditingDurationIndex(index);
+    setEditedDuration(String(minDurationWarning.items[index].requested));
+  };
+
+  const handleMinDurationSave = (index: number) => {
+    if (!minDurationWarning || editingDurationIndex !== index) return;
+    const newDuration = parseInt(editedDuration, 10);
+    if (!Number.isFinite(newDuration) || newDuration <= 0) return;
+    setMinDurationWarning({
+      items: minDurationWarning.items.map((item, itemIndex) =>
+        itemIndex === index ? { ...item, requested: newDuration } : item,
+      ),
+    });
+    setEditingDurationIndex(null);
+    setEditedDuration('');
+  };
+
+  const handleMinDurationCancelEdit = () => {
+    setEditingDurationIndex(null);
+    setEditedDuration('');
+  };
+
+  const handleMinDurationClose = () => {
+    setMinDurationWarning(null);
+    setEditingDurationIndex(null);
+    setEditedDuration('');
+    setPendingDurationInput(null);
+    setPendingConfirmGeneration(null);
+  };
+
+  // "No, I'll adjust" keeps the user in chat so they can type a new duration.
+  const handleMinDurationContinue = () => {
+    if (!minDurationWarning || !pendingConfirmGeneration) return;
+    const pending = pendingConfirmGeneration;
+    setPendingDurationInput({
+      rows: pending.rows,
+      originalUserInput: pending.originalUserInput,
+      messageId: pending.messageId,
+      violations: minDurationWarning.items,
+    });
+    setMinDurationWarning(null);
+    setEditingDurationIndex(null);
+    setEditedDuration('');
+    setInputValue('');
+  };
+
+  const handleMinDurationUseMinimum = async () => {
+    if (!minDurationWarning || !pendingConfirmGeneration) return;
+    const pending = pendingConfirmGeneration;
+    const updatedRows = pending.rows.map((row) => {
+      const violation = minDurationWarning.items.find(
+        (item) =>
+          item.description.toLowerCase().includes(row.service.toLowerCase())
+          && (row.city === '—' || item.description.toLowerCase().includes(row.city.toLowerCase())),
+      );
+      return violation ? { ...row, durationDays: violation.minimum } : row;
+    });
+    setMinDurationWarning(null);
+    setEditingDurationIndex(null);
+    setEditedDuration('');
+    setPendingDurationInput(null);
+    setPendingConfirmGeneration(null);
+    await generateQuoteFromProgressiveRows(updatedRows, pending.originalUserInput);
+  };
+
   // Handle min qty warning: user chooses to continue with requested qty
-  const handleMinQtyContinue = () => {
+  const handleMinQtyContinue = async () => {
     if (!minQtyWarning) return;
     const pending = pendingValidMessage;
     const currentItems = minQtyWarning.items;
@@ -1983,13 +2520,11 @@ const ChatInterface: React.FC = () => {
         const gen = pendingConfirmGeneration;
         const updatedRows = applyMinQtyToConfirmRows(gen.rows, currentItems, 'continue');
         setPendingConfirmGeneration(null);
-        openConfirmationTable(gen.messageId, updatedRows, gen.originalUserInput, {
-          items: currentItems,
-          aboveMinItems,
-          pendingRows: gen.rows,
-          messageId: gen.messageId,
-          originalUserInput: gen.originalUserInput,
-        });
+        await applyMinQtyGateOrConfirmTable(
+          gen.messageId,
+          updatedRows,
+          gen.originalUserInput,
+        );
         return;
       }
       if (pending) {
@@ -2013,13 +2548,7 @@ const ChatInterface: React.FC = () => {
             .replace(/\s*\[QTY_OVERRIDE\]/g, '')
             .trim();
           const messageId = Date.now().toString();
-          openConfirmationTable(messageId, updatedRows, displayText, {
-            items: currentItems,
-            aboveMinItems,
-            pendingRows: parsedRows,
-            messageId,
-            originalUserInput: displayText,
-          });
+          await applyMinQtyGateOrConfirmTable(messageId, updatedRows, displayText);
           return;
         }
         let rewrittenMsg = pending;
@@ -2062,7 +2591,7 @@ const ChatInterface: React.FC = () => {
   };
 
   // Handle min qty warning: user chooses to use minimum quantities
-  const handleMinQtyUseMinimum = () => {
+  const handleMinQtyUseMinimum = async () => {
     if (!minQtyWarning) return;
     const pending = pendingValidMessage;
     const currentItems = minQtyWarning.items;
@@ -2078,13 +2607,11 @@ const ChatInterface: React.FC = () => {
         const gen = pendingConfirmGeneration;
         const updatedRows = applyMinQtyToConfirmRows(gen.rows, currentItems, 'minimum');
         setPendingConfirmGeneration(null);
-        openConfirmationTable(gen.messageId, updatedRows, gen.originalUserInput, {
-          items: currentItems,
-          aboveMinItems,
-          pendingRows: gen.rows,
-          messageId: gen.messageId,
-          originalUserInput: gen.originalUserInput,
-        });
+        await applyMinQtyGateOrConfirmTable(
+          gen.messageId,
+          updatedRows,
+          gen.originalUserInput,
+        );
         return;
       }
       if (pending) {
@@ -2108,13 +2635,7 @@ const ChatInterface: React.FC = () => {
             .replace(/\s*\[QTY_OVERRIDE\]/g, '')
             .trim();
           const messageId = Date.now().toString();
-          openConfirmationTable(messageId, updatedRows, displayText, {
-            items: currentItems,
-            aboveMinItems,
-            pendingRows: parsedRows,
-            messageId,
-            originalUserInput: displayText,
-          });
+          await applyMinQtyGateOrConfirmTable(messageId, updatedRows, displayText);
           return;
         }
         let newMsg = pending;
@@ -2281,7 +2802,7 @@ const ChatInterface: React.FC = () => {
     messageId: string,
     rows: Array<{ service: string; qty: number | string; city: string }>,
     originalUserInput: string,
-    minQtySnapshot?: {
+    _minQtySnapshot?: {
       items: Array<{ description: string; requested: number; originalRequested: number; minimum: number }>;
       aboveMinItems?: Array<{ description: string; requested: number; minimum: number }>;
       pendingRows: Array<{ service: string; qty: number | string; city: string }>;
@@ -2289,12 +2810,7 @@ const ChatInterface: React.FC = () => {
       originalUserInput: string;
     },
   ) => {
-    setConfirmationTable({
-      messageId,
-      rows: dedupeConfirmationRows(rows),
-      originalUserInput,
-      minQtySnapshot,
-    });
+    void executeConfirmedGeneration(dedupeConfirmationRows(rows), originalUserInput, messageId);
   };
 
   const syncMinQtyItemsFromConfirmRows = (
@@ -2928,6 +3444,111 @@ const ChatInterface: React.FC = () => {
                             </Box>
                           )}
 
+                          {/* Min duration details card — same layout as min qty */}
+                          {message.progressiveBelowMinDuration && message.progressiveBelowMinDuration.length > 0 && (
+                            <Box mt={3} p={3} bg="orange.50" border="1px solid" borderColor="orange.200" borderRadius="lg">
+                              <HStack mb={2} spacing={1} justify="space-between" align="flex-start">
+                                <Text fontSize="12px" fontWeight="700" color="orange.700">
+                                  ⚠ Minimum Duration Required
+                                </Text>
+                                <Text fontSize="10px" color="orange.600" fontWeight="500" maxW="55%" textAlign="right">
+                                  Tap pencil to edit duration
+                                </Text>
+                              </HStack>
+                              {message.progressiveBelowMinDuration.map((item, i) => {
+                                const itemKey = item.serviceId || item.service;
+                                const isEditing = minDurationEditingKey[message.id] === itemKey;
+                                const draft =
+                                  minDurationDrafts[message.id]?.[itemKey]
+                                  ?? String(item.requested);
+                                return (
+                                  <Box key={itemKey} mb={i < message.progressiveBelowMinDuration!.length - 1 ? 2 : 0}>
+                                    <Text fontSize="12px" fontWeight="600" color="gray.700">{item.service}</Text>
+                                    <HStack mt={0.5} spacing={3} align="flex-end">
+                                      <Box>
+                                        <Text fontSize="10px" color="gray.500" fontWeight="500">Requested Duration</Text>
+                                        <HStack spacing={1} align="center">
+                                          {isEditing ? (
+                                            <Input
+                                              size="xs"
+                                              type="number"
+                                              min={1}
+                                              w="72px"
+                                              value={draft}
+                                              autoFocus
+                                              bg="white"
+                                              borderColor="orange.300"
+                                              fontWeight="600"
+                                              onChange={(e) => {
+                                                const v = e.target.value;
+                                                setMinDurationDrafts((prev) => ({
+                                                  ...prev,
+                                                  [message.id]: {
+                                                    ...(prev[message.id] || {}),
+                                                    [itemKey]: v,
+                                                  },
+                                                }));
+                                              }}
+                                              onKeyDown={(e) => {
+                                                if (e.key === 'Enter') {
+                                                  e.preventDefault();
+                                                  void applyMinDurationPencilEdits(message);
+                                                }
+                                                if (e.key === 'Escape') {
+                                                  setMinDurationEditingKey((prev) => ({ ...prev, [message.id]: null }));
+                                                }
+                                              }}
+                                              onBlur={() => void applyMinDurationPencilEdits(message)}
+                                            />
+                                          ) : (
+                                            <Text fontSize="13px" fontWeight="700" color="red.500">
+                                              {item.requested.toLocaleString()} days
+                                            </Text>
+                                          )}
+                                          <IconButton
+                                            aria-label="Edit duration"
+                                            icon={<FiEdit2 />}
+                                            size="xs"
+                                            variant="ghost"
+                                            color="brand.600"
+                                            isDisabled={isLoading}
+                                            onClick={() => {
+                                              setMinDurationDrafts((prev) => ({
+                                                ...prev,
+                                                [message.id]: {
+                                                  ...(prev[message.id] || {}),
+                                                  [itemKey]: String(
+                                                    prev[message.id]?.[itemKey] ?? item.requested,
+                                                  ),
+                                                },
+                                              }));
+                                              setMinDurationEditingKey((prev) => ({
+                                                ...prev,
+                                                [message.id]: itemKey,
+                                              }));
+                                            }}
+                                            _hover={{ bg: 'orange.100' }}
+                                            fontSize="11px"
+                                            w="22px"
+                                            h="22px"
+                                            minW="22px"
+                                          />
+                                        </HStack>
+                                      </Box>
+                                      <Text fontSize="16px" color="gray.300" pb="2px">→</Text>
+                                      <Box>
+                                        <Text fontSize="10px" color="gray.500" fontWeight="500">Minimum Duration</Text>
+                                        <Text fontSize="13px" fontWeight="700" color="green.600">
+                                          {item.minimum.toLocaleString()} days
+                                        </Text>
+                                      </Box>
+                                    </HStack>
+                                  </Box>
+                                );
+                              })}
+                            </Box>
+                          )}
+
                           {/* Batch: skipped services only (no “Now choosing” banner) */}
                           {message.isProgressiveChat
                             && message.progressiveUnavailable
@@ -2978,8 +3599,8 @@ const ChatInterface: React.FC = () => {
                             </Box>
                           )}
 
-                          {/* Progressive chat option chips */}
-                          {message.isProgressiveChat && message.progressiveOptions && message.progressiveOptions.length > 0 && (
+                          {/* Progressive chat option chips — only the latest turn stays interactive */}
+                          {message.isProgressiveChat && message.id === latestProgressiveId && message.progressiveOptions && message.progressiveOptions.length > 0 && (
                             <Box mt={3}>
                               {message.progressiveAllowMulti ? (
                                 /* Scrollable checklist — fixed ~10 rows visible */
@@ -3290,7 +3911,9 @@ const ChatInterface: React.FC = () => {
                                         || o.id === 'yes'
                                         || o.id === 'no'
                                         || o.id === 'yes_min'
-                                        || o.id === 'no_min',
+                                        || o.id === 'no_min'
+                                        || o.id === 'yes_min_duration'
+                                        || o.id === 'no_min_duration',
                                     );
                                     const previewUrl = isYesNo
                                       ? opts.find((o) => o.imageUrl)?.imageUrl
@@ -4718,97 +5341,6 @@ Generate a detailed quote based on the above information.`;
       </VStack>
 
       <ChipImageLightbox />
-
-      {/* Confirmation Table Modal — shown after min qty (if any) and before Gemini */}
-      {confirmationTable && (
-        <Box
-          position="fixed"
-          top="0" left="0" right="0" bottom="0"
-          bg="rgba(0,0,0,0.55)"
-          zIndex={9999}
-          display="flex"
-          alignItems="center"
-          justifyContent="center"
-          px={4}
-        >
-          <Box
-            bg="white"
-            borderRadius="16px"
-            maxW="460px"
-            w="100%"
-            boxShadow="0 8px 32px rgba(0,0,0,0.18)"
-            display="flex"
-            flexDirection="column"
-            maxH="90vh"
-            overflow="hidden"
-          >
-            {/* Sticky Header */}
-            <Box px={6} pt={6} pb={3} flexShrink={0}>
-              <Text fontSize="16px" fontWeight="700" color="gray.800">
-                Confirm Your Services
-              </Text>
-            </Box>
-
-            {/* Scrollable Table Body */}
-            <Box flex={1} overflowY="auto" px={6} pb={2}>
-              <Box borderRadius="8px" overflow="hidden" border="1px solid" borderColor="gray.200">
-                <HStack bg="gray.800" px={3} py={2} spacing={0}>
-                  <Text flex={2} fontSize="11px" fontWeight="700" color="white" textTransform="uppercase" letterSpacing="wider">Service</Text>
-                  <Text flex={0.6} fontSize="11px" fontWeight="700" color="white" textTransform="uppercase" letterSpacing="wider" textAlign="center">Qty</Text>
-                  <Text flex={1} fontSize="11px" fontWeight="700" color="white" textTransform="uppercase" letterSpacing="wider" textAlign="right">City</Text>
-                </HStack>
-                {confirmationTable.rows.map((row, idx) => (
-                  <HStack
-                    key={idx}
-                    px={3}
-                    py={2.5}
-                    spacing={0}
-                    bg={idx % 2 === 0 ? 'white' : 'gray.50'}
-                    borderTop="1px solid"
-                    borderColor="gray.100"
-                  >
-                    <Text flex={2} fontSize="13px" fontWeight="500" color="gray.800">{row.service}</Text>
-                    <Text flex={0.6} fontSize="13px" fontWeight="600" color="gray.700" textAlign="center">{row.qty}</Text>
-                    <Text flex={1} fontSize="13px" color="blue.600" fontWeight="600" textAlign="right">{row.city}</Text>
-                  </HStack>
-                ))}
-              </Box>
-            </Box>
-
-            {/* Sticky Footer */}
-            <Box px={6} pt={3} pb={6} flexShrink={0} borderTop="1px solid" borderColor="gray.100">
-              <Text fontSize="12px" color="gray.500" mb={4}>
-                {confirmationTable.rows.length} service{confirmationTable.rows.length !== 1 ? 's' : ''} selected. Confirm to generate the quote.
-              </Text>
-              <HStack spacing={3} justify="flex-end">
-                <Button
-                  size="sm"
-                  variant="outline"
-                  borderColor="gray.300"
-                  color="gray.600"
-                  borderRadius="8px"
-                  onClick={handleConfirmTableEdit}
-                >
-                  ← Edit
-                </Button>
-                <Button
-                  size="sm"
-                  bgGradient="linear(135deg, #dc2626 0%, #be123c 50%, #9f1239 100%)"
-                  color="white"
-                  fontWeight="700"
-                  borderRadius="8px"
-                  px={6}
-                  onClick={handleConfirmAndGenerate}
-                  leftIcon={<Icon as={FiCheck} boxSize="14px" />}
-                  _hover={{ bgGradient: 'linear(135deg, #b91c1c 0%, #9f1239 100%)' }}
-                >
-                  Generate Quote
-                </Button>
-              </HStack>
-            </Box>
-          </Box>
-        </Box>
-      )}
 
       {/* Unavailable Service Alert */}
       {unavailableServices.length > 0 && (

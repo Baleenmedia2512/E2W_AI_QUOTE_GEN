@@ -91,6 +91,8 @@ export interface Message {
     | 'pick_direction'
     | 'no_match'
     | 'min_qty_confirm'
+    | 'min_duration_confirm'
+    | 'qty_or_duration_clarify'
     | 'quote_ready'
     | 'small_talk';
   progressiveOptions?: Array<{
@@ -120,6 +122,12 @@ export interface Message {
     minimum: number;
     serviceId?: string;
   }>;
+  progressiveBelowMinDuration?: Array<{
+    service: string;
+    requested: number;
+    minimum: number;
+    serviceId?: string;
+  }>;
   progressiveSession?: {
     originalText: string;
     medium?: string;
@@ -135,9 +143,9 @@ export interface Message {
     bestGuessServiceId?: string;
     bestGuessLabel?: string;
     bestGuessKind?: 'place' | 'service';
-    pendingRows?: Array<{ service: string; qty: number | string; city: string; serviceId?: string }>;
+    pendingRows?: Array<{ service: string; qty: number | string; city: string; serviceId?: string; durationDays?: number }>;
     pendingMedia?: string[];
-    collectedRows?: Array<{ service: string; qty: number | string; city: string; serviceId?: string }>;
+    collectedRows?: Array<{ service: string; qty: number | string; city: string; serviceId?: string; durationDays?: number }>;
     collectedServiceIds?: string[];
     aiReply?: string | null;
     segments?: Array<{ raw: string; token: string; qty: number | null; city: string | null }>;

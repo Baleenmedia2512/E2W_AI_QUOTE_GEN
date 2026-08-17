@@ -2,6 +2,7 @@ import { createClient } from '@supabase/supabase-js';
 import { Quote } from '../types/quote';
 import { ClientInfo } from '../types/client';
 import { CompanyInfo } from '../types/company';
+import { toCampaignDays } from '../utils/durationUtils';
 
 // Initialize Supabase client
 const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
@@ -29,6 +30,18 @@ interface SendQuoteEmailParams {
 interface SendQuoteEmailResult {
   success: boolean;
   message: string;
+}
+
+interface QuoteItemForEmailAttachment {
+  serviceId?: string;
+  serviceName?: string;
+  description: string;
+  quantity: number;
+  duration?: number;
+  durationUnit?: 'months' | 'days';
+  minimumQuantity?: number;
+  total: number;
+  city?: string;
 }
 
 const blobToBase64 = async (pdfBlob: Blob): Promise<string> => {
@@ -59,6 +72,17 @@ export const sendQuoteEmail = async (
       body: {
         pdfAttachments: encodedAttachments,
         quoteNumber: quote.quoteNumber,
+        quoteItems: quote.items.map<QuoteItemForEmailAttachment>((item) => ({
+          serviceId: item.serviceId,
+          serviceName: item.serviceName,
+          description: item.description,
+          quantity: Number(item.quantity) || 0,
+          duration: toCampaignDays(item.duration, item.durationUnit) ?? item.duration,
+          durationUnit: 'days',
+          minimumQuantity: item.minimumQuantity,
+          total: Number(item.total) || 0,
+          city: item.city,
+        })),
         clientName: client.name,
         clientPhoneNumber: client.phone,
         downloadedBy,

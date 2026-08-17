@@ -164,7 +164,8 @@ export function buildExecutiveSummaryRows(items: QuoteItem[]): ExecutiveSummaryR
       extractServiceType(primary.description);
     const serviceId = formatServiceIdDisplay(rawServiceId);
 
-    // Exact ×30 days → months + per month; otherwise day-wise (incl. 34, 45)
+    // Vendor catalog display rates are stored per day. Show monthly only for
+    // complete 30-day periods; partial campaigns stay explicitly day-wise.
     const durationDays = toCampaignDays(primary.duration, primary.durationUnit);
     const dailyRate =
       durationDays != null && requiringCharge > 0

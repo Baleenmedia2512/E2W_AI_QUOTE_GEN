@@ -375,9 +375,14 @@ export function resolveServiceIdFromCatalog(
     const sid = normalizeServiceId(s.service_id);
     return sc.includes(canonical) || canonical.includes(sc) || sid.includes(kebab);
   });
-  const byContains = pickAmongMediumCompatible(containsMatches, mediumHint);
-  if (byContains) {
-    return { serviceId: byContains.service_id, serviceName: byContains.service_name };
+  // A partial phrase may resolve only when it identifies one catalog row.
+  // Never pick one preferred row from several matches: that would turn
+  // "bus shelter" or "apartment" into an arbitrary service.
+  if (containsMatches.length === 1) {
+    return {
+      serviceId: containsMatches[0].service_id,
+      serviceName: containsMatches[0].service_name,
+    };
   }
 
   return null;

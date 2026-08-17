@@ -126,6 +126,17 @@ const readTemplateDataFromDom = (): TemplateData | null => {
   }
 };
 
+const formatClientNameForFilename = (clientName: string): string => {
+  const trimmed = clientName.trim().replace(/\s+/g, ' ');
+  if (!trimmed) return 'Client';
+  return trimmed.charAt(0).toUpperCase() + trimmed.slice(1);
+};
+
+const getQuoteFilenameLabel = (exportMode: PdfExportMode): string => {
+  if (exportMode === 'summary') return 'Summarized Quote';
+  return 'Detailed Quote';
+};
+
 /**
  * Wait for all ReferenceImages blocks to finish async image/spec resolution.
  * They mark themselves with data-pdf-ready="true" when stable.
@@ -616,10 +627,9 @@ export const exportToPDF = async (
     const blob = await pdf(doc).toBlob();
 
     // Generate filename
-    const dateStr = new Date().toISOString().slice(0, 10).replace(/-/g, '');
-    const clientStr = (clientName || '').replace(/\s+/g, '');
-    const suffix = exportMode === 'summary' ? '_Summary' : exportMode === 'detailed' ? '_Detailed Summary' : '';
-    const filename = `${dateStr}_${clientStr}_${quoteNumber}${suffix}.pdf`;
+    const clientStr = formatClientNameForFilename(clientName || '');
+    const quoteLabel = getQuoteFilenameLabel(exportMode);
+    const filename = `${quoteNumber}_${clientStr}_${quoteLabel}.pdf`;
 
       if (isMobile()) {
         // ── Mobile: save to Documents folder and open ──────────────────

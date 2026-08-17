@@ -87,6 +87,8 @@ export type ProgressiveStep =
   | 'pick_direction'
   | 'no_match'
   | 'min_qty_confirm'
+  | 'min_duration_confirm'
+  | 'qty_or_duration_clarify'
   | 'quote_ready'
   | 'small_talk';
 
@@ -3301,6 +3303,9 @@ function normalizeSegmentPhrase(text: string): string {
     .replace(/awarness/gi, 'awareness')
     .replace(/elevetaed/gi, 'elevated')
     .replace(/app?art+ment/gi, 'apartment')
+    // Product alias: "apartment screen" means the lobby-screen service,
+    // not the separate apartment-lift service.
+    .replace(/\bapartment\s+screen\b/gi, 'apartment lobby screen')
     // Glue fixes: "2and" / "100and" / "poster2 and" → proper spaces for qty+and splits
     .replace(/(\d)\s*(and|&|\+)\s*/gi, '$1 $2 ')
     .replace(/(\d)(and|&|\+)/gi, '$1 $2 ')
@@ -3351,9 +3356,9 @@ function matchSegmentHits(
   if (!hits.length) {
     hits = filterByBrowseToken(services, words.join(' '));
   }
-  if (!hits.length && words.length > 1) {
-    hits = filterByBrowseToken(services, words[0]);
-  }
+  // Do not fall back from a qualified phrase to its first family word.
+  // "apartment screen" must not broaden into every Apartment service,
+  // while a bare "apartment" query is handled by the family browse path.
 
   // Safe service-phrase fallback: when the user supplies the vehicle plus a
   // catalog qualifier ("auto sticker"), match every meaningful word against
@@ -9088,10 +9093,10 @@ function continueProgressiveActionInner(
   if (actionId === 'no_min') {
     const minQty = session.pendingRows?.[0]?.qty;
     return {
-      step: 'no_match',
+      step: 'min_qty_confirm',
       botText: `Please enter a quantity of ${minQty || 'the minimum'} or more to continue.`,
       options: [],
-      session: { ...session, pendingRows: undefined },
+      session,
     };
   }
 

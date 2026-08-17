@@ -7,7 +7,7 @@ import {
   buildLineItemsFromDbPricing,
   hasQuotablePricing,
 } from './dbPricingUtils';
-import { enrichQuoteItemsDurationFromDb } from './durationUtils';
+import { enrichQuoteItemsDurationFromDb, getServiceScopedUserMessage } from './durationUtils';
 import { DEFAULT_GENERAL_TERMS } from './quoteGrouping';
 import type { DbService } from './serviceResolver';
 import { resolveServiceIdFromCatalog } from './serviceResolver';
@@ -74,10 +74,23 @@ export function buildQuoteFromConfirmedRows(
       continue;
     }
 
+    const scopedUserInput = row.durationDays != null
+      ? `${baseSvc.service_name || row.service} ${row.durationDays} days`
+      : getServiceScopedUserMessage(
+          originalUserInput,
+          baseSvc.service_name || row.service,
+        );
+    console.log('[DurationDebug] quote row scope', {
+      service: row.service,
+      serviceId: baseSvc.service_id,
+      originalUserInput,
+      scopedUserInput,
+      durationOverrideDays: row.durationDays,
+    });
     const lineItems = buildLineItemsFromDbPricing(
       svc,
       qty,
-      originalUserInput,
+      scopedUserInput,
       i,
     );
 
@@ -89,7 +102,12 @@ export function buildQuoteFromConfirmedRows(
       continue;
     }
 
-    for (const line of lineItems) {
+    const enrichedLineItems = enrichQuoteItemsDurationFromDb(
+      lineItems,
+      scopedUserInput,
+      services,
+    );
+    for (const line of enrichedLineItems) {
       allItems.push({ ...line, city: cityLabel });
     }
   }
@@ -110,15 +128,10 @@ export function buildQuoteFromConfirmedRows(
     };
   }
 
-  const enriched = enrichQuoteItemsDurationFromDb(
-    allItems,
-    originalUserInput,
-    services,
-  );
-  const hydrated = hydrateQuoteTermsFromCatalog(enriched, '', services);
+  const hydrated = hydrateQuoteTermsFromCatalog(allItems, '', services);
   const quoteItems = hydrated.items.map((item) => ({
     ...item,
-    city: item.city || enriched.find((e) => e.id === item.id)?.city,
+    city: item.city || allItems.find((e) => e.id === item.id)?.city,
   }));
 
   const finalTerms = hydrated.hydratedFromDb
