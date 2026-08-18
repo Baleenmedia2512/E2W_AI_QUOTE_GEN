@@ -568,6 +568,11 @@ function roundOne(value: number): number {
   return Math.round(value * 10) / 10;
 }
 
+/** Excel presentation rounding: nearest 10 rupees (e.g. 12499 -> 12500). */
+function roundRupeeForExcel(value: number): number {
+  return Math.round(value / 10) * 10;
+}
+
 const DAYS_PER_MONTH = 30;
 
 function pickPositive(...values: unknown[]): number | undefined {
@@ -1106,6 +1111,27 @@ function buildVendorExcelRow(summary: QuoteServiceSummary, vendor?: VendorRateCh
     productionCost,
     officialCost,
   );
+  // Named P&F/production only (no official fallback). When these exist, official
+  // must be added on top — same as quote UI. When they do not, resolvePfUnit
+  // already used official as the one-time amount; do not add it twice.
+  const namedPfPrice = resolvePfUnit(
+    printingAndMountingPrice,
+    printingAndFixingPrice,
+    printingUnitPrice,
+    fixingUnitPrice,
+    productionPrice,
+  );
+  const namedPfCost = resolvePfUnit(
+    printingAndMountingCost,
+    printingAndFixingCost,
+    printingUnitCost,
+    fixingUnitCost,
+    productionCost,
+  );
+  const officialAddonPrice = namedPfPrice > 0 ? (officialPrice || 0) : 0;
+  const officialAddonCost = namedPfCost > 0
+    ? (pickPositive(vendor?.official_and_incidental_cost, metadata.official_and_incidental_cost) || 0)
+    : 0;
 
   const unitPricePerDay = pickPositive(
     vendor?.display_unit_price_per_day,
@@ -1129,8 +1155,8 @@ function buildVendorExcelRow(summary: QuoteServiceSummary, vendor?: VendorRateCh
     metadataPricing.display_cost,
   );
 
-  const oneTimePrice = pfUnitPrice + rtoUnitPrice + extraKmPrice;
-  const oneTimeCost = pfUnitCost + rtoUnitCost + extraKmCost;
+  const oneTimePrice = pfUnitPrice + officialAddonPrice + rtoUnitPrice + extraKmPrice;
+  const oneTimeCost = pfUnitCost + officialAddonCost + rtoUnitCost + extraKmCost;
 
   const displayPeriod = pickString(
     pricing.display_period,
@@ -1169,9 +1195,11 @@ function buildVendorExcelRow(summary: QuoteServiceSummary, vendor?: VendorRateCh
   const hasCostRates = totalDisplayCost > 0 || oneTimeCost > 0;
   const totalPrice = roundTwo(totalDisplayPrice + oneTimePrice * qty);
   const totalCost = roundTwo(totalDisplayCost + oneTimeCost * qty);
+  const roundedTotalPrice = roundRupeeForExcel(totalPrice);
+  const roundedTotalCost = roundRupeeForExcel(totalCost);
   const marginPct =
-    hasPriceRates && hasCostRates && totalPrice > 0
-      ? roundOne(((totalPrice - totalCost) / totalPrice) * 100)
+    hasPriceRates && hasCostRates && roundedTotalPrice > 0
+      ? roundOne(((roundedTotalPrice - roundedTotalCost) / roundedTotalPrice) * 100)
       : undefined;
 
   console.log('[ExcelPricingDebug] buildVendorExcelRow', {
@@ -1203,6 +1231,8 @@ function buildVendorExcelRow(summary: QuoteServiceSummary, vendor?: VendorRateCh
     priceBasis,
     pfUnitCost,
     pfUnitPrice,
+    officialAddonCost,
+    officialAddonPrice,
     rtoUnitCost,
     rtoUnitPrice,
     extraKmCost,
@@ -1213,6 +1243,8 @@ function buildVendorExcelRow(summary: QuoteServiceSummary, vendor?: VendorRateCh
     oneTimePrice,
     totalCost,
     totalPrice,
+    roundedTotalCost,
+    roundedTotalPrice,
     marginPct: marginPct ?? 'NA',
   });
 
@@ -1223,8 +1255,8 @@ function buildVendorExcelRow(summary: QuoteServiceSummary, vendor?: VendorRateCh
     'Margin %': marginPct ?? '',
     Qty: qty,
     'Duration (Days)': hasDuration ? days : 'NA',
-    'Total Cost': hasCostRates ? totalCost : '',
-    'Total Price': hasPriceRates ? totalPrice : '',
+    'Total Cost': hasCostRates ? roundedTotalCost : '',
+    'Total Price': hasPriceRates ? roundedTotalPrice : '',
   };
 }
 
@@ -1337,7 +1369,7 @@ Deno.serve(async (req) => {
 
     const filenames = [...resolvedPdfAttachments.map((attachment) => attachment.filename), vendorExcelAttachment.filename];
 
-    const emailSubject = [quoteNumber, clientName, clientPhoneNumber].filter(Boolean).join(' ');
+    const emailSubject = [quoteNumber, clientName].filter(Boolean).join(' ');
     const logoEmbed = buildLogoEmbed(companyName, companyLogo);
     const emailHtml = buildEmailHtml({
       emailSubject,
