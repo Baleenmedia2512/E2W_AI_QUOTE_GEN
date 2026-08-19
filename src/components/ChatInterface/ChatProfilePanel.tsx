@@ -315,9 +315,9 @@ const ChatProfilePanel: React.FC = () => {
                 type="button"
                 p={3}
                 border="1.5px solid"
-                borderColor={profileType === 'company' ? 'brand.400' : 'gray.200'}
+                borderColor="gray.200"
                 borderRadius="12px"
-                bg={profileType === 'company' ? 'brand.50' : 'gray.50'}
+                bg="gray.50"
                 textAlign="left"
                 w="100%"
                 onClick={() => setProfileType('company')}
@@ -340,9 +340,9 @@ const ChatProfilePanel: React.FC = () => {
                 type="button"
                 p={3}
                 border="1.5px solid"
-                borderColor={profileType === 'self' ? 'brand.400' : 'gray.200'}
+                borderColor="gray.200"
                 borderRadius="12px"
-                bg={profileType === 'self' ? 'brand.50' : 'gray.50'}
+                bg="gray.50"
                 textAlign="left"
                 w="100%"
                 onClick={() => setProfileType('self')}
