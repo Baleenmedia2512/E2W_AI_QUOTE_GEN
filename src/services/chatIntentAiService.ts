@@ -13,7 +13,7 @@ const MODEL = 'gemini-3.1-flash-lite';
 const TELEMETRY_MODULE = 'chat_intent';
 
 export interface ChatIntentHint {
-  kind?: 'greeting' | 'help' | 'quote' | 'clarify_type' | 'city_browse' | 'other' | null;
+  kind?: 'greeting' | 'help' | 'quote' | 'clarify_type' | 'city_browse' | 'services_browse' | 'other' | null;
   /** Catalog type / family tokens the user wants. */
   media?: string[];
   medium?: string | null;
@@ -195,7 +195,7 @@ export async function parseChatIntentWithAi(
     const prompt = [
       'You plan steps for an advertising quote chatbot.',
       'Return ONLY compact JSON (no markdown):',
-      '{"kind":"greeting"|"help"|"quote"|"clarify_type"|"city_browse"|"other","media":string[],"city":string|null,"areaHint":string|null,"directionHint":string|null,"ambiguous":boolean,"clarifyHint":string|null,"qty":number|null,"duration":string|null,"shortReply":string}',
+      '{"kind":"greeting"|"help"|"quote"|"clarify_type"|"city_browse"|"services_browse"|"other","media":string[],"city":string|null,"areaHint":string|null,"directionHint":string|null,"ambiguous":boolean,"clarifyHint":string|null,"qty":number|null,"duration":string|null,"shortReply":string}',
       '',
       'SERVICE TYPES IN DATABASE:',
       typeList,
@@ -211,6 +211,9 @@ export async function parseChatIntentWithAi(
       '- Never invent prices. Never invent types/cities not related to the lists above.',
       '- kind=greeting for hi/hello/hey/hlo/hii.',
       '- kind=help for help/how-to.',
+      '- kind=services_browse when the user asks to list or show all available services.',
+      '- Treat "list all", "show all", "all services", "list all services", and "what services are available?" as services_browse.',
+      '- For services_browse, return media=[], city=null, areaHint=null, directionHint=null, ambiguous=false.',
       '- kind=city_browse when user only names a city.',
       '- kind=clarify_type + ambiguous=true when the user gives a FEATURE or place phrase that spans MANY types',
       '  Examples that MUST clarify (media=[] , clarifyHint=feature):',
@@ -236,6 +239,7 @@ export async function parseChatIntentWithAi(
       '  "led" → "LED options available.\\nWhich option do you need?"',
       '  "chennai" → "Services available in Chennai.\\nWhich service do you need?"',
       '  "what services are available?" → "Advertising services available.\\nWhich service do you need?"',
+      '  "list all" → "Advertising services available.\\nWhich service do you need?"',
       '  "which cities are available?" → "Available in these cities.\\nWhich city do you need?"',
       '  "bus chennai" → "Bus advertising options available.\\nWhich option do you need?"',
       '  "near ecr" → "Services available near ECR.\\nWhich service do you need?"',
@@ -251,6 +255,7 @@ export async function parseChatIntentWithAi(
       '  "bus stand branding madurai" → kind=clarify_type, ambiguous=true, clarifyHint="bus stand", city="Madurai"',
       '  "chennai" → kind=city_browse, city="Chennai"',
       '  "give me a quote for chennai" → kind=city_browse, city="Chennai", media=[]',
+      '  "list all" → kind=services_browse, media=[], city=null, ambiguous=false',
       '  "bus 30 and auto 60 and 2 hoarding" → kind=quote, media=["bus","auto","hoarding"], city=null',
       '',
       `User: ${userText.trim()}`,

@@ -1237,6 +1237,11 @@ export function detectCatalogueBrowseQuery(text: string): CatalogueBrowseKind | 
 
   if (!listing) return null;
 
+  // Standalone list requests are service-catalogue browse requests.
+  if (/^\s*(?:list|show)\s+all(?:\s+(?:services?|products?))?\s*[?!.]*$/i.test(t)) {
+    return 'services';
+  }
+
   // Prefer specific axis (types before services — "service types")
   if (/\b(service\s+types?|types?|variants?)\b/.test(lower)) return 'types';
   if (/\b(areas?|localit(?:y|ies)|neighbourhoods?|neighborhoods?)\b/.test(lower)) {
@@ -7223,6 +7228,19 @@ function resolveProgressiveTextInner(
       options: [],
       session: { originalText, qty: null, aiReply: intent.shortReply },
     };
+  }
+  if (intent?.kind === 'services_browse') {
+    return startCatalogueBrowse(
+      'services',
+      {
+        ...(prior || {}),
+        originalText,
+        qty: null,
+        aiReply: intent.shortReply,
+      },
+      services,
+      intent.shortReply,
+    );
   }
 
   const talk = isSmallTalk(originalText);
