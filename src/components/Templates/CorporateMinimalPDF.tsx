@@ -222,9 +222,10 @@ const PageFooter: React.FC<{ company: TemplateData['company'] }> = ({ company })
 const Header: React.FC<{
   data: TemplateData;
   showMeta?: boolean;
+  title?: string;
   /** Continuation pages: skip logo + QUOTATION title to maximize table fill. */
   compact?: boolean;
-}> = ({ data, showMeta = true, compact = false }) => {
+}> = ({ data, showMeta = true, title = 'QUOTATION', compact = false }) => {
   const { company, quote } = data;
   return (
     <View>
@@ -233,7 +234,7 @@ const Header: React.FC<{
           <Image style={s.logo} src={company.logo} />
         </View>
       )}
-      {!compact && showMeta && <Text style={s.quoteTitle}>QUOTATION</Text>}
+      {!compact && showMeta && <Text style={s.quoteTitle}>{title}</Text>}
       <View style={s.headerInfoRow}>
         <View style={s.companyDetails}>
           {company.phone && (
@@ -1243,7 +1244,10 @@ const CorporateMinimalPDF: React.FC<CorporateMinimalPDFProps> = ({ data, pdfData
           <View style={s.accentBar} fixed />
           <PageFooter company={company} />
 
-          <Header data={data} />
+          <Header
+            data={data}
+            title={exportMode === 'summary' ? 'Summarized quotation' : 'Detailed quotation'}
+          />
           <ClientDetails client={client} />
 
           {/* Service name + Pricing Breakdown (no orphan heading) */}
@@ -1454,7 +1458,12 @@ const CorporateMinimalPDF: React.FC<CorporateMinimalPDFProps> = ({ data, pdfData
           <View style={s.accentBar} fixed />
           <PageFooter company={company} />
 
-          {page.showCompanyHeader && <Header data={data} />}
+          {page.showCompanyHeader && (
+            <Header
+              data={data}
+              title={exportMode === 'summary' ? 'Summarized quotation' : 'Detailed quotation'}
+            />
+          )}
           {page.showClientDetails && <ClientDetails client={client} />}
           {page.showSectionHeading && (
             <Text style={s.sectionHeading}>Executive Pricing Summary</Text>

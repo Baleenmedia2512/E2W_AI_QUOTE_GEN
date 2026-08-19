@@ -23,6 +23,7 @@ export interface User {
 export interface AuthUser {
   id: string;
   email: string;
+  canSendQuoteEmail?: boolean;
   full_name: string;
   phone?: string | null;
   profileImage?: string | null;

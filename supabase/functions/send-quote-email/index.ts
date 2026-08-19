@@ -1433,7 +1433,7 @@ async function buildVendorExcelAttachment(
   XLSX.utils.book_append_sheet(workbook, worksheet, 'Vendor Details');
 
   const safeQuoteNumber = quoteNumber.replace(/[^a-zA-Z0-9_-]+/g, '_');
-  const excelFilename = `Vendor_Details_${safeQuoteNumber || 'Quote'}.xlsx`;
+  const excelFilename = `preferred_vendor_Details_${safeQuoteNumber || 'Quote'}.xlsx`;
 
   return {
     filename: excelFilename,

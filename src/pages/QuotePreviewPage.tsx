@@ -629,6 +629,17 @@ export const QuotePreviewPage: React.FC = () => {
         throw new Error('Could not generate PDF. Please try again.');
       }
 
+      if (user?.canSendQuoteEmail !== true) {
+        toast({
+          title: 'PDF Downloaded',
+          description: 'Email sending is not enabled for this account.',
+          status: 'success',
+          duration: 5000,
+          isClosable: true,
+        });
+        return;
+      }
+
       const emailSendResult = await sendQuoteEmail({
         pdfAttachments,
         quote: currentQuote,

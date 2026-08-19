@@ -379,6 +379,7 @@ export function buildPricingBreakdownLines(items: QuoteItem[]): {
 
     if (pfItem && (pfItem.rate > 0 || pfItem.total > 0)) {
       const unitRate = pfItem.rate > 0 ? pfItem.rate : row.oneTimeCharge;
+      const oneTimeQty = row.oneTimeQuantity ?? qty;
       const svc = resolveDbServiceForQuoteItem({
         serviceId: row.catalogServiceId || primary.serviceId || pfItem.serviceId,
         serviceName: primary.serviceName || pfItem.serviceName,
@@ -397,7 +398,7 @@ export function buildPricingBreakdownLines(items: QuoteItem[]): {
       lines.push({
         kind: 'onetime',
         descriptionLines: [
-          `${titlePrefix} for ${qty} ${unitPlural}`,
+          `${titlePrefix} for ${oneTimeQty} ${pluralizeQtyUnit(row.quantityUnit ?? primary.quantityUnit, oneTimeQty)}`,
           formula,
         ],
         amount: computeQuoteItemTotal(pfItem),

@@ -6,6 +6,11 @@ const SUPABASE_URL = Deno.env.get('SUPABASE_URL');
 const SUPABASE_SERVICE_ROLE_KEY = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY');
 const AUTH_SESSION_SECRET =
   Deno.env.get('AUTH_SESSION_SECRET') || SUPABASE_SERVICE_ROLE_KEY || '';
+const INTERNAL_QUOTE_EMAILS = [
+  Deno.env.get('INTERNAL_QUOTE_EMAIL_1'),
+  Deno.env.get('INTERNAL_QUOTE_EMAIL_2'),
+  Deno.env.get('INTERNAL_QUOTE_EMAIL_3'),
+].filter(Boolean).map((value) => normalizeEmail(value));
 const SESSION_TTL_SECONDS = 8 * 60 * 60;
 
 const corsHeaders = {
@@ -106,6 +111,7 @@ Deno.serve(async (req) => {
     const authUser = {
       id: user.id,
       email: user.email,
+      canSendQuoteEmail: INTERNAL_QUOTE_EMAILS.includes(normalizeEmail(user.email)),
       full_name: user.name,
       phone: user.phone || null,
       profileImage: user.image || null,

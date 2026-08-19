@@ -3122,20 +3122,14 @@ function serviceMatchesCityLabel(svc: DbService, city: string): boolean {
   const c = city.toLowerCase().trim();
   if (!c) return false;
   const cKey = canonicalizeServiceName(c);
-  // Named metro ("in madurai") must match this row's DB city — never locations[],
-  // document name, or a substring in area/direction. No inventory there → no quote.
+  // Named metro ("in madurai") must match the dedicated DB city field —
+  // never locations[], document name, or a substring in area/direction.
   if (REAL_CITY_KEYS.includes(cKey)) {
     const meta = getMetaCityRaw(svc);
-    if (meta) {
-      const known = matchKnownCityLabel(meta);
-      if (known) return canonicalizeServiceName(known) === cKey;
-      return canonicalizeServiceName(meta) === cKey;
-    }
-    const funnel = funnelCityFromDb(svc);
-    if (!funnel) return false;
-    const knownFunnel = matchKnownCityLabel(funnel);
-    if (knownFunnel) return canonicalizeServiceName(knownFunnel) === cKey;
-    return canonicalizeServiceName(funnel) === cKey;
+    if (!meta) return false;
+    const known = matchKnownCityLabel(meta);
+    if (known) return canonicalizeServiceName(known) === cKey;
+    return canonicalizeServiceName(meta) === cKey;
   }
   const cRe = new RegExp(
     `\\b${cKey.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\b`,
@@ -5312,6 +5306,14 @@ export function detectDirectionInText(
 ): { phrase: string; serviceIds: string[]; city?: string; area?: string } | null {
   const lower = text.toLowerCase().trim();
   if (lower.length < 4) return null;
+  // A city name can be a substring of direction_remarks ("towards Chennai").
+  // Without an explicit site/direction cue, treat it as a city request rather
+  // than selecting whichever direction happens to contain that city word.
+  const hasDirectionCue =
+    /\b(near|around|at|towards?|opposite|signal|road|street|junction|flyover)\b/i.test(lower);
+  if (detectCityInText(lower, services) && !hasDirectionCue) {
+    return null;
+  }
 
   // "metro" / "bus" / "led" → service flow, never steal a direction that mentions the word
   const bareWords = extractQueryWords(lower).filter((w) => !STOP_WORDS.has(w));
@@ -7137,7 +7139,11 @@ export function canSkipChatIntentAi(userText: string, services: DbService[]): bo
     // Plain service requests still use the fast local path.
     const regexDirectionContext =
       /\b(near|around|at|towards?|opposite|signal|road|street|junction|flyover)\b/i.test(t);
-    const localDirectionHit = detectDirectionInText(t, services);
+    // A city mention can be found inside a direction remark ("towards
+    // Chennai"). It is not a site request, so it must not force the slower AI
+    // intent path or let direction matching override the city funnel.
+    const requestedCity = detectCityInText(t, services);
+    const localDirectionHit = requestedCity ? null : detectDirectionInText(t, services);
     const hasDirectionContext = regexDirectionContext || !!localDirectionHit;
     const skip = !hasDirectionContext;
     logFunnelDebug('canSkipChatIntentAi', {
@@ -7476,8 +7482,13 @@ function resolveProgressiveTextInner(
       const isPureArea =
         !!localityHint && textKey === canonicalizeServiceName(localityHint);
       const isPureCity = !!city && textKey === canonicalizeServiceName(city);
+      const directionMatchesRequestedCity =
+        !city
+        || directionServices
+          .filter((service) => dirHit.serviceIds.includes(service.service_id))
+          .some((service) => serviceMatchesCityLabel(service, city));
       // Don't treat a pure area/city answer as a direction lock
-      if (!isPureArea && !isPureCity) {
+      if (!isPureArea && !isPureCity && directionMatchesRequestedCity) {
         directionFromText = dirHit.phrase;
       }
     }
@@ -7658,13 +7669,21 @@ function resolveProgressiveTextInner(
         // If a service is also named, keep only direction rows belonging to
         // that service. A conflicting service must not broaden the direction
         // back to the full catalogue.
-        const directionServiceHits = media.length
+        let directionServiceHits = media.length
           ? [...new Map(
             media
               .flatMap((m) => filterForBrowseOrFamily(matchedDirectionServices, m))
               .map((s) => [s.service_id, s]),
           ).values()]
           : matchedDirectionServices;
+        // A city word can occur inside direction_remarks ("towards Chennai").
+        // Once the request names a city, direction candidates must belong to
+        // that row's actual DB city before they can enter the direction route.
+        if (city) {
+          directionServiceHits = directionServiceHits.filter((s) =>
+            serviceMatchesCityLabel(s, city),
+          );
+        }
         logFunnelDebug('directionRoute.filterByMedia', {
           media,
           matchedDirectionCount: matchedDirectionServices.length,
@@ -8433,6 +8452,14 @@ function resolveProgressiveTextInner(
 
     // Service named in text → startMediumFlow (different service already reset in merge;
     // same-service with extra entities overlays city/area/type above).
+    // Hoarding has several city choices. Even when the initial sentence names a
+    // city, keep the normal Type → City funnel so the city chip is confirmed
+    // before any site can be finalized. Do not repeat this on a later turn after
+    // the user has already selected a city.
+    const hoardingCityNeedsConfirmation =
+      !preservePrior
+      && !!cityForSession
+      && /^hoardings?$/.test(canonicalizeServiceName(first));
     const mediumResult = startMediumFlow(
       first,
       {
@@ -8440,7 +8467,9 @@ function resolveProgressiveTextInner(
         pendingMedia: sessionBase.pendingMedia || [],
         medium: canonicalizeServiceName(first),
         browseToken: canonicalizeServiceName(first),
-        city: cityForSession || sessionBase.city || undefined,
+        city: hoardingCityNeedsConfirmation
+          ? undefined
+          : (cityForSession || sessionBase.city || undefined),
         area: locInText || sessionBase.area,
         placeHint: locInText || sessionBase.placeHint || sessionBase.area,
         needsContinueConfirm: !!locInText && !sessionBase.city,
