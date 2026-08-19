@@ -201,7 +201,7 @@ export const useAppStore = create<AppState>((set) => ({
 
   // Company state - Load from localStorage on init, fallback to defaults
   companyInfo: loadCompanyInfoWithDefaults(),
-  setCompanyInfo: (info: CompanyInfo) => {
+  setCompanyInfo: (info: CompanyInfo, persistRemote = true) => {
     set({ companyInfo: info });
     // Persist to localStorage (always works, fallback)
     try {
@@ -209,7 +209,8 @@ export const useAppStore = create<AppState>((set) => ({
     } catch (error) {
       console.error('Failed to save company info to localStorage:', error);
     }
-    // Also persist to database (syncs across devices)
+    if (!persistRemote) return;
+    // Also persist to database (syncs across devices) via permission-checked RPC
     companyService.saveCompanySettings(info).catch(err => {
       console.warn('Database sync failed, localStorage still working:', err);
     });

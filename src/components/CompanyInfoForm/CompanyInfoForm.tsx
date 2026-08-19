@@ -19,11 +19,11 @@ import {
 } from '@chakra-ui/react';
 import { FiUploadCloud } from 'react-icons/fi';
 import { CompanyInfo } from '../../types/company';
-import { saveCompanyInfo, loadCompanyInfo } from '../../utils/localStorage';
+import { loadCompanyInfo } from '../../utils/localStorage';
 import './CompanyInfoForm.css';
 
 interface CompanyInfoFormProps {
-  onSubmit: (companyInfo: CompanyInfo) => void;
+  onSubmit: (companyInfo: CompanyInfo) => void | Promise<void>;
   initialData?: CompanyInfo | null;
 }
 
@@ -105,12 +105,11 @@ const CompanyInfoForm: React.FC<CompanyInfoFormProps> = ({ onSubmit, initialData
     return Object.keys(newErrors).length === 0;
   };
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     
     if (validateForm()) {
-      onSubmit(formData);
-      saveCompanyInfo(formData);
+      await onSubmit(formData);
     }
   };
 

@@ -2361,8 +2361,10 @@ const ChatInterface: React.FC = () => {
     setMessages(prev => [...prev, assistantMsg]);
   };
 
-  const handleSuggestionClick = (suggestion: string) => {
-    setInputValue(suggestion);
+  const handleSuggestionClick = async (suggestion: string) => {
+    setHistoryIndex(-1);
+    setDraftInput('');
+    await sendMessageWithContent(suggestion);
   };
 
   // Back button on the multi-match checkbox UI: re-open the city picker
@@ -5316,7 +5318,7 @@ Generate a detailed quote based on the above information.`;
                 justifyContent={{ base: 'flex-start', md: 'center' }}
                 boxShadow="0 1px 2px rgba(0,0,0,0.04)"
                 transition="transform 0.2s ease, box-shadow 0.2s ease, background 0.2s ease"
-                onClick={() => handleSuggestionClick(prompt)}
+                onClick={() => { void handleSuggestionClick(prompt); }}
                 _hover={{
                   bg: 'brand.50',
                   borderColor: 'brand.400',

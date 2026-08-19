@@ -1,5 +1,6 @@
 import { supabase } from './supabaseClient';
 import { CompanyInfo } from '../types/company';
+import { updateCompanyProfile } from './userProfileService';
 
 /**
  * Company Service - Manages company information with database sync
@@ -49,71 +50,19 @@ export const companyService = {
   },
 
   /**
-   * Save/Update company settings in database
-   * Updates the active company record or creates new one
+   * Save/Update company settings in database.
+   * Writes go through a permission-checked RPC (admin / super agent only).
    */
   async saveCompanySettings(companyInfo: CompanyInfo): Promise<boolean> {
     try {
-      // First, try to get existing active company
-      const { data: existing } = await supabase
-        .from('company_settings')
-        .select('id')
-        .eq('is_active', true)
-        .limit(1)
-        .maybeSingle();
-
-      if (existing?.id) {
-        // Update existing record
-        const { error } = await supabase
-          .from('company_settings')
-          .update({
-            name: companyInfo.name,
-            address: companyInfo.address,
-            gst: companyInfo.gst,
-            abn: companyInfo.abn,
-            phone: companyInfo.phone,
-            email: companyInfo.email,
-            logo: companyInfo.logo,
-            website: companyInfo.website,
-            signature: companyInfo.signature,
-            designation: companyInfo.designation,
-            updated_at: new Date().toISOString(),
-          })
-          .eq('id', existing.id);
-
-        if (error) {
-          console.warn('⚠️ Database update failed, using localStorage only:', error.message);
-          return false;
-        }
-
-        console.log('✅ Company settings updated in database');
-        return true;
-      } else {
-        // Insert new record
-        const { error } = await supabase
-          .from('company_settings')
-          .insert({
-            name: companyInfo.name,
-            address: companyInfo.address,
-            gst: companyInfo.gst,
-            abn: companyInfo.abn,
-            phone: companyInfo.phone,
-            email: companyInfo.email,
-            logo: companyInfo.logo,
-            website: companyInfo.website,
-            signature: companyInfo.signature,
-            designation: companyInfo.designation,
-            is_active: true,
-          });
-
-        if (error) {
-          console.warn('⚠️ Database insert failed, using localStorage only:', error.message);
-          return false;
-        }
-
-        console.log('✅ Company settings created in database');
-        return true;
+      const result = await updateCompanyProfile(companyInfo);
+      if (!result.success) {
+        console.warn('⚠️ Company profile update rejected:', result.message);
+        return false;
       }
+
+      console.log('✅ Company settings saved');
+      return true;
     } catch (error) {
       console.error('❌ Error saving company settings:', error);
       return false;

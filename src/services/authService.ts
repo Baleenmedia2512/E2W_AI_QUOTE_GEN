@@ -75,6 +75,7 @@ class AuthService {
       id: user.id,
       email: user.email,
       full_name: user.name,
+      profileImage: user.profileImage || null,
       role: {
         role_name: roleData?.name || 'user',
         permissions: permissions,

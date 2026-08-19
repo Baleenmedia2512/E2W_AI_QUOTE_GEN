@@ -81,7 +81,7 @@ export interface AppState {
 
   // Company state
   companyInfo: CompanyInfo | null;
-  setCompanyInfo: (info: CompanyInfo) => void;
+  setCompanyInfo: (info: CompanyInfo, persistRemote?: boolean) => void;
   syncCompanyFromDatabase: () => Promise<void>;
   enableCompanySync: () => any;
 

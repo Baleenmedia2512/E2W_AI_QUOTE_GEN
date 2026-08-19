@@ -17,6 +17,7 @@ import {
 import { ChevronDownIcon } from '@chakra-ui/icons';
 import { useHistory } from 'react-router-dom';
 import { useAuthStore } from '../../store/authStore';
+import { canAccessCompanyProfile } from '../../utils/profileAccess';
 
 export const UserProfile: React.FC = () => {
   const { user, logout, isAuthenticated } = useAuthStore();
@@ -50,6 +51,8 @@ export const UserProfile: React.FC = () => {
   const getRoleColor = (roleName: string) => {
     const colors: Record<string, string> = {
       admin: 'red',
+      'super agent': 'red',
+      superagent: 'red',
       manager: 'purple',
       sales: 'blue',
       user: 'gray',
@@ -71,6 +74,7 @@ export const UserProfile: React.FC = () => {
           <Avatar
             size="sm"
             name={user.full_name}
+            src={user.profileImage || undefined}
             bg="blue.500"
             color="white"
           />
@@ -105,9 +109,14 @@ export const UserProfile: React.FC = () => {
           </Badge>
         </Box>
         <MenuDivider />
-        <MenuItem onClick={() => history.push('/company-settings')}>
-          Company Settings
+        <MenuItem onClick={() => history.push('/profile')}>
+          Self Profile
         </MenuItem>
+        {canAccessCompanyProfile(user) ? (
+          <MenuItem onClick={() => history.push('/company-settings')}>
+            Company Profile
+          </MenuItem>
+        ) : null}
         <MenuDivider />
         <MenuItem onClick={handleLogout} color="red.600">
           Logout

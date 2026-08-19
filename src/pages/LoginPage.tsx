@@ -1,41 +1,65 @@
-import React, { useState, useEffect } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import {
+  Alert,
+  AlertIcon,
   Box,
   Button,
-  FormControl,
-  FormLabel,
-  Input,
-  VStack,
-  Heading,
-  Text,
-  useToast,
-  InputGroup,
-  InputRightElement,
-  IconButton,
-  FormErrorMessage,
-  Link,
+  Center,
   Container,
-  Flex,
-  HStack,
-  Badge,
+  FormControl,
+  FormErrorMessage,
+  FormLabel,
+  Heading,
   Icon,
+  IconButton,
+  Image,
+  Input,
+  InputGroup,
+  InputLeftElement,
+  InputRightElement,
+  Modal,
+  ModalBody,
+  ModalCloseButton,
+  ModalContent,
+  ModalOverlay,
+  Text,
+  useDisclosure,
+  useToast,
+  VStack,
 } from '@chakra-ui/react';
-import { ViewIcon, ViewOffIcon, LockIcon } from '@chakra-ui/icons';
+import { EmailIcon, LockIcon, ViewIcon, ViewOffIcon } from '@chakra-ui/icons';
 import { useHistory, useLocation } from 'react-router-dom';
 import { useAuthStore } from '../store/authStore';
+import { passwordResetService } from '../services/passwordResetService';
+
+type ForgotStep = 'email' | 'otp' | 'password' | 'success';
+
+const PASSWORD_MIN_LENGTH = 8;
 
 const LoginPage: React.FC = () => {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
-  
+
+  const [forgotStep, setForgotStep] = useState<ForgotStep>('email');
+  const [forgotEmail, setForgotEmail] = useState('');
+  const [otpDigits, setOtpDigits] = useState(['', '', '', '']);
+  const [newPassword, setNewPassword] = useState('');
+  const [confirmPassword, setConfirmPassword] = useState('');
+  const [resetToken, setResetToken] = useState('');
+  const [recoveryError, setRecoveryError] = useState('');
+  const [isRecoverySubmitting, setIsRecoverySubmitting] = useState(false);
+  const [resendCooldown, setResendCooldown] = useState(0);
+  const [verifyAttemptsRemaining, setVerifyAttemptsRemaining] = useState<number | null>(null);
+  const otpInputRefs = useRef<Array<HTMLInputElement | null>>([]);
+
   const toast = useToast();
   const history = useHistory();
   const location = useLocation<{ from?: string }>();
   const { login, isAuthenticated, error, clearError } = useAuthStore();
+  const { isOpen, onOpen, onClose } = useDisclosure();
 
-  // Redirect if already authenticated
   useEffect(() => {
     if (isAuthenticated) {
       const from = location.state?.from || '/';
@@ -43,10 +67,63 @@ const LoginPage: React.FC = () => {
     }
   }, [isAuthenticated, history, location]);
 
+  useEffect(() => {
+    if (resendCooldown <= 0) return undefined;
+
+    const interval = window.setInterval(() => {
+      setResendCooldown((current) => {
+        if (current <= 1) {
+          window.clearInterval(interval);
+          return 0;
+        }
+        return current - 1;
+      });
+    }, 1000);
+
+    return () => window.clearInterval(interval);
+  }, [resendCooldown]);
+
+  const recoveryTitle = useMemo(() => {
+    switch (forgotStep) {
+      case 'otp':
+        return 'Verify OTP';
+      case 'password':
+        return 'Create New Password';
+      case 'success':
+        return 'Password Reset';
+      default:
+        return 'Forgot Password';
+    }
+  }, [forgotStep]);
+
+  const resetRecoveryState = () => {
+    setForgotStep('email');
+    setForgotEmail('');
+    setOtpDigits(['', '', '', '']);
+    setNewPassword('');
+    setConfirmPassword('');
+    setResetToken('');
+    setRecoveryError('');
+    setIsRecoverySubmitting(false);
+    setResendCooldown(0);
+    setVerifyAttemptsRemaining(null);
+  };
+
+  const openForgotPassword = () => {
+    setForgotEmail(email.trim());
+    setForgotStep('email');
+    setRecoveryError('');
+    onOpen();
+  };
+
+  const closeForgotPassword = () => {
+    onClose();
+    resetRecoveryState();
+  };
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    
-    // Validation
+
     if (!email || !password) {
       toast({
         title: 'Missing fields',
@@ -63,16 +140,6 @@ const LoginPage: React.FC = () => {
 
     try {
       await login({ email, password });
-      
-      toast({
-        title: 'Login successful',
-        description: 'Welcome back!',
-        status: 'success',
-        duration: 2000,
-        isClosable: true,
-      });
-      
-      // Redirect to the page they tried to visit or home
       const from = location.state?.from || '/';
       history.push(from);
     } catch (err: any) {
@@ -88,307 +155,576 @@ const LoginPage: React.FC = () => {
     }
   };
 
-  return (
-    <Box
-      minH="100vh"
-      bg="white"
-      position="relative"
-      overflow="hidden"
-    >
-      {/* White Header Bar - Status Bar Area */}
-      <Box
-        bg="white"
-        h={{ base: "44px", md: "60px" }}
-        borderBottom="1px solid"
-        borderColor="gray.100"
-      />
+  const handleSendOtp = async () => {
+    const normalizedEmail = forgotEmail.trim();
 
-      {/* Burgundy Header Section */}
-      <Box
-        bgGradient="linear(135deg, brand.500 0%, brand.600 100%)"
-        pt={{ base: 8, md: 12 }}
-        pb={{ base: 24, md: 28 }}
-        px={6}
-        position="relative"
-        overflow="hidden"
-        _before={{
-          content: '""',
-          position: 'absolute',
-          top: '-50%',
-          right: '-20%',
-          width: '400px',
-          height: '400px',
-          borderRadius: 'full',
-          bg: 'whiteAlpha.100',
-          filter: 'blur(60px)',
-        }}
-        _after={{
-          content: '""',
-          position: 'absolute',
-          bottom: 0,
-          left: 0,
-          right: 0,
-          height: '60px',
-          bg: 'white',
-          borderTopRadius: '30px',
-        }}
-      >
-        {/* Decorative Elements */}
-        <Box
-          position="absolute"
-          bottom="40%"
-          left="-10%"
-          width="200px"
-          height="200px"
-          borderRadius="full"
-          bg="whiteAlpha.50"
-          filter="blur(50px)"
-        />
+    if (!normalizedEmail) {
+      setRecoveryError('Please enter your registered email.');
+      return;
+    }
 
-        <Container maxW="440px" position="relative" zIndex={1}>
-          {/* Logo and Badge */}
-          <VStack align="flex-start" spacing={4}>
-            <HStack spacing={3}>
-              <Box
-                bg="whiteAlpha.200"
-                p={2.5}
-                borderRadius="xl"
-                backdropFilter="blur(10px)"
-                border="1px solid"
-                borderColor="whiteAlpha.300"
-                boxShadow="0 4px 12px rgba(0, 0, 0, 0.1)"
-                transition="all 0.3s"
-                _hover={{
-                  transform: 'scale(1.05)',
-                  bg: 'whiteAlpha.300',
-                }}
-              >
-                <Icon viewBox="0 0 24 24" boxSize={6} color="white">
-                  <path
-                    fill="currentColor"
-                    d="M14,2H6A2,2 0 0,0 4,4V20A2,2 0 0,0 6,22H18A2,2 0 0,0 20,20V8L14,2M18,20H6V4H13V9H18V20Z"
+    setIsRecoverySubmitting(true);
+    setRecoveryError('');
+
+    try {
+      const result = await passwordResetService.requestOtp(normalizedEmail);
+
+      if (result.success !== true) {
+        setRecoveryError(result.message || 'Unable to send OTP.');
+        return;
+      }
+
+      setForgotEmail(normalizedEmail);
+      setOtpDigits(['', '', '', '']);
+      setVerifyAttemptsRemaining(result.verifyAttemptsRemaining ?? null);
+      setResendCooldown(result.cooldownSeconds ?? 60);
+      setForgotStep('otp');
+      toast({
+        title: 'OTP sent',
+        description: result.message,
+        status: 'success',
+        duration: 2500,
+        isClosable: true,
+      });
+    } catch (err: unknown) {
+      setRecoveryError(err instanceof Error && err.message ? err.message : 'Unable to send OTP.');
+    } finally {
+      setIsRecoverySubmitting(false);
+    }
+  };
+
+  const handleVerifyOtp = async () => {
+    const otpValue = otpDigits.join('');
+
+    if (!/^\d{4}$/.test(otpValue)) {
+      setRecoveryError('Enter the 4-digit OTP.');
+      return;
+    }
+
+    setIsRecoverySubmitting(true);
+    setRecoveryError('');
+
+    try {
+      const result = await passwordResetService.verifyOtp(forgotEmail, otpValue);
+
+      if (result.success !== true) {
+        setRecoveryError(result.message || 'OTP verification failed.');
+        return;
+      }
+
+      setResetToken(result.resetToken || '');
+      setForgotStep('password');
+      toast({
+        title: 'OTP verified',
+        description: result.message,
+        status: 'success',
+        duration: 2500,
+        isClosable: true,
+      });
+    } catch (err: unknown) {
+      setRecoveryError(err instanceof Error && err.message ? err.message : 'OTP verification failed.');
+    } finally {
+      setIsRecoverySubmitting(false);
+    }
+  };
+
+  const focusOtpInput = (index: number) => {
+    otpInputRefs.current[index]?.focus();
+  };
+
+  const updateOtpDigit = (index: number, rawValue: string) => {
+    const digitsOnly = rawValue.replace(/\D/g, '');
+
+    if (!digitsOnly) {
+      setOtpDigits((current) => {
+        const next = [...current];
+        next[index] = '';
+        return next;
+      });
+      return;
+    }
+
+    if (digitsOnly.length > 1) {
+      const next = ['', '', '', ''];
+      digitsOnly.slice(0, 4).split('').forEach((digit, digitIndex) => {
+        next[digitIndex] = digit;
+      });
+      setOtpDigits(next);
+      window.setTimeout(() => focusOtpInput(Math.min(digitsOnly.length, 3)), 0);
+      return;
+    }
+
+    setOtpDigits((current) => {
+      const next = [...current];
+      next[index] = digitsOnly;
+      return next;
+    });
+
+    if (index < 3) {
+      window.setTimeout(() => focusOtpInput(index + 1), 0);
+    }
+  };
+
+  const handleOtpKeyDown = (index: number, event: React.KeyboardEvent<HTMLInputElement>) => {
+    if (event.key === 'Backspace') {
+      event.preventDefault();
+
+      setOtpDigits((current) => {
+        const next = [...current];
+        if (next[index]) {
+          next[index] = '';
+          return next;
+        }
+
+        if (index > 0) {
+          next[index - 1] = '';
+          window.setTimeout(() => focusOtpInput(index - 1), 0);
+        }
+
+        return next;
+      });
+      return;
+    }
+
+    if (event.key === 'ArrowLeft' && index > 0) {
+      event.preventDefault();
+      focusOtpInput(index - 1);
+      return;
+    }
+
+    if (event.key === 'ArrowRight' && index < 3) {
+      event.preventDefault();
+      focusOtpInput(index + 1);
+    }
+  };
+
+  const handleOtpPaste = (event: React.ClipboardEvent<HTMLInputElement>) => {
+    event.preventDefault();
+    const pastedDigits = event.clipboardData.getData('text').replace(/\D/g, '').slice(0, 4);
+    if (!pastedDigits) return;
+
+    const next = ['', '', '', ''];
+    pastedDigits.split('').forEach((digit, digitIndex) => {
+      next[digitIndex] = digit;
+    });
+    setOtpDigits(next);
+    window.setTimeout(() => focusOtpInput(Math.min(pastedDigits.length, 3)), 0);
+  };
+
+  const handleResendOtp = async () => {
+    if (resendCooldown > 0) return;
+    await handleSendOtp();
+  };
+
+  const handleResetPassword = async () => {
+    if (newPassword.length < PASSWORD_MIN_LENGTH) {
+      setRecoveryError(`Password must be at least ${PASSWORD_MIN_LENGTH} characters long.`);
+      return;
+    }
+
+    if (newPassword !== confirmPassword) {
+      setRecoveryError('Passwords do not match.');
+      return;
+    }
+
+    if (!resetToken) {
+      setRecoveryError('The verification session has expired. Please request a new OTP.');
+      setForgotStep('email');
+      return;
+    }
+
+    setIsRecoverySubmitting(true);
+    setRecoveryError('');
+
+    try {
+      const result = await passwordResetService.resetPassword(
+        forgotEmail,
+        resetToken,
+        newPassword,
+        confirmPassword,
+      );
+
+      if (result.success !== true) {
+        setRecoveryError(result.message || 'Unable to reset password.');
+        return;
+      }
+
+      setForgotStep('success');
+      toast({
+        title: 'Password reset successfully',
+        description: result.message,
+        status: 'success',
+        duration: 3000,
+        isClosable: true,
+      });
+    } catch (err: unknown) {
+      setRecoveryError(err instanceof Error && err.message ? err.message : 'Unable to reset password.');
+    } finally {
+      setIsRecoverySubmitting(false);
+    }
+  };
+
+  const renderRecoveryContent = () => {
+    switch (forgotStep) {
+      case 'otp':
+        return (
+          <VStack spacing={4} align="stretch">
+            <Text fontSize="sm" color="gray.600">
+              We sent a 4-digit OTP to {forgotEmail}. It expires after 10 minutes.
+            </Text>
+            <FormControl isInvalid={!!recoveryError}>
+              <FormLabel fontSize="sm" fontWeight="600" color="gray.700">
+                Enter the 4-digit OTP
+              </FormLabel>
+              <Box display="flex" gap={3} justifyContent="space-between">
+                {otpDigits.map((digit, index) => (
+                  <Input
+                    key={index}
+                    ref={(el) => {
+                      otpInputRefs.current[index] = el;
+                    }}
+                    value={digit}
+                    onChange={(e) => updateOtpDigit(index, e.target.value)}
+                    onKeyDown={(e) => handleOtpKeyDown(index, e)}
+                    onPaste={handleOtpPaste}
+                    inputMode="numeric"
+                    pattern="[0-9]*"
+                    maxLength={1}
+                    aria-label={`OTP digit ${index + 1}`}
+                    placeholder=""
+                    h={{ base: '52px', md: '56px' }}
+                    w={{ base: '52px', md: '56px' }}
+                    minW={{ base: '52px', md: '56px' }}
+                    textAlign="center"
+                    borderRadius="12px"
+                    borderColor="gray.300"
+                    bg="white"
+                    fontSize="xl"
+                    fontWeight="700"
+                    px={0}
+                    _focusVisible={{
+                      borderColor: 'brand.500',
+                      boxShadow: '0 0 0 3px rgba(201, 31, 61, 0.18)',
+                    }}
                   />
-                </Icon>
+                ))}
               </Box>
-              <Heading 
-                size="lg" 
-                color="white" 
-                fontWeight="800"
-                letterSpacing="tight"
-                textShadow="0 2px 10px rgba(0, 0, 0, 0.2)"
-              >
-                QuoteAI
-              </Heading>
-            </HStack>
-
-            <Badge
-              bg="whiteAlpha.200"
+              {verifyAttemptsRemaining !== null ? (
+                <Text mt={2} fontSize="xs" color="gray.500">
+                  Attempts remaining: {verifyAttemptsRemaining}
+                </Text>
+              ) : null}
+              {recoveryError ? <FormErrorMessage mt={2}>{recoveryError}</FormErrorMessage> : null}
+            </FormControl>
+            <Button
+              w="full"
+              h="50px"
+              bg="brand.500"
               color="white"
-              px={3.5}
-              py={1.5}
-              borderRadius="full"
-              fontSize="2xs"
               fontWeight="700"
-              textTransform="uppercase"
-              letterSpacing="wider"
-              backdropFilter="blur(10px)"
-              border="1px solid"
-              borderColor="whiteAlpha.300"
-              boxShadow="0 2px 8px rgba(0, 0, 0, 0.1)"
+              borderRadius="14px"
+              isLoading={isRecoverySubmitting}
+              onClick={handleVerifyOtp}
+              _hover={{ bg: 'brand.600' }}
+              _active={{ bg: 'brand.700' }}
             >
-              ✨ GEMINI AI - POWERED
-            </Badge>
+              Verify OTP
+            </Button>
+            <Button
+              variant="ghost"
+              color="brand.600"
+              onClick={handleResendOtp}
+              isDisabled={resendCooldown > 0 || isRecoverySubmitting}
+            >
+              {resendCooldown > 0 ? `Resend OTP (${resendCooldown}s)` : 'Resend OTP'}
+            </Button>
+          </VStack>
+        );
+      case 'password':
+        return (
+          <VStack spacing={4} align="stretch">
+            <Text fontSize="sm" color="gray.600">
+              Create a new password for {forgotEmail}.
+            </Text>
+            <FormControl isInvalid={!!recoveryError}>
+              <FormLabel fontSize="sm" fontWeight="600" color="gray.700">
+                New Password
+              </FormLabel>
+              <Input
+                type="password"
+                value={newPassword}
+                onChange={(e) => setNewPassword(e.target.value)}
+                placeholder="New Password"
+                autoComplete="new-password"
+                h="50px"
+                borderRadius="14px"
+              />
+            </FormControl>
+            <FormControl isInvalid={!!recoveryError}>
+              <FormLabel fontSize="sm" fontWeight="600" color="gray.700">
+                Confirm Password
+              </FormLabel>
+              <Input
+                type="password"
+                value={confirmPassword}
+                onChange={(e) => setConfirmPassword(e.target.value)}
+                placeholder="Confirm Password"
+                autoComplete="new-password"
+                h="50px"
+                borderRadius="14px"
+              />
+              {recoveryError ? <FormErrorMessage mt={2}>{recoveryError}</FormErrorMessage> : null}
+            </FormControl>
+            <Button
+              w="full"
+              h="50px"
+              bg="brand.500"
+              color="white"
+              fontWeight="700"
+              borderRadius="14px"
+              isLoading={isRecoverySubmitting}
+              onClick={handleResetPassword}
+              _hover={{ bg: 'brand.600' }}
+              _active={{ bg: 'brand.700' }}
+            >
+              Reset Password
+            </Button>
+          </VStack>
+        );
+      case 'success':
+        return (
+          <VStack spacing={4} align="stretch">
+            <Alert status="success" borderRadius="14px">
+              <AlertIcon />
+              Password reset successfully
+            </Alert>
+            <Button
+              w="full"
+              h="50px"
+              bg="brand.500"
+              color="white"
+              fontWeight="700"
+              borderRadius="14px"
+              onClick={closeForgotPassword}
+              _hover={{ bg: 'brand.600' }}
+              _active={{ bg: 'brand.700' }}
+            >
+              Back to Sign In
+            </Button>
+          </VStack>
+        );
+      default:
+        return (
+          <VStack spacing={4} align="stretch">
+            <Text fontSize="sm" color="gray.600">
+              Enter your registered email to receive a 4-digit OTP.
+            </Text>
+            <FormControl isInvalid={!!recoveryError}>
+              <FormLabel fontSize="sm" fontWeight="600" color="gray.700">
+                Email
+              </FormLabel>
+              <InputGroup>
+                <InputLeftElement h="50px" pointerEvents="none" color="gray.400">
+                  <Icon as={EmailIcon} boxSize={4} />
+                </InputLeftElement>
+                <Input
+                  type="email"
+                  value={forgotEmail}
+                  onChange={(e) => setForgotEmail(e.target.value)}
+                  placeholder="Enter your registered email"
+                  autoComplete="email"
+                  h="50px"
+                  borderRadius="14px"
+                  pl={11}
+                />
+              </InputGroup>
+              {recoveryError ? <FormErrorMessage mt={2}>{recoveryError}</FormErrorMessage> : null}
+            </FormControl>
+            <Button
+              w="full"
+              h="50px"
+              bg="brand.500"
+              color="white"
+              fontWeight="700"
+              borderRadius="14px"
+              isLoading={isRecoverySubmitting}
+              onClick={handleSendOtp}
+              _hover={{ bg: 'brand.600' }}
+              _active={{ bg: 'brand.700' }}
+            >
+              Send OTP
+            </Button>
+          </VStack>
+        );
+    }
+  };
 
-            <VStack align="flex-start" spacing={3} mt={3}>
-              <Box>
-                <Text
-                  fontSize="4xl"
-                  fontWeight="900"
-                  color="white"
-                  lineHeight="1.1"
-                  textShadow="0 2px 10px rgba(0, 0, 0, 0.2)"
-                  letterSpacing="tight"
-                >
-                  Welcome
-                </Text>
-                <Text
-                  fontSize="4xl"
-                  fontWeight="900"
-                  color="whiteAlpha.500"
-                  lineHeight="1.1"
-                  letterSpacing="tight"
-                  backgroundImage="linear-gradient(90deg, rgba(255,255,255,0.5) 0%, rgba(255,255,255,0.3) 100%)"
-                  backgroundClip="text"
-                >
-                  back
-                </Text>
-              </Box>
-              <Text 
-                color="whiteAlpha.900" 
-                fontSize="sm"
-                fontWeight="500"
-                lineHeight="1.6"
-                maxW="90%"
+  return (
+    <Center minH="100vh" bg="gray.50" px={4}>
+      <Container maxW="md" w="full" px={0}>
+        <Box
+          as="form"
+          onSubmit={handleSubmit}
+          bg="white"
+          borderWidth="1px"
+          borderColor="gray.200"
+          borderRadius="24px"
+          boxShadow="0 18px 50px rgba(15, 23, 42, 0.08)"
+          px={{ base: 6, sm: 8 }}
+          py={{ base: 8, sm: 10 }}
+        >
+          <VStack spacing={6} align="stretch">
+            <VStack spacing={3}>
+              <Box
+                borderRadius="20px"
+                p={2.5}
+                bg="gray.50"
+                borderWidth="1px"
+                borderColor="gray.100"
               >
-                Sign in to generate intelligent quotations from your proposals.
-              </Text>
+                <Image
+                  src="/icons/icon-192x192.png"
+                  alt="Quote Buddy logo"
+                  boxSize="52px"
+                  objectFit="contain"
+                />
+              </Box>
+              <Heading size="md" color="gray.900" fontWeight="700" letterSpacing="-0.02em">
+                Quote Buddy
+              </Heading>
+            </VStack>
+
+            <VStack spacing={4} align="stretch">
+              <FormControl isRequired isInvalid={!!error}>
+                <FormLabel fontSize="sm" fontWeight="600" color="gray.700" mb={2}>
+                  Email
+                </FormLabel>
+                <InputGroup>
+                  <InputLeftElement h="52px" pointerEvents="none" color="gray.400">
+                    <Icon as={EmailIcon} boxSize={4} />
+                  </InputLeftElement>
+                  <Input
+                    type="email"
+                    value={email}
+                    onChange={(e) => setEmail(e.target.value)}
+                    placeholder="Enter your email"
+                    autoComplete="email"
+                    autoFocus
+                    h="52px"
+                    borderRadius="14px"
+                    pl={11}
+                  />
+                </InputGroup>
+              </FormControl>
+
+              <FormControl isRequired isInvalid={!!error}>
+                <FormLabel fontSize="sm" fontWeight="600" color="gray.700" mb={2}>
+                  Password
+                </FormLabel>
+                <InputGroup>
+                  <InputLeftElement h="52px" pointerEvents="none" color="gray.400">
+                    <Icon as={LockIcon} boxSize={4} />
+                  </InputLeftElement>
+                  <Input
+                    type={showPassword ? 'text' : 'password'}
+                    value={password}
+                    onChange={(e) => setPassword(e.target.value)}
+                    placeholder="Enter your password"
+                    autoComplete="current-password"
+                    h="52px"
+                    borderRadius="14px"
+                    pl={11}
+                    pr={12}
+                  />
+                  <InputRightElement h="52px" pr={2}>
+                    <IconButton
+                      aria-label={showPassword ? 'Hide password' : 'Show password'}
+                      icon={showPassword ? <ViewOffIcon /> : <ViewIcon />}
+                      variant="ghost"
+                      color="gray.500"
+                      size="sm"
+                      onClick={() => setShowPassword((current) => !current)}
+                      _hover={{ bg: 'gray.100', color: 'gray.700' }}
+                    />
+                  </InputRightElement>
+                </InputGroup>
+                {error ? <FormErrorMessage mt={2}>{error}</FormErrorMessage> : null}
+              </FormControl>
+
+              <Button
+                type="submit"
+                w="full"
+                h="52px"
+                bg="brand.500"
+                color="white"
+                fontSize="md"
+                fontWeight="700"
+                borderRadius="14px"
+                isLoading={isSubmitting}
+                loadingText="Signing in..."
+                _hover={{
+                  bg: 'brand.600',
+                  transform: 'translateY(-1px)',
+                  boxShadow: '0 10px 24px rgba(201, 31, 61, 0.28)',
+                }}
+                _active={{
+                  bg: 'brand.700',
+                  transform: 'scale(0.99)',
+                }}
+                transition="all 0.2s ease"
+              >
+                Sign In
+              </Button>
+
+              <Button
+                type="button"
+                variant="link"
+                alignSelf="center"
+                fontSize="sm"
+                fontWeight="600"
+                color="brand.600"
+                onClick={openForgotPassword}
+                _hover={{ color: 'brand.700', textDecoration: 'underline' }}
+              >
+                Forgot Password?
+              </Button>
             </VStack>
           </VStack>
-        </Container>
-      </Box>
-
-      {/* Form Section */}
-      <Container maxW="440px" px={6} mt={-6}>
-        <VStack spacing={6} as="form" onSubmit={handleSubmit}>
-          {/* Email Field */}
-          <FormControl isRequired isInvalid={!!error}>
-            <FormLabel
-              fontSize="xs"
-              fontWeight="600"
-              color="gray.500"
-              textTransform="uppercase"
-              letterSpacing="wide"
-              mb={2}
-            >
-              📧 Email Address
-            </FormLabel>
-            <Input
-              type="email"
-              value={email}
-              onChange={(e) => setEmail(e.target.value)}
-              placeholder="you@company.com"
-              size="lg"
-              autoComplete="off"
-              autoFocus
-              bg="gray.800"
-              color="white"
-              border="none"
-              borderRadius="xl"
-              h="56px"
-              fontSize="md"
-              _placeholder={{ color: 'gray.500' }}
-              _hover={{ bg: 'gray.700' }}
-              _focus={{
-                bg: 'gray.700',
-                boxShadow: '0 0 0 3px rgba(201, 31, 61, 0.3)',
-              }}
-            />
-          </FormControl>
-
-          {/* Password Field */}
-          <FormControl isRequired isInvalid={!!error}>
-            <FormLabel
-              fontSize="xs"
-              fontWeight="600"
-              color="gray.500"
-              textTransform="uppercase"
-              letterSpacing="wide"
-              mb={2}
-            >
-              🔒 Password
-            </FormLabel>
-            <InputGroup size="lg">
-              <Input
-                type={showPassword ? 'text' : 'password'}
-                value={password}
-                onChange={(e) => setPassword(e.target.value)}
-                placeholder="Enter your password"
-                autoComplete="current-password"
-                bg="gray.800"
-                color="white"
-                border="none"
-                borderRadius="xl"
-                h="56px"
-                fontSize="md"
-                pr="60px"
-                _placeholder={{ color: 'gray.500' }}
-                _hover={{ bg: 'gray.700' }}
-                _focus={{
-                  bg: 'gray.700',
-                  boxShadow: '0 0 0 3px rgba(201, 31, 61, 0.3)',
-                }}
-              />
-              <InputRightElement h="56px" pr={3}>
-                <IconButton
-                  aria-label={showPassword ? 'Hide password' : 'Show password'}
-                  icon={showPassword ? <ViewOffIcon /> : <ViewIcon />}
-                  variant="ghost"
-                  color="gray.400"
-                  _hover={{ color: 'white', bg: 'whiteAlpha.200' }}
-                  onClick={() => setShowPassword(!showPassword)}
-                  tabIndex={-1}
-                  size="sm"
-                />
-              </InputRightElement>
-            </InputGroup>
-            
-            {/* Error Message or Forgot Password */}
-            {error ? (
-              <FormErrorMessage mt={2} fontSize="sm">
-                {error}
-              </FormErrorMessage>
-            ) : (
-              <Flex justify="flex-end" mt={2}>
-                <Link
-                  fontSize="sm"
-                  color="brand.500"
-                  fontWeight="600"
-                  _hover={{ color: 'brand.600', textDecoration: 'underline' }}
-                >
-                  Forgot password?
-                </Link>
-              </Flex>
-            )}
-          </FormControl>
-
-          {/* Submit Button */}
-          <Button
-            type="submit"
-            w="full"
-            h="56px"
-            bg="brand.500"
-            color="white"
-            fontSize="md"
-            fontWeight="700"
-            borderRadius="xl"
-            isLoading={isSubmitting}
-            loadingText="Signing in..."
-            _hover={{
-              bg: 'brand.600',
-              transform: 'translateY(-2px)',
-              boxShadow: '0 8px 20px rgba(201, 31, 61, 0.3)',
-            }}
-            _active={{
-              transform: 'scale(0.98)',
-            }}
-            transition="all 0.2s"
-            mt={4}
-          >
-            Sign In
-          </Button>
-
-          {/* Security Badge */}
-          <HStack spacing={2} color="gray.400" fontSize="xs" pt={2}>
-            <Icon as={LockIcon} boxSize={3} />
-            <Text>Secured with 256-bit encryption</Text>
-          </HStack>
-        </VStack>
-
-        {/* Footer */}
-        <Box textAlign="center" mt={12} pb={8}>
-          <Text fontSize="sm" color="gray.600">
-            Don't have an account?{' '}
-            <Text
-              as="span"
-              color="gray.500"
-              fontWeight="600"
-            >
-              Contact admin
-            </Text>
-          </Text>
         </Box>
       </Container>
-    </Box>
+
+      <Modal isOpen={isOpen} onClose={closeForgotPassword} isCentered size="md">
+        <ModalOverlay bg="blackAlpha.500" />
+        <ModalContent borderRadius="24px" mx={4}>
+          <ModalCloseButton />
+          <ModalBody px={{ base: 5, sm: 8 }} py={{ base: 8, sm: 10 }}>
+            <VStack spacing={6} align="stretch">
+              <VStack spacing={3}>
+                <Box
+                  borderRadius="20px"
+                  p={2.5}
+                  bg="gray.50"
+                  borderWidth="1px"
+                  borderColor="gray.100"
+                >
+                  <Image
+                    src="/icons/icon-192x192.png"
+                    alt="Quote Buddy logo"
+                    boxSize="48px"
+                    objectFit="contain"
+                  />
+                </Box>
+                <Heading size="md" color="gray.900" fontWeight="700" letterSpacing="-0.02em">
+                  {recoveryTitle}
+                </Heading>
+              </VStack>
+
+              {renderRecoveryContent()}
+            </VStack>
+          </ModalBody>
+        </ModalContent>
+      </Modal>
+    </Center>
   );
 };
 

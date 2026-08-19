@@ -6,6 +6,7 @@ import DocumentsPage from './pages/DocumentsPage';
 import QuotePage from './pages/QuotePage';
 import { QuotePreviewPage } from './pages/QuotePreviewPage';
 import CompanySettingsPage from './pages/CompanySettingsPage';
+import ProfilePage from './pages/ProfilePage';
 import LoginPage from './pages/LoginPage';
 import UnauthorizedPage from './pages/UnauthorizedPage';
 import { ErrorBoundary } from './components/ErrorBoundary/ErrorBoundary';
@@ -16,6 +17,7 @@ import { registerServiceWorker } from './utils/pwa';
 import { PrivateRoute } from './components/PrivateRoute';
 import { useCompanySync } from './hooks/useCompanySync';
 import { useAppStore } from './store';
+import { canAccessCompanyProfile } from './utils/profileAccess';
 
 const App: React.FC = () => {
   // Initialize database sync for company info (syncs across devices)
@@ -53,7 +55,8 @@ const App: React.FC = () => {
                 location.pathname === '/' ||
                 location.pathname === '/quote' ||
                 location.pathname === '/preview' ||
-                location.pathname === '/company-settings';
+                location.pathname === '/company-settings' ||
+                location.pathname === '/profile';
               const hideBottomNav =
                 location.pathname === '/login' ||
                 location.pathname === '/preview';
@@ -70,7 +73,13 @@ const App: React.FC = () => {
                     <PrivateRoute exact path="/documents" component={DocumentsPage} />
                     <PrivateRoute exact path="/quote" component={QuotePage} />
                     <PrivateRoute exact path="/preview" component={QuotePreviewPage} />
-                    <PrivateRoute exact path="/company-settings" component={CompanySettingsPage} />
+                    <PrivateRoute exact path="/profile" component={ProfilePage} />
+                    <PrivateRoute
+                      exact
+                      path="/company-settings"
+                      component={CompanySettingsPage}
+                      authorize={canAccessCompanyProfile}
+                    />
                     
                     {/* Fallback */}
                     <Route render={() => <Redirect to="/" />} />

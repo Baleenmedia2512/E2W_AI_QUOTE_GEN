@@ -3,6 +3,7 @@ import { useHistory } from 'react-router-dom';
 import { useToast } from '@chakra-ui/react';
 import { useAppStore } from '../store';
 import { useAuthStore } from '../store/authStore';
+import { canAccessCompanyProfile } from '../utils/profileAccess';
 import { CorporateMinimal } from '../components/Templates/CorporateMinimal';
 import { exportToPDF } from '../services/pdfExportService';
 import { sendQuoteEmail } from '../services/quoteEmailService';
@@ -159,12 +160,12 @@ export const QuotePreviewPage: React.FC = () => {
     if (!currentQuote || !companyInfo) {
       console.warn('⚠️ Missing required data for preview...');
       if (!companyInfo) {
-        history.push('/company-settings');
+        history.push(canAccessCompanyProfile(user) ? '/company-settings' : '/');
       } else if (!currentQuote) {
         history.push('/');
       }
     }
-  }, [currentQuote, companyInfo, history]);
+  }, [currentQuote, companyInfo, history, user]);
 
   // On mount: Load data in background (non-blocking)
   useEffect(() => {
@@ -488,11 +489,13 @@ export const QuotePreviewPage: React.FC = () => {
           </p>
           <button
             onClick={() =>
-              history.push(!companyInfo ? '/company-settings' : '/')
+              history.push(
+                !companyInfo && canAccessCompanyProfile(user) ? '/company-settings' : '/',
+              )
             }
             className="back-button"
           >
-            {!companyInfo ? 'Go to Company Settings' : 'Go to Chat'}
+            {!companyInfo && canAccessCompanyProfile(user) ? 'Go to Company Profile' : 'Go to Chat'}
           </button>
         </div>
       </div>
