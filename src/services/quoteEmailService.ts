@@ -3,6 +3,8 @@ import { Quote } from '../types/quote';
 import { ClientInfo } from '../types/client';
 import { CompanyInfo } from '../types/company';
 import { toCampaignDays } from '../utils/durationUtils';
+import { authService } from './authService';
+import { buildPdfAttachmentPayload } from '../utils/quoteEmailPayload';
 
 // Initialize Supabase client
 const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
@@ -40,6 +42,12 @@ interface QuoteItemForEmailAttachment {
   duration?: number;
   durationUnit?: 'months' | 'days';
   minimumQuantity?: number;
+  quantityUnit?: string;
+  rate?: number;
+  oneTimeQuantity?: number;
+  oneTimeComponents?: { label: string; amount: number }[];
+  vendorPfUnitCost?: number;
+  vendorDisplayUnitCostPerDay?: number;
   total: number;
   city?: string;
 }
@@ -61,11 +69,13 @@ export const sendQuoteEmail = async (
       return { success: false, message: 'No PDF attachments to send.' };
     }
 
-    const encodedAttachments = await Promise.all(
-      pdfAttachments.map(async ({ pdfBlob, filename }) => ({
-        base64Pdf: await blobToBase64(pdfBlob),
-        filename,
-      })),
+    const encodedAttachments = buildPdfAttachmentPayload(
+      await Promise.all(
+        pdfAttachments.map(async ({ pdfBlob, filename }) => ({
+          base64Pdf: await blobToBase64(pdfBlob),
+          filename,
+        })),
+      ),
     );
 
     const { data, error } = await supabase.functions.invoke('send-quote-email', {
@@ -80,6 +90,12 @@ export const sendQuoteEmail = async (
           duration: toCampaignDays(item.duration, item.durationUnit) ?? item.duration,
           durationUnit: 'days',
           minimumQuantity: item.minimumQuantity,
+          quantityUnit: item.quantityUnit,
+          rate: Number(item.rate) || 0,
+          oneTimeQuantity: Number(item.oneTimeQuantity) || undefined,
+          oneTimeComponents: item.oneTimeComponents,
+          vendorPfUnitCost: item.vendorPfUnitCost,
+          vendorDisplayUnitCostPerDay: item.vendorDisplayUnitCostPerDay,
           total: Number(item.total) || 0,
           city: item.city,
         })),
@@ -94,7 +110,12 @@ export const sendQuoteEmail = async (
           day: '2-digit',
         }),
       },
-      headers: { 'Content-Type': 'application/json' },
+      headers: {
+        'Content-Type': 'application/json',
+        ...(authService.getSessionToken()
+          ? { Authorization: `Bearer ${authService.getSessionToken()}` }
+          : {}),
+      },
     });
 
     if (error) {

@@ -1,4 +1,3 @@
-import bcrypt from 'bcryptjs';
 import { supabase } from './supabaseClient';
 import { AuthUser, LoginCredentials } from '../types/auth';
 
@@ -8,81 +7,17 @@ class AuthService {
    * Queries the database for user credentials and verifies password
    */
   async login(credentials: LoginCredentials): Promise<AuthUser> {
-    const { email, password } = credentials;
+    const { data, error } = await supabase.functions.invoke('auth-session', {
+      body: credentials,
+      headers: { 'Content-Type': 'application/json' },
+    });
 
-    // Query user first - table name is 'User' (CamelCase)
-    // Use ilike for case-insensitive email matching
-    const { data: user, error } = await supabase
-      .from('User')
-      .select('*')
-      .ilike('email', email.trim())
-      .single();
-
-    if (error || !user) {
-      console.error('Login error:', error);
-      throw new Error('Invalid email or password');
+    if (error || !data?.user || !data?.token) {
+      throw new Error(data?.error || error?.message || 'Invalid email or password');
     }
 
-    // Fetch role separately - table name is 'Role' (CamelCase)
-    const { data: role, error: roleError } = await supabase
-      .from('Role')
-      .select('*')
-      .eq('id', user.roleId)
-      .single();
-
-    if (roleError || !role) {
-      console.error('Role fetch error:', roleError);
-      throw new Error('Unable to fetch user role');
-    }
-
-    // Attach role to user object
-    user.Role = role;
-
-    // Check if account is active
-    if (!user.isActive) {
-      throw new Error('Your account has been deactivated. Please contact administrator.');
-    }
-
-    // Verify password with bcrypt
-    const isValidPassword = await bcrypt.compare(password, user.password);
-    
-    if (!isValidPassword) {
-      throw new Error('Invalid email or password');
-    }
-
-    // Note: Update last login timestamp if column exists
-    // await supabase
-    //   .from('User')
-    //   .update({ lastLogin: new Date().toISOString() })
-    //   .eq('id', user.id);
-
-    // Return user data without password
-    const roleData = Array.isArray(user.Role) ? user.Role[0] : user.Role;
-    
-    // Parse permissions if it's a JSON string
-    let permissions = {};
-    if (roleData?.permissions) {
-      try {
-        permissions = typeof roleData.permissions === 'string' 
-          ? JSON.parse(roleData.permissions) 
-          : roleData.permissions;
-      } catch (e) {
-        console.error('Failed to parse permissions:', e);
-      }
-    }
-    
-    const authUser: AuthUser = {
-      id: user.id,
-      email: user.email,
-      full_name: user.name,
-      profileImage: user.profileImage || null,
-      role: {
-        role_name: roleData?.name || 'user',
-        permissions: permissions,
-      },
-    };
-
-    return authUser;
+    localStorage.setItem('authSessionToken', data.token);
+    return data.user as AuthUser;
   }
 
   /**
@@ -91,6 +26,7 @@ class AuthService {
   logout(): void {
     localStorage.removeItem('currentUser');
     localStorage.removeItem('authToken');
+    localStorage.removeItem('authSessionToken');
     console.log('✅ User logged out successfully');
   }
 
@@ -115,6 +51,13 @@ class AuthService {
    */
   saveUser(user: AuthUser): void {
     localStorage.setItem('currentUser', JSON.stringify(user));
+  }
+
+  /**
+   * Return the server-verifiable session token created during login.
+   */
+  getSessionToken(): string | null {
+    return localStorage.getItem('authSessionToken');
   }
 
   /**

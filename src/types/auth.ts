@@ -10,6 +10,7 @@ export interface User {
   id: string;
   email: string;
   full_name: string;
+  phone?: string | null;
   role_id: string;
   is_active: boolean;
   last_login?: string;
@@ -23,6 +24,7 @@ export interface AuthUser {
   id: string;
   email: string;
   full_name: string;
+  phone?: string | null;
   profileImage?: string | null;
   role: {
     role_name: string;

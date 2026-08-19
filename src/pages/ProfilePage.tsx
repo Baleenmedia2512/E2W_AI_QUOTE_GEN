@@ -35,6 +35,7 @@ const ProfilePage: React.FC = () => {
 
   const [name, setName] = useState(user?.full_name || '');
   const [email, setEmail] = useState(user?.email || '');
+  const [phone, setPhone] = useState(user?.phone || '');
   const [profileImage, setProfileImage] = useState(user?.profileImage || '');
   const [pendingImageFile, setPendingImageFile] = useState<File | null>(null);
   const [nameError, setNameError] = useState('');
@@ -46,16 +47,18 @@ const ProfilePage: React.FC = () => {
     let cancelled = false;
 
     const loadProfile = async () => {
-      const profile = await getSelfProfile(user.id);
+      const profile = await getSelfProfile();
       if (cancelled || !profile) return;
 
       setName(profile.name || user.full_name || '');
       setEmail(profile.email || user.email || '');
+      setPhone(profile.phone || user.phone || '');
       setProfileImage(profile.profileImage || '');
       setUser({
         ...user,
         full_name: profile.name || user.full_name,
         email: profile.email || user.email,
+        phone: profile.phone || user.phone,
         profileImage: profile.profileImage || user.profileImage,
       });
     };
@@ -104,12 +107,11 @@ const ProfilePage: React.FC = () => {
 
     try {
       let imageUrl = profileImage.startsWith('http') ? profileImage : user.profileImage || null;
-
       if (pendingImageFile) {
-        imageUrl = await uploadProfileImage(user.id, pendingImageFile);
+        imageUrl = await uploadProfileImage(pendingImageFile);
       }
 
-      const result = await updateSelfProfile(user.id, trimmedName, imageUrl);
+      const result = await updateSelfProfile(trimmedName, phone.trim(), imageUrl);
 
       if (!result.success) {
         toast({
@@ -122,15 +124,17 @@ const ProfilePage: React.FC = () => {
         return;
       }
 
-      const nextImage = result.profileImage || imageUrl || '';
+      const nextImage = result.profileImage || profileImage || '';
       setName(result.name || trimmedName);
       setEmail(result.email || email);
+      setPhone(result.phone || phone.trim());
       setProfileImage(nextImage);
       setPendingImageFile(null);
       setUser({
         ...user,
         full_name: result.name || trimmedName,
         email: result.email || user.email,
+        phone: result.phone || phone.trim(),
         profileImage: nextImage || undefined,
       });
 
@@ -312,6 +316,19 @@ const ProfilePage: React.FC = () => {
                 borderRadius="12px"
               />
               {nameError ? <FormErrorMessage fontWeight="500">{nameError}</FormErrorMessage> : null}
+            </FormControl>
+
+            <FormControl>
+              <FormLabel fontSize="sm" fontWeight="700" color="gray.800">
+                Phone
+              </FormLabel>
+              <Input
+                value={phone}
+                onChange={(event) => setPhone(event.target.value)}
+                placeholder="Enter phone number"
+                size="lg"
+                borderRadius="12px"
+              />
             </FormControl>
 
             <FormControl>

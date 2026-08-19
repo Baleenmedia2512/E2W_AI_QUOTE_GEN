@@ -242,7 +242,10 @@ export const useAppStore = create<AppState>((set) => ({
     });
     return subscription;
   },
-
+  // Chat profile flow state
+  chatProfileOpen: false,
+  openChatProfile: () => set({ chatProfileOpen: true }),
+  closeChatProfile: () => set({ chatProfileOpen: false }),
 
   // Proposal Library state (NEW - purely additive, doesn't affect existing code)
   recentProposals: [],

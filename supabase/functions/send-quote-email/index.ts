@@ -18,6 +18,8 @@ const INTERNAL_QUOTE_CC_EMAIL = Deno.env.get('INTERNAL_QUOTE_CC_EMAIL');
 const SUPABASE_URL = Deno.env.get('SUPABASE_URL');
 const SUPABASE_SERVICE_ROLE_KEY = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY');
 const SUPABASE_ANON_KEY = Deno.env.get('SUPABASE_ANON_KEY');
+const AUTH_SESSION_SECRET =
+  Deno.env.get('AUTH_SESSION_SECRET') || Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') || '';
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -35,8 +37,60 @@ function jsonResponse(body: Record<string, unknown>, status: number): Response {
   });
 }
 
-function getRecipients(): string[] {
+function getConfiguredQuoteEmails(): string[] {
   return [INTERNAL_QUOTE_EMAIL_1, INTERNAL_QUOTE_EMAIL_2, INTERNAL_QUOTE_EMAIL_3].filter(Boolean) as string[];
+}
+
+function base64UrlDecode(value: string): string {
+  const padded = value.replace(/-/g, '+').replace(/_/g, '/').padEnd(Math.ceil(value.length / 4) * 4, '=');
+  return atob(padded);
+}
+
+async function hmacVerify(message: string, signature: string): Promise<boolean> {
+  if (!AUTH_SESSION_SECRET) return false;
+  const key = await crypto.subtle.importKey(
+    'raw',
+    new TextEncoder().encode(AUTH_SESSION_SECRET),
+    { name: 'HMAC', hash: 'SHA-256' },
+    false,
+    ['verify'],
+  );
+  const signatureBytes = Uint8Array.from(base64UrlDecode(signature), (char) => char.charCodeAt(0));
+  return crypto.subtle.verify(
+    'HMAC',
+    key,
+    signatureBytes,
+    new TextEncoder().encode(message),
+  );
+}
+
+async function getAuthenticatedEmail(req: Request): Promise<string | null> {
+  const authorization = req.headers.get('Authorization') || '';
+  const token = authorization.replace(/^Bearer\s+/i, '').trim();
+  const [payloadPart, signature] = token.split('.');
+  if (!payloadPart || !signature) return null;
+
+  try {
+    if (!(await hmacVerify(payloadPart, signature))) return null;
+    const payload = JSON.parse(base64UrlDecode(payloadPart)) as {
+      email?: unknown;
+      exp?: unknown;
+    };
+    const email = typeof payload.email === 'string' ? payload.email.trim().toLowerCase() : '';
+    const expiresAt = Number(payload.exp);
+    if (!email || !Number.isFinite(expiresAt) || expiresAt <= Math.floor(Date.now() / 1000)) {
+      return null;
+    }
+    return email;
+  } catch {
+    return null;
+  }
+}
+
+function getMatchedRecipient(authenticatedEmail: string): string | null {
+  return getConfiguredQuoteEmails().find(
+    (recipient) => recipient.trim().toLowerCase() === authenticatedEmail,
+  ) || null;
 }
 
 function validateSmtpConfig(): string | null {
@@ -454,6 +508,12 @@ interface QuoteItemInput {
   duration?: number;
   durationUnit?: 'months' | 'days' | string;
   minimumQuantity?: number;
+  quantityUnit?: string;
+  rate?: number;
+  oneTimeQuantity?: number;
+  oneTimeComponents?: Array<{ label?: string; amount?: number }>;
+  vendorPfUnitCost?: number;
+  vendorDisplayUnitCostPerDay?: number;
   total?: number;
   city?: string;
 }
@@ -464,6 +524,11 @@ interface QuoteServiceSummary {
   quantity: number;
   minimumQuantity: number;
   campaignDays: number;
+  rate?: number;
+  oneTimeQuantity?: number;
+  oneTimeComponents?: Array<{ label?: string; amount?: number }>;
+  vendorPfUnitCost?: number;
+  vendorDisplayUnitCostPerDay?: number;
 }
 
 /** Raw row from vendor_rate_chunks (pricing/cost fields live in metadata JSON). */
@@ -549,9 +614,13 @@ const VENDOR_EXCEL_HEADERS = [
   'Medium Name',
   'Vendor Name',
   'Margin %',
-  'Qty',
+  'Req. Qty',
   'Duration (Days)',
+  'Recurring Cost',
+  'One-Time Cost',
   'Total Cost',
+  'Recurring Price',
+  'One-Time Price',
   'Total Price',
 ] as const;
 
@@ -586,6 +655,19 @@ function pickPositive(...values: unknown[]): number | undefined {
     if (n !== undefined && n > 0) return n;
   }
   return undefined;
+}
+
+function pickNonNegative(...values: unknown[]): number {
+  for (const value of values) {
+    if (value == null || value === '') continue;
+    if (typeof value === 'string' && ['NA', 'N/A', '-'].includes(value.trim().toUpperCase())) continue;
+    const raw = typeof value === 'string'
+      ? value.replace(/,/g, '').replace(/^₹\s*/u, '').replace(/^Rs\.?\s*/i, '').trim()
+      : value;
+    const n = toNumber(raw);
+    if (n !== undefined && n >= 0) return n;
+  }
+  return 0;
 }
 
 function toCampaignDays(duration: unknown, durationUnit?: unknown): number {
@@ -761,6 +843,11 @@ function buildQuoteServiceSummaries(items: QuoteItemInput[]): QuoteServiceSummar
         quantity,
         minimumQuantity,
         campaignDays: duration,
+        rate: toNumber(item.rate),
+        oneTimeQuantity: toNumber(item.oneTimeQuantity),
+        oneTimeComponents: item.oneTimeComponents,
+        vendorPfUnitCost: toNumber(item.vendorPfUnitCost),
+        vendorDisplayUnitCostPerDay: toNumber(item.vendorDisplayUnitCostPerDay),
       });
       continue;
     }
@@ -769,6 +856,12 @@ function buildQuoteServiceSummaries(items: QuoteItemInput[]): QuoteServiceSummar
     existing.quantity = Math.max(existing.quantity, quantity);
     existing.minimumQuantity = Math.max(existing.minimumQuantity, minimumQuantity);
     existing.campaignDays = Math.max(existing.campaignDays, duration);
+    existing.rate = existing.rate || toNumber(item.rate);
+    existing.oneTimeQuantity = existing.oneTimeQuantity || toNumber(item.oneTimeQuantity);
+    existing.oneTimeComponents = existing.oneTimeComponents || item.oneTimeComponents;
+    existing.vendorPfUnitCost = existing.vendorPfUnitCost || toNumber(item.vendorPfUnitCost);
+    existing.vendorDisplayUnitCostPerDay =
+      existing.vendorDisplayUnitCostPerDay || toNumber(item.vendorDisplayUnitCostPerDay);
   }
 
   // Keep zero when the quote did not contain a campaign duration.
@@ -1023,12 +1116,10 @@ function buildVendorExcelRow(summary: QuoteServiceSummary, vendor?: VendorRateCh
   const minQty = pickPositive(vendor?.min_qty, metadata.min_qty, metadata.minimum_quantity, summary.minimumQuantity);
   const minDays = pickPositive(vendor?.min_days, vendor?.min_duration, metadata.min_days, metadata.min_duration);
   const requiredQty = minQty || 1;
-  const askedQty = summary.quantity || requiredQty;
-  const qty = Math.max(requiredQty, askedQty);
-  const requiredDays = minDays || 1;
-  const askedDays = summary.campaignDays > 0 ? summary.campaignDays : 1;
-  const days = Math.max(requiredDays, askedDays);
-  const hasDuration = minDays > 0 || summary.campaignDays > 0;
+  const qty = summary.quantity > 0 ? summary.quantity : requiredQty;
+  const requiredDays = minDays || 0;
+  const days = summary.campaignDays > 0 ? summary.campaignDays : minDays || 0;
+  const hasDuration = days > 0;
 
   const printingUnitPrice = pickPositive(pricing.printing_price, metadataPricing.printing_price);
   const printingUnitCost = pickPositive(vendor?.printing_cost, metadata.printing_cost);
@@ -1155,8 +1246,15 @@ function buildVendorExcelRow(summary: QuoteServiceSummary, vendor?: VendorRateCh
     metadataPricing.display_cost,
   );
 
-  const oneTimePrice = pfUnitPrice + officialAddonPrice + rtoUnitPrice + extraKmPrice;
-  const oneTimeCost = pfUnitCost + officialAddonCost + rtoUnitCost + extraKmCost;
+  const componentPrice = Array.isArray(summary.oneTimeComponents)
+    ? summary.oneTimeComponents.reduce((sum, component) => sum + pickNonNegative(component.amount), 0)
+    : 0;
+  const oneTimePrice = componentPrice > 0
+    ? componentPrice
+    : pfUnitPrice + officialAddonPrice + rtoUnitPrice + extraKmPrice;
+  const oneTimeCost = summary.vendorPfUnitCost !== undefined
+    ? summary.vendorPfUnitCost + officialAddonCost + rtoUnitCost + extraKmCost
+    : pfUnitCost + officialAddonCost + rtoUnitCost + extraKmCost;
 
   const displayPeriod = pickString(
     pricing.display_period,
@@ -1188,13 +1286,19 @@ function buildVendorExcelRow(summary: QuoteServiceSummary, vendor?: VendorRateCh
     recurringRentalRate: recurringDisplayCostRaw !== undefined,
     requiredDays: minDays,
   });
-  const totalDisplayPrice = calculateDisplayTotal(priceRate, priceBasis, qty, days);
-  const totalDisplayCost = calculateDisplayTotal(costRate, costBasis, qty, days);
+  const recurringUnitPrice = pickNonNegative(summary.rate, priceRate);
+  const recurringUnitCost = pickNonNegative(summary.vendorDisplayUnitCostPerDay, costRate);
+  const recurringPrice = qty * days * recurringUnitPrice;
+  const recurringCost = qty * days * recurringUnitCost;
+  const totalDisplayPrice = recurringPrice;
+  const totalDisplayCost = recurringCost;
 
   const hasPriceRates = totalDisplayPrice > 0 || oneTimePrice > 0;
   const hasCostRates = totalDisplayCost > 0 || oneTimeCost > 0;
-  const totalPrice = roundTwo(totalDisplayPrice + oneTimePrice * qty);
-  const totalCost = roundTwo(totalDisplayCost + oneTimeCost * qty);
+  const oneTimeTotalPrice = qty * oneTimePrice;
+  const oneTimeTotalCost = qty * oneTimeCost;
+  const totalPrice = roundTwo(recurringPrice + oneTimeTotalPrice);
+  const totalCost = roundTwo(recurringCost + oneTimeTotalCost);
   const roundedTotalPrice = roundRupeeForExcel(totalPrice);
   const roundedTotalCost = roundRupeeForExcel(totalCost);
   const marginPct =
@@ -1207,10 +1311,8 @@ function buildVendorExcelRow(summary: QuoteServiceSummary, vendor?: VendorRateCh
     mediumName: pickString(vendor?.medium, metadata.medium),
     vendorName: pickString(vendor?.vendor_name, metadata.vendor_name),
     requiredQty,
-    askedQty,
     finalQty: qty,
     requiredDays,
-    askedDays,
     finalDays: days,
     qtyMeasurementUnit: pickString(
       metadata.qty_measurement_unit,
@@ -1239,6 +1341,10 @@ function buildVendorExcelRow(summary: QuoteServiceSummary, vendor?: VendorRateCh
     extraKmPrice,
     totalDisplayCost,
     totalDisplayPrice,
+    recurringCost,
+    recurringPrice,
+    oneTimeTotalCost,
+    oneTimeTotalPrice,
     oneTimeCost,
     oneTimePrice,
     totalCost,
@@ -1253,10 +1359,14 @@ function buildVendorExcelRow(summary: QuoteServiceSummary, vendor?: VendorRateCh
     'Medium Name': pickString(vendor?.medium, metadata.medium),
     'Vendor Name': pickString(vendor?.vendor_name, metadata.vendor_name),
     'Margin %': marginPct ?? '',
-    Qty: qty,
-    'Duration (Days)': hasDuration ? days : 'NA',
-    'Total Cost': hasCostRates ? roundedTotalCost : '',
-    'Total Price': hasPriceRates ? roundedTotalPrice : '',
+    'Req. Qty': qty,
+    'Duration (Days)': hasDuration ? days : 0,
+    'Recurring Cost': hasCostRates ? roundRupeeForExcel(recurringCost) : 0,
+    'One-Time Cost': hasCostRates ? roundRupeeForExcel(oneTimeTotalCost) : 0,
+    'Total Cost': hasCostRates ? roundedTotalCost : 0,
+    'Recurring Price': hasPriceRates ? roundRupeeForExcel(recurringPrice) : 0,
+    'One-Time Price': hasPriceRates ? roundRupeeForExcel(oneTimeTotalPrice) : 0,
+    'Total Price': hasPriceRates ? roundedTotalPrice : 0,
   };
 }
 
@@ -1296,6 +1406,29 @@ async function buildVendorExcelAttachment(
     origin: 'A1',
   });
 
+  worksheet['!cols'] = [
+    { wch: 28 },
+    { wch: 24 },
+    { wch: 24 },
+    { wch: 12 },
+    { wch: 12 },
+    { wch: 16 },
+    { wch: 16 },
+    { wch: 16 },
+    { wch: 16 },
+    { wch: 18 },
+    { wch: 18 },
+    { wch: 16 },
+  ];
+  const numericColumns = [3, 4, 5, 6, 7, 8, 9, 10, 11];
+  const range = XLSX.utils.decode_range(worksheet['!ref'] || 'A1:L1');
+  for (let rowIndex = 1; rowIndex <= range.e.r; rowIndex += 1) {
+    for (const columnIndex of numericColumns) {
+      const cell = worksheet[XLSX.utils.encode_cell({ r: rowIndex, c: columnIndex })];
+      if (cell && typeof cell.v === 'number') cell.z = '#,##0.00';
+    }
+  }
+
   const workbook = XLSX.utils.book_new();
   XLSX.utils.book_append_sheet(workbook, worksheet, 'Vendor Details');
 
@@ -1326,9 +1459,12 @@ Deno.serve(async (req) => {
       return jsonResponse({ error: smtpConfigError }, 500);
     }
 
-    const recipients = getRecipients();
-    if (recipients.length === 0) {
-      return jsonResponse({ error: 'No internal quote email recipients configured' }, 500);
+    const authenticatedEmail = await getAuthenticatedEmail(req);
+    const matchedRecipient = authenticatedEmail
+      ? getMatchedRecipient(authenticatedEmail)
+      : null;
+    if (!matchedRecipient) {
+      return jsonResponse({ error: 'Email address not available.' }, 400);
     }
 
     const body = await req.json();
@@ -1414,7 +1550,7 @@ Deno.serve(async (req) => {
 
     await transporter.sendMail({
       from: SMTP_FROM,
-      to: recipients,
+      to: matchedRecipient,
       cc: INTERNAL_QUOTE_CC_EMAIL || undefined,
       subject: emailSubject,
       html: emailHtml,

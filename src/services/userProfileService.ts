@@ -5,6 +5,7 @@ import { CompanyInfo } from '../types/company';
 export interface SelfProfile {
   name: string;
   email: string;
+  phone: string;
   profileImage: string | null;
 }
 
@@ -13,10 +14,12 @@ export interface ProfileMutationResult {
   message: string;
   name?: string;
   email?: string;
+  phone?: string;
+  image?: string | null;
   profileImage?: string | null;
 }
 
-const PROFILE_IMAGE_BUCKETS = ['profile-images', 'proposal-images'] as const;
+const PROFILE_IMAGE_BUCKET = 'profile-images';
 const MAX_PROFILE_IMAGE_BYTES = 5 * 1024 * 1024;
 
 function asProfileResult(data: unknown, fallback: string): ProfileMutationResult {
@@ -35,36 +38,22 @@ function asProfileResult(data: unknown, fallback: string): ProfileMutationResult
   }
 
   const body = parsed as ProfileMutationResult;
+  const isDirectProfileResponse =
+    body.success === undefined
+    && (typeof body.name === 'string' || typeof body.email === 'string' || body.image !== undefined);
+
   return {
-    success: body.success === true,
+    success: body.success === true || isDirectProfileResponse,
     message: body.message || (body.success === true ? 'Success' : fallback),
     name: body.name,
     email: body.email,
-    profileImage: body.profileImage ?? null,
+    phone: body.phone,
+    // The database column is `image`; profileImage remains the UI alias.
+    profileImage: body.profileImage ?? body.image ?? null,
   };
 }
 
-async function uploadToBucket(
-  bucket: string,
-  path: string,
-  file: File,
-): Promise<string | null> {
-  const { error } = await supabase.storage.from(bucket).upload(path, file, {
-    cacheControl: '3600',
-    upsert: true,
-    contentType: file.type || 'image/jpeg',
-  });
-
-  if (error) {
-    console.warn(`Profile image upload failed for bucket ${bucket}:`, error.message);
-    return null;
-  }
-
-  const { data } = supabase.storage.from(bucket).getPublicUrl(path);
-  return data?.publicUrl || null;
-}
-
-export async function uploadProfileImage(userId: string, file: File): Promise<string> {
+async function uploadToProfileBucket(file: File, userId: string): Promise<string> {
   if (!file.type.startsWith('image/')) {
     throw new Error('Please choose an image file.');
   }
@@ -73,20 +62,41 @@ export async function uploadProfileImage(userId: string, file: File): Promise<st
     throw new Error('Profile image must be 5MB or smaller.');
   }
 
-  const extension = (file.name.split('.').pop() || 'jpg').toLowerCase().replace(/[^a-z0-9]/g, '') || 'jpg';
-  const path = `profiles/${userId}/${Date.now()}.${extension}`;
+  const path = `${userId}/profile.jpg`;
+  const { error } = await supabase.storage.from(PROFILE_IMAGE_BUCKET).upload(path, file, {
+    cacheControl: '3600',
+    upsert: true,
+    contentType: file.type || 'image/jpeg',
+  });
 
-  for (const bucket of PROFILE_IMAGE_BUCKETS) {
-    const publicUrl = await uploadToBucket(bucket, path, file);
-    if (publicUrl) return publicUrl;
+  if (error) {
+    throw new Error(error.message || 'Unable to upload profile image.');
   }
 
-  throw new Error('Unable to upload profile image.');
+  const { data } = supabase.storage.from(PROFILE_IMAGE_BUCKET).getPublicUrl(path);
+  if (!data?.publicUrl) {
+    throw new Error('Unable to resolve the uploaded profile image.');
+  }
+
+  const separator = data.publicUrl.includes('?') ? '&' : '?';
+  return `${data.publicUrl}${separator}v=${Date.now()}`;
 }
 
-export async function getSelfProfile(userId: string): Promise<SelfProfile | null> {
+export async function uploadProfileImage(file: File): Promise<string> {
+  const currentUserId = authService.getCurrentUser()?.id;
+  if (!currentUserId) {
+    throw new Error('You must be signed in to upload a profile image.');
+  }
+
+  return uploadToProfileBucket(file, currentUserId);
+}
+
+export async function getSelfProfile(): Promise<SelfProfile | null> {
+  const currentUserId = authService.getCurrentUser()?.id;
+  if (!currentUserId) return null;
+
   const { data, error } = await supabase.rpc('get_self_profile', {
-    p_user_id: userId,
+    p_user_id: currentUserId,
   });
 
   if (error) {
@@ -100,19 +110,26 @@ export async function getSelfProfile(userId: string): Promise<SelfProfile | null
   return {
     name: result.name || '',
     email: result.email || '',
+    phone: result.phone || '',
     profileImage: result.profileImage || null,
   };
 }
 
 export async function updateSelfProfile(
-  userId: string,
   name: string,
+  phone: string,
   profileImage?: string | null,
 ): Promise<ProfileMutationResult> {
+  const currentUserId = authService.getCurrentUser()?.id;
+  if (!currentUserId) {
+    return { success: false, message: 'You must be signed in to update your profile.' };
+  }
+
   const { data, error } = await supabase.rpc('update_self_profile', {
-    p_user_id: userId,
+    p_user_id: currentUserId,
     p_name: name,
-    p_profile_image: profileImage || null,
+    p_phone: phone,
+    p_image: profileImage || null,
   });
 
   if (error) {

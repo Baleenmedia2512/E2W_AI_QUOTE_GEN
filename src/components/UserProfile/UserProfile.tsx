@@ -1,26 +1,19 @@
 import React from 'react';
 import {
-  Box,
-  Button,
-  Menu,
-  MenuButton,
-  MenuList,
-  MenuItem,
-  MenuDivider,
   Avatar,
-  Text,
-  HStack,
-  VStack,
-  Badge,
+  Button,
+  IconButton,
+  Tooltip,
   useToast,
 } from '@chakra-ui/react';
-import { ChevronDownIcon } from '@chakra-ui/icons';
 import { useHistory } from 'react-router-dom';
 import { useAuthStore } from '../../store/authStore';
-import { canAccessCompanyProfile } from '../../utils/profileAccess';
+import { useAppStore } from '../../store';
+import { FiLogOut, FiUser } from 'react-icons/fi';
 
 export const UserProfile: React.FC = () => {
   const { user, logout, isAuthenticated } = useAuthStore();
+  const openChatProfile = useAppStore((state) => state.openChatProfile);
   const history = useHistory();
   const toast = useToast();
 
@@ -47,82 +40,39 @@ export const UserProfile: React.FC = () => {
     history.push('/login');
   };
 
-  // Get role color
-  const getRoleColor = (roleName: string) => {
-    const colors: Record<string, string> = {
-      admin: 'red',
-      'super agent': 'red',
-      superagent: 'red',
-      manager: 'purple',
-      sales: 'blue',
-      user: 'gray',
-      viewer: 'green',
-    };
-    return colors[roleName.toLowerCase()] || 'gray';
-  };
-
   return (
-    <Menu>
-      <MenuButton
-        as={Button}
-        rightIcon={<ChevronDownIcon display={{ base: 'none', md: 'inline' }} />}
-        variant="ghost"
-        size="sm"
-        px={{ base: 1, md: 3 }}
-      >
-        <HStack spacing={2}>
-          <Avatar
-            size="sm"
-            name={user.full_name}
-            src={user.profileImage || undefined}
-            bg="blue.500"
-            color="white"
-          />
-          <VStack spacing={0} align="start" display={{ base: 'none', md: 'flex' }}>
-            <Text fontSize="sm" fontWeight="medium" lineHeight="1.2">
-              {user.full_name}
-            </Text>
-            <Badge
-              fontSize="xs"
-              colorScheme={getRoleColor(user.role.role_name)}
-              variant="subtle"
-            >
-              {user.role.role_name}
-            </Badge>
-          </VStack>
-        </HStack>
-      </MenuButton>
-      <MenuList>
-        <Box px={3} py={2}>
-          <Text fontWeight="bold" fontSize="sm">
-            {user.full_name}
-          </Text>
-          <Text fontSize="xs" color="gray.600">
-            {user.email}
-          </Text>
-          <Badge
-            mt={1}
-            fontSize="xs"
-            colorScheme={getRoleColor(user.role.role_name)}
-          >
-            {user.role.role_name}
-          </Badge>
-        </Box>
-        <MenuDivider />
-        <MenuItem onClick={() => history.push('/profile')}>
-          Self Profile
-        </MenuItem>
-        {canAccessCompanyProfile(user) ? (
-          <MenuItem onClick={() => history.push('/company-settings')}>
-            Company Profile
-          </MenuItem>
-        ) : null}
-        <MenuDivider />
-        <MenuItem onClick={handleLogout} color="red.600">
-          Logout
-        </MenuItem>
-      </MenuList>
-    </Menu>
+    <>
+      <Tooltip label="Open profile">
+        <IconButton
+          aria-label="Open profile"
+          icon={
+            user.profileImage ? (
+              <Avatar size="sm" name={user.full_name} src={user.profileImage} />
+            ) : (
+              <FiUser />
+            )
+          }
+          onClick={() => {
+            openChatProfile();
+            if (history.location.pathname !== '/') history.push('/');
+          }}
+          variant="ghost"
+          color="brand.600"
+          borderRadius="full"
+        />
+      </Tooltip>
+      <Tooltip label="Logout">
+        <IconButton
+          aria-label="Logout"
+          icon={<FiLogOut />}
+          onClick={handleLogout}
+          variant="ghost"
+          color="red.500"
+          borderRadius="full"
+          _hover={{ bg: 'red.50', color: 'red.600' }}
+        />
+      </Tooltip>
+    </>
   );
 };
 

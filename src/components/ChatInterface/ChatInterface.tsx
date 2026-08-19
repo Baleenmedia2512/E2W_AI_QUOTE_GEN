@@ -32,6 +32,7 @@ import {
   toCampaignDays,
 } from '../../utils/durationUtils';
 import { ChatChipThumb } from './ChatChipThumb';
+import ChatProfilePanel from './ChatProfilePanel';
 import { ChipImageLightbox, closeChipImagePreview, openChipImagePreview } from './ChipImageLightbox';
 import {
   buildCityServiceListFromDb,
@@ -153,7 +154,7 @@ interface CityPickerSegment {
   matchedCities?: string[];       // Cities where service is available (from DB catalog)
 }
 
-const ChatInterface: React.FC = () => {
+const ChatInterfaceContent: React.FC = () => {
   const history = useHistory();
   const { proposal, setCurrentQuote, activeProposals, loadCloudServices } = useAppStore();
   const [messages, setMessages] = useState<Message[]>([]);
@@ -182,6 +183,7 @@ const ChatInterface: React.FC = () => {
     catalogCacheRef.current = await catalogLoadRef.current;
     return catalogCacheRef.current;
   };
+
   /** Locked confirm rows for the current generate request (scoped Gemini context). */
   const confirmedRowsRef = useRef<Array<{ service: string; qty: number | string; city: string }> | null>(null);
 
@@ -5695,6 +5697,28 @@ Generate a detailed quote based on the above information.`;
         </Box>
       )}
     </Box>
+  );
+};
+
+const ChatInterface: React.FC = () => {
+  const chatProfileOpen = useAppStore((state) => state.chatProfileOpen);
+
+  return chatProfileOpen ? (
+    <Box
+      className="qb-chat-root"
+      display="flex"
+      flexDirection="column"
+      h="100%"
+      w="100%"
+      borderRadius={0}
+      border="none"
+      bg="white"
+      overflow="auto"
+    >
+      <ChatProfilePanel />
+    </Box>
+  ) : (
+    <ChatInterfaceContent />
   );
 };
 

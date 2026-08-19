@@ -579,6 +579,7 @@ export const exportToPDF = async (
   clientName?: string,
   documentIds?: string[],      // proposal document IDs to load images from DB
   exportMode: PdfExportMode = 'full',
+  shouldDownload = true,
 ): Promise<{ pdfBlob: Blob; filename: string }> => {
   const originalCursor = document.body.style.cursor;
   document.body.style.cursor = 'wait';
@@ -631,7 +632,7 @@ export const exportToPDF = async (
     const quoteLabel = getQuoteFilenameLabel(exportMode);
     const filename = `${quoteNumber}_${clientStr}_${quoteLabel}.pdf`;
 
-      if (isMobile()) {
+      if (shouldDownload && isMobile()) {
         // ── Mobile: save to Documents folder and open ──────────────────
         const arrayBuffer = await blob.arrayBuffer();
         const base64 = btoa(
@@ -648,7 +649,7 @@ export const exportToPDF = async (
           recursive: true,
         });
         await FileOpener.open({ filePath: result.uri, contentType: 'application/pdf' });
-      } else {
+      } else if (shouldDownload) {
         // ── Web: browser download ───────────────────────────────────────
         const url = URL.createObjectURL(blob);
         const a = document.createElement('a');

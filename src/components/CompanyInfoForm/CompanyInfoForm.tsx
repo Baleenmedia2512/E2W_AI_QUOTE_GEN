@@ -25,9 +25,20 @@ import './CompanyInfoForm.css';
 interface CompanyInfoFormProps {
   onSubmit: (companyInfo: CompanyInfo) => void | Promise<void>;
   initialData?: CompanyInfo | null;
+  submitLabel?: string;
+  secondaryLabel?: string;
+  onSecondaryAction?: () => void;
+  showUseSavedInfoButton?: boolean;
 }
 
-const CompanyInfoForm: React.FC<CompanyInfoFormProps> = ({ onSubmit, initialData }) => {
+const CompanyInfoForm: React.FC<CompanyInfoFormProps> = ({
+  onSubmit,
+  initialData,
+  submitLabel = 'Continue →',
+  secondaryLabel = '🔄 Clear',
+  onSecondaryAction,
+  showUseSavedInfoButton = true,
+}) => {
   const [formData, setFormData] = useState<CompanyInfo>({
     name: '',
     address: '',
@@ -160,7 +171,7 @@ const CompanyInfoForm: React.FC<CompanyInfoFormProps> = ({ onSubmit, initialData
             Tell us about your company
           </Text>
         </Box>
-        {loadCompanyInfo() && !useSaved && (
+        {showUseSavedInfoButton && loadCompanyInfo() && !useSaved && (
           <Button 
             size="md" 
             variant="outline" 
@@ -474,7 +485,7 @@ const CompanyInfoForm: React.FC<CompanyInfoFormProps> = ({ onSubmit, initialData
             <HStack justify="flex-end" spacing={4} pt={8}>
               <Button 
                 variant="outline" 
-                onClick={handleClearForm}
+                onClick={onSecondaryAction || handleClearForm}
                 size="lg"
                 borderWidth="2px"
                 borderColor="gray.300"
@@ -490,7 +501,7 @@ const CompanyInfoForm: React.FC<CompanyInfoFormProps> = ({ onSubmit, initialData
                 }}
                 _active={{ transform: 'scale(0.98)' }}
               >
-                🔄 Clear
+                {secondaryLabel}
               </Button>
               <Button 
                 type="submit" 
@@ -508,7 +519,7 @@ const CompanyInfoForm: React.FC<CompanyInfoFormProps> = ({ onSubmit, initialData
                 }}
                 _active={{ transform: 'scale(0.98)' }}
               >
-                Continue →
+                {submitLabel}
               </Button>
             </HStack>
           </VStack>

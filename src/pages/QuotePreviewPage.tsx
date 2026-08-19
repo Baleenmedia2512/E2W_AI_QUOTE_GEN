@@ -3,7 +3,6 @@ import { useHistory } from 'react-router-dom';
 import { useToast } from '@chakra-ui/react';
 import { useAppStore } from '../store';
 import { useAuthStore } from '../store/authStore';
-import { canAccessCompanyProfile } from '../utils/profileAccess';
 import { CorporateMinimal } from '../components/Templates/CorporateMinimal';
 import { exportToPDF } from '../services/pdfExportService';
 import { sendQuoteEmail } from '../services/quoteEmailService';
@@ -47,6 +46,7 @@ export const QuotePreviewPage: React.FC = () => {
     loadRecentProposals,
     cloudServicePages,      // NEW: Cloud service pages from proposal_chunks
     loadCloudServices,      // NEW: Load cloud services function
+    openChatProfile,
   } = useAppStore();
 
   const toast = useToast();
@@ -160,12 +160,13 @@ export const QuotePreviewPage: React.FC = () => {
     if (!currentQuote || !companyInfo) {
       console.warn('⚠️ Missing required data for preview...');
       if (!companyInfo) {
-        history.push(canAccessCompanyProfile(user) ? '/company-settings' : '/');
+        openChatProfile();
+        history.push('/');
       } else if (!currentQuote) {
         history.push('/');
       }
     }
-  }, [currentQuote, companyInfo, history, user]);
+  }, [currentQuote, companyInfo, history, openChatProfile]);
 
   // On mount: Load data in background (non-blocking)
   useEffect(() => {
@@ -488,14 +489,15 @@ export const QuotePreviewPage: React.FC = () => {
             {!companyInfo && '• Company information is missing'}
           </p>
           <button
-            onClick={() =>
-              history.push(
-                !companyInfo && canAccessCompanyProfile(user) ? '/company-settings' : '/',
-              )
-            }
+            onClick={() => {
+              if (!companyInfo) {
+                openChatProfile();
+              }
+              history.push('/');
+            }}
             className="back-button"
           >
-            {!companyInfo && canAccessCompanyProfile(user) ? 'Go to Company Profile' : 'Go to Chat'}
+            Go to Chat
           </button>
         </div>
       </div>
@@ -548,7 +550,10 @@ export const QuotePreviewPage: React.FC = () => {
     );
   };
 
-  const handleExportPDF = async (mode: PdfExportMode = 'full'): Promise<{ pdfBlob: Blob; filename: string } | undefined> => {
+  const handleExportPDF = async (
+    mode: PdfExportMode = 'full',
+    shouldDownload = true,
+  ): Promise<{ pdfBlob: Blob; filename: string } | undefined> => {
     console.log(`📄 Export PDF clicked (mode: ${mode})`);
 
     if (!clientReady) {
@@ -590,6 +595,7 @@ export const QuotePreviewPage: React.FC = () => {
         effectiveClient.name,
         docIds.length > 0 ? docIds : undefined,
         mode,
+        shouldDownload,
       );
       console.log('✅ PDF exported successfully');
       return { pdfBlob, filename };
@@ -604,80 +610,57 @@ export const QuotePreviewPage: React.FC = () => {
 
   const handleDownloadPDF = async () => {
     if (isExporting || isSendingEmail) return;
-
-    setIsExporting(true);
     const hasExecutiveSummary = !!currentQuote && isMultiServiceQuote(currentQuote.items);
-    let pdfAttachments: { pdfBlob: Blob; filename: string }[] = [];
+    const pdfAttachments: { pdfBlob: Blob; filename: string }[] = [];
+    setIsSendingEmail(true);
 
     try {
       if (!hasExecutiveSummary) {
-        const pdfResult = await handleExportPDF('full');
-        if (pdfResult) pdfAttachments = [pdfResult];
+        const result = await handleExportPDF('full', true);
+        if (result) pdfAttachments.push(result);
       } else {
-        const summaryResult = await handleExportPDF('summary');
-        const detailedResult = await handleExportPDF('detailed');
+        const summaryResult = await handleExportPDF('summary', true);
+        const detailedResult = await handleExportPDF('detailed', true);
         if (summaryResult) pdfAttachments.push(summaryResult);
         if (detailedResult) pdfAttachments.push(detailedResult);
       }
 
-      if (!pdfAttachments.length) {
-        toast({
-          title: 'PDF Export Failed',
-          description: 'Could not generate PDF. Please try again.',
-          status: 'error',
-          duration: 5000,
-          isClosable: true,
-        });
-        return;
+      if (!pdfAttachments.length || !currentQuote) {
+        throw new Error('Could not generate PDF. Please try again.');
       }
-
-      setIsSendingEmail(true);
-      const downloadedByName = user?.full_name || 'Unknown User';
 
       const emailSendResult = await sendQuoteEmail({
         pdfAttachments,
-        quote: currentQuote!,
+        quote: currentQuote,
         client: effectiveClient,
-        company: companyInfo!,
-        downloadedBy: downloadedByName,
+        company: companyInfo,
+        downloadedBy: user?.full_name || 'Unknown User',
       });
 
-      if (emailSendResult.success) {
-        toast({
-          title: 'PDF Downloaded & Emailed',
-          description:
-            pdfAttachments.length > 1
-              ? 'Both PDFs were downloaded and sent in one email to the internal team.'
-              : 'The PDF has been downloaded and sent to the internal team.',
-          status: 'success',
-          duration: 5000,
-          isClosable: true,
-        });
-      } else {
-        toast({
-          title: 'Email Notification Failed',
-          description: `PDF downloaded, but internal email notification failed: ${emailSendResult.message}`,
-          status: 'warning',
-          duration: 9000,
-          isClosable: true,
-        });
-      }
+      toast({
+        title: emailSendResult.success ? 'PDF Downloaded & Emailed' : 'Email Not Sent',
+        description: emailSendResult.success
+          ? 'The PDF was downloaded and sent to your logged-in email with the configured CC.'
+          : emailSendResult.message,
+        status: emailSendResult.success ? 'success' : 'error',
+        duration: 7000,
+        isClosable: true,
+      });
     } catch (error) {
       console.error('❌ PDF download or email error:', error);
       toast({
-        title: 'Error',
-        description: `Failed to complete operation: ${error instanceof Error ? error.message : 'Unknown error'}`,
+        title: 'Download or Email Failed',
+        description: error instanceof Error ? error.message : 'Could not complete the operation.',
         status: 'error',
-        duration: 9000,
+        duration: 7000,
         isClosable: true,
       });
     } finally {
-      setIsExporting(false);
       setIsSendingEmail(false);
-    }
+      }
   };
 
-  const [isSendingEmail, setIsSendingEmail] = useState(false); // NEW STATE
+  const [isSendingEmail, setIsSendingEmail] = useState(false);
   const handleZoomIn = () => {
     setZoom(prev => Math.min(prev + 10, 150));
   };
@@ -696,6 +679,7 @@ export const QuotePreviewPage: React.FC = () => {
         step="preview"
         onDownloadPdf={handleDownloadPDF}
         isDownloading={isExporting}
+        isSendingMail={isSendingEmail}
         // Keep the button visible and let handleExportPDF show the validation
         // popup when required client details are missing.
         canDownload={isContentReady && !isExporting}
@@ -814,7 +798,7 @@ export const QuotePreviewPage: React.FC = () => {
             type="button"
             onClick={handleDownloadPDF}
             className="mobile-action-btn primary"
-            disabled={isExporting}
+            disabled={isExporting || isSendingEmail}
           >
             {isExporting ? 'Downloading...' : 'Download PDF'}
           </button>

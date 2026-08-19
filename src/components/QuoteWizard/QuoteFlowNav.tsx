@@ -13,6 +13,7 @@ import {
 import { FiArrowLeft, FiArrowRight, FiDownload } from 'react-icons/fi';
 import { useHistory } from 'react-router-dom';
 import { UserProfile } from '../UserProfile';
+import { useAppStore } from '../../store';
 
 export type QuoteFlowStep = 'chat' | 'client' | 'preview';
 
@@ -28,6 +29,7 @@ interface QuoteFlowNavProps {
    * When set with `multiDownloadOptions`, the header shows a dropdown.
    */
   isDownloading?: boolean;
+  isSendingMail?: boolean;
   canDownload?: boolean;
   rightExtra?: React.ReactNode;
 }
@@ -53,12 +55,16 @@ const QuoteFlowNav: React.FC<QuoteFlowNavProps> = ({
   onNext,
   onDownloadPdf,
   isDownloading = false,
+  isSendingMail = false,
   canDownload = true,
   rightExtra,
 }) => {
   const history = useHistory();
+  const closeChatProfile = useAppStore((state) => state.closeChatProfile);
+  const chatProfileOpen = useAppStore((state) => state.chatProfileOpen);
 
   const goHome = () => {
+    closeChatProfile();
     history.push('/');
   };
 
@@ -177,24 +183,26 @@ const QuoteFlowNav: React.FC<QuoteFlowNavProps> = ({
             )}
 
             {showDownload && (
-              <Button
-                leftIcon={<Icon as={FiDownload} boxSize={3.5} />}
-                bg="brand.500"
-                color="white"
-                onClick={onDownloadPdf}
-                isLoading={isDownloading}
-                isDisabled={!canDownload || isDownloading}
-                aria-label="Download PDF"
-                {...navPillProps}
-                _hover={{ bg: 'brand.600' }}
-              >
-                <Text as="span" display={{ base: 'none', sm: 'inline' }}>
-                  Download PDF
-                </Text>
-                <Text as="span" display={{ base: 'inline', sm: 'none' }}>
-                  PDF
-                </Text>
-              </Button>
+              <>
+                <Button
+                  leftIcon={<Icon as={FiDownload} boxSize={3.5} />}
+                  bg="brand.500"
+                  color="white"
+                  onClick={onDownloadPdf}
+                  isLoading={isDownloading}
+                  isDisabled={!canDownload || isDownloading || isSendingMail}
+                  aria-label="Download PDF"
+                  {...navPillProps}
+                  _hover={{ bg: 'brand.600' }}
+                >
+                  <Text as="span" display={{ base: 'none', sm: 'inline' }}>
+                    Download PDF
+                  </Text>
+                  <Text as="span" display={{ base: 'inline', sm: 'none' }}>
+                    PDF
+                  </Text>
+                </Button>
+              </>
             )}
 
             {showBack && (
@@ -219,7 +227,7 @@ const QuoteFlowNav: React.FC<QuoteFlowNavProps> = ({
               </Button>
             )}
 
-            {step !== 'preview' && (
+            {step !== 'preview' && !chatProfileOpen && (
               <Button
                 variant="outline"
                 borderColor="brand.200"

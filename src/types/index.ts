@@ -85,6 +85,11 @@ export interface AppState {
   syncCompanyFromDatabase: () => Promise<void>;
   enableCompanySync: () => any;
 
+  // Chat profile state
+  chatProfileOpen: boolean;
+  openChatProfile: () => void;
+  closeChatProfile: () => void;
+
   // Client state
   clientInfo: ClientInfo | null;
   setClientInfo: (info: ClientInfo) => void;
