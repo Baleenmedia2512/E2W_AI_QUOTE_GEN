@@ -10,6 +10,7 @@ interface ImportMetaEnv {
   readonly VITE_AI_TOKEN_MONITOR_SDK_KEY?: string;
   readonly VITE_AI_TOKEN_MONITOR_APP_NAME?: string;
   readonly VITE_AI_TOKEN_MONITOR_BASE_URL?: string;
+  readonly VITE_AI_TOKEN_MONITOR_DEBUG?: string;
   // Add more env variables here as needed
 }
 

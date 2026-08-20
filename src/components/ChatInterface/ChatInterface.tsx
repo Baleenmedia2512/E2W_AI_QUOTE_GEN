@@ -1610,7 +1610,7 @@ const ChatInterfaceContent: React.FC = () => {
             intent = await parseChatIntentWithAi(
               cleanedText,
               { types: catalogTypes, cities: catalogCities },
-              2000,
+              10000,
             );
           } catch (err) {
             console.log('[funnel-debug] chatIntentError', err);

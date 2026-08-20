@@ -15,18 +15,188 @@ export interface GeminiUsageMetadata {
 }
 
 let initialized = false;
+const DEBUG_PREFIX = '[AI Token Monitor]';
+
+function isDebugEnabled(): boolean {
+  return String(import.meta.env.VITE_AI_TOKEN_MONITOR_DEBUG || '')
+    .trim()
+    .toLowerCase() === 'true';
+}
+
+function debugLog(message: string, details?: unknown): void {
+  if (!isDebugEnabled()) return;
+  // Use console.log (not debug) so Chrome shows it without Verbose enabled
+  if (details === undefined) {
+    console.log(`${DEBUG_PREFIX} ${message}`);
+  } else {
+    console.log(`${DEBUG_PREFIX} ${message}`, details);
+  }
+}
+
+function debugError(message: string, details?: unknown): void {
+  if (!isDebugEnabled()) return;
+  console.error(`${DEBUG_PREFIX} ${message}`, details);
+}
 
 function getSdkKey(): string {
   return String(import.meta.env.VITE_AI_TOKEN_MONITOR_SDK_KEY || '').trim();
+}
+
+function getConfiguredBaseUrl(): string {
+  return String(import.meta.env.VITE_AI_TOKEN_MONITOR_BASE_URL || '').trim();
+}
+
+function getTelemetryEndpoint(): string {
+  const base = getConfiguredBaseUrl().replace(/\/$/, '');
+  return base ? `${base}/sdk/log` : '(base URL not set)/sdk/log';
+}
+
+function getPageOrigin(): string {
+  return typeof window !== 'undefined' ? window.location.origin : '(unknown)';
+}
+
+/**
+ * Classify SDK / network failures into a clear reason for console debugging.
+ */
+function classifyTelemetryFailure(error: unknown): {
+  exactReason: string;
+  message: string;
+  httpStatus: number | null;
+  pageOrigin: string;
+  endpoint: string;
+  fixHint: string;
+} {
+  const pageOrigin = getPageOrigin();
+  const endpoint = getTelemetryEndpoint();
+  const fixHint =
+    `Backend must return Access-Control-Allow-Origin for "${pageOrigin}" on POST ${endpoint}`;
+
+  if (error == null) {
+    return {
+      exactReason: 'SDK_RETURNED_NULL',
+      message:
+        'SDK caught the error internally and returned null. Check the "Telemetry Failed" line above, or Network → sdk/log.',
+      httpStatus: null,
+      pageOrigin,
+      endpoint,
+      fixHint,
+    };
+  }
+
+  const err = error as {
+    message?: string;
+    code?: string;
+    name?: string;
+    response?: { status?: number; data?: unknown };
+  };
+  const message = String(err.message || error);
+  const httpStatus = err.response?.status ?? null;
+  const lower = message.toLowerCase();
+
+  if (
+    lower.includes('cors') ||
+    lower.includes('access-control') ||
+    lower.includes('blocked by cors') ||
+    (err.code === 'ERR_NETWORK' && !httpStatus)
+  ) {
+    return {
+      exactReason: 'CORS_BLOCKED',
+      message,
+      httpStatus,
+      pageOrigin,
+      endpoint,
+      fixHint,
+    };
+  }
+
+  if (httpStatus === 401 || httpStatus === 403) {
+    return {
+      exactReason: 'UNAUTHORIZED_SDK_KEY',
+      message,
+      httpStatus,
+      pageOrigin,
+      endpoint,
+      fixHint: 'Check VITE_AI_TOKEN_MONITOR_SDK_KEY is valid for this app',
+    };
+  }
+
+  if (httpStatus === 404) {
+    return {
+      exactReason: 'ENDPOINT_NOT_FOUND',
+      message,
+      httpStatus,
+      pageOrigin,
+      endpoint,
+      fixHint: 'Confirm Token Monitor exposes POST /api/sdk/log',
+    };
+  }
+
+  if (httpStatus != null && httpStatus >= 500) {
+    return {
+      exactReason: 'SERVER_ERROR',
+      message,
+      httpStatus,
+      pageOrigin,
+      endpoint,
+      fixHint: 'Check Token Monitor server logs / Vercel function errors',
+    };
+  }
+
+  if (err.code === 'ECONNABORTED' || lower.includes('timeout')) {
+    return {
+      exactReason: 'TIMEOUT',
+      message,
+      httpStatus,
+      pageOrigin,
+      endpoint,
+      fixHint: 'Token Monitor API did not respond in time',
+    };
+  }
+
+  if (err.code === 'ERR_NETWORK' || lower.includes('network error')) {
+    return {
+      exactReason: 'NETWORK_OR_CORS',
+      message,
+      httpStatus,
+      pageOrigin,
+      endpoint,
+      fixHint:
+        `${fixHint}. Network tab Status "CORS error" confirms this.`,
+    };
+  }
+
+  return {
+    exactReason: 'UNKNOWN_TELEMETRY_FAILURE',
+    message,
+    httpStatus,
+    pageOrigin,
+    endpoint,
+    fixHint,
+  };
 }
 
 /**
  * Initialize once at app startup. No-ops when SDK key is missing.
  */
 export function initAiTokenMonitor(): void {
-  if (initialized) return;
+  if (initialized) {
+    debugLog('Already initialized');
+    return;
+  }
 
   const sdkKey = getSdkKey();
+  debugLog('Initialization started', {
+    sdkKeyConfigured: Boolean(sdkKey),
+    sdkKeyLength: sdkKey.length,
+    appName:
+      String(import.meta.env.VITE_AI_TOKEN_MONITOR_APP_NAME || '').trim() ||
+      'QuoteBuddy',
+    baseURL: getConfiguredBaseUrl() || '(SDK default)',
+    endpoint: getTelemetryEndpoint(),
+    pageOrigin: getPageOrigin(),
+    environment: import.meta.env.PROD ? 'production' : 'localhost',
+  });
+
   if (!sdkKey) {
     console.warn(
       'AI Token Monitor: VITE_AI_TOKEN_MONITOR_SDK_KEY not set — telemetry disabled',
@@ -37,9 +207,7 @@ export function initAiTokenMonitor(): void {
   const appName =
     String(import.meta.env.VITE_AI_TOKEN_MONITOR_APP_NAME || '').trim() ||
     'QuoteBuddy';
-  const baseURL = String(
-    import.meta.env.VITE_AI_TOKEN_MONITOR_BASE_URL || '',
-  ).trim();
+  const baseURL = getConfiguredBaseUrl();
 
   try {
     AIClient.initialize({
@@ -51,8 +219,9 @@ export function initAiTokenMonitor(): void {
         typeof __APP_VERSION__ !== 'undefined' ? __APP_VERSION__ : '1.0.0',
     });
     initialized = true;
+    debugLog('Initialization succeeded');
   } catch (error) {
-    console.error('AI Token Monitor: initialize failed', error);
+    debugError('Initialization failed', classifyTelemetryFailure(error));
   }
 }
 
@@ -68,12 +237,21 @@ export function reportAiTelemetry(params: {
   usage?: GeminiUsageMetadata | null;
   errorMessage?: string;
 }): void {
-  if (!getSdkKey()) return;
+  const sdkKey = getSdkKey();
+  if (!sdkKey) {
+    debugLog('Telemetry skipped: SDK key is not configured', {
+      exactReason: 'MISSING_SDK_KEY',
+      model: params.model,
+      module: params.module,
+      status: params.status,
+      pageOrigin: getPageOrigin(),
+    });
+    return;
+  }
 
   const user = useAuthStore.getState().user;
   const usage = params.usage || {};
-
-  void AIClient.sendTelemetry({
+  const payload = {
     provider: params.provider || 'Gemini',
     model: params.model,
     usage: {
@@ -88,7 +266,34 @@ export function reportAiTelemetry(params: {
     endUserId: user?.id ?? null,
     endUserName: user?.full_name ?? null,
     endUserEmail: user?.email ?? null,
+  };
+
+  debugLog('Sending telemetry', {
+    initialized,
+    pageOrigin: getPageOrigin(),
+    endpoint: getTelemetryEndpoint(),
+    payload,
   });
+
+  void AIClient.sendTelemetry(payload)
+    .then((response) => {
+      if (response === null) {
+        // SDK swallows Axios/CORS errors and returns null — surface exact reason
+        const reason = classifyTelemetryFailure(null);
+        debugError('Telemetry failed — exact reason', {
+          ...reason,
+          note:
+            'Look one line above for SDK "Telemetry Failed" / "Network Error". If Network tab shows CORS error on sdk/log, exactReason is CORS_BLOCKED on the backend.',
+          networkTabHint:
+            'Open Network → sdk/log → Status. "CORS error" = backend must allow this pageOrigin on POST.',
+        });
+        return;
+      }
+      debugLog('Telemetry sent successfully', response);
+    })
+    .catch((error: unknown) => {
+      debugError('Telemetry rejected — exact reason', classifyTelemetryFailure(error));
+    });
 }
 
 export function usageFromGeminiResponse(

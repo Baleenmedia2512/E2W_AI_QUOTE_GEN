@@ -1,6 +1,6 @@
 import { create } from 'zustand';
 import { AppState, ProposalData, Message, Quote, CompanyInfo, ClientInfo, TemplateType, StoredProposal, ActiveProposal } from '../types';
-import { loadCompanyInfo, saveCompanyInfo as saveCompanyInfoToStorage } from '../utils/localStorage';
+import { saveCompanyInfo as saveCompanyInfoToStorage } from '../utils/localStorage';
 import {
   savePageImages as savePageImagesToDB,
   clearPageImages,
@@ -12,7 +12,6 @@ import {
   saveActiveProposalMeta,
   loadActiveProposalMeta,
 } from '../utils/imageStorage';
-import { DEFAULT_COMPANY_INFO } from '../constants/defaultCompany';
 import { companyService } from '../services/companyService';
 import { useAuthStore } from './authStore';
 import { extractPDFContent } from '../utils/pdfUtils';
@@ -80,12 +79,6 @@ const loadClientInfo = (): ClientInfo | null => {
     console.error('Failed to load client info from localStorage:', error);
   }
   return null;
-};
-
-// Load company info with fallback to defaults
-const loadCompanyInfoWithDefaults = (): CompanyInfo => {
-  const saved = loadCompanyInfo();
-  return saved || DEFAULT_COMPANY_INFO;
 };
 
 export const useAppStore = create<AppState>((set) => ({
@@ -199,8 +192,10 @@ export const useAppStore = create<AppState>((set) => ({
     }
   },
 
-  // Company state - Load from localStorage on init, fallback to defaults
-  companyInfo: loadCompanyInfoWithDefaults(),
+  // Company state - database is the source of truth after authentication.
+  // Do not hydrate this from global localStorage: that can show a previous
+  // user's company while the authenticated user's database profile is loading.
+  companyInfo: null,
   setCompanyInfo: (info: CompanyInfo, persistRemote = true) => {
     set({ companyInfo: info });
     // Persist to localStorage (always works, fallback)
@@ -215,6 +210,7 @@ export const useAppStore = create<AppState>((set) => ({
       console.warn('Database sync failed, localStorage still working:', err);
     });
   },
+  clearCompanyInfo: () => set({ companyInfo: null }),
 
   // Sync company info from database (call on app init)
   syncCompanyFromDatabase: async () => {
@@ -226,10 +222,12 @@ export const useAppStore = create<AppState>((set) => ({
         // Also update localStorage cache
         saveCompanyInfoToStorage(dbCompany);
       } else {
-        console.log('ℹ️ No company info in database, using defaults/localStorage');
+        console.log('ℹ️ No company info found in database');
+        set({ companyInfo: null });
       }
     } catch (error) {
-      console.warn('⚠️ Database sync failed, using localStorage:', error);
+      console.warn('⚠️ Database sync failed; company profile remains empty:', error);
+      set({ companyInfo: null });
     }
   },
 

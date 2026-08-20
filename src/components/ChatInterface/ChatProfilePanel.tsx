@@ -23,10 +23,10 @@ import { useAppStore } from '../../store';
 import { useAuthStore } from '../../store/authStore';
 import {
   getSelfProfile,
-  updateCompanyProfile,
   updateSelfProfile,
   uploadProfileImage,
 } from '../../services/userProfileService';
+import { companyService } from '../../services/companyService';
 import { canAccessCompanyProfile } from '../../utils/profileAccess';
 
 type ProfileType = 'select' | 'company' | 'self';
@@ -179,12 +179,12 @@ const ChatProfilePanel: React.FC = () => {
   const handleCompanySave = async (nextCompany: CompanyInfo) => {
     setIsCompanySaving(true);
     try {
-      const result = await updateCompanyProfile(nextCompany);
+      const saved = await companyService.saveCompanySettings(nextCompany);
 
-      if (!result.success) {
+      if (!saved) {
         toast({
           title: 'Unable to save company profile',
-          description: result.message,
+          description: 'The company profile could not be saved to the database.',
           status: 'error',
           duration: 4000,
           isClosable: true,

@@ -1,6 +1,5 @@
 import { supabase } from './supabaseClient';
 import { authService } from './authService';
-import { CompanyInfo } from '../types/company';
 
 export interface SelfProfile {
   name: string;
@@ -142,34 +141,3 @@ export async function updateSelfProfile(
   return asProfileResult(data, 'Unable to update profile.');
 }
 
-export async function updateCompanyProfile(companyInfo: CompanyInfo): Promise<ProfileMutationResult> {
-  const currentUser = authService.getCurrentUser();
-  if (!currentUser?.id) {
-    return { success: false, message: 'You must be signed in to update the company profile.' };
-  }
-
-  const { data, error } = await supabase.rpc('update_company_profile', {
-    p_user_id: currentUser.id,
-    p_company: {
-      name: companyInfo.name,
-      address: companyInfo.address,
-      gst: companyInfo.gst,
-      abn: companyInfo.abn || '',
-      phone: companyInfo.phone,
-      email: companyInfo.email,
-      logo: companyInfo.logo || '',
-      website: companyInfo.website || '',
-      signature: companyInfo.signature || '',
-      designation: companyInfo.designation || '',
-    },
-  });
-
-  if (error) {
-    return {
-      success: false,
-      message: error.message || 'Unable to save company profile.',
-    };
-  }
-
-  return asProfileResult(data, 'Unable to save company profile.');
-}

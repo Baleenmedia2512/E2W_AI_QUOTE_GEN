@@ -1,6 +1,6 @@
 import { supabase } from './supabaseClient';
 import { CompanyInfo } from '../types/company';
-import { updateCompanyProfile } from './userProfileService';
+import { authService } from './authService';
 
 /**
  * Company Service - Manages company information with database sync
@@ -8,8 +8,11 @@ import { updateCompanyProfile } from './userProfileService';
  */
 export const companyService = {
   /**
-   * Fetch active company settings from database
-   * Returns null if no company exists or on error
+   * Fetch the single active company profile from the database.
+   *
+   * Company settings are global in the current schema, so this read must not
+   * depend on the optional user_id migration. This also makes the database
+   * profile available in a fresh/incognito browser.
    */
   async getCompanySettings(): Promise<CompanyInfo | null> {
     try {
@@ -50,14 +53,49 @@ export const companyService = {
   },
 
   /**
-   * Save/Update company settings in database.
-   * Writes go through a permission-checked RPC (admin / super agent only).
+   * Save the single global company profile in database.
    */
   async saveCompanySettings(companyInfo: CompanyInfo): Promise<boolean> {
     try {
-      const result = await updateCompanyProfile(companyInfo);
-      if (!result.success) {
-        console.warn('⚠️ Company profile update rejected:', result.message);
+      const { data: existing, error: findError } = await supabase
+        .from('company_settings')
+        .select('id')
+        .eq('is_active', true)
+        .order('created_at', { ascending: false })
+        .limit(1)
+        .maybeSingle();
+
+      if (findError) {
+        console.warn('⚠️ Company profile lookup failed:', findError.message);
+        return false;
+      }
+
+      const payload = {
+        name: companyInfo.name,
+        address: companyInfo.address,
+        gst: companyInfo.gst,
+        abn: companyInfo.abn || '',
+        phone: companyInfo.phone,
+        email: companyInfo.email,
+        logo: companyInfo.logo || '',
+        website: companyInfo.website || '',
+        signature: companyInfo.signature || '',
+        designation: companyInfo.designation || '',
+        is_active: true,
+      };
+
+      const mutation = existing?.id
+        ? supabase
+          .from('company_settings')
+          .update(payload)
+          .eq('id', existing.id)
+        : supabase
+          .from('company_settings')
+          .insert(payload);
+
+      const { error } = await mutation;
+      if (error) {
+        console.warn('⚠️ Company profile save failed:', error.message);
         return false;
       }
 
@@ -74,6 +112,11 @@ export const companyService = {
    * Callback is triggered when company settings are updated
    */
   subscribeToChanges(callback: (companyInfo: CompanyInfo) => void) {
+    const currentUserId = authService.getCurrentUser()?.id;
+    if (!currentUserId) {
+      return { unsubscribe: () => undefined };
+    }
+
     const subscription = supabase
       .channel('company_settings_changes')
       .on(
@@ -82,6 +125,7 @@ export const companyService = {
           event: 'UPDATE',
           schema: 'public',
           table: 'company_settings',
+          filter: `user_id=eq.${currentUserId}`,
         },
         (payload) => {
           console.log('🔄 Company settings updated:', payload);

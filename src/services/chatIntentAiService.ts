@@ -282,6 +282,17 @@ export async function parseChatIntentWithAi(
       return null;
     }
     const data = await res.json();
+    console.log('[AI Token Monitor] AI response received', {
+      module: TELEMETRY_MODULE,
+      model: MODEL,
+      httpStatus: res.status,
+      hasCandidates: Array.isArray(data?.candidates) && data.candidates.length > 0,
+      usageMetadata: data?.usageMetadata ?? null,
+      responseText:
+        typeof data?.candidates?.[0]?.content?.parts?.[0]?.text === 'string'
+          ? data.candidates[0].content.parts[0].text
+          : null,
+    });
     const usage = usageFromGeminiResponse(data);
     const raw = data?.candidates?.[0]?.content?.parts?.[0]?.text;
     if (!raw || typeof raw !== 'string') {

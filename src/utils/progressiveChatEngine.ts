@@ -2853,6 +2853,58 @@ export function detectMediumTypeInText(
   return null;
 }
 
+/**
+ * Detect a complete catalog medium + DB type phrase in one user turn.
+ *
+ * This is intentionally DB-driven and conservative. It lets inputs such as
+ * "Bus Semi Branding" and "Mobile Van Non LED" lock the service and type
+ * together, while a bare "Bus" or "Mobile Van" continues through the normal
+ * family funnel.
+ */
+function detectExactCatalogSelection(
+  text: string,
+  services: DbService[],
+): { medium: string; mediumType?: string } | null {
+  const query = canonicalizeServiceName(text);
+  if (!query) return null;
+
+  const candidates = services
+    .map((service) => {
+      const medium = getMediumKey(service);
+      const mediumType = getMediumTypeFromDb(service);
+      const mediumKey = canonicalizeServiceName(medium);
+      const typeKey = mediumType ? canonicalizeServiceName(mediumType) : '';
+      const phrase = [
+        mediumKey,
+        typeKey && !mediumKey.includes(typeKey) ? typeKey : '',
+      ]
+        .filter(Boolean)
+        .join(' ')
+        .trim();
+      return {
+        medium,
+        mediumType: mediumType || undefined,
+        phrase,
+      };
+    })
+    .filter((candidate) => candidate.phrase.length > 0)
+    .sort((a, b) => b.phrase.length - a.phrase.length);
+
+  for (const candidate of candidates) {
+    const escaped = candidate.phrase.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    if (
+      new RegExp(`(?:^|\\s)${escaped}(?=\\s|$)`, 'i').test(query)
+    ) {
+      return {
+        medium: candidate.medium,
+        mediumType: candidate.mediumType,
+      };
+    }
+  }
+
+  return null;
+}
+
 /** Parse `medium:Foo` or `medium:Foo|elevated` chip ids. */
 function parseMediumChipToken(token: string): { medium: string; mediumType?: string } {
   const raw = token.trim();
@@ -5628,6 +5680,25 @@ export function advanceFunnel(
   opts?: { allowAutoFinalize?: boolean },
 ): ProgressiveTurnResult {
   const allowAutoFinalize = opts?.allowAutoFinalize !== false;
+  // Re-apply an exact service/type lock whenever the funnel is re-entered.
+  // This protects typed requests and chip-confirm paths from reopening the
+  // family list after another state transition.
+  const exactSelection =
+    (session.originalText || '').trim() && !session.typesResolved
+      ? detectExactCatalogSelection(session.originalText || '', services)
+      : null;
+  const currentMedium = canonicalizeServiceName(
+    session.medium || session.browseToken || '',
+  );
+  const exactMedium = canonicalizeServiceName(exactSelection?.medium || '');
+  const exactCompatible =
+    !!exactSelection
+    && (
+      !currentMedium
+      || currentMedium === exactMedium
+      || isSameMediumFamily(currentMedium, exactMedium)
+      || isSameMediumFamily(exactMedium, currentMedium)
+    );
   // browseToken alone = family browse (e.g. "bus") — do NOT promote to locked medium
   let sess: ProgressiveSession = {
     ...session,
@@ -5636,6 +5707,17 @@ export function advanceFunnel(
     // Confirmed place hint acts as area when area not set
     area: session.area || session.placeHint,
   };
+  if (exactCompatible) {
+    sess = {
+      ...sess,
+      medium: exactSelection!.medium,
+      browseToken: exactSelection!.medium,
+      mediumType: exactSelection!.mediumType
+        ? canonicalizeServiceName(exactSelection!.mediumType)
+        : sess.mediumType,
+      typesResolved: exactSelection!.mediumType ? true : sess.typesResolved,
+    };
+  }
 
   for (let guard = 0; guard < 10; guard++) {
     const pool = filterPoolBySession(services, sess);
@@ -7369,6 +7451,17 @@ function resolveProgressiveTextInner(
     }
   }
 
+  // A complete service + DB type phrase wins over a broader AI/family match.
+  // Example: "Mobile Van Non LED branding - 30 days" must lock Mobile Van
+  // + Non LED before the normal family/type branch runs.
+  const exactCatalogSelection =
+    batchSegmentsBeforeLocation.length < 2
+      ? detectExactCatalogSelection(originalText, services)
+      : null;
+  if (exactCatalogSelection) {
+    media = [canonicalizeServiceName(exactCatalogSelection.medium)];
+  }
+
   // Bare family token (hoarding) when catalog only has "LED Hoarding" etc.
   // Keep DB-driven: only tokens that appear in catalog medium keys and have browse hits.
   if (!media.length) {
@@ -7445,11 +7538,13 @@ function resolveProgressiveTextInner(
     }
   }
 
-  const typeFromText = detectMediumTypeInText(
-    originalText,
-    services,
-    media[0] || null,
-  );
+  const typeFromText =
+    exactCatalogSelection?.mediumType
+    || detectMediumTypeInText(
+      originalText,
+      services,
+      media[0] || null,
+    );
 
   const earlySegmentsCheck = batchSegmentsBeforeLocation;
 

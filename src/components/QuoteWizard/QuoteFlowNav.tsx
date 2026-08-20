@@ -9,6 +9,7 @@ import {
   Icon,
   Badge,
   Image,
+  VStack,
 } from '@chakra-ui/react';
 import { FiArrowLeft, FiArrowRight, FiDownload } from 'react-icons/fi';
 import { useHistory } from 'react-router-dom';
@@ -62,6 +63,7 @@ const QuoteFlowNav: React.FC<QuoteFlowNavProps> = ({
   const history = useHistory();
   const closeChatProfile = useAppStore((state) => state.closeChatProfile);
   const chatProfileOpen = useAppStore((state) => state.chatProfileOpen);
+  const companyInfo = useAppStore((state) => state.companyInfo);
 
   const goHome = () => {
     closeChatProfile();
@@ -109,9 +111,9 @@ const QuoteFlowNav: React.FC<QuoteFlowNavProps> = ({
         className="qb-flow-nav__inner"
         maxW="100%"
         px={{ base: 3, md: 5 }}
-        py={{ base: 2.5, md: 3 }}
+        py={{ base: 1.5, md: 2 }}
       >
-        <Flex align="center" gap={{ base: 2, md: 3 }} minH={{ base: '44px', md: '48px' }}>
+        <Flex align="center" gap={{ base: 2, md: 3 }} minH={{ base: '40px', md: '44px' }}>
           {/* Left — brand → Home */}
           <HStack
             as="button"
@@ -136,28 +138,46 @@ const QuoteFlowNav: React.FC<QuoteFlowNavProps> = ({
               objectFit="cover"
               flexShrink={0}
             />
-            <Text
-              className="qb-flow-nav__brand-text"
-              fontSize={{ base: 'sm', md: 'lg' }}
-              fontWeight="800"
-              color="brand.500"
-              letterSpacing="-0.02em"
-              noOfLines={1}
-            >
-              Quote Buddy
-            </Text>
-            {typeof __APP_VERSION__ !== 'undefined' && (
-              <Badge
-                colorScheme="brand"
-                fontSize="9px"
-                fontWeight="600"
-                borderRadius="4px"
-                px={1.5}
-                display={{ base: 'none', md: 'inline-flex' }}
-              >
-                v{__APP_VERSION__}
-              </Badge>
-            )}
+            <VStack spacing={0} align="flex-start" justify="center" maxW={{ base: '150px', md: '230px' }} minW={0}>
+              <HStack spacing={2} w="100%" align="center">
+                <Text
+                  className="qb-flow-nav__brand-text"
+                  fontSize={{ base: 'sm', md: 'lg' }}
+                  fontWeight="800"
+                  color="brand.500"
+                  letterSpacing="-0.02em"
+                  noOfLines={1}
+                >
+                  Quote Buddy
+                </Text>
+                {typeof __APP_VERSION__ !== 'undefined' && (
+                  <Badge
+                    colorScheme="brand"
+                    fontSize="9px"
+                    fontWeight="600"
+                    borderRadius="4px"
+                    px={1.5}
+                    display={{ base: 'none', md: 'inline-flex' }}
+                  >
+                    v{__APP_VERSION__}
+                  </Badge>
+                )}
+              </HStack>
+              {companyInfo?.name && (
+                <Text
+                  fontSize={{ base: 'xs', md: 'sm' }}
+                  lineHeight="12px"
+                  fontWeight="600"
+                  color="gray.600"
+                  textAlign="left"
+                  noOfLines={1}
+                  maxW={{ base: '150px', md: '230px' }}
+                  title={companyInfo.name}
+                >
+                  {companyInfo.name}
+                </Text>
+              )}
+            </VStack>
           </HStack>
 
           {/* Right — Download (left) / Back Chat (right of download) / Preview + profile */}

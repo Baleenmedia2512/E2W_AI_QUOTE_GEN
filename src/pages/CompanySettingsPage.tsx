@@ -18,7 +18,7 @@ import { saveCompanyInfo } from '../utils/localStorage';
 import { Header } from '../components/Header';
 import { useAuthStore } from '../store/authStore';
 import { canAccessCompanyProfile } from '../utils/profileAccess';
-import { updateCompanyProfile } from '../services/userProfileService';
+import { companyService } from '../services/companyService';
 
 const CompanySettingsPage: React.FC = () => {
   const history = useHistory();
@@ -33,11 +33,11 @@ const CompanySettingsPage: React.FC = () => {
   }, [user, history]);
 
   const handleSubmit = async (info: CompanyInfo) => {
-    const result = await updateCompanyProfile(info);
-    if (!result.success) {
+    const saved = await companyService.saveCompanySettings(info);
+    if (!saved) {
       toast({
         title: 'Unable to save company profile',
-        description: result.message,
+        description: 'The company profile could not be saved to the database.',
         status: 'error',
         duration: 4000,
         isClosable: true,

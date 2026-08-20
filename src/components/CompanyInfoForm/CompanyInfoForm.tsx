@@ -19,7 +19,6 @@ import {
 } from '@chakra-ui/react';
 import { FiUploadCloud } from 'react-icons/fi';
 import { CompanyInfo } from '../../types/company';
-import { loadCompanyInfo } from '../../utils/localStorage';
 import './CompanyInfoForm.css';
 
 interface CompanyInfoFormProps {
@@ -28,7 +27,6 @@ interface CompanyInfoFormProps {
   submitLabel?: string;
   secondaryLabel?: string;
   onSecondaryAction?: () => void;
-  showUseSavedInfoButton?: boolean;
 }
 
 const CompanyInfoForm: React.FC<CompanyInfoFormProps> = ({
@@ -37,7 +35,6 @@ const CompanyInfoForm: React.FC<CompanyInfoFormProps> = ({
   submitLabel = 'Continue →',
   secondaryLabel = '🔄 Clear',
   onSecondaryAction,
-  showUseSavedInfoButton = true,
 }) => {
   const [formData, setFormData] = useState<CompanyInfo>({
     name: '',
@@ -53,7 +50,6 @@ const CompanyInfoForm: React.FC<CompanyInfoFormProps> = ({
 
   const [errors, setErrors] = useState<Partial<Record<keyof CompanyInfo, string>>>({});
   const [logoPreview, setLogoPreview] = useState<string>('');
-  const [useSaved, setUseSaved] = useState(false);
 
   useEffect(() => {
     if (initialData) {
@@ -124,17 +120,6 @@ const CompanyInfoForm: React.FC<CompanyInfoFormProps> = ({
     }
   };
 
-  const handleUseSavedInfo = () => {
-    const savedInfo = loadCompanyInfo();
-    if (savedInfo) {
-      setFormData(savedInfo);
-      if (savedInfo.logo) {
-        setLogoPreview(savedInfo.logo);
-      }
-      setUseSaved(true);
-    }
-  };
-
   const handleClearForm = () => {
     setFormData({
       name: '',
@@ -149,12 +134,10 @@ const CompanyInfoForm: React.FC<CompanyInfoFormProps> = ({
     });
     setLogoPreview('');
     setErrors({});
-    setUseSaved(false);
   };
 
   return (
     <Box className="company-form-card" py={8}>
-      {/* Section Title with Use Saved Info Button */}
       <HStack justify="space-between" flexWrap="wrap" gap={3} mb={8}>
         <Box>
           <Heading 
@@ -171,26 +154,6 @@ const CompanyInfoForm: React.FC<CompanyInfoFormProps> = ({
             Tell us about your company
           </Text>
         </Box>
-        {showUseSavedInfoButton && loadCompanyInfo() && !useSaved && (
-          <Button 
-            size="md" 
-            variant="outline" 
-            borderColor="red.300"
-            color="red.600"
-            fontWeight="600"
-            borderRadius="12px"
-            px={6}
-            _hover={{ 
-              bg: 'red.50', 
-              borderColor: 'red.400',
-              transform: 'translateY(-2px)',
-              boxShadow: '0 4px 12px rgba(201, 31, 61, 0.2)'
-            }}
-            onClick={handleUseSavedInfo}
-          >
-            Use Saved Info
-          </Button>
-        )}
       </HStack>
 
       <form onSubmit={handleSubmit}>

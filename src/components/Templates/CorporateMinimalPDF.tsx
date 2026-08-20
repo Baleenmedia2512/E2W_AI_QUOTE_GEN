@@ -706,18 +706,12 @@ const SpecSection: React.FC<{
     return rowIndex === totalRows ? [s.specRow, s.specRowLast] : s.specRow;
   };
 
-  const remarkRowStyle = () => {
-    rowIndex += 1;
-    const base = rowIndex === totalRows ? [s.specRemarkRow, s.specRowLast] : s.specRemarkRow;
-    return base;
-  };
-
   return (
     <View style={s.specTable}>
       {trimmedRemark ? (
-        <View style={remarkRowStyle()}>
+        <View style={s.specRemarkBlock}>
           <Text style={s.specLabel}>Remark</Text>
-          <Text style={s.specRemarkValue}>
+          <Text style={s.specRemarkBlockValue}>
             {hyphenateLongWords(trimmedRemark, 36)}
           </Text>
         </View>
@@ -950,20 +944,20 @@ const DisplaySpecificationBlock: React.FC<{
   const specImagesAfterTables = (leadGroup || hasFields || trimmedRemark) && firstBatch.length > 0;
 
   const remarkRow = trimmedRemark ? (
-    <View style={s.specTable}>
-      <View style={[s.specRemarkRow, !(leadGroup || hasFields) ? s.specRowLast : {}]}>
-        <Text style={s.specLabel}>Remark</Text>
-        <Text style={s.specRemarkValue}>
-          {hyphenateLongWords(trimmedRemark, 36)}
-        </Text>
-      </View>
+    <View style={s.specRemarkBlock}>
+      <Text style={s.specLabel}>Remark</Text>
+      <Text style={s.specRemarkBlockValue}>
+        {hyphenateLongWords(trimmedRemark, 36)}
+      </Text>
     </View>
   ) : null;
 
   return (
     <View wrap={true}>
       {/* Heading stays with remark + first table/field block */}
-      <View wrap={false}>
+      {/* Allow a long remark to flow onto the next PDF page instead of being
+          clipped by a non-wrapping block. */}
+      <View wrap={true}>
         <SubHeading>{heading}</SubHeading>
         {/* Remark first, then Width / Height / Length / other specs */}
         {hasGroups && trimmedRemark ? remarkRow : null}

@@ -839,6 +839,19 @@ export const s = StyleSheet.create({
     paddingVertical: 7,
     paddingHorizontal: 12,
   },
+  /** Full-width remark block so long text keeps one consistent left edge
+   * when React-PDF flows it onto the next page. */
+  specRemarkBlock: {
+    borderBottomWidth: 0.75,
+    borderBottomColor: '#e4ecf5',
+    paddingVertical: 7,
+    paddingHorizontal: 12,
+  },
+  specRemarkBlockValue: {
+    fontSize: PDF_FONT.specValue,
+    color: '#1a202c',
+    lineHeight: 1.4,
+  },
   specSectionHeader: {
     flexDirection: 'row',
     alignItems: 'center',
