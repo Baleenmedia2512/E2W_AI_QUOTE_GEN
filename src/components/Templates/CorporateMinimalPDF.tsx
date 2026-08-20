@@ -1233,6 +1233,7 @@ const CorporateMinimalPDF: React.FC<CorporateMinimalPDFProps> = ({ data, pdfData
       serviceName: serviceType,
       city: city0,
     });
+    const singleRemark = collectServiceRemarks(quote.items);
 
     return (
       <Document
@@ -1263,20 +1264,20 @@ const CorporateMinimalPDF: React.FC<CorporateMinimalPDFProps> = ({ data, pdfData
           />
 
           {/* Reference images + display spec share one flow so tables fill space below images */}
-          {singlePdf && (
+          {(singlePdf || singleRemark) && (
             <View wrap={true}>
-              {normalizeImageSrcs(singlePdf.refImages).length > 0 && (
+              {normalizeImageSrcs(singlePdf?.refImages || []).length > 0 && (
                 <RefImages
-                  images={singlePdf.refImages}
+                  images={singlePdf?.refImages || []}
                   heading="2. Reference Image(s)"
                 />
               )}
               <DisplaySpecificationBlock
                 heading="3. Specification"
-                fields={singlePdf.specFields}
-                specGroups={singlePdf.specGroups}
-                images={singlePdf.specImages || []}
-                remark={collectServiceRemarks(quote.items)}
+                fields={singlePdf?.specFields || []}
+                specGroups={singlePdf?.specGroups}
+                images={singlePdf?.specImages || []}
+                remark={singleRemark}
               />
             </View>
           )}
@@ -1346,6 +1347,7 @@ const CorporateMinimalPDF: React.FC<CorporateMinimalPDFProps> = ({ data, pdfData
             serviceName: group.serviceType,
             city,
           });
+          const groupRemark = collectServiceRemarks(group.items);
 
           let sectionNum = 1;
 
@@ -1362,31 +1364,31 @@ const CorporateMinimalPDF: React.FC<CorporateMinimalPDFProps> = ({ data, pdfData
                 }
               />
 
-              {spd && (
-                normalizeImageSrcs(spd.refImages).length > 0 ||
-                hasSpecGroupContent(spd.specGroups) ||
-                spd.specFields.length > 0 ||
-                normalizeImageSrcs(spd.specImages || []).length > 0 ||
-                !!collectServiceRemarks(group.items)
+              {(spd || groupRemark) && (
+                normalizeImageSrcs(spd?.refImages || []).length > 0 ||
+                hasSpecGroupContent(spd?.specGroups) ||
+                (spd?.specFields?.length || 0) > 0 ||
+                normalizeImageSrcs(spd?.specImages || []).length > 0 ||
+                !!groupRemark
               ) && (
                 <View wrap={true}>
-                  {normalizeImageSrcs(spd.refImages).length > 0 && (
+                  {normalizeImageSrcs(spd?.refImages || []).length > 0 && (
                     <RefImages
-                      images={spd.refImages}
+                      images={spd?.refImages || []}
                       heading={`${sectionNum++}. Reference Image(s)`}
-                      imageDimensions={spd.refImageDimensions}
+                      imageDimensions={spd?.refImageDimensions}
                     />
                   )}
-                  {(hasSpecGroupContent(spd.specGroups) ||
-                    spd.specFields.length > 0 ||
-                    normalizeImageSrcs(spd.specImages || []).length > 0 ||
-                    !!collectServiceRemarks(group.items)) && (
+                  {(hasSpecGroupContent(spd?.specGroups) ||
+                    (spd?.specFields?.length || 0) > 0 ||
+                    normalizeImageSrcs(spd?.specImages || []).length > 0 ||
+                    !!groupRemark) && (
                     <DisplaySpecificationBlock
                       heading={`${sectionNum++}. Specification`}
-                      fields={spd.specFields}
-                      specGroups={spd.specGroups}
-                      images={spd.specImages || []}
-                      remark={collectServiceRemarks(group.items)}
+                      fields={spd?.specFields || []}
+                      specGroups={spd?.specGroups}
+                      images={spd?.specImages || []}
+                      remark={groupRemark}
                     />
                   )}
                 </View>
