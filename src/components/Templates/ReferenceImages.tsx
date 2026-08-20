@@ -2763,8 +2763,10 @@ export const ReferenceImages: React.FC<ReferenceImagesProps> = (props) => {
       (resolvedServiceIds.size > 0 || (items || []).some((i) => !!i.serviceId)) &&
       !!(proposalPages && proposalPages.some((p) => p.serviceId));
 
-    // Wait for real data before becoming ready — except intentional no-image rates.
-    if ((filteredPages.length === 0 && !knownServiceNoImages) || refImagesLoading) return;
+    // Wait for real data before becoming ready — except intentional no-image rates
+    // and remark-only sections. A quote remark must still render/export when the
+    // catalog has no display-spec pages for the service.
+    if ((filteredPages.length === 0 && !knownServiceNoImages && !showRemarkRow) || refImagesLoading) return;
     const tid = setTimeout(() => {
       if (containerRef.current) {
         containerRef.current.setAttribute('data-pdf-ready', 'true');
@@ -2831,18 +2833,19 @@ export const ReferenceImages: React.FC<ReferenceImagesProps> = (props) => {
     resolvedServiceIds,
     items,
     proposalPages,
+    showRemarkRow,
     props.onDataReady,
     props.serviceKey,
     finalReview,
   ]);
   // ─────────────────────────────────────────────────────────────────────────
 
-  if ((!resolvedPages || resolvedPages.length === 0) && filteredPages.length === 0) {
-    console.log('❌ ReferenceImages: No proposal pages, returning null');
+  if ((!resolvedPages || resolvedPages.length === 0) && filteredPages.length === 0 && !showRemarkRow) {
+    console.log('❌ ReferenceImages: No proposal pages or remark, returning null');
     return null;
   }
-  if (filteredPages.length === 0) {
-    console.log('⚠️ ReferenceImages: No filtered pages found — hiding Reference Image(s)');
+  if (filteredPages.length === 0 && !showRemarkRow) {
+    console.log('⚠️ ReferenceImages: No filtered pages or remark — hiding Reference Image(s)');
     return null;
   }
 
