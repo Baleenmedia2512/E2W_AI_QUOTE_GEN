@@ -27,6 +27,7 @@ import {
   updateSelfProfile,
   uploadProfileImage,
 } from '../../services/userProfileService';
+import { canAccessCompanyProfile } from '../../utils/profileAccess';
 
 type ProfileType = 'select' | 'company' | 'self';
 
@@ -37,6 +38,7 @@ const ChatProfilePanel: React.FC = () => {
   const companyInfo = useAppStore((state) => state.companyInfo);
   const setCompanyInfo = useAppStore((state) => state.setCompanyInfo);
   const closeChatProfile = useAppStore((state) => state.closeChatProfile);
+  const canEditCompanyProfile = canAccessCompanyProfile(user);
 
   const [profileType, setProfileType] = useState<ProfileType>('select');
   const [companySaved, setCompanySaved] = useState<CompanyInfo | null>(companyInfo);
@@ -310,30 +312,32 @@ const ChatProfilePanel: React.FC = () => {
 
           <RadioGroup value={profileType === 'select' ? selectionValue : profileType} onChange={(value) => setProfileType(value as Exclude<ProfileType, 'select'>)} mt={3}>
             <Stack spacing={2}>
-              <Box
-                as="button"
-                type="button"
-                p={3}
-                border="1.5px solid"
-                borderColor="gray.200"
-                borderRadius="12px"
-                bg="gray.50"
-                textAlign="left"
-                w="100%"
-                onClick={() => setProfileType('company')}
-                _hover={{ borderColor: 'brand.400', bg: 'brand.50' }}
-              >
-                <Radio value="company" size="lg" colorScheme="red">
-                  <HStack justify="space-between" align="center" w="100%" pl={2}>
-                    <Text fontWeight="700" color="gray.800">
-                      Company Profile
-                    </Text>
-                    <Text fontSize="sm" color="gray.500">
-                      Business details
-                    </Text>
-                  </HStack>
-                </Radio>
-              </Box>
+              {canEditCompanyProfile && (
+                <Box
+                  as="button"
+                  type="button"
+                  p={3}
+                  border="1.5px solid"
+                  borderColor="gray.200"
+                  borderRadius="12px"
+                  bg="gray.50"
+                  textAlign="left"
+                  w="100%"
+                  onClick={() => setProfileType('company')}
+                  _hover={{ borderColor: 'brand.400', bg: 'brand.50' }}
+                >
+                  <Radio value="company" size="lg" colorScheme="red">
+                    <HStack justify="space-between" align="center" w="100%" pl={2}>
+                      <Text fontWeight="700" color="gray.800">
+                        Company Profile
+                      </Text>
+                      <Text fontSize="sm" color="gray.500">
+                        Business details
+                      </Text>
+                    </HStack>
+                  </Radio>
+                </Box>
+              )}
 
               <Box
                 as="button"
