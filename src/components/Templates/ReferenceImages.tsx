@@ -2149,8 +2149,11 @@ export const ReferenceImages: React.FC<ReferenceImagesProps> = (props) => {
     remarkEditable = false,
     onRemarkChange,
   } = props;
-  const serviceRemark = (remarkProp ?? collectServiceRemarks(items)).trim();
-  const showRemarkRow = Boolean(serviceRemark || (remarkEditable && onRemarkChange));
+  // Preserve the raw value while editing so trailing spaces and Shift+Enter
+  // newlines are not removed by the controlled textarea on each keystroke.
+  const rawServiceRemark = remarkProp ?? collectServiceRemarks(items);
+  const serviceRemark = remarkEditable ? rawServiceRemark : rawServiceRemark.trim();
+  const showRemarkRow = Boolean(rawServiceRemark.trim() || (remarkEditable && onRemarkChange));
   // DEBUG: Log incoming props
   console.log('═══════════════════════════════════════════════════════════');
   console.log('🎬 DEBUG [ReferenceImages]: Component mounted/updated');
