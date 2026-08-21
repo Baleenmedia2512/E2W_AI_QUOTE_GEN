@@ -6,6 +6,7 @@ import {
 import {
   buildLineItemsFromDbPricing,
   hasQuotablePricing,
+  pickPreferredDbService,
 } from './dbPricingUtils';
 import { enrichQuoteItemsDurationFromDb, getServiceScopedUserMessage } from './durationUtils';
 import { DEFAULT_GENERAL_TERMS } from './quoteGrouping';
@@ -26,11 +27,24 @@ function titleCaseCity(city: string): string {
  * Confirmation rows identify catalog records, but several vendor records can
  * represent the same logical quote service. Keep one requested row for each
  * service/city/quantity combination before resolving vendor pricing.
+ *
+ * Distinct sites (different area / direction) and distinct medium_types
+ * (Elevated vs Underground, Frontlit vs Nonlit) stay separate. Vendor
+ * duplicates that share medium + type + city with no site identity collapse
+ * to one preferred row so the executive summary does not show Fixing twice.
  */
-function dedupeLogicalQuoteRows(rows: ConfirmationRow[]): ConfirmationRow[] {
-  const seen = new Set<string>();
-  return rows.filter((row) => {
-    const serviceKey = row.service
+function dedupeLogicalQuoteRows(
+  rows: ConfirmationRow[],
+  services: DbService[] = [],
+): ConfirmationRow[] {
+  const byLogical = new Map<string, ConfirmationRow[]>();
+
+  for (const row of rows) {
+    const svc = row.serviceId
+      ? services.find((s) => s.service_id === row.serviceId)
+      : undefined;
+    const meta = (svc?.metadata || {}) as Record<string, unknown>;
+    const medium = String(meta.medium || row.service || '')
       .toLowerCase()
       .replace(/[–—]/g, '-')
       .replace(/\s+/g, ' ')
@@ -42,17 +56,56 @@ function dedupeLogicalQuoteRows(rows: ConfirmationRow[]): ConfirmationRow[] {
     const qty = typeof row.qty === 'number'
       ? row.qty
       : parseInt(String(row.qty), 10) || 1;
-    // A serviceId identifies one exact catalog site. Keep separate DB rows
-    // even when they share the same medium, city, and quantity; otherwise
-    // selecting multiple directions collapses to whichever row appears first
-    // and the preview can show the wrong site.
-    const key = row.serviceId
-      ? `id:${row.serviceId}|${qty}`
-      : `${serviceKey}|${cityKey}|${qty}`;
-    if (seen.has(key)) return false;
-    seen.add(key);
-    return true;
-  });
+    const area = String(meta.area_name || meta.area || '').trim();
+    const direction = String(meta.direction_remarks || '').trim();
+    const mediumType = String(meta.medium_type || meta.mediumType || '')
+      .toLowerCase()
+      .replace(/\s+/g, ' ')
+      .trim();
+    const typeKey =
+      mediumType && mediumType !== 'na' ? mediumType : '';
+    const siteParts = [area, direction]
+      .filter((v) => v && v.toUpperCase() !== 'NA');
+    const siteKey = siteParts
+      .map((v) => v.toLowerCase().replace(/\s+/g, ' ').trim())
+      .join('|');
+    // medium_type is part of product identity (Elevated vs Underground,
+    // Frontlit vs Nonlit). Only collapse true vendor twins that share type.
+    const key = siteKey
+      ? `site:${medium}|${typeKey}|${cityKey}|${siteKey}|${qty}`
+      : `logical:${medium}|${typeKey}|${cityKey}|${qty}`;
+    const list = byLogical.get(key);
+    if (list) list.push(row);
+    else byLogical.set(key, [row]);
+  }
+
+  const out: ConfirmationRow[] = [];
+  for (const group of byLogical.values()) {
+    if (group.length === 1) {
+      out.push(group[0]);
+      continue;
+    }
+    // Prefer the preferred/quotable catalog row when several vendor ids share
+    // the same logical medium + city with no site distinction.
+    const candidates = group
+      .map((row) => ({
+        row,
+        svc: row.serviceId
+          ? services.find((s) => s.service_id === row.serviceId)
+          : undefined,
+      }))
+      .filter((x): x is { row: ConfirmationRow; svc: DbService } => !!x.svc);
+    if (candidates.length) {
+      const preferred = pickPreferredDbService(candidates.map((c) => c.svc));
+      const match = preferred
+        ? candidates.find((c) => c.svc.service_id === preferred.service_id)
+        : candidates[0];
+      out.push(match?.row || group[0]);
+    } else {
+      out.push(group[0]);
+    }
+  }
+  return out;
 }
 
 /**
@@ -66,7 +119,7 @@ export function buildQuoteFromConfirmedRows(
   services: DbService[],
   originalUserInput: string,
 ): BuildQuoteFromDbResult {
-  const uniqueRows = dedupeLogicalQuoteRows(dedupeConfirmationRows(rows));
+  const uniqueRows = dedupeLogicalQuoteRows(dedupeConfirmationRows(rows), services);
   const unresolved: string[] = [];
   const allItems: QuoteItem[] = [];
   const vendorRates = getVendorRatesCache();

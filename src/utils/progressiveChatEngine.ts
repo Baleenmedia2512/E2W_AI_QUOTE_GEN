@@ -54,7 +54,7 @@ import {
   serviceMatchesQuery,
 } from './cloudQuoteValidation';
 import { canonicalizeServiceName, KNOWN_CITY_LIST } from './serviceNameUtils';
-import { hasQuotablePricing } from './dbPricingUtils';
+import { hasQuotablePricing, pickPreferredDbService } from './dbPricingUtils';
 import type { DbService } from './serviceResolver';
 import { formatServiceDisplayName } from './serviceResolver';
 import { resolveMediaAgainstCatalog } from '../services/chatIntentAiService';
@@ -5407,15 +5407,21 @@ function uniqueMediumOnlyOptions(services: DbService[]): ProgressiveOption[] {
 function uniqueTypeOnlyOptions(services: DbService[], medium: string): ProgressiveOption[] {
   const want = canonicalizeServiceName(medium);
   const family = want.split(/\s+/).filter(Boolean)[0] || want;
+  // Bare family token ("metro") may include Station / Train Inside / Wrap types.
+  // Exact medium ("metro station") must only show that medium's medium_type values.
+  const bareFamily = want === family;
   const groups = new Map<string, { opt: ProgressiveOption; rows: DbService[] }>();
   for (const s of services) {
     const mk = canonicalizeServiceName(getMediumKey(s));
     if (!mk) continue;
-    // "metro station" types + sibling "metro wrap" / "metro train inside" under family "metro"
     const mediumOk =
       mk === want
       || isSameMediumFamily(mk, want)
-      || (family.length >= 3 && (isSameMediumFamily(mk, family) || mk.startsWith(`${family} `)));
+      || (
+        bareFamily
+        && family.length >= 3
+        && (isSameMediumFamily(mk, family) || mk.startsWith(`${family} `))
+      );
     if (!mediumOk) continue;
     const mType = getMediumTypeFromDb(s);
     if (!mType) continue;
@@ -6240,10 +6246,32 @@ export function advanceFunnel(
 
     // Multiple DB rows can represent one logical product across vendors,
     // pricing records, or optional row qualifiers. With no real direction
-    // values, do not expose those rows as a fake site/product picker.
+    // values, do not expose those rows as a fake site/product picker —
+    // and never finalize every vendor duplicate into the quote.
+    // Multi-type Confirm (Elevated+Underground / Frontlit+Nonlit) must keep
+    // one preferred row PER medium_type before any single-vendor collapse.
     const logicalProducts = uniqueProductOptions(finalPool);
     if (allowAutoFinalize && dirKeys.length === 0 && logicalProducts.length === 1) {
-      return finalizeSelection(finalPool, sess, services);
+      if (sess.typesResolved) {
+        const byType = new Map<string, DbService[]>();
+        for (const s of finalPool) {
+          const t = canonicalizeServiceName(getMediumTypeFromDb(s) || '_none');
+          const list = byType.get(t);
+          if (list) list.push(s);
+          else byType.set(t, [s]);
+        }
+        if (byType.size > 1) {
+          const reps = [...byType.values()]
+            .map((rows) => pickPreferredDbService(rows) || rows[0])
+            .filter((s): s is DbService => !!s);
+          return finalizeSelection(reps, {
+            ...sess,
+            candidateServiceIds: finalPool.map((s) => s.service_id),
+          }, services);
+        }
+      }
+      const preferred = pickPreferredDbService(finalPool) || finalPool[0];
+      return finalizeSelection(preferred ? [preferred] : [], sess, services);
     }
 
     if (finalPool.length === 1) {
@@ -6306,7 +6334,14 @@ export function advanceFunnel(
       const byType = new Map<string, DbService>();
       for (const s of finalPool) {
         const t = canonicalizeServiceName(getMediumTypeFromDb(s) || '_none');
-        if (!byType.has(t)) byType.set(t, s);
+        const prev = byType.get(t);
+        if (!prev) {
+          byType.set(t, s);
+          continue;
+        }
+        // Prefer the stronger-priced vendor when several rows share a type.
+        const preferred = pickPreferredDbService([prev, s]);
+        if (preferred) byType.set(t, preferred);
       }
       if (byType.size >= 1) {
         return finalizeSelection([...byType.values()], {
@@ -10159,6 +10194,28 @@ function continueProgressiveActionInner(
           });
           if (typed.length) hits = typed;
           else if (session.city) continue; // type not in locked city
+        } else {
+          // Multi-select must not skip Type (Elevated / Underground) by auto-picking
+          // one site when direction_remarks are empty or a single site exists.
+          const types = uniqueTypeOnlyOptions(hits, med);
+          if (types.length > 1) {
+            needFunnel.push({
+              medium: med,
+              browseToken: med,
+              qty: session.qty,
+              city: session.city || undefined,
+              candidateServiceIds: hits.map((s) => s.service_id),
+            });
+            continue;
+          }
+          if (types.length === 1) {
+            const mt = canonicalizeServiceName(types[0].mediumType || types[0].label);
+            const typed = hits.filter((s) => {
+              const got = getMediumTypeFromDb(s);
+              return !!got && canonicalizeServiceName(got) === mt;
+            });
+            if (typed.length) hits = typed;
+          }
         }
 
         const cities = uniqueCityOptionsFromPool(hits, med);
@@ -10190,7 +10247,8 @@ function continueProgressiveActionInner(
         // Ready when city known and at most one direction (or no directions / single site)
         if (cityLock && (dirKeys.length <= 1 || scoped.length === 1)) {
           const rep =
-            (dirKeys.length === 1 && withDir[0])
+            (dirKeys.length === 1 && (pickPreferredDbService(withDir) || withDir[0]))
+            || pickPreferredDbService(scoped)
             || scoped[0];
           if (rep && hasQuotablePricing(rep)) readyReps.push(rep);
           else if (rep) unpricedLabels.push(chipDisplayLabel(chip));
