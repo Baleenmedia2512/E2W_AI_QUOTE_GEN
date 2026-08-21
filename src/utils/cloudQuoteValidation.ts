@@ -63,8 +63,57 @@ export function extractQueryWords(query: string): string[] {
     .map((w) => PLURAL_NORMALIZE_MAP[w] ?? w);
 }
 
-/** True when the user typed a category (e.g. "bus") rather than a full service name. */
-export function isVagueCategoryQuery(query: string): boolean {
+/**
+ * True when the user typed a category (e.g. "bus") rather than a full service
+ * name. When the catalog is available, exact and multi-word DB-medium
+ * prefixes take precedence over the legacy hardcoded category heuristic.
+ */
+export function isVagueCategoryQuery(query: string, services?: DbService[]): boolean {
+  if (services?.length) {
+    const queryKey = canonicalizeServiceName(query);
+    const compact = queryKey.replace(/\s+/g, '');
+    const queryWordCount = queryKey.split(/\s+/).filter(Boolean).length;
+    if (queryKey) {
+      const relatedMediums = new Set<string>();
+      let exactOrPrefix = false;
+      for (const service of services) {
+        const medium = canonicalizeServiceName(
+          String(service.metadata?.medium || '').trim(),
+        );
+        const serviceName = canonicalizeServiceName(
+          (service.service_name || '').split(/[·|]/)[0],
+        );
+        for (const field of [medium, serviceName]) {
+          if (!field) continue;
+          const first = field.split(/\s+/).filter(Boolean)[0] || field;
+          if (field === queryKey || field.startsWith(`${queryKey} `)) {
+            exactOrPrefix = true;
+            relatedMediums.add(medium || field);
+          } else if (
+            first === queryKey
+            || first === compact
+            || field.replace(/\s+/g, '') === compact
+            || (queryKey.length >= 4 && first.startsWith(queryKey))
+          ) {
+            relatedMediums.add(medium || field);
+          }
+        }
+      }
+      if (exactOrPrefix && queryWordCount >= 2) return false;
+      if (relatedMediums.size >= 1) {
+        const isExactFirstToken =
+          queryWordCount === 1
+          && [...relatedMediums].some((medium) => {
+            const first = medium.split(/\s+/).filter(Boolean)[0];
+            return first === queryKey;
+          });
+        // Classic 1-word families (bus, auto) still use the city-picker path.
+        if (!(isExactFirstToken && VEHICLE_CATEGORY_PATTERN.test(query))) {
+          return false;
+        }
+      }
+    }
+  }
   if (FULL_SERVICE_PATTERNS.some((p) => p.test(query))) return false;
   const words = extractQueryWords(query);
   if (words.length === 0) return false;
@@ -208,9 +257,9 @@ export function detectCityOnlyInList(text: string, cityListLower: string[]): str
 }
 
 function citiesMatch(svcCity: string, selectedCity: string): boolean {
-  const a = svcCity.toLowerCase();
-  const b = selectedCity.toLowerCase();
-  return a.includes(b) || b.includes(a);
+  const a = svcCity.toLowerCase().replace(/\s+/g, ' ').trim();
+  const b = selectedCity.toLowerCase().replace(/\s+/g, ' ').trim();
+  return Boolean(a && b && a === b);
 }
 
 /** Medium-type tokens that should filter matches, not require literal name inclusion. */

@@ -329,6 +329,20 @@ const ChatInterfaceContent: React.FC = () => {
   /** Progressive checklist page size — rendering 90+ chips freezes the main thread. */
   const [progressiveChipVisible, setProgressiveChipVisible] = useState<Record<string, number>>({});
   const PROGRESSIVE_CHIP_PAGE = 24;
+
+  const updateProgressiveSelection = (messageId: string, selected: string[]) => {
+    setProgressiveMultiSelect((prev) => ({
+      ...prev,
+      [messageId]: selected,
+    }));
+    setMessages((prev) =>
+      prev.map((message) =>
+        message.id === messageId
+          ? { ...message, progressiveSelected: selected }
+          : message,
+      ),
+    );
+  };
   /** messageId → serviceKey currently being edited on min-qty card */
   const [minQtyEditingKey, setMinQtyEditingKey] = useState<Record<string, string | null>>({});
   /** messageId → serviceKey → draft string while typing */
@@ -504,6 +518,13 @@ const ChatInterfaceContent: React.FC = () => {
     if (safe.length < history.length) {
       saveChatHistory(safe);
     }
+    const restoredSelections: Record<string, string[]> = {};
+    safe.forEach((msg) => {
+      if (msg.progressiveSelected?.length) {
+        restoredSelections[msg.id] = msg.progressiveSelected;
+      }
+    });
+    setProgressiveMultiSelect(restoredSelections);
     setMessages(
       stripChipImagesFromMessages(
         safe.map((msg) => ({
@@ -1101,12 +1122,17 @@ const ChatInterfaceContent: React.FC = () => {
       }
       setCurrentQuote(result.quote);
       loadCloudServices().catch(() => undefined);
+      const skippedNote = result.skipped?.length
+        ? `Currently no pricing for ${result.skipped.join('; ')}. We can't include ${
+          result.skipped.length === 1 ? 'this service' : 'these services'
+        } in the quote.\n`
+        : '';
       setMessages((prev) => [
         ...prev,
         {
           id: (Date.now() + 1).toString(),
           role: 'assistant',
-          content: 'Your quotation is ready.\nOpening quotation preview.',
+          content: `${skippedNote}Your quotation is ready.\nOpening quotation preview.`,
           timestamp: new Date(),
         },
       ]);
@@ -1642,10 +1668,20 @@ const ChatInterfaceContent: React.FC = () => {
         const lastProgMsg = [...messages].reverse().find(
           (m) => m.role === 'assistant' && m.progressiveSession,
         );
+        const lastAssistant = [...messages].reverse().find(
+          (m) => m.role === 'assistant',
+        );
+        const completedQuoteSession =
+          !!lastAssistant
+          && /your quotation is ready\./i.test(lastAssistant.content || '');
         const priorSession: ProgressiveSession | null =
-          progressiveSession
-          || (lastProgMsg?.progressiveSession as ProgressiveSession | undefined)
-          || null;
+          completedQuoteSession
+            ? null
+            : (
+              progressiveSession
+              || (lastProgMsg?.progressiveSession as ProgressiveSession | undefined)
+              || null
+            );
 
         // ── Typed chip / yes-no / min-qty reply → same as tapping ──
         // Skip when message names a *different* catalog service (fresh switch).
@@ -1814,7 +1850,7 @@ const ChatInterfaceContent: React.FC = () => {
           const dynamicCities = getMergedDynamicCities(dbList);
           const cityDetectionList = getCityDetectionList(dbList);
           const isMultiSegment = isMultiSegmentQuoteRequest(cleanedText);
-          const isVagueWhole = isVagueCategoryQuery(cleanedText);
+          const isVagueWhole = isVagueCategoryQuery(cleanedText, dbList);
           const knownCityWhole = detectKnownCityInText(cleanedText, dbList);
 
           // ── Single-segment vague with no city (e.g. "bus") → always city picker ──
@@ -2955,10 +2991,15 @@ const ChatInterfaceContent: React.FC = () => {
               console.warn('⚠️ Could not refresh cloud services after quote:', err);
             });
 
+            const skippedNote = result.skipped?.length
+              ? `Currently no pricing for ${result.skipped.join('; ')}. We can't include ${
+                result.skipped.length === 1 ? 'this service' : 'these services'
+              } in the quote.\n`
+              : '';
             const quoteReadyMessage: Message = {
               id: (Date.now() + 1).toString(),
               role: 'assistant',
-              content: 'Your quotation is ready.\nOpening quotation preview.',
+              content: `${skippedNote}Your quotation is ready.\nOpening quotation preview.`,
               timestamp: new Date(),
             };
             setMessages(prev => [...prev, quoteReadyMessage]);
@@ -3604,7 +3645,20 @@ const ChatInterfaceContent: React.FC = () => {
                           )}
 
                           {/* Progressive chat option chips — only the latest turn stays interactive */}
-                          {message.isProgressiveChat && message.id === latestProgressiveId && message.progressiveOptions && message.progressiveOptions.length > 0 && (
+                          {message.isProgressiveChat
+                            && message.progressiveOptions
+                            && message.progressiveOptions.length > 0
+                            && (
+                              message.id === latestProgressiveId
+                              || (
+                                message.progressiveAllowMulti
+                                && (
+                                  progressiveMultiSelect[message.id]?.length
+                                  ?? message.progressiveSelected?.length
+                                  ?? 0
+                                ) > 0
+                              )
+                            ) && (
                             <Box mt={3}>
                               {message.progressiveAllowMulti ? (
                                 /* Scrollable checklist — fixed ~10 rows visible */
@@ -3642,10 +3696,10 @@ const ChatInterfaceContent: React.FC = () => {
                                       fontSize="12px"
                                       _hover={{ color: 'brand.700', textDecoration: 'underline' }}
                                       onClick={() =>
-                                        setProgressiveMultiSelect((prev) => ({
-                                          ...prev,
-                                          [message.id]: message.progressiveOptions!.map((o) => o.id),
-                                        }))
+                                        updateProgressiveSelection(
+                                          message.id,
+                                          message.progressiveOptions!.map((o) => o.id),
+                                        )
                                       }
                                     >
                                       Select all
@@ -3659,10 +3713,7 @@ const ChatInterfaceContent: React.FC = () => {
                                       fontSize="12px"
                                       _hover={{ color: 'gray.700', textDecoration: 'underline' }}
                                       onClick={() =>
-                                        setProgressiveMultiSelect((prev) => ({
-                                          ...prev,
-                                          [message.id]: [],
-                                        }))
+                                        updateProgressiveSelection(message.id, [])
                                       }
                                     >
                                       Clear
@@ -3679,8 +3730,14 @@ const ChatInterfaceContent: React.FC = () => {
                                       border="1px solid"
                                       borderColor="gray.200"
                                     >
-                                      {progressiveMultiSelect[message.id]?.length
-                                        ? `${progressiveMultiSelect[message.id].length} selected`
+                                      {(progressiveMultiSelect[message.id]?.length
+                                        ?? message.progressiveSelected?.length
+                                        ?? 0)
+                                        ? `${(
+                                          progressiveMultiSelect[message.id]
+                                          ?? message.progressiveSelected
+                                          ?? []
+                                        ).length} selected`
                                         : `${message.progressiveOptions.length} options`}
                                     </Text>
                                   </HStack>
@@ -3743,7 +3800,11 @@ const ChatInterfaceContent: React.FC = () => {
                                           )}
                                           <SimpleGrid columns={{ base: 1, sm: 2 }} spacing={2}>
                                             {sec.items.map((opt) => {
-                                              const isSelected = (progressiveMultiSelect[message.id] || []).includes(opt.id);
+                                              const isSelected = (
+                                                progressiveMultiSelect[message.id]
+                                                ?? message.progressiveSelected
+                                                ?? []
+                                              ).includes(opt.id);
                                               const showThumb = !!opt.imageUrl;
                                               return (
                                                 <Box
@@ -3775,13 +3836,11 @@ const ChatInterfaceContent: React.FC = () => {
                                                   disabled={isLoading}
                                                   onClick={() => {
                                                     if (isLoading) return;
-                                                    setProgressiveMultiSelect((prev) => {
-                                                      const cur = prev[message.id] || [];
-                                                      const next = cur.includes(opt.id)
-                                                        ? cur.filter((x) => x !== opt.id)
-                                                        : [...cur, opt.id];
-                                                      return { ...prev, [message.id]: next };
-                                                    });
+                                                    const current = progressiveMultiSelect[message.id] || [];
+                                                    const next = current.includes(opt.id)
+                                                      ? current.filter((x) => x !== opt.id)
+                                                      : [...current, opt.id];
+                                                    updateProgressiveSelection(message.id, next);
                                                   }}
                                                 >
                                                   <Box
@@ -3894,12 +3953,23 @@ const ChatInterfaceContent: React.FC = () => {
                                         cursor: 'not-allowed',
                                         boxShadow: 'none',
                                       }}
-                                      isDisabled={isLoading || !(progressiveMultiSelect[message.id]?.length)}
+                                      isDisabled={
+                                        isLoading
+                                        || !(
+                                          progressiveMultiSelect[message.id]?.length
+                                          ?? message.progressiveSelected?.length
+                                        )
+                                      }
                                       onClick={() => void handleProgressiveMultiConfirm(message)}
                                     >
                                       Confirm
-                                      {progressiveMultiSelect[message.id]?.length
-                                        ? ` (${progressiveMultiSelect[message.id].length})`
+                                      {(progressiveMultiSelect[message.id]?.length
+                                        ?? message.progressiveSelected?.length)
+                                        ? ` (${(
+                                          progressiveMultiSelect[message.id]
+                                          ?? message.progressiveSelected
+                                          ?? []
+                                        ).length})`
                                         : ''}
                                     </Button>
                                   </Box>

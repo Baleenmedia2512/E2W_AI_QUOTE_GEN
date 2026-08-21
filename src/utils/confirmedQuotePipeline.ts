@@ -17,8 +17,27 @@ import {
 } from './durationUtils';
 import { resolveDisplayUnitPricePerDay } from './marginUtils';
 
-/** True when segment text contains a complete service name (not a vague category). */
-export function isSegmentFullySpecified(segmentRaw: string): boolean {
+/** True when segment text contains a complete DB service phrase. */
+export function isSegmentFullySpecified(
+  segmentRaw: string,
+  services?: DbService[],
+): boolean {
+  const queryKey = canonicalizeServiceName(segmentRaw);
+  if (services?.length && queryKey) {
+    const catalogMatch = services.some((service) => {
+      const medium = canonicalizeServiceName(String(service.metadata?.medium || ''));
+      const name = canonicalizeServiceName(
+        (service.service_name || '').split(/[·|]/)[0],
+      );
+      return (
+        medium === queryKey
+        || name === queryKey
+        || medium.startsWith(`${queryKey} `)
+        || name.startsWith(`${queryKey} `)
+      );
+    });
+    if (catalogMatch) return true;
+  }
   return FULL_SERVICE_PATTERNS.some((p) => p.test(segmentRaw));
 }
 
@@ -399,7 +418,7 @@ export function resolveDbServiceNameForSegment(
     .replace(/\b(need|for|the|a|an|in|at|of|and|i|want|please|generate|quote)\b/gi, '')
     .trim();
 
-  if (isSegmentFullySpecified(segmentRaw)) {
+  if (isSegmentFullySpecified(segmentRaw, services)) {
     const resolved = resolveServiceIdFromCatalog(words, services, cityHint);
     return resolved?.serviceName ?? null;
   }

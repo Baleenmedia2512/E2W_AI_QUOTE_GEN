@@ -54,6 +54,7 @@ import {
   serviceMatchesQuery,
 } from './cloudQuoteValidation';
 import { canonicalizeServiceName, KNOWN_CITY_LIST } from './serviceNameUtils';
+import { hasQuotablePricing } from './dbPricingUtils';
 import type { DbService } from './serviceResolver';
 import { formatServiceDisplayName } from './serviceResolver';
 import { resolveMediaAgainstCatalog } from '../services/chatIntentAiService';
@@ -63,6 +64,9 @@ import {
   scoreDirectionMatch,
 } from './directionMatcher';
 
+// Legacy vocabulary used only for typed metro aliases and service-id parsing.
+// City chips, city locks, filtering, and quote generation must use DB metadata
+// values from the active catalog instead of this static list.
 const REAL_CITY_KEYS = [...new Set([...CLOUD_CITY_KEYS, ...KNOWN_CITY_LIST])]
   .map((c) => c.toLowerCase())
   .sort((a, b) => b.length - a.length);
@@ -534,9 +538,9 @@ function copyAskArea(
   medium?: string | null,
   session?: ProgressiveSession | null,
 ): string {
-  void medium;
+  const svc = titleCase(medium || 'This');
   return composeReply(session, {
-    avail: city ? `Available in more ${city} areas.` : 'Available in more than one area.',
+    avail: city ? `${svc} in more ${city} areas.` : `${svc} in more than one area.`,
     ask: 'Which area do you need?',
   }).text;
 }
@@ -546,16 +550,54 @@ function copyAskDirection(
   mediumName: string,
   session?: ProgressiveSession | null,
 ): string {
-  void mediumName;
   const loc = locationLabel || 'that area';
+  const svc = titleCase(mediumName || 'This');
   return composeReply(session, {
-    avail: `Sites available in ${loc}.`,
+    avail: `${svc} sites available in ${loc}.`,
     ask: 'Which location do you need?',
   }).text;
 }
 
-function copyQuoteReady(): string {
-  return compactFunnelReply('Your quotation is ready.', 'Opening quotation preview.');
+function copyQuoteReady(
+  session?: ProgressiveSession | null,
+  rows?: ConfirmationRow[],
+): string {
+  const labels = [
+    ...new Set(
+      (rows || [])
+        .map((row) => row.service.trim())
+        .filter(Boolean),
+    ),
+  ];
+  const selectedLabel =
+    labels.length === 1
+      ? labels[0]
+      : labels.length > 1
+        ? `${labels.slice(0, 3).join(', ')}${labels.length > 3 ? ` +${labels.length - 3} more` : ''}`
+        : [
+          session?.medium ? titleCase(session.medium) : '',
+          session?.mediumType ? titleCase(session.mediumType) : '',
+        ].filter(Boolean).join(' — ');
+  const cities = [
+    ...new Set(
+      (rows || [])
+        .map((row) => row.city.trim())
+        .filter(Boolean),
+    ),
+  ];
+  const cityText =
+    cities.length === 1
+      ? ` is available only in ${cities[0]}`
+      : cities.length > 1
+        ? ` is available in ${cities.join(' and ')}`
+        : '';
+  const availability = selectedLabel
+    ? `${selectedLabel}${cityText}.`
+    : 'Your quotation is ready.';
+  return compactFunnelReply(
+    availability,
+    'Your quotation is ready.\nOpening quotation preview.',
+  );
 }
 
 function copyUnknownService(session?: ProgressiveSession | null): string {
@@ -1561,11 +1603,9 @@ function copyBatchNextService(opts: {
   city?: string;
   remainingAfter: number;
 }): string {
+  void opts.finishedLabel;
   const where = opts.city ? ` in ${opts.city}` : '';
-  return compactFunnelReply(
-    opts.finishedLabel ? `Added ${opts.finishedLabel}.` : undefined,
-    `Now choosing ${opts.nextLabel}${where}.`,
-  );
+  return `Now choosing ${opts.nextLabel}${where}.`;
 }
 
 function copyBatchStepWhy(step: ProgressiveStep | string | undefined): string {
@@ -1593,14 +1633,20 @@ function withBatchStepPrompt(
   if (result.step === 'min_qty_confirm' || result.step === 'quote_ready') {
     return result;
   }
+  const why = copyBatchStepWhy(result.step);
+  const choosing = replyLines(trimmed).find((line) => /^now choosing\b/i.test(line));
+  // Keep the current service on line 1; put the step ask on line 2.
+  if (choosing && why) {
+    return { ...result, botText: compactFunnelReply(choosing, why) };
+  }
   // Handoff already includes the ask ("which Bus option?")
   if (/\bwhich\b.+\boption\b/i.test(trimmed)) {
     return { ...result, botText: trimmed };
   }
-  const why = copyBatchStepWhy(result.step);
+  if (!why) return { ...result, botText: choosing || trimmed };
   return {
     ...result,
-    botText: joinNoteAndAsk(trimmed, why),
+    botText: joinNoteAndAsk(choosing || trimmed, why),
   };
 }
 
@@ -1930,7 +1976,7 @@ function getMetaCityRaw(svc: DbService): string | null {
 function funnelCityFromDb(svc: DbService): string | null {
   const raw = getMetaCityRaw(svc);
   if (raw && !isNumericOnlyLabel(raw) && !isDirectionLikeLabel(raw)) {
-    return matchKnownCityLabel(raw) || titleCase(raw);
+    return titleCase(raw);
   }
   const area = getMetaAreaRaw(svc);
   if (area && !isNumericOnlyLabel(area) && !isDirectionLikeLabel(area)) {
@@ -1975,6 +2021,16 @@ export function getDirectionLabel(svc: DbService): string | null {
   return metaFieldClean(meta?.direction_remarks);
 }
 
+/** Stable key for duplicate DB chips; does not merge different words or labels. */
+function dbChipValueKey(value: string): string {
+  return value.toLowerCase().replace(/\s+/g, ' ').trim();
+}
+
+/** Identity for DB field values: preserve case and wording exactly. */
+function exactDbValueKey(value: string): string {
+  return value.trim();
+}
+
 /** Long road / direction-style labels — not city or area chips. */
 function isDirectionLikeLabel(value: string): boolean {
   const t = value.trim();
@@ -1993,9 +2049,7 @@ function isDirectionLikeLabel(value: string): boolean {
 export function getDbCityLabel(svc: DbService): string | null {
   const raw = getMetaCityRaw(svc);
   if (!raw || isNumericOnlyLabel(raw) || isDirectionLikeLabel(raw)) return null;
-  // Prefer known metro spelling when applicable
-  const known = matchKnownCityLabel(raw);
-  if (known) return known;
+  // Preserve the catalog value; do not collapse it into a hardcoded metro.
   return titleCase(raw);
 }
 
@@ -2215,10 +2269,8 @@ function extractExplicitAreaPhrase(text: string): string | null {
 }
 
 export function detectCityInText(text: string, services?: DbService[]): string | null {
-  const all = detectCitiesInText(text);
+  const all = detectCitiesInText(text, services);
   if (all[0]) return all[0];
-  // DB metadata.city (Tirupathi / Chittoor / …) when not a known-metro phrase
-  if (services?.length) return detectDbCityInText(text, services);
   return null;
 }
 
@@ -2257,8 +2309,8 @@ export function detectDbCityInText(text: string, services: DbService[]): string 
   return null;
 }
 
-/** All known metros named in text (order of first appearance). */
-export function detectCitiesInText(text: string): string[] {
+/** Cities named in text, using the active DB catalog when available. */
+export function detectCitiesInText(text: string, services?: DbService[]): string[] {
   const lower = text.toLowerCase();
   type Hit = { label: string; index: number };
   const hits: Hit[] = [];
@@ -2283,6 +2335,23 @@ export function detectCitiesInText(text: string): string[] {
     const canonical = CITY_TYPO_ALIASES[typo]!;
     consider(typo, titleCaseCityKey(canonical));
   }
+
+  // Catalog values are authoritative for non-metro cities such as Chittoor.
+  // This supplements the legacy metro/typo vocabulary without inventing or
+  // normalizing a DB city into another label.
+  if (services?.length) {
+    const dbLabels = new Map<string, string>();
+    for (const service of services) {
+      const label = funnelCityFromDb(service);
+      if (!label) continue;
+      const key = canonicalizeServiceName(label);
+      if (key) dbLabels.set(key, label);
+    }
+    for (const [key, label] of dbLabels) {
+      consider(key, label);
+    }
+  }
+
   return hits.sort((a, b) => a.index - b.index).map((h) => h.label);
 }
 
@@ -2353,7 +2422,7 @@ function extractSharedBatchCities(
     : null;
   if (explicitLocations?.length) return explicitLocations;
 
-  const cities = detectCitiesInText(text);
+  const cities = detectCitiesInText(text, services);
   if (cities.length < 2) return null;
 
   const segsWithCity = segments.filter((s) => !!s.city);
@@ -2790,9 +2859,12 @@ export function getMediumKey(svc: DbService | null | undefined): string {
   if (medium && medium.toUpperCase() !== 'NA') {
     return canonicalizeServiceName(medium.split(/[·|]/)[0] || medium);
   }
-  const name = (svc.service_name || '').split(/[·—–]/)[0] || '';
-  const first = canonicalizeServiceName(name).split(/\s+/)[0] || '';
-  if (first) return first;
+  // When medium is absent, preserve the complete DB service label as the
+  // catalog medium. Reducing it to the first word makes related products
+  // indistinguishable and prevents exact full-name matching.
+  const name = (svc.service_name || '').split(/[·|]/)[0] || '';
+  const fullName = canonicalizeServiceName(name);
+  if (fullName) return fullName;
   const sid = (svc.service_id || '').toLowerCase();
   return sid.split('-')[0] || 'service';
 }
@@ -2874,19 +2946,38 @@ function detectExactCatalogSelection(
       const mediumType = getMediumTypeFromDb(service);
       const mediumKey = canonicalizeServiceName(medium);
       const typeKey = mediumType ? canonicalizeServiceName(mediumType) : '';
-      const phrase = [
-        mediumKey,
-        typeKey && !mediumKey.includes(typeKey) ? typeKey : '',
-      ]
-        .filter(Boolean)
-        .join(' ')
-        .trim();
-      return {
+      const serviceName = canonicalizeServiceName(
+        (service.service_name || '').split(/[·|]/)[0] || '',
+      );
+      // A bare medium must not inherit the type from whichever vendor row
+      // happens to be encountered first. For example, "hoarding" must remain
+      // untyped even when the first DB row is Nonlit; the funnel must still
+      // ask for Frontlit/Nonlit. A type is locked only when it is explicit in
+      // the matched service phrase.
+      const phrases = [
+        { phrase: mediumKey, explicitType: false },
+        {
+          phrase: serviceName,
+          explicitType: !!typeKey && serviceName.includes(typeKey),
+        },
+        {
+          phrase: [
+            mediumKey,
+            typeKey && !mediumKey.includes(typeKey) ? typeKey : '',
+          ]
+            .filter(Boolean)
+            .join(' ')
+            .trim(),
+          explicitType: !!typeKey,
+        },
+      ].filter((candidate) => candidate.phrase.length > 0);
+      return phrases.map(({ phrase, explicitType }) => ({
         medium,
-        mediumType: mediumType || undefined,
+        mediumType: explicitType ? mediumType || undefined : undefined,
         phrase,
-      };
+      }));
     })
+    .flat()
     .filter((candidate) => candidate.phrase.length > 0)
     .sort((a, b) => b.phrase.length - a.phrase.length);
 
@@ -3103,6 +3194,65 @@ function getCatalogMediaCorrectTokens(services: DbService[]): string[] {
   return [...set];
 }
 
+/** Min length before a user token may expand to a longer catalog first-token (news → newspaper). */
+const CATALOG_MEDIA_PREFIX_MIN = 4;
+
+/**
+ * Join adjacent user words when the compacted form is a catalog medium token.
+ * Example: "news paper" → "newspaper" when catalog has "newspaper insertion …".
+ */
+function compactAdjacentMediaAgainstCatalog(query: string, catalogTokens: string[]): string {
+  const words = canonicalizeServiceName(query).split(/\s+/).filter(Boolean);
+  if (words.length < 2) return words.join(' ');
+  const tokenSet = new Set(catalogTokens);
+  const compactSet = new Set(catalogTokens.map((c) => c.replace(/\s+/g, '')));
+  const out: string[] = [];
+  for (let i = 0; i < words.length; ) {
+    let used = 1;
+    let best = words[i];
+    for (let j = words.length; j >= i + 2; j--) {
+      const glued = words.slice(i, j).join('');
+      const spaced = words.slice(i, j).join(' ');
+      if (tokenSet.has(spaced) || tokenSet.has(glued) || compactSet.has(glued)) {
+        best = tokenSet.has(spaced) ? spaced : glued;
+        used = j - i;
+        break;
+      }
+    }
+    out.push(best);
+    i += used;
+  }
+  return out.join(' ');
+}
+
+/**
+ * Expand a short user token to a unique catalog first-token it prefixes.
+ * Ambiguous prefixes (two different first tokens) are left unchanged.
+ */
+function expandMediaPrefixAgainstCatalog(token: string, catalogTokens: string[]): string {
+  const t = canonicalizeServiceName(token);
+  if (!t || t.length < CATALOG_MEDIA_PREFIX_MIN) return t;
+  if (catalogTokens.includes(t)) return t;
+  const firsts = [...new Set(
+    catalogTokens
+      .map((c) => c.split(/\s+/).filter(Boolean)[0] || c)
+      .filter((first) => first.startsWith(t) && first.length >= t.length),
+  )];
+  return firsts.length === 1 ? firsts[0] : t;
+}
+
+/** Compact split words and unique-prefix-expand against DB medium tokens. */
+function rewriteQueryMediaAgainstCatalog(text: string, services: DbService[]): string {
+  const catalogTokens = getCatalogMediaCorrectTokens(services);
+  if (!catalogTokens.length) return canonicalizeServiceName(text);
+  const compacted = compactAdjacentMediaAgainstCatalog(text, catalogTokens);
+  return compacted
+    .split(/\s+/)
+    .filter(Boolean)
+    .map((word) => expandMediaPrefixAgainstCatalog(word, catalogTokens))
+    .join(' ');
+}
+
 /**
  * Silent typo fix against catalog media tokens only (not cities / places / directions).
  * Returns corrected token or null if already exact / ambiguous / unsafe.
@@ -3176,36 +3326,17 @@ function softCorrectMediaWordsInText(text: string, services: DbService[]): strin
 
 /** True when service belongs to the given city label (DB city or area_name). */
 function serviceMatchesCityLabel(svc: DbService, city: string): boolean {
-  const c = city.toLowerCase().trim();
-  if (!c) return false;
-  const cKey = canonicalizeServiceName(c);
-  // Named metro ("in madurai") must match the dedicated DB city field —
-  // never locations[], document name, or a substring in area/direction.
-  if (REAL_CITY_KEYS.includes(cKey)) {
-    const meta = getMetaCityRaw(svc);
-    if (!meta) return false;
-    const known = matchKnownCityLabel(meta);
-    if (known) return canonicalizeServiceName(known) === cKey;
-    return canonicalizeServiceName(meta) === cKey;
-  }
-  const cRe = new RegExp(
-    `\\b${cKey.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\b`,
-    'i',
-  );
-  const candidates = [
-    getMetaCityRaw(svc),
-    getDbCityLabel(svc),
-    funnelCityFromDb(svc),
-    getMetaAreaRaw(svc),
-    getAreaLabel(svc),
-    getLocalityFromMetaCity(svc),
-  ]
-    .filter(Boolean)
-    .map((x) => String(x).toLowerCase().trim());
-  return candidates.some((l) => {
-    if (l === c || canonicalizeServiceName(l) === cKey) return true;
-    return cRe.test(l);
-  });
+  const requested = canonicalizeServiceName(city);
+  if (!requested) return false;
+
+  // City matching is catalog-driven and exact after normalization. A blank
+  // metadata.city may use area_name because that is the value exposed as the
+  // city/place chip. Do not consult REAL_CITY_KEYS, locations, documents,
+  // direction text, or substring/regex fallbacks here.
+  const dbCity = getMetaCityRaw(svc);
+  const dbArea = getMetaAreaRaw(svc);
+  const dbValue = dbCity || dbArea;
+  return !!dbValue && canonicalizeServiceName(dbValue) === requested;
 }
 
 /**
@@ -3214,11 +3345,11 @@ function serviceMatchesCityLabel(svc: DbService, city: string): boolean {
  * parent city or service_id/direction text as an area fallback.
  */
 function serviceMatchesExplicitArea(svc: DbService, area: string): boolean {
-  const wanted = canonicalizeServiceName(area);
+  const wanted = area.trim();
   if (!wanted) return false;
   return [getMetaAreaRaw(svc), getLocalityFromMetaCity(svc)]
     .filter(Boolean)
-    .some((value) => canonicalizeServiceName(value as string) === wanted);
+    .some((value) => exactDbValueKey(value as string) === wanted);
 }
 
 function filterByCity(services: DbService[], city: string | null): DbService[] {
@@ -3246,7 +3377,13 @@ function browseTokenVariants(token: string, services?: DbService[]): string[] {
   if (t === 'appartment') out.add('apartment');
   // Silent typo → catalog token (hoardin → hoarding, buss already synonym)
   if (services?.length) {
-    const fixed = correctMediaTokenSilent(t, getCatalogMediaCorrectTokens(services));
+    const catalogTokens = getCatalogMediaCorrectTokens(services);
+    const compacted = compactAdjacentMediaAgainstCatalog(t, catalogTokens);
+    if (compacted) out.add(compacted);
+    for (const part of compacted.split(/\s+/).filter(Boolean)) {
+      out.add(expandMediaPrefixAgainstCatalog(part, catalogTokens));
+    }
+    const fixed = correctMediaTokenSilent(t, catalogTokens);
     if (fixed) out.add(fixed);
   }
   // Plural form of each variant for regex without relying only on s?
@@ -3268,14 +3405,20 @@ function isCatalogMediumToken(word: string, services: DbService[]): boolean {
   const w = canonicalizeServiceName(word);
   if (!w || w.length < 2) return false;
   if (GENERIC_MEDIUM_TAILS.has(w)) return false;
+  const compact = w.replace(/\s+/g, '');
   return getCatalogTypeKeys(services).some((m) => {
     const key = canonicalizeServiceName(m);
     const parts = key.split(/\s+/).filter(Boolean);
+    const first = parts[0] || key;
     // "booth" → Police Booth; "hoarding" → LED Hoarding; first-token families stay
+    // "news" / "news paper" → newspaper insertion mediums via prefix or compact
     return (
       key === w
       || key.startsWith(`${w} `)
-      || parts[0] === w
+      || first === w
+      || first === compact
+      || (w.length >= CATALOG_MEDIA_PREFIX_MIN && first.startsWith(w))
+      || (compact.length >= CATALOG_MEDIA_PREFIX_MIN && first.startsWith(compact))
       || (w.length >= 4 && parts.includes(w))
     );
   });
@@ -4476,8 +4619,7 @@ function filterByMediumFamily(services: DbService[], medium: string): DbService[
   const byMedium = filterByExactMedium(services, m);
   if (byMedium.length) return byMedium;
   return services.filter((s) => {
-    const nameBase = canonicalizeServiceName((s.service_name || '').split(/[·—–|]/)[0] || '');
-    return isSameMediumFamily(nameBase, m);
+    return getCatalogMediumAliases(s).some((alias) => isSameMediumFamily(alias, m));
   });
 }
 
@@ -4485,38 +4627,31 @@ function uniqueMediumLabels(services: DbService[]): ProgressiveOption[] {
   return uniqueMediumLabelsWithExamples(services);
 }
 
-/** Type chips — catalog medium, merged with DB medium_type when present. */
+/**
+ * Medium options for an unresolved/partial service request.
+ * Keep the DB medium label intact here. medium_type is resolved only after
+ * the user selects an exact medium in the funnel.
+ */
 function uniqueMediumLabelsWithExamples(services: DbService[]): ProgressiveOption[] {
   const groups = new Map<string, { opt: ProgressiveOption; rows: DbService[] }>();
   for (const s of services) {
-    const medium = getMediumKey(s);
+    const raw = String((s.metadata as { medium?: string } | undefined)?.medium || '').trim();
+    const medium = raw && raw.toUpperCase() !== 'NA'
+      ? raw
+      : getMediumKey(s);
     if (!medium) continue;
-    const mType = getMediumTypeFromDb(s);
-    // Avoid "Metro Train Inside Branding — Inside"
-    const typeAlreadyInMedium =
-      !!mType
-      && canonicalizeServiceName(medium).includes(canonicalizeServiceName(mType));
-    const typeForChip = mType && !typeAlreadyInMedium ? mType : null;
-    const key = typeForChip
-      ? `${canonicalizeServiceName(medium)}|${canonicalizeServiceName(typeForChip)}`
-      : canonicalizeServiceName(medium);
+    const key = exactDbValueKey(medium);
     const existing = groups.get(key);
     if (existing) {
       existing.rows.push(s);
       continue;
     }
-    const label = typeForChip
-      ? `${titleCase(medium)} — ${titleCase(typeForChip)}`
-      : titleCase(medium);
     groups.set(key, {
       rows: [s],
       opt: {
-        id: typeForChip
-          ? `medium:${medium}|${canonicalizeServiceName(typeForChip)}`
-          : `medium:${medium}`,
-        label,
+        id: `medium:${medium}`,
+        label: medium,
         medium,
-        mediumType: typeForChip || undefined,
       },
     });
   }
@@ -4527,8 +4662,8 @@ function uniqueMediumLabelsWithExamples(services: DbService[]): ProgressiveOptio
     }))
     .sort((a, b) => a.label.localeCompare(b.label))
     .filter((opt, idx, all) => {
-      const key = canonicalizeServiceName(opt.label);
-      return all.findIndex((o) => canonicalizeServiceName(o.label) === key) === idx;
+      const key = exactDbValueKey(opt.label);
+      return all.findIndex((o) => exactDbValueKey(o.label) === key) === idx;
     });
 }
 
@@ -4553,7 +4688,10 @@ export function detectMediaLocal(text: string, services: DbService[]): string[] 
   if (detectFeatureClarifyHint(text, services, detectCityInText(text, services))) {
     return [];
   }
-  const lower = text.toLowerCase().replace(/&/g, ' and ').replace(/\+/g, ' and ');
+  const lower = rewriteQueryMediaAgainstCatalog(
+    text.toLowerCase().replace(/&/g, ' and ').replace(/\+/g, ' and '),
+    services,
+  );
   const catalog = getCatalogTypeKeys(services)
     .map((m) => ({ raw: m, key: canonicalizeServiceName(m) }))
     .filter((m) => m.key.length >= 2)
@@ -4814,6 +4952,10 @@ function isSameMediumFamily(mediumKey: string, familyToken: string): boolean {
   const m = canonicalizeServiceName(familyToken);
   if (!m || !mk) return false;
   if (mk === m) return true;
+  // Catalog mediums can be multi-word families (for example, a base medium
+  // followed by a DB-defined variant). Treat either complete key as the
+  // family prefix without relying on a service-specific name list.
+  if (mk.startsWith(`${m} `) || m.startsWith(`${mk} `)) return true;
   const parts = mk.split(/\s+/).filter(Boolean);
   if (parts[0] !== m) return false;
   if (parts.length === 1) return true;
@@ -4821,13 +4963,27 @@ function isSameMediumFamily(mediumKey: string, familyToken: string): boolean {
   return parts.slice(1).every((p) => MEDIUM_STYLE_TOKENS.has(p));
 }
 
+/** Search aliases from both DB identity fields without creating duplicate options. */
+function getCatalogMediumAliases(svc: DbService): string[] {
+  const aliases = new Set<string>();
+  const medium = canonicalizeServiceName(getMediumKey(svc));
+  const serviceName = canonicalizeServiceName(
+    (svc.service_name || '').split(/[·|]/)[0] || '',
+  );
+  if (medium) aliases.add(medium);
+  if (serviceName) aliases.add(serviceName);
+  return [...aliases];
+}
+
 /** Strict family filter: "auto" → auto full / auto semi. Not "bus stand" when asking "bus". */
 function filterByExactMedium(services: DbService[], medium: string): DbService[] {
   const m = canonicalizeServiceName(medium);
   if (!m) return [];
-  const exact = services.filter((s) => canonicalizeServiceName(getMediumKey(s)) === m);
+  const exact = services.filter((s) => getCatalogMediumAliases(s).includes(m));
   if (exact.length) return exact;
-  return services.filter((s) => isSameMediumFamily(getMediumKey(s), m));
+  return services.filter((s) =>
+    getCatalogMediumAliases(s).some((alias) => isSameMediumFamily(alias, m)),
+  );
 }
 
 function uniqueServiceOptions(services: DbService[], limit = Number.POSITIVE_INFINITY): ProgressiveOption[] {
@@ -4851,26 +5007,19 @@ function uniqueServiceOptions(services: DbService[], limit = Number.POSITIVE_INF
 }
 
 function uniqueProductOptions(services: DbService[]): ProgressiveOption[] {
-  // Prefer medium + medium_type merge; keep Elevated / Underground distinct.
+  // Group vendor/rate rows by the catalog medium. medium_type is resolved by
+  // the funnel before this product stage; merging it here creates duplicate
+  // products when one row has a qualifier and sibling rows have NA.
   const groups = new Map<string, { opt: ProgressiveOption; rows: DbService[] }>();
   for (const s of services) {
     const medium = getMediumKey(s);
-    const mType = getMediumTypeFromDb(s);
-    const typeAlreadyInMedium =
-      !!mType
-      && !!medium
-      && canonicalizeServiceName(medium).includes(canonicalizeServiceName(mType));
-    const merged =
-      medium && mType && !typeAlreadyInMedium
-        ? `${titleCase(medium)} — ${titleCase(mType)}`
-        : null;
-    const label = (
-      merged
+    const label = titleCase(
+      medium
       || formatServiceDisplayName(s)
       || (s.service_name || '').split('·')[0]
-      || friendlyServiceLabel(s)
+      || friendlyServiceLabel(s),
     ).trim();
-    const key = canonicalizeServiceName(label);
+    const key = canonicalizeServiceName(medium || label);
     if (!key) continue;
     const existing = groups.get(key);
     if (existing) {
@@ -4883,7 +5032,6 @@ function uniqueProductOptions(services: DbService[]): ProgressiveOption[] {
         id: `product:${key}`,
         label: label.length > 60 ? label.slice(0, 57) + '…' : label,
         medium: medium || getMediumKey(s),
-        mediumType: mType && !typeAlreadyInMedium ? mType : undefined,
         serviceId: getAreaLabel(s) ? undefined : s.service_id,
         city: extractRealCityFromDbService(s) || undefined,
       },
@@ -4965,14 +5113,20 @@ function uniquePlaceOptions(services: DbService[], token: string): ProgressiveOp
     .sort((a, b) => a.label.localeCompare(b.label));
 }
 
-/** Distinct area chips within a city for a browse token. */
+/**
+ * Distinct area chips within a city for a browse token.
+ *
+ * Deduplication is intentionally limited to area_name values. An identical
+ * direction_remarks value is still allowed to appear later in the Direction
+ * step because the two chips represent separate DB fields.
+ */
 function uniqueAreaOptions(services: DbService[], token: string, city: string): ProgressiveOption[] {
   const hits = areasForMediumCity(services, token, city);
   const groups = new Map<string, { opt: ProgressiveOption; rows: DbService[] }>();
   for (const s of hits) {
     const area = getFunnelAreaLabel(s);
     if (!area) continue;
-    const key = canonicalizeServiceName(area);
+    const key = exactDbValueKey(area);
     const existing = groups.get(key);
     if (existing) {
       existing.rows.push(s);
@@ -5016,7 +5170,12 @@ function afterLocationResolved(
   );
 }
 
-/** Build direction picker options from a set of services that have direction_remarks. */
+/**
+ * Build direction picker options from direction_remarks.
+ *
+ * Direction values are deduplicated only within this step. They must not be
+ * removed just because the same text was also stored in area_name.
+ */
 /**
  * True when workQueue still has another city to process (same-medium multi-city Confirm).
  * Distinguishes multi-city continuation from same-medium type leftovers (Frontlit → Nonlit).
@@ -5080,8 +5239,8 @@ function buildDirectionPicker(
     const typeKey = mType ? canonicalizeServiceName(mType) : '';
     // Multi-type union (Frontlit + Nonlit): keep both lines even if direction text matches
     const key = annotateType && typeKey
-      ? `${canonicalizeServiceName(dir)}|${typeKey}`
-      : canonicalizeServiceName(dir);
+      ? `${exactDbValueKey(dir)}|${typeKey}`
+      : exactDbValueKey(dir);
     const existing = groups.get(key);
     if (existing) {
       existing.rows.push(s);
@@ -5150,10 +5309,11 @@ function buildMultiAreaSitePicker(
   const options: ProgressiveOption[] = [];
   const seen = new Set<string>();
   for (const s of hits) {
-    if (seen.has(s.service_id)) continue;
-    seen.add(s.service_id);
     const area = getFunnelAreaLabel(s) || getAreaLabel(s) || '';
     const dir = getDirectionLabel(s);
+    const siteKey = `${exactDbValueKey(area)}|${exactDbValueKey(dir || '')}`;
+    if (seen.has(siteKey)) continue;
+    seen.add(siteKey);
     let label: string;
     if (area && dir) {
       const aKey = canonicalizeServiceName(area);
@@ -5210,9 +5370,12 @@ function buildMultiAreaSitePicker(
 function uniqueMediumOnlyOptions(services: DbService[]): ProgressiveOption[] {
   const groups = new Map<string, { opt: ProgressiveOption; rows: DbService[] }>();
   for (const s of services) {
-    const medium = getMediumKey(s);
+    const raw = String((s.metadata as { medium?: string } | undefined)?.medium || '').trim();
+    const medium = raw && raw.toUpperCase() !== 'NA'
+      ? raw
+      : getMediumKey(s);
     if (!medium) continue;
-    const key = canonicalizeServiceName(medium);
+    const key = exactDbValueKey(medium);
     if (!key) continue;
     const existing = groups.get(key);
     if (existing) {
@@ -5223,7 +5386,7 @@ function uniqueMediumOnlyOptions(services: DbService[]): ProgressiveOption[] {
       rows: [s],
       opt: {
         id: `medium:${medium}`,
-        label: titleCase(medium),
+        label: medium,
         medium,
       },
     });
@@ -5235,8 +5398,8 @@ function uniqueMediumOnlyOptions(services: DbService[]): ProgressiveOption[] {
     }))
     .sort((a, b) => a.label.localeCompare(b.label))
     .filter((opt, idx, all) => {
-      const key = canonicalizeServiceName(opt.label);
-      return all.findIndex((o) => canonicalizeServiceName(o.label) === key) === idx;
+      const key = exactDbValueKey(opt.label);
+      return all.findIndex((o) => exactDbValueKey(o.label) === key) === idx;
     });
 }
 
@@ -5303,6 +5466,7 @@ function uniqueCityOptionsFromPool(services: DbService[], medium?: string): Prog
     });
   }
   return [...groups.values()]
+    .filter(({ rows }) => rows.some((row) => hasQuotablePricing(row)))
     .map(({ opt, rows }) => ({
       ...opt,
       imageUrl: chipImageIfUniqueNext(rows, 'area'),
@@ -5329,7 +5493,7 @@ function uniqueAreaOptionsFromPool(
   for (const s of scoped) {
     const area = getFunnelAreaLabel(s);
     if (!area) continue;
-    const key = canonicalizeServiceName(area);
+    const key = exactDbValueKey(area);
     const existing = groups.get(key);
     if (existing) {
       existing.rows.push(s);
@@ -5603,6 +5767,28 @@ function formatBatchUnavailableNote(city: string, missing: string[], available: 
   return `Not providing ${miss} in ${city}.`;
 }
 
+/** Rank-1 medium exists but vendor_rate_chunks has no usable rate. */
+function copyNoCurrentPricing(labels: string[], nextLabel?: string): string {
+  const miss = formatBatchServiceList(labels);
+  const noun = labels.length === 1 ? 'this service' : 'these services';
+  if (nextLabel) {
+    return compactFunnelReply(
+      `Currently no pricing for ${miss}. We can't generate a quote for ${noun} right now.`,
+      `Now choosing ${nextLabel}.`,
+    );
+  }
+  return compactFunnelReply(
+    `Currently no pricing for ${miss}.`,
+    `We can't generate a quote for ${noun} right now.`,
+  );
+}
+
+function chipDisplayLabel(chip: { medium: string; mediumType?: string }): string {
+  const medium = String(chip.medium || '').trim();
+  if (chip.mediumType) return `${medium} — ${chip.mediumType}`;
+  return medium;
+}
+
 /** Lock the only city and continue the funnel (no OK Continue tap). */
 function lockOneCity(
   sess: ProgressiveSession,
@@ -5739,6 +5925,16 @@ export function advanceFunnel(
         options: [],
         session: sess,
       };
+    }
+
+    if (
+      sess.medium
+      && isExactCatalogMedium(sess.medium, services)
+      && !pool.some((row) => hasQuotablePricing(row))
+    ) {
+      const raw = uniqueMediumOnlyOptions(pool)[0]?.label
+        || String(sess.medium).trim();
+      return continueAfterNoPricing(sess, services, [raw]);
     }
 
     sess = {
@@ -5938,8 +6134,11 @@ export function advanceFunnel(
       // 0 cities (all NA) — skip city step
     }
 
-    // 4) Area — actual area_name values (ask if 2+ even if text looks like directions)
-    if (!sess.area) {
+    // 4) Area — actual area_name values. A typed direction already narrowed
+    // the pool to direction_remarks rows, so do not route it back through the
+    // Area step (for example, "vadapalani" must not ask for Arumbakkam or
+    // Koyambedu before showing the matching full directions).
+    if (!sess.area && !sess.directionHint) {
       const areas = uniqueAreaOptionsFromPool(pool, sess.city, sess.medium);
       if (areas.length > 1) {
         return {
@@ -6039,6 +6238,14 @@ export function advanceFunnel(
       }, services);
     }
 
+    // Multiple DB rows can represent one logical product across vendors,
+    // pricing records, or optional row qualifiers. With no real direction
+    // values, do not expose those rows as a fake site/product picker.
+    const logicalProducts = uniqueProductOptions(finalPool);
+    if (allowAutoFinalize && dirKeys.length === 0 && logicalProducts.length === 1) {
+      return finalizeSelection(finalPool, sess, services);
+    }
+
     if (finalPool.length === 1) {
       const one = finalPool[0]!;
       // Same-service echo: confirm only when there is a real site/direction to pick.
@@ -6109,7 +6316,7 @@ export function advanceFunnel(
       }
     }
 
-    const products = uniqueProductOptions(finalPool);
+    const products = logicalProducts;
     if (products.length > 1) {
       return {
         step: 'related_services',
@@ -6338,19 +6545,69 @@ function continuePendingWork(
   return null;
 }
 
+function continueAfterNoPricing(
+  session: ProgressiveSession,
+  services: DbService[],
+  unpricedLabels: string[],
+): ProgressiveTurnResult {
+  const labels = unpricedLabels.filter(Boolean);
+  const next = session.workQueue?.[0];
+  const nextLabel = next
+    ? titleCase(next.browseToken || next.medium)
+    : undefined;
+  const note = copyNoCurrentPricing(labels, nextLabel);
+  const continued = continuePendingWork(
+    {
+      ...session,
+      needsContinueConfirm: false,
+      pendingRows: undefined,
+      candidateServiceIds: undefined,
+      medium: undefined,
+      browseToken: undefined,
+      mediumType: undefined,
+      typesResolved: undefined,
+      city: next?.city,
+      area: undefined,
+      placeHint: undefined,
+      directionHint: undefined,
+    },
+    [...(session.collectedRows || [])],
+    [...(session.collectedServiceIds || [])],
+    services,
+  );
+  if (continued) {
+    return {
+      ...continued,
+      botText: note,
+    };
+  }
+  return {
+    step: 'no_match',
+    botText: note,
+    options: [],
+    session: {
+      ...session,
+      workQueue: undefined,
+      pendingCityQueue: undefined,
+    },
+  };
+}
+
 function filterHitsBySessionLocation(hits: DbService[], session: ProgressiveSession): DbService[] {
   let out = hits;
   if (session.area) {
-    const a = canonicalizeServiceName(session.area);
-    const aRe = new RegExp(`\\b${a.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\b`, 'i');
     out = hits.filter((s) => {
-      const label = canonicalizeServiceName(getAreaLabel(s) || '');
-      const locality = canonicalizeServiceName(getLocalityFromMetaCity(s) || '');
-      const metaCity = canonicalizeServiceName(getMetaCityRaw(s) || '');
-      const metaArea = canonicalizeServiceName(getMetaAreaRaw(s) || '');
-      // Place = city metadata OR area_name only — NEVER direction_remarks
-      return label === a || locality === a || metaCity === a || metaArea === a
-        || aRe.test(label) || aRe.test(locality) || aRe.test(metaCity) || aRe.test(metaArea);
+      const label = exactDbValueKey(getAreaLabel(s) || '');
+      const locality = exactDbValueKey(getLocalityFromMetaCity(s) || '');
+      const metaCity = exactDbValueKey(getMetaCityRaw(s) || '');
+      const metaArea = exactDbValueKey(getMetaAreaRaw(s) || '');
+      // Area/place selection is an exact normalized DB-field match. Do not
+      // widen "Anna Nagar" to "Anna Nagar Chintamani" or other child labels.
+      // Place = city metadata OR area_name only — NEVER direction_remarks.
+      return label === session.area.trim()
+        || locality === session.area.trim()
+        || metaCity === session.area.trim()
+        || metaArea === session.area.trim();
     });
     if (session.city && out.length > 0) {
       const narrowed = out.filter((s) => serviceMatchesCityLabel(s, session.city!));
@@ -7080,7 +7337,7 @@ function startMediumFlow(
     if (session.city && !browseHits.length) {
       // User named multiple cities ("bus semi madurai and chennai") but first city
       // had no inventory — skip dead cities and continue usable ones (never Madurai-only list).
-      const namedCities = detectCitiesInText(session.originalText || '');
+      const namedCities = detectCitiesInText(session.originalText || '', services);
       if (namedCities.length >= 2) {
         return startBatchWithCityCandidates(
           [{
@@ -8219,7 +8476,7 @@ function resolveProgressiveTextInner(
 
   // Mid-funnel city/area/direction refine with service already locked → continue funnel
   if (lockedMedForCity && (cityOnly || localityOnly || city || localityHint || directionFromText)) {
-    const multiCitiesRefine = detectCitiesInText(originalText);
+    const multiCitiesRefine = detectCitiesInText(originalText, services);
     // "bus semi in madurai and chennai" must NOT lock the first city and dump a
     // city-wide browse — skip dead cities / ask among usable ones.
     if (multiCitiesRefine.length >= 2 && !localityOnly && !localityHint) {
@@ -8531,7 +8788,7 @@ function resolveProgressiveTextInner(
     // Single service + multiple metros in one message
     // ("bus semi in madurai and chennai") → skip cities with no inventory; continue usable ones.
     // parseServiceSegments returns [] when only one service is named, so handle here.
-    const multiCities = detectCitiesInText(originalText);
+    const multiCities = detectCitiesInText(originalText, services);
     if (multiCities.length >= 2 && !locInText) {
       logFunnelDebug('singleServiceMultiCity', {
         media: first,
@@ -8863,7 +9120,7 @@ export function resolveMinQtyEdits(
 
   return {
     step: 'quote_ready',
-    botText: copyQuoteReady(),
+    botText: copyQuoteReady({ ...session, pendingRows: pending }, pending),
     options: [],
     session: {
       ...session,
@@ -8881,8 +9138,19 @@ function finalizeSelection(
   session: ProgressiveSession,
   services?: DbService[],
 ): ProgressiveTurnResult {
+  const quotable = selected.filter((s) => hasQuotablePricing(s));
+  const unpriced = selected.filter((s) => !hasQuotablePricing(s));
+  const unpricedLabels = unpriced.map((s) => {
+    const medium = getMediumKey(s) || s.service_name || 'service';
+    const city = funnelCityFromDb(s) || session.city || '—';
+    return `${medium} (${city})`;
+  });
+  if (unpricedLabels.length && services && !quotable.length) {
+    return continueAfterNoPricing(session, services, unpricedLabels);
+  }
+  const useSelected = quotable.length ? quotable : selected;
   const { rows, belowMin } = buildRowsForServices(
-    selected,
+    useSelected,
     session.qty,
     session.durationText,
     session.originalText,
@@ -8892,7 +9160,7 @@ function finalizeSelection(
   const collectedRows = [...(session.collectedRows || []), ...rows];
   const collectedServiceIds = [
     ...(session.collectedServiceIds || []),
-    ...selected.map((s) => s.service_id),
+    ...useSelected.map((s) => s.service_id),
   ];
 
   // Place-locked (OMR / locality): one site Confirm → quote.
@@ -8929,7 +9197,18 @@ function finalizeSelection(
       collectedServiceIds,
       services,
     );
-    if (pending) return pending;
+    if (pending) {
+      if (unpricedLabels.length) {
+        return {
+          ...pending,
+          botText: joinNoteAndAsk(
+            copyNoCurrentPricing(unpricedLabels),
+            pending.botText,
+          ),
+        };
+      }
+      return pending;
+    }
   }
 
   // Batch multi-select already finished — never sequential "Next — pick"
@@ -9025,7 +9304,10 @@ function finalizeSelection(
     {
       const raw = {
         step: 'quote_ready' as const,
-        botText: copyQuoteReady(),
+        botText: copyQuoteReady(
+          { ...session, pendingRows: allRows, collectedRows: allRows },
+          allRows,
+        ),
         options: [] as ProgressiveOption[],
         session: {
           ...session,
@@ -9082,7 +9364,10 @@ function finalizeSelection(
   {
     const raw = {
       step: 'quote_ready' as const,
-      botText: copyQuoteReady(),
+      botText: copyQuoteReady(
+        { ...session, pendingRows: collectedRows, collectedRows },
+        collectedRows,
+      ),
       options: [] as ProgressiveOption[],
       session: {
         ...session,
@@ -9225,7 +9510,7 @@ function continueProgressiveActionInner(
   if (actionId === 'yes_min' && session.pendingRows?.length) {
     return {
       step: 'quote_ready',
-      botText: copyQuoteReady(),
+      botText: copyQuoteReady(session, session.pendingRows),
       options: [],
       session,
       quoteRows: session.pendingRows,
@@ -9332,7 +9617,7 @@ function continueProgressiveActionInner(
         const areaLabel =
           areaPool
             .map((s) => getFunnelAreaLabel(s) || getAreaLabel(s) || getLocalityFromMetaCity(s))
-            .find((a) => a && canonicalizeServiceName(a) === areaKey)
+            .find((a) => a && exactDbValueKey(a) === areaKey)
           || titleCase(areaKey.replace(/-/g, ' '));
         const nextSession: ProgressiveSession = {
           ...session,
@@ -9356,7 +9641,7 @@ function continueProgressiveActionInner(
       const areaLabel =
         pool
           .map((s) => getAreaLabel(s) || getLocalityFromMetaCity(s))
-          .find((a) => a && canonicalizeServiceName(a) === areaKey)
+          .find((a) => a && exactDbValueKey(a) === areaKey)
         || titleCase(areaKey.replace(/-/g, ' '));
       let city: string | undefined;
       if (isLocality) {
@@ -9440,9 +9725,9 @@ function continueProgressiveActionInner(
           const areaLabel =
             areaPool
               .map((s) => getFunnelAreaLabel(s) || getAreaLabel(s) || getLocalityFromMetaCity(s))
-              .find((a) => a && canonicalizeServiceName(a) === areaKey)
+              .find((a) => a && exactDbValueKey(a) === areaKey)
             || titleCase(areaKey.replace(/-/g, ' '));
-          const ak = canonicalizeServiceName(areaLabel);
+          const ak = exactDbValueKey(areaLabel);
           if (areaLabel && !seenArea.has(ak)) {
             seenArea.add(ak);
             uniqueAreas.push(areaLabel);
@@ -9457,9 +9742,9 @@ function continueProgressiveActionInner(
             const areaLabel =
               pool
                 .map((s) => getAreaLabel(s) || getLocalityFromMetaCity(s))
-                .find((a) => a && canonicalizeServiceName(a) === areaKey)
+              .find((a) => a && exactDbValueKey(a) === areaKey)
               || titleCase(areaKey.replace(/-/g, ' '));
-            const ak = canonicalizeServiceName(areaLabel);
+            const ak = exactDbValueKey(areaLabel);
             if (areaLabel && !seenArea.has(ak)) {
               seenArea.add(ak);
               uniqueAreas.push(areaLabel);
@@ -9508,7 +9793,7 @@ function continueProgressiveActionInner(
         if (!basePool.length && candPool.length) basePool = candPool;
 
         for (const areaLabel of uniqueAreas) {
-          const areaKey = canonicalizeServiceName(areaLabel);
+          const areaKey = exactDbValueKey(areaLabel);
           let hits = filterHitsBySessionLocation(basePool, {
             ...session,
             area: areaLabel,
@@ -9523,19 +9808,7 @@ function continueProgressiveActionInner(
                 getMetaAreaRaw(s),
               ];
               return labels.some(
-                (lab) => lab && canonicalizeServiceName(lab) === areaKey,
-              );
-            });
-          }
-          if (!hits.length) {
-            hits = basePool.filter((s) => {
-              const metaArea = canonicalizeServiceName(getMetaAreaRaw(s) || '');
-              const label = canonicalizeServiceName(
-                getFunnelAreaLabel(s) || getAreaLabel(s) || '',
-              );
-              return (
-                (metaArea && (metaArea.includes(areaKey) || areaKey.includes(metaArea)))
-                || (label && (label.includes(areaKey) || areaKey.includes(label)))
+                (lab) => lab && exactDbValueKey(lab) === areaKey,
               );
             });
           }
@@ -9677,6 +9950,23 @@ function continueProgressiveActionInner(
       pendingCityQueue: undefined,
     };
     if (token) {
+      const cityPool = filterHitsBySessionLocation(
+        filterForBrowseOrFamily(services, token),
+        { ...nextSession, medium: session.medium || token, browseToken: token },
+      );
+      if (cityPool.length && !cityPool.some((row) => hasQuotablePricing(row))) {
+        const label = uniqueMediumOnlyOptions(cityPool)[0]?.label
+          || String(session.medium || token).trim();
+        return continueAfterNoPricing(
+          {
+            ...nextSession,
+            browseToken: token,
+            medium: session.medium || token,
+          },
+          services,
+          [`${label} (${city})`],
+        );
+      }
       return advanceFunnel({
         ...nextSession,
         browseToken: token,
@@ -9700,7 +9990,7 @@ function continueProgressiveActionInner(
     const areaLabel =
       pool
         .map((s) => getAreaLabel(s))
-        .find((a) => a && canonicalizeServiceName(a) === areaKey)
+        .find((a) => a && exactDbValueKey(a) === areaKey)
       || titleCase(areaKey.replace(/-/g, ' '));
     const nextSession: ProgressiveSession = {
       ...session,
@@ -9829,6 +10119,7 @@ function continueProgressiveActionInner(
       };
       const readyReps: DbService[] = [];
       const needFunnel: WorkItem[] = [];
+      const unpricedLabels: string[] = [];
 
       for (const chip of allChips) {
         const med = canonicalizeServiceName(chip.medium);
@@ -9853,6 +10144,11 @@ function continueProgressiveActionInner(
           hits = scoped;
         }
         if (!hits.length) continue;
+
+        if (!hits.some((row) => hasQuotablePricing(row))) {
+          unpricedLabels.push(chipDisplayLabel(chip));
+          continue;
+        }
 
         if (chip.mediumType) {
           const mt = canonicalizeServiceName(chip.mediumType);
@@ -9895,7 +10191,8 @@ function continueProgressiveActionInner(
           const rep =
             (dirKeys.length === 1 && withDir[0])
             || scoped[0];
-          if (rep) readyReps.push(rep);
+          if (rep && hasQuotablePricing(rep)) readyReps.push(rep);
+          else if (rep) unpricedLabels.push(chipDisplayLabel(chip));
           continue;
         }
 
@@ -9908,13 +10205,13 @@ function continueProgressiveActionInner(
         });
       }
 
-      // All selected options unavailable in locked city — skip and continue batch
+      // All selected options unavailable or unpriced — skip and continue batch
       if (readyReps.length === 0 && needFunnel.length === 0) {
+        if (unpricedLabels.length) {
+          return continueAfterNoPricing(session, services, unpricedLabels);
+        }
         const label = allChips
-          .map((c) => {
-            const m = titleCase(c.medium);
-            return c.mediumType ? `${m} — ${titleCase(c.mediumType)}` : m;
-          })
+          .map((c) => chipDisplayLabel(c))
           .join(', ') || titleCase(session.medium || 'this service');
         if (session.city) {
           const skipMsg = copyNotOfferedInCity(label, session.city, session);
@@ -9959,7 +10256,18 @@ function continueProgressiveActionInner(
           collectedServiceIds,
           services,
         );
-        if (continued) return continued;
+        if (continued) {
+          if (unpricedLabels.length) {
+            const nextLabel = titleCase(
+              continued.session.medium || continued.session.browseToken || '',
+            );
+            return {
+              ...continued,
+              botText: copyNoCurrentPricing(unpricedLabels, nextLabel || undefined),
+            };
+          }
+          return continued;
+        }
         return finalizeSelection(readyReps, {
           ...session,
           needsContinueConfirm: false,
@@ -10001,7 +10309,11 @@ function continueProgressiveActionInner(
       } else {
         const [first, ...rest] = needFunnel;
         const priorQueue = session.workQueue || [];
-        return advanceFunnel(
+        const nextLabel = titleCase(first.medium);
+        const handoff = unpricedLabels.length
+          ? copyNoCurrentPricing(unpricedLabels, nextLabel)
+          : `Now choosing ${nextLabel}${first.city ? ` in ${first.city}` : ''}.`;
+        const result = advanceFunnel(
           {
             ...session,
             medium: canonicalizeServiceName(first.medium),
@@ -10019,13 +10331,13 @@ function continueProgressiveActionInner(
             typesResolved: undefined,
           },
           services,
-          rest.length || priorQueue.length
-            ? compactFunnelReply(
-              `Added your selection.`,
-              `Now choosing ${titleCase(first.medium)}${first.city ? ` in ${first.city}` : ''}.`,
-            )
-            : undefined,
         );
+        if (unpricedLabels.length) {
+          return { ...result, botText: handoff };
+        }
+        return rest.length || priorQueue.length
+          ? withBatchStepPrompt(result, handoff)
+          : result;
       }
     }
 

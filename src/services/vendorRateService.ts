@@ -181,11 +181,11 @@ export function normalizeVendorRateRow(row: Record<string, unknown>): VendorRate
       : row;
 
   const pricingRaw = meta.pricing ?? row.pricing;
-  if (!pricingRaw || typeof pricingRaw !== 'object' || Array.isArray(pricingRaw)) {
-    return null;
-  }
-
-  const pricing = pricingRaw as VendorPricingBlock;
+  const pricing = (
+    pricingRaw && typeof pricingRaw === 'object' && !Array.isArray(pricingRaw)
+      ? pricingRaw
+      : {}
+  ) as VendorPricingBlock;
   // Accept both snake_case and camelCase price fields from vendor metadata
   const displayUnitPricePerDay =
     pricing.display_unit_price_per_day ??
@@ -195,18 +195,8 @@ export function normalizeVendorRateRow(row: Record<string, unknown>): VendorRate
   const pfPrice =
     pricing.printing_and_mounting_price ??
     (pricing as { printingAndMountingPrice?: unknown }).printingAndMountingPrice;
-  const hasPrice =
-    hasUsableAmount(displayUnitPricePerDay) ||
-    hasUsableAmount(displayPrice) ||
-    hasUsableAmount(pfPrice) ||
-    hasUsableAmount(pricing.printing_price) ||
-    hasUsableAmount(pricing.mounting_price) ||
-    hasUsableAmount(pricing.official_and_incidental_price) ||
-    hasUsableAmount(pricing.rto_price) ||
-    hasUsableAmount(pricing.space_rental_price) ||
-    hasUsableAmount(pricing.total_price);
-
-  if (!hasPrice) return null;
+  // Keep rank-1 identity rows even when price is 0 / NA so chat can discover
+  // the medium. Quote generation still rejects non-quotable pricing later.
 
   // Normalize camelCase into snake_case for downstream quote builders
   if (displayUnitPricePerDay != null && pricing.display_unit_price_per_day == null) {
@@ -312,8 +302,12 @@ export function normalizeVendorRateRow(row: Record<string, unknown>): VendorRate
     return undefined;
   };
 
+  const medium = pickString(meta.medium, row.medium, meta.medium_name, row.medium_name);
+  const serviceName = pickString(row.service_name, meta.service_name);
+  if (!medium && !serviceId && !serviceName) return null;
+
   return {
-    medium: pickString(meta.medium, row.medium, meta.medium_name, row.medium_name),
+    medium,
     city: pickString(meta.city, row.city).toLowerCase(),
     vendor_name: pickString(meta.vendor_name, row.vendor_name) || undefined,
     service_id: serviceId,
@@ -421,9 +415,9 @@ export async function loadVendorRatesFromCloud(): Promise<VendorRateRow[]> {
       vendorRatesCache = rows;
       vendorRatesCacheAt = Date.now();
       console.log(
-        `💰 [vendor_rate_chunks] Rank=1: ${rank1Rows.length}; usable: ${rows.length}` +
+        `💰 [vendor_rate_chunks] Rank=1: ${rank1Rows.length}; catalog: ${rows.length}` +
           (rank1Rows.length > rows.length
-            ? ` (${rank1Rows.length - rows.length} skipped — no usable pricing)`
+            ? ` (${rank1Rows.length - rows.length} skipped — no medium/service identity)`
             : ''),
       );
       return rows;
@@ -441,10 +435,52 @@ export async function loadVendorRatesFromCloud(): Promise<VendorRateRow[]> {
 }
 
 function citiesMatch(a: string, b: string): boolean {
-  const x = a.toLowerCase().trim();
-  const y = b.toLowerCase().trim();
+  const x = a.toLowerCase().replace(/\s+/g, ' ').trim();
+  const y = b.toLowerCase().replace(/\s+/g, ' ').trim();
   if (!x || !y) return false;
-  return x === y || x.includes(y) || y.includes(x);
+  return x === y;
+}
+
+function vendorRateHasUsablePricing(row: VendorRateRow): boolean {
+  const pricing = row.pricing || {};
+  return [
+    pricing.display_price,
+    pricing.printing_and_mounting_price,
+    pricing.total_price,
+  ].some((value) => Number(value) > 0);
+}
+
+/**
+ * Select one vendor deterministically when the database contains duplicate
+ * rank-1 rows for the same service/site. Rank remains the primary rule;
+ * completeness and stable vendor identity only resolve ties.
+ */
+function compareVendorRatePreference(a: VendorRateRow, b: VendorRateRow): number {
+  const rankA = Number.isFinite(Number(a.preferred_vendor_rank))
+    ? Number(a.preferred_vendor_rank)
+    : Number.MAX_SAFE_INTEGER;
+  const rankB = Number.isFinite(Number(b.preferred_vendor_rank))
+    ? Number(b.preferred_vendor_rank)
+    : Number.MAX_SAFE_INTEGER;
+  if (rankA !== rankB) return rankA - rankB;
+
+  const usableA = vendorRateHasUsablePricing(a);
+  const usableB = vendorRateHasUsablePricing(b);
+  if (usableA !== usableB) return usableA ? -1 : 1;
+
+  const vendorA = (a.vendor_name || '').trim().toLowerCase();
+  const vendorB = (b.vendor_name || '').trim().toLowerCase();
+  const vendorCompare = vendorA.localeCompare(vendorB);
+  if (vendorCompare !== 0) return vendorCompare;
+
+  return (a.rate_key || '').localeCompare(b.rate_key || '');
+}
+
+function pickPreferredVendorRate(rows: VendorRateRow[]): VendorRateRow {
+  if (rows.length === 0) {
+    throw new Error('Cannot select a preferred vendor from an empty list');
+  }
+  return [...rows].sort(compareVendorRatePreference)[0];
 }
 
 /** Resolve full preferred vendor row (or null → keep all proposal_chunks data). */
@@ -478,9 +514,9 @@ export function resolveVendorRateRow(
     }
     if (byServiceId.length > 1) {
       console.warn(
-        `⚠️ [VendorMatch] Duplicate service_id "${sid}" (${byServiceId.length} rows) — using first`,
+        `⚠️ [VendorMatch] Duplicate service_id "${sid}" (${byServiceId.length} rows) — selecting preferred row`,
       );
-      return byServiceId[0];
+      return pickPreferredVendorRate(byServiceId);
     }
 
     // Fallback: rate_key / medium_id match (legacy cleaned keys)
@@ -489,18 +525,12 @@ export function resolveVendorRateRow(
       if (!key) return false;
       return key === sid || key.startsWith(sid) || sid.startsWith(key) || key.includes(sid) || sid.includes(key);
     });
-    const byKeyCity = city
+    // When a city is supplied, never fall back to a rate from another city.
+    const keyPool = city
       ? byKey.filter((r) => citiesMatch(r.city, city))
       : byKey;
-    const keyPool = byKeyCity.length > 0 ? byKeyCity : byKey;
     if (keyPool.length >= 1) {
-      const chosen = keyPool.length === 1
-        ? keyPool[0]
-        : [...keyPool].sort((a, b) => {
-            const ta = Number(a.pricing?.total_price) || Number(a.pricing?.display_price) || 0;
-            const tb = Number(b.pricing?.total_price) || Number(b.pricing?.display_price) || 0;
-            return ta - tb;
-          })[0];
+      const chosen = pickPreferredVendorRate(keyPool);
       console.log(
         `💰 [VendorMatch] rate_key~service_id "${sid}" → ${chosen.vendor_name || 'unknown'} (${chosen.rate_key})`,
       );
@@ -530,8 +560,8 @@ export function resolveVendorRateRow(
   );
 
   if (city) {
-    const cityFiltered = matches.filter((r) => citiesMatch(r.city, city));
-    if (cityFiltered.length > 0) matches = cityFiltered;
+    // A requested city with no exact match must remain unresolved.
+    matches = matches.filter((r) => citiesMatch(r.city, city));
   }
 
   // Prefer vendor rows whose medium / rate_key encodes the same medium type
@@ -562,9 +592,7 @@ export function resolveVendorRateRow(
       const scoreDiff =
         fuzzyMatchScore(b.medium, matchLabel) - fuzzyMatchScore(a.medium, matchLabel);
       if (scoreDiff !== 0) return scoreDiff;
-      const ta = Number(a.pricing?.total_price) || Number(a.pricing?.display_price) || 0;
-      const tb = Number(b.pricing?.total_price) || Number(b.pricing?.display_price) || 0;
-      return ta - tb;
+      return compareVendorRatePreference(a, b);
     });
   }
 
@@ -1187,11 +1215,15 @@ export function vendorRatesToDbServices(
       byKey.set(mapKey, svc);
       return;
     }
-    // Prefer row with usable day-wise display rate if duplicate service_id somehow appears
+    // Resolve duplicate service_id rows deterministically. The database normally
+    // assigns one preferred rank, but duplicate rank-1 rows must not make the
+    // quote depend on query order.
     const prevPricing = (existing.metadata?.pricing || {}) as Record<string, unknown>;
     const nextPricing = (svc.metadata?.pricing || {}) as Record<string, unknown>;
     const prevMeta = (existing.metadata || {}) as Record<string, unknown>;
     const nextMeta = (svc.metadata || {}) as Record<string, unknown>;
+    const prevRank = Number(prevMeta.preferred_vendor_rank);
+    const nextRank = Number(nextMeta.preferred_vendor_rank);
     const prevPrice =
       Number(prevPricing.display_unit_price_per_day) ||
       Number(prevMeta.display_unit_price_per_day) ||
@@ -1202,7 +1234,21 @@ export function vendorRatesToDbServices(
       Number(nextMeta.display_unit_price_per_day) ||
       Number(nextPricing.display_price) ||
       0;
-    if (nextPrice > 0 && prevPrice <= 0) {
+    const prevVendor = String(prevMeta.vendor_name || '').trim().toLowerCase();
+    const nextVendor = String(nextMeta.vendor_name || '').trim().toLowerCase();
+    const preferNext =
+      (Number.isFinite(nextRank) && !Number.isFinite(prevRank)) ||
+      (Number.isFinite(nextRank) &&
+        Number.isFinite(prevRank) &&
+        nextRank < prevRank) ||
+      ((nextRank === prevRank || (!Number.isFinite(nextRank) && !Number.isFinite(prevRank))) &&
+        nextPrice > 0 &&
+        prevPrice <= 0) ||
+      ((nextRank === prevRank || (!Number.isFinite(nextRank) && !Number.isFinite(prevRank))) &&
+        nextPrice > 0 &&
+        prevPrice > 0 &&
+        nextVendor.localeCompare(prevVendor) < 0);
+    if (preferNext) {
       byKey.set(mapKey, svc);
     }
   });

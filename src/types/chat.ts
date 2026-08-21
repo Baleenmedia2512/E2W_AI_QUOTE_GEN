@@ -106,6 +106,8 @@ export interface Message {
     imageUrl?: string;
   }>;
   progressiveAllowMulti?: boolean;
+  /** Selected option IDs retained so completed checklists survive remounts. */
+  progressiveSelected?: string[];
   progressiveAutoConfirmed?: string[];
   /** Batch: service currently being asked about (one chip). */
   progressiveCurrentService?: string;

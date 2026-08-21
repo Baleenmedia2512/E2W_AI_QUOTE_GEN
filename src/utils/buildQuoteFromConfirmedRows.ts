@@ -15,11 +15,44 @@ import { hydrateQuoteTermsFromCatalog } from './termsHydration';
 import { applyVendorPricingForQuoteRow, getVendorRatesCache } from '../services/vendorRateService';
 
 export type BuildQuoteFromDbResult =
-  | { success: true; quote: Quote }
+  | { success: true; quote: Quote; skipped?: string[] }
   | { success: false; message: string; unresolved: string[] };
 
 function titleCaseCity(city: string): string {
   return city.charAt(0).toUpperCase() + city.slice(1);
+}
+
+/**
+ * Confirmation rows identify catalog records, but several vendor records can
+ * represent the same logical quote service. Keep one requested row for each
+ * service/city/quantity combination before resolving vendor pricing.
+ */
+function dedupeLogicalQuoteRows(rows: ConfirmationRow[]): ConfirmationRow[] {
+  const seen = new Set<string>();
+  return rows.filter((row) => {
+    const serviceKey = row.service
+      .toLowerCase()
+      .replace(/[–—]/g, '-')
+      .replace(/\s+/g, ' ')
+      .trim();
+    const cityKey = (row.city && row.city !== '—' ? row.city : '')
+      .toLowerCase()
+      .replace(/\s+/g, ' ')
+      .trim();
+    const qty = typeof row.qty === 'number'
+      ? row.qty
+      : parseInt(String(row.qty), 10) || 1;
+    // A serviceId identifies one exact catalog site. Keep separate DB rows
+    // even when they share the same medium, city, and quantity; otherwise
+    // selecting multiple directions collapses to whichever row appears first
+    // and the preview can show the wrong site.
+    const key = row.serviceId
+      ? `id:${row.serviceId}|${qty}`
+      : `${serviceKey}|${cityKey}|${qty}`;
+    if (seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
 }
 
 /**
@@ -33,7 +66,7 @@ export function buildQuoteFromConfirmedRows(
   services: DbService[],
   originalUserInput: string,
 ): BuildQuoteFromDbResult {
-  const uniqueRows = dedupeConfirmationRows(rows);
+  const uniqueRows = dedupeLogicalQuoteRows(dedupeConfirmationRows(rows));
   const unresolved: string[] = [];
   const allItems: QuoteItem[] = [];
   const vendorRates = getVendorRatesCache();
@@ -112,19 +145,14 @@ export function buildQuoteFromConfirmedRows(
     }
   }
 
-  if (unresolved.length > 0) {
-    return {
-      success: false,
-      message: `Could not resolve pricing for: ${unresolved.join('; ')}`,
-      unresolved,
-    };
-  }
-
+  // Partial success: quote everything with rates; only fail when nothing is quotable.
   if (allItems.length === 0) {
     return {
       success: false,
-      message: 'No services could be resolved from your selection.',
-      unresolved: [],
+      message: unresolved.length
+        ? `Could not resolve pricing for: ${unresolved.join('; ')}`
+        : 'No services could be resolved from your selection.',
+      unresolved,
     };
   }
 
@@ -159,5 +187,9 @@ export function buildQuoteFromConfirmedRows(
     updatedAt: new Date(),
   };
 
-  return { success: true, quote };
+  return {
+    success: true,
+    quote,
+    skipped: unresolved.length ? unresolved : undefined,
+  };
 }
