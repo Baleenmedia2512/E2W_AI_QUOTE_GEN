@@ -6596,6 +6596,7 @@ function continueAfterNoPricing(
 function filterHitsBySessionLocation(hits: DbService[], session: ProgressiveSession): DbService[] {
   let out = hits;
   if (session.area) {
+    const areaWanted = exactDbValueKey(session.area);
     out = hits.filter((s) => {
       const label = exactDbValueKey(getAreaLabel(s) || '');
       const locality = exactDbValueKey(getLocalityFromMetaCity(s) || '');
@@ -6604,10 +6605,10 @@ function filterHitsBySessionLocation(hits: DbService[], session: ProgressiveSess
       // Area/place selection is an exact normalized DB-field match. Do not
       // widen "Anna Nagar" to "Anna Nagar Chintamani" or other child labels.
       // Place = city metadata OR area_name only — NEVER direction_remarks.
-      return label === session.area.trim()
-        || locality === session.area.trim()
-        || metaCity === session.area.trim()
-        || metaArea === session.area.trim();
+      return label === areaWanted
+        || locality === areaWanted
+        || metaCity === areaWanted
+        || metaArea === areaWanted;
     });
     if (session.city && out.length > 0) {
       const narrowed = out.filter((s) => serviceMatchesCityLabel(s, session.city!));
