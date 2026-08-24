@@ -25,6 +25,7 @@ import { loadAllServicesFromCloud, buildMetroSpecText } from './supabaseProposal
 import type { DbService } from '../utils/serviceResolver';
 import { extractMetroMultiTableSpec, type PdfSpecGroup } from '../utils/metroSpecParser';
 import { pickMaterialFromMeta, pickDisplayDimensionFields } from '../utils/specMaterial';
+import { useAppStore } from '../store';
 
 const isMobile = () => Capacitor.isNativePlatform();
 const DEBUG_PDF_EXPORT = true;
@@ -590,6 +591,13 @@ export const exportToPDF = async (
       throw new Error('Template data not found. Please wait for the preview to load.');
     }
 
+    // DOM JSON can lag behind preview edits (huge data-template-store / async floors).
+    // Quote, company, and client in the Zustand store are the source of truth.
+    const live = useAppStore.getState();
+    if (live.currentQuote) templateData.quote = live.currentQuote;
+    if (live.companyInfo) templateData.company = live.companyInfo;
+    if (live.clientInfo) templateData.client = live.clientInfo;
+
     // Always load vendor catalog for images/specs (documentIds kept for API compat).
     // Rank-1 vendor_rate_chunks is the source of truth — not proposal_chunks.
     let pdfData: ServicePdfData[] = [];
@@ -630,7 +638,10 @@ export const exportToPDF = async (
     // Generate filename
     const clientStr = formatClientNameForFilename(clientName || '');
     const quoteLabel = getQuoteFilenameLabel(exportMode);
-    const filename = `${quoteNumber}_${clientStr}_${quoteLabel}.pdf`;
+    const stamp = new Date();
+    const pad = (n: number) => String(n).padStart(2, '0');
+    const timePart = `${pad(stamp.getHours())}${pad(stamp.getMinutes())}${pad(stamp.getSeconds())}`;
+    const filename = `${quoteNumber}_${clientStr}_${quoteLabel}_${timePart}.pdf`;
 
       if (shouldDownload && isMobile()) {
         // ── Mobile: save to Documents folder and open ──────────────────

@@ -2760,6 +2760,7 @@ function startPlaceTypeBrowse(
         },
         services,
         reply || copyPlaceServices(place, sess),
+        { allowAutoFinalize: false },
       );
     }
   }
@@ -2795,12 +2796,12 @@ function startPlaceTypeBrowse(
       needsContinueConfirm: true,
       pendingCityQueue: undefined,
       workQueue: undefined,
-      collectedRows: mediumOpts.length === 1 ? (session.collectedRows || []) : [],
-      collectedServiceIds:
-        mediumOpts.length === 1 ? (session.collectedServiceIds || []) : [],
+      collectedRows: [],
+      collectedServiceIds: [],
     },
     services,
     placeReply,
+    { allowAutoFinalize: false },
   );
 }
 
@@ -5126,7 +5127,7 @@ function uniqueAreaOptions(services: DbService[], token: string, city: string): 
   for (const s of hits) {
     const area = getFunnelAreaLabel(s);
     if (!area) continue;
-    const key = exactDbValueKey(area);
+    const key = areaDisplayKey(area);
     const existing = groups.get(key);
     if (existing) {
       existing.rows.push(s);
@@ -5311,15 +5312,12 @@ function buildMultiAreaSitePicker(
   for (const s of hits) {
     const area = getFunnelAreaLabel(s) || getAreaLabel(s) || '';
     const dir = getDirectionLabel(s);
-    const siteKey = `${exactDbValueKey(area)}|${exactDbValueKey(dir || '')}`;
+    const siteKey = `${areaDisplayKey(area)}|${exactDbValueKey(dir || '')}`;
     if (seen.has(siteKey)) continue;
     seen.add(siteKey);
     let label: string;
     if (area && dir) {
-      const aKey = canonicalizeServiceName(area);
-      const dKey = canonicalizeServiceName(dir);
-      label =
-        dKey.includes(aKey) || aKey.includes(dKey) ? dir : `${area} · ${dir}`;
+      label = `${area} · ${dir}`;
     } else {
       label = dir || area || friendlyServiceLabel(s);
     }
@@ -5487,6 +5485,11 @@ function getFunnelAreaLabel(svc: DbService): string | null {
   return raw;
 }
 
+/** Merge only exact area names ignoring case/spacing; do not merge by words. */
+function areaDisplayKey(value: string): string {
+  return value.trim().replace(/\s+/g, ' ').toLowerCase();
+}
+
 function uniqueAreaOptionsFromPool(
   services: DbService[],
   city: string | undefined,
@@ -5499,7 +5502,7 @@ function uniqueAreaOptionsFromPool(
   for (const s of scoped) {
     const area = getFunnelAreaLabel(s);
     if (!area) continue;
-    const key = exactDbValueKey(area);
+    const key = areaDisplayKey(area);
     const existing = groups.get(key);
     if (existing) {
       existing.rows.push(s);
@@ -6586,13 +6589,12 @@ function continueAfterNoPricing(
   unpricedLabels: string[],
 ): ProgressiveTurnResult {
   const labels = unpricedLabels.filter(Boolean);
-  const next = session.workQueue?.[0];
-  const nextLabel = next
-    ? titleCase(next.browseToken || next.medium)
-    : undefined;
-  const note = copyNoCurrentPricing(labels, nextLabel);
-  const continued = continuePendingWork(
-    {
+  const note = copyNoCurrentPricing(labels);
+  return {
+    step: 'no_match',
+    botText: note,
+    options: [],
+    session: {
       ...session,
       needsContinueConfirm: false,
       pendingRows: undefined,
@@ -6601,29 +6603,11 @@ function continueAfterNoPricing(
       browseToken: undefined,
       mediumType: undefined,
       typesResolved: undefined,
-      city: next?.city,
+      workQueue: undefined,
+      pendingCityQueue: undefined,
       area: undefined,
       placeHint: undefined,
       directionHint: undefined,
-    },
-    [...(session.collectedRows || [])],
-    [...(session.collectedServiceIds || [])],
-    services,
-  );
-  if (continued) {
-    return {
-      ...continued,
-      botText: note,
-    };
-  }
-  return {
-    step: 'no_match',
-    botText: note,
-    options: [],
-    session: {
-      ...session,
-      workQueue: undefined,
-      pendingCityQueue: undefined,
     },
   };
 }
@@ -7138,8 +7122,11 @@ function mergePriorWithDetected(
     candidateServiceIds: clearSitePool || typeChanged ? undefined : prior.candidateServiceIds,
     directionHint: nextDirection,
     pendingRows: clearSitePool || typeChanged ? undefined : prior.pendingRows,
-    workQueue: placeRescopedCity ? undefined : prior.workQueue,
-    pendingCityQueue: placeRescopedCity ? undefined : prior.pendingCityQueue,
+    // New typed place = new quote basket (never keep Chennai 81 lines + Chittoor queue).
+    collectedRows: clearSitePool ? [] : prior.collectedRows,
+    collectedServiceIds: clearSitePool ? [] : prior.collectedServiceIds,
+    workQueue: clearSitePool ? undefined : prior.workQueue,
+    pendingCityQueue: clearSitePool ? undefined : prior.pendingCityQueue,
     needsContinueConfirm:
       cityChanged || areaChanged || typeChanged || placeRescopedCity
         ? false
@@ -8249,9 +8236,14 @@ function resolveProgressiveTextInner(
             directionHint: undefined,
             candidateServiceIds: undefined,
             needsContinueConfirm: false,
+            collectedRows: [],
+            collectedServiceIds: [],
+            pendingCityQueue: undefined,
+            workQueue: undefined,
           },
           services,
           shortReply,
+          { allowAutoFinalize: false },
         );
       }
       logFunnelDebug('areaChangeInActiveFunnel', {
@@ -8274,9 +8266,14 @@ function resolveProgressiveTextInner(
           directionHint: baseSessionFields.directionHint,
           candidateServiceIds: undefined,
           needsContinueConfirm: false,
+          collectedRows: [],
+          collectedServiceIds: [],
+          pendingCityQueue: undefined,
+          workQueue: undefined,
         },
         services,
         shortReply,
+        { allowAutoFinalize: false },
       );
     }
     return startPlaceTypeBrowse(
@@ -8621,6 +8618,9 @@ function resolveProgressiveTextInner(
       },
       services,
       shortReply,
+      localityOnly || cityOnly
+        ? { allowAutoFinalize: false }
+        : undefined,
     );
   }
 

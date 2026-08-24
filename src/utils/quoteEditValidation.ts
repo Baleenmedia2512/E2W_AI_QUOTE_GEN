@@ -787,13 +787,13 @@ export function applyExecutiveSummaryFieldEdit(
 
     if (field === 'oneTimeQuantity') {
       if (!isOneTime) return item;
-      return recalcItemTotal({ ...item, oneTimeQuantity: value });
+      return recalcItemTotal({ ...item, quantity: value, oneTimeQuantity: value });
     }
 
     if (field === 'quantity') {
       // Normalize display lines so a qty edit also repairs corrupt month/day rates
       if (isOneTime) {
-        return recalcItemTotal({ ...item, oneTimeQuantity: value });
+        return recalcItemTotal({ ...item, quantity: value, oneTimeQuantity: value });
       }
       const base = normalizeRecurringToDailyDays(item, floors);
       return recalcItemTotal({ ...base, quantity: value });

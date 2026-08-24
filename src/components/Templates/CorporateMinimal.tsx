@@ -1,18 +1,6 @@
 import React, { useState, useCallback, useEffect, useRef } from 'react';
-import {
-  Button,
-  HStack,
-  Modal,
-  ModalBody,
-  ModalCloseButton,
-  ModalContent,
-  ModalFooter,
-  ModalHeader,
-  ModalOverlay,
-  Text,
-  useToast,
-  VStack,
-} from '@chakra-ui/react';
+import { useToast } from '@chakra-ui/react';
+import { useAppStore } from '../../store';
 import { TemplateProps } from '../../types';
 import { QuoteItem } from '../../types/quote';
 import { ReferenceImages } from './ReferenceImages';
@@ -53,14 +41,6 @@ import './CorporateMinimal.css';
 type ExecEditField = 'quantity' | 'duration' | 'requiringCharge' | 'oneTimeCharge' | 'oneTimeQuantity';
 type ExecEditMeta = {
   hasDisplayRental?: boolean;
-};
-
-type OneTimeQuantityConfirmState = {
-  primaryItemId: string;
-  serviceLabel: string;
-  previousValue: number;
-  nextValue: number;
-  displayValue: number;
 };
 
 const EMPTY_FLOORS: VendorEditFloors = {
@@ -495,8 +475,6 @@ export const CorporateMinimal: React.FC<TemplateProps> = ({
   const [reviewsByKey, setReviewsByKey] = useState<
     Record<string, CustomerReview | null>
   >({});
-  const [pendingOneTimeQuantityConfirm, setPendingOneTimeQuantityConfirm] =
-    useState<OneTimeQuantityConfirmState | null>(null);
 
   const handleServiceDataReady = useCallback(
     (
@@ -546,39 +524,44 @@ export const CorporateMinimal: React.FC<TemplateProps> = ({
     [toast],
   );
 
-  const cancelOneTimeQuantityChange = useCallback(() => {
-    if (!onDataChange || !pendingOneTimeQuantityConfirm) {
-      setPendingOneTimeQuantityConfirm(null);
-      return;
-    }
-
-    const restoredItems = applyExecutiveSummaryFieldEdit(
-      quote.items,
-      pendingOneTimeQuantityConfirm.primaryItemId,
-      'oneTimeQuantity',
-      pendingOneTimeQuantityConfirm.previousValue,
-    );
-    const restoredQuote = recalcQuoteTotals({ ...quote, items: restoredItems });
-    onDataChange({ ...data, quote: restoredQuote });
-    setPendingOneTimeQuantityConfirm(null);
-  }, [data, onDataChange, pendingOneTimeQuantityConfirm, quote]);
-
-  const confirmOneTimeQuantityChange = useCallback(() => {
-    setPendingOneTimeQuantityConfirm(null);
-  }, []);
-
   const commitExecEdit = useCallback(
     async (row: ExecutiveSummaryRow, field: ExecEditField, value: number, meta?: ExecEditMeta) => {
       if (!onDataChange) return;
 
+      const liveQuote = useAppStore.getState().currentQuote ?? quote;
       const primary =
-        quote.items.find((i) => i.id === row.id) ||
-        quote.items.find(
+        liveQuote.items.find((i) => i.id === row.id) ||
+        liveQuote.items.find(
           (i) =>
             (i.serviceId || '').trim().toLowerCase() ===
             (row.catalogServiceId || '').trim().toLowerCase(),
         );
       if (!primary) return;
+
+      // Keep display rental and P&F qty in lockstep so Executive Summary REQ. QUANTITY updates.
+      const applyField: ExecEditField =
+        field === 'oneTimeQuantity' && meta?.hasDisplayRental ? 'quantity' : field;
+
+      let storeValue = value;
+      if (applyField === 'duration') {
+        storeValue = uiEditToStorageValue('duration', value, row);
+      } else if (applyField === 'requiringCharge') {
+        storeValue = uiEditToStorageValue('requiringCharge', value, row);
+      }
+      const applyValue =
+        applyField === 'duration' || applyField === 'requiringCharge' ? storeValue : value;
+
+      const snapshot = liveQuote;
+      const optimisticItems = applyExecutiveSummaryFieldEdit(
+        liveQuote.items,
+        primary.id,
+        applyField,
+        applyValue,
+      );
+      onDataChange({
+        ...data,
+        quote: recalcQuoteTotals({ ...liveQuote, items: optimisticItems }),
+      });
 
       const floors = mergeFloorsWithQuoteItem(
         await resolveEditFloors({
@@ -588,19 +571,13 @@ export const CorporateMinimal: React.FC<TemplateProps> = ({
           city: primary.city,
         }),
         primary,
-        quote.items,
+        optimisticItems,
       );
-      let storeValue = value;
-      if (field === 'duration') {
-        storeValue = uiEditToStorageValue('duration', value, row);
-      } else if (field === 'requiringCharge') {
-        storeValue = uiEditToStorageValue('requiringCharge', value, row);
-      }
 
       let validationField: 'quantity' | 'duration' | 'displayRate' | 'pfRate';
-      if (field === 'quantity' || field === 'oneTimeQuantity') validationField = 'quantity';
-      else if (field === 'duration') validationField = 'duration';
-      else if (field === 'requiringCharge') validationField = 'displayRate';
+      if (applyField === 'quantity' || applyField === 'oneTimeQuantity') validationField = 'quantity';
+      else if (applyField === 'duration') validationField = 'duration';
+      else if (applyField === 'requiringCharge') validationField = 'displayRate';
       else validationField = 'pfRate';
 
       const durationDays = row.durationDays ?? 0;
@@ -611,7 +588,7 @@ export const CorporateMinimal: React.FC<TemplateProps> = ({
             ? (row.requiringCharge || 0) / 30
             : row.requiringCharge || 0;
       const packageContext = {
-        quantity: row.quantity,
+        quantity: applyField === 'quantity' || applyField === 'oneTimeQuantity' ? value : row.quantity,
         durationDays,
         displayDailyRate: displayDaily,
         pfUnitRate: row.oneTimeCharge || 0,
@@ -620,40 +597,33 @@ export const CorporateMinimal: React.FC<TemplateProps> = ({
       const result = validateQuoteEdit({
         field: validationField,
         value:
-          field === 'requiringCharge'
-            ? value // validate against UI unit via rateUiMode
-            : field === 'duration'
-              ? storeValue // duration floor is always in days
+          applyField === 'requiringCharge'
+            ? value
+            : applyField === 'duration'
+              ? storeValue
               : value,
         floors,
         rateUiMode: row.ratePeriod === 'per_month' ? 'per_month' : 'per_day',
         packageContext,
       });
       if (!result.ok) {
+        onDataChange({ ...data, quote: snapshot });
         showFloorToast(result.message || 'Invalid value');
         return;
       }
 
-      const nextItems = applyExecutiveSummaryFieldEdit(
-        quote.items,
+      const latest = useAppStore.getState().currentQuote ?? snapshot;
+      const repairedItems = applyExecutiveSummaryFieldEdit(
+        latest.items,
         primary.id,
-        field,
-        field === 'duration' || field === 'requiringCharge' ? storeValue : value,
+        applyField,
+        applyValue,
         floors,
       );
-      const nextQuote = recalcQuoteTotals({ ...quote, items: nextItems });
-      onDataChange({ ...data, quote: nextQuote });
-      if (field === 'oneTimeQuantity') {
-        if (meta?.hasDisplayRental && row.quantity !== value) {
-          setPendingOneTimeQuantityConfirm({
-            primaryItemId: primary.id,
-            serviceLabel: row.serviceId,
-            previousValue: row.oneTimeQuantity,
-            nextValue: value,
-            displayValue: row.quantity,
-          });
-        }
-      }
+      onDataChange({
+        ...data,
+        quote: recalcQuoteTotals({ ...latest, items: repairedItems }),
+      });
     },
     [data, onDataChange, quote, showFloorToast],
   );
@@ -1190,49 +1160,6 @@ export const CorporateMinimal: React.FC<TemplateProps> = ({
     </div>
   );
 
-  const renderOneTimeQuantityConfirmModal = () => {
-    if (!pendingOneTimeQuantityConfirm) return null;
-
-    const { serviceLabel, previousValue, nextValue, displayValue } = pendingOneTimeQuantityConfirm;
-
-    return (
-      <Modal
-        isOpen
-        onClose={cancelOneTimeQuantityChange}
-        isCentered
-        closeOnOverlayClick
-        closeOnEsc
-      >
-        <ModalOverlay />
-        <ModalContent mx={4} borderRadius="xl">
-          <ModalHeader pb={2}>Confirm quantity change</ModalHeader>
-          <ModalCloseButton />
-          <ModalBody py={4}>
-            <VStack align="stretch" spacing={3}>
-              <Text>
-                One-time quantity changed from <strong>{previousValue}</strong> to{' '}
-                <strong>{nextValue}</strong> for <strong>{serviceLabel}</strong>.
-              </Text>
-              <Text>
-                Display Rental quantity is still <strong>{displayValue}</strong>. Is this okay?
-              </Text>
-            </VStack>
-          </ModalBody>
-          <ModalFooter pt={2}>
-            <HStack spacing={3}>
-              <Button variant="outline" onClick={cancelOneTimeQuantityChange}>
-                Cancel
-              </Button>
-              <Button colorScheme="blue" onClick={confirmOneTimeQuantityChange}>
-                OK
-              </Button>
-            </HStack>
-          </ModalFooter>
-        </ModalContent>
-      </Modal>
-    );
-  };
-
   // Single service quote (original behavior)
   if (!isMultiService) {
     const singleTotal = 3;
@@ -1242,7 +1169,6 @@ export const CorporateMinimal: React.FC<TemplateProps> = ({
     );
     return (
       <>
-        {renderOneTimeQuantityConfirmModal()}
         <div id="pdf-page-1" className="template-corporate-minimal">
           <div data-pdf-block="atomic" style={{ paddingBottom: '1px' }}>
             {renderHeader()}
@@ -1333,7 +1259,6 @@ export const CorporateMinimal: React.FC<TemplateProps> = ({
 
   return (
     <>
-      {renderOneTimeQuantityConfirmModal()}
       {/* Page 1: Summary Page */}
       <div id="pdf-page-summary" className="template-corporate-minimal">
         <div data-pdf-block="atomic" style={{ paddingBottom: '1px' }}>

@@ -175,14 +175,20 @@ export function buildExecutiveSummaryRows(items: QuoteItem[]): ExecutiveSummaryR
     const displayRate =
       dailyRate > 0 ? toDisplayRecurringRate(dailyRate, durationDays) : null;
 
+    const displayLine = group.find((i) => !isOneTimeLineDescription(i.description));
+    const pfLine = group.find((i) => isOneTimeLineDescription(i.description));
+    const summaryQty = displayLine
+      ? displayLine.quantity
+      : (pfLine?.oneTimeQuantity ?? pfLine?.quantity ?? primary.quantity);
+
     rows.push({
       id: primary.id,
       serviceId,
       catalogServiceId: rawServiceId,
-      quantity: primary.quantity,
+      quantity: summaryQty,
       oneTimeQuantity:
-        group.find((i) => isOneTimeLineDescription(i.description))?.oneTimeQuantity ??
-        group.find((i) => isOneTimeLineDescription(i.description))?.quantity ??
+        pfLine?.oneTimeQuantity ??
+        pfLine?.quantity ??
         primary.quantity,
       quantityUnit: primary.quantityUnit,
       duration: displayDur?.value,

@@ -18,6 +18,7 @@ import {
   buildPreviewTocItems,
   scrollToPreviewSection,
 } from '../utils/previewNavigation';
+import { buildExecutiveSummaryRows } from '../utils/quoteGrouping';
 import QuoteFlowNav from '../components/QuoteWizard/QuoteFlowNav';
 import { EMPTY_CLIENT } from '../components/ClientInfoForm/ClientEditDrawer';
 import { ClientInfo } from '../types/client';
@@ -584,13 +585,14 @@ export const QuotePreviewPage: React.FC = () => {
     setIsExporting(true);
 
     try {
+      const liveQuote = useAppStore.getState().currentQuote ?? currentQuote;
       const docIds = activeProposals
         .map((p) => p.id)
         .filter(Boolean) as string[];
 
       const { pdfBlob, filename } = await exportToPDF(
         previewRef.current,
-        currentQuote.quoteNumber,
+        liveQuote.quoteNumber,
         selectedTemplate,
         effectiveClient.name,
         docIds.length > 0 ? docIds : undefined,
@@ -625,7 +627,12 @@ export const QuotePreviewPage: React.FC = () => {
         if (detailedResult) pdfAttachments.push(detailedResult);
       }
 
-      if (!pdfAttachments.length || !currentQuote) {
+      if (!pdfAttachments.length) {
+        throw new Error('Could not generate PDF. Please try again.');
+      }
+
+      const liveQuote = useAppStore.getState().currentQuote ?? currentQuote;
+      if (!liveQuote) {
         throw new Error('Could not generate PDF. Please try again.');
       }
 
@@ -642,7 +649,7 @@ export const QuotePreviewPage: React.FC = () => {
 
       const emailSendResult = await sendQuoteEmail({
         pdfAttachments,
-        quote: currentQuote,
+        quote: liveQuote,
         client: effectiveClient,
         company: companyInfo,
         downloadedBy: user?.full_name || 'Unknown User',
@@ -684,6 +691,8 @@ export const QuotePreviewPage: React.FC = () => {
     setZoom(100);
   };
 
+  const totalServices = currentQuote ? buildExecutiveSummaryRows(currentQuote.items).length : 0;
+
   return (
     <div className="quote-preview-page">
       <QuoteFlowNav
@@ -711,7 +720,10 @@ export const QuotePreviewPage: React.FC = () => {
             </svg>
             {showToc ? 'Hide TOC' : 'Open TOC'}
           </button>
-          <h1 className="toolbar-title">Quote Preview</h1>
+          <div className="toolbar-title-wrap">
+            <h1 className="toolbar-title">Quote Preview</h1>
+            <span className="toolbar-service-count">Total services: {totalServices}</span>
+          </div>
         </div>
 
         <div className="toolbar-section">
