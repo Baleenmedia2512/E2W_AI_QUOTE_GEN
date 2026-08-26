@@ -67,8 +67,10 @@ import {
 import type { DbService } from '../../utils/serviceResolver';
 import {
   continueProgressiveAction,
+  detectCityInText as detectCatalogCityInText,
   detectLocalityInText,
   detectMediaLocal,
+  extractGeocodePlaceHint,
   isNewServiceSwitch,
   matchFreeTextToProgressiveOption,
   parseQtyFromText,
@@ -78,6 +80,8 @@ import {
   type ProgressiveSession,
   type ProgressiveTurnResult,
 } from '../../utils/progressiveChatEngine';
+import { resolveLocation } from '../../utils/locationResolver';
+import type { ResolvedLocation } from '../../types/location';
 
 // ═══════════════════════════════════════════════════════════════════════
 // Progressive DB chat (short friendly replies). Gemini optional for intent only.
@@ -85,6 +89,32 @@ import {
 // ═══════════════════════════════════════════════════════════════════════
 const USE_CLOUD_DATA = true;
 const USE_PROGRESSIVE_CHAT = true;
+
+/**
+ * Resolve a city via Nominatim (cached). Used so statewide DB rows covering the
+ * same state count as available in that city — no hardcoded city lists.
+ */
+async function resolveCityGeography(
+  city: string | null | undefined,
+  prior?: ProgressiveSession | null,
+): Promise<ResolvedLocation | null> {
+  const label = (city || '').trim();
+  if (!label) return prior?.resolvedLocation ?? null;
+  const existing = prior?.resolvedLocation ?? null;
+  if (
+    existing
+    && prior?.city
+    && canonicalizeServiceName(prior.city) === canonicalizeServiceName(label)
+  ) {
+    return existing;
+  }
+  try {
+    const resolved = await resolveLocation(label);
+    return resolved || existing;
+  } catch {
+    return existing;
+  }
+}
 
 /**
  * Drop chip thumbnail URLs from prior turns so decoded images don't linger
@@ -1340,7 +1370,18 @@ const ChatInterfaceContent: React.FC = () => {
     setIsLoading(true);
     try {
       const dbServices = await getCachedDbServices();
-      const result = continueProgressiveAction(optionId, session, dbServices);
+      let sessionForAction = session;
+      const opt = (message.progressiveOptions || []).find((o) => o.id === optionId);
+      const cityFromChip = opt?.city || (
+        optionId.startsWith('city:')
+          ? (opt?.label || optionId.replace(/^city:/i, ''))
+          : undefined
+      );
+      if (cityFromChip) {
+        const resolved = await resolveCityGeography(cityFromChip, session);
+        sessionForAction = { ...session, resolvedLocation: resolved };
+      }
+      const result = continueProgressiveAction(optionId, sessionForAction, dbServices);
       // No echo bubble for chip selections — bot's reply conveys what was chosen
       await appendProgressiveResult(null, result);
     } catch (err) {
@@ -1360,9 +1401,20 @@ const ChatInterfaceContent: React.FC = () => {
     setIsLoading(true);
     try {
       const dbServices = await getCachedDbServices();
+      let sessionForAction = session;
+      const opts = message.progressiveOptions || [];
+      const cityPicks = selected
+        .map((id) => opts.find((o) => o.id === id))
+        .filter((o): o is ProgressiveOption => !!o && !!(o.city || o.label))
+        .filter((o) => (o.id || '').startsWith('city:') || !!o.city);
+      if (cityPicks.length === 1) {
+        const cityLabel = cityPicks[0].city || cityPicks[0].label;
+        const resolved = await resolveCityGeography(cityLabel, session);
+        sessionForAction = { ...session, resolvedLocation: resolved };
+      }
       const result = continueProgressiveAction(
         selected[0],
-        session,
+        sessionForAction,
         dbServices,
         selected,
       );
@@ -1730,9 +1782,22 @@ const ChatInterfaceContent: React.FC = () => {
               lastProgMsg.progressiveOptions as ProgressiveOption[],
             );
           if (matched) {
+            let sessionForMatch = priorSession;
+            const cityFromChip = matched.city || (
+              matched.id.startsWith('city:')
+                ? (matched.label || matched.id.replace(/^city:/i, ''))
+                : undefined
+            );
+            if (cityFromChip) {
+              const resolved = await resolveCityGeography(cityFromChip, priorSession);
+              sessionForMatch = {
+                ...priorSession,
+                resolvedLocation: resolved,
+              };
+            }
             const result = continueProgressiveAction(
               matched.id,
-              priorSession,
+              sessionForMatch,
               dbServices,
             );
             await appendProgressiveResult(null, result);
@@ -1740,10 +1805,26 @@ const ChatInterfaceContent: React.FC = () => {
           }
         }
 
+        const textCity =
+          detectCatalogCityInText(cleanedText, dbServices)
+          || (intent?.city ? String(intent.city) : null)
+          || null;
+        // Unknown towns (Puliyangudi) still need Nominatim so statewide TN rows match
+        const placeToResolve =
+          textCity
+          || extractGeocodePlaceHint(cleanedText, dbServices)
+          || priorSession?.city
+          || null;
+        const resolvedLocation = placeToResolve
+          ? await resolveCityGeography(placeToResolve, priorSession)
+          : (priorSession?.resolvedLocation ?? null);
+
         const result = resolveProgressiveText(
           cleanedText,
           dbServices,
-          priorSession,
+          priorSession
+            ? { ...priorSession, resolvedLocation: resolvedLocation ?? priorSession.resolvedLocation }
+            : (resolvedLocation ? { originalText: cleanedText, qty: null, resolvedLocation } : priorSession),
           intent
             ? {
                 kind: intent.kind,
@@ -1757,8 +1838,9 @@ const ChatInterfaceContent: React.FC = () => {
                 qty: intent.qty,
                 duration: intent.duration,
                 shortReply: intent.shortReply,
+                resolvedLocation,
               }
-            : null,
+            : { resolvedLocation },
         );
         await appendProgressiveResult(null, result);
       } catch (err) {
