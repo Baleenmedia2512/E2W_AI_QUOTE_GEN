@@ -10,7 +10,7 @@
  *  4. Falls back to DOM store (ReferenceImages) if DB has no images for a service
  *  5. Render CorporateMinimalPDF to a blob — zero Gemini calls
  *  6. Mobile: save without prompting and open in the platform's download/documents location
- *  7. Web: browser download
+ *  7. Web: after PDF is ready, open it in a new browser tab (fallback to download if blocked)
  */
 
 import React from 'react';
@@ -661,16 +661,23 @@ export const exportToPDF = async (
         });
         await FileOpener.open({ filePath: result.uri, contentType: 'application/pdf' });
       } else if (shouldDownload) {
-        // ── Web: browser download ───────────────────────────────────────
-        const url = URL.createObjectURL(blob);
-        const a = document.createElement('a');
-        a.href = url;
-        a.download = filename;
-        a.click();
-        setTimeout(() => URL.revokeObjectURL(url), 10000);
+        openPdfBlobInNewTab(blob, filename);
       }
       return { pdfBlob: blob, filename };
   } finally {
     document.body.style.cursor = originalCursor;
   }
+};
+
+/** Open a generated PDF in a new tab after it is ready (web). Falls back to download if blocked. */
+export const openPdfBlobInNewTab = (blob: Blob, filename: string): void => {
+  const url = URL.createObjectURL(blob);
+  const opened = window.open(url, '_blank');
+  if (!opened) {
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = filename;
+    a.click();
+  }
+  setTimeout(() => URL.revokeObjectURL(url), 60_000);
 };

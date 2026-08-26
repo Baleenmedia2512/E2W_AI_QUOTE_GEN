@@ -309,10 +309,10 @@ function salesAdLabel(token: string | undefined | null): string {
 
 /**
  * Response style: availability + next ask only.
- * Max 2 lines, max 12 words. Never add filler openers. Never truncate names.
+ * Max 2 lines. Type-ask copy is a bit longer by product request.
  */
 const MAX_REPLY_LINES = 2;
-const MAX_REPLY_WORDS = 12;
+const MAX_REPLY_WORDS = 22;
 
 const OPENER_POOL = [
   '',
@@ -356,7 +356,7 @@ function clampReplyLines(text: string): string {
 function extractAskLine(text: string | null | undefined): string {
   const lines = replyLines(text || '');
   const ask = [...lines].reverse().find((l) =>
-    /^(which|please choose|now choosing|starting|did you mean)/i.test(l),
+    /^(which|please choose|now choosing|starting|did you mean|i have the below options|i understand you)/i.test(l),
   );
   return ask || lines[lines.length - 1] || '';
 }
@@ -432,18 +432,23 @@ function stampResultOpener(result: ProgressiveTurnResult): ProgressiveTurnResult
   };
 }
 
+/**
+ * Service / type chip ask only (Bus Semi vs Shelter, LED vs Non LED, …).
+ * City line only when a city is locked/named — never invent “any city”.
+ */
 function copyAskType(
   token?: string | null,
   session?: ProgressiveSession | null,
+  cityOverride?: string | null,
 ): string {
-  const key = canonicalizeServiceName(token || '');
-  const label = FAMILY_NEEDS_ADS_WORD.has(key)
-    ? `${key} advertising`
-    : titleCase(token || 'advertising');
-  return composeReply(session, {
-    avail: `${label} options available.`,
-    ask: 'Which option do you need?',
-  }).text;
+  const label = titleCase(token || 'this');
+  const city = (cityOverride ?? session?.city ?? '').trim();
+  return compactFunnelReply(
+    `I understand you're looking for advertising services in ${label}.`,
+    city
+      ? `I have the below options for you in ${city}.`
+      : 'I have the below options for you.',
+  );
 }
 
 function copyAskCities(
@@ -492,21 +497,16 @@ function copySingleServiceAtPlace(
   }).text;
 }
 
-/** Family/service at a place → availability + type ask. */
+/**
+ * Type ask at a place — still only mention city when session has a city lock.
+ * Place/corridor alone does not add “in OMR” on this template (product: city or nothing).
+ */
 function copyAskTypeAtPlace(
   medium: string | undefined | null,
-  place: string,
+  _place: string,
   session?: ProgressiveSession | null,
 ): string {
-  const key = canonicalizeServiceName(medium || '');
-  const near = formatPlacePrep(place);
-  const label = FAMILY_NEEDS_ADS_WORD.has(key)
-    ? `${key} advertising`
-    : titleCase(medium || 'this');
-  return composeReply(session, {
-    avail: `${label} options available ${near}.`,
-    ask: 'Which option do you need?',
-  }).text;
+  return copyAskType(medium, session);
 }
 
 /** Type-step copy: never reuse place “which service?” reply after medium was auto-locked. */
@@ -1594,17 +1594,14 @@ function startCatalogueBrowse(
       reply,
     );
   }
-  const { text, opener } = composeReply(session, {
-    avail: scopedMed
-      ? `${titleCase(scopedMed)} options available${scopedCity ? ` in ${scopedCity}` : ''}.`
-      : scopedCity
-        ? `Options available in ${scopedCity}.`
-        : 'Service types available.',
-    ask: 'Which option do you need?',
-  });
+  const typeAsk = copyAskType(
+    scopedMed || undefined,
+    session,
+    scopedCity || session.city || null,
+  );
   return {
     step: 'pick_type',
-    botText: preferEngineCopy(reply, text),
+    botText: preferEngineCopy(reply, typeAsk),
     options,
     allowMulti: true,
     session: stampReplyMeta(
@@ -1613,7 +1610,7 @@ function startCatalogueBrowse(
         candidateServiceIds: pool.map((s) => s.service_id),
         needsContinueConfirm: false,
       },
-      opener,
+      '',
     ),
   };
 }
@@ -1666,10 +1663,7 @@ function copyBatchSkipCitiesContinue(
 function copyBatchStart(city: string, count: number, firstLabel: string, allLabels?: string[]): string {
   void count;
   void allLabels;
-  return compactFunnelReply(
-    `Starting ${firstLabel} in ${city}.`,
-    'Which option do you need?',
-  );
+  return copyAskType(firstLabel, null, city);
 }
 
 /**
@@ -1690,7 +1684,7 @@ function copyBatchNextService(opts: {
 function copyBatchStepWhy(step: ProgressiveStep | string | undefined): string {
   switch (step) {
     case 'pick_type':
-      return 'Which option do you need?';
+      return 'I have the below options for you.';
     case 'pick_area':
       return 'Which area do you need?';
     case 'pick_direction':
@@ -1711,6 +1705,24 @@ function withBatchStepPrompt(
   // Prefer short handoff + why (avoid stacking long paragraphs)
   if (result.step === 'min_qty_confirm' || result.step === 'quote_ready') {
     return result;
+  }
+  // Type chips → full understand + options copy (with city when locked)
+  if (result.step === 'pick_type') {
+    const med = result.session.browseToken || result.session.medium || '';
+    const typeAsk = copyAskType(med, result.session);
+    const choosing = replyLines(trimmed).find((line) => /^now choosing\b/i.test(line));
+    if (choosing) {
+      const city = (result.session.city || '').trim();
+      const line2 = city
+        ? `I have the below options for you in ${city}.`
+        : 'I have the below options for you.';
+      return { ...result, botText: compactFunnelReply(choosing, line2) };
+    }
+    // Handoff already is a full type ask / auto-added ask — keep if it matches template
+    if (/i understand you'?re looking for advertising services/i.test(trimmed)) {
+      return { ...result, botText: trimmed };
+    }
+    return { ...result, botText: typeAsk };
   }
   const why = copyBatchStepWhy(result.step);
   const choosing = replyLines(trimmed).find((line) => /^now choosing\b/i.test(line));
@@ -2034,17 +2046,14 @@ function copyBatchAutoAddedThenAsk(
   allLabels?: string[],
 ): string {
   void allLabels;
-  const where = city ? ` in ${city}` : '';
   if (autoLabels.length) {
+    const where = city ? ` in ${city}` : '';
     return compactFunnelReply(
       `${formatBatchServiceList(autoLabels)} added${where}.`,
-      `Which ${nextLabel} option do you need?`,
+      copyAskType(nextLabel, null, city).split('\n').slice(-1)[0],
     );
   }
-  return compactFunnelReply(
-    undefined,
-    `Which ${nextLabel} option do you need${where}?`,
-  );
+  return copyAskType(nextLabel, null, city);
 }
 
 function matchKnownCityLabel(value: string): string | null {
@@ -8727,11 +8736,8 @@ function resolveProgressiveTextInner(
         botText:
           shortReply
           || (hint === 'that'
-            ? 'Which option do you need?'
-            : compactFunnelReply(
-              `${salesAdLabel(hint)}${city ? ` in ${city}` : ''} options available.`,
-              'Which option do you need?',
-            )),
+            ? copyAskType('this', { originalText, qty: null, city: city || undefined })
+            : copyAskType(hint, { originalText, qty: null, city: city || undefined }, city)),
         options: types,
         allowMulti: true,
         session: {
@@ -8779,7 +8785,11 @@ function resolveProgressiveTextInner(
       if (mediums.length > 1) {
         return {
           step: 'pick_type',
-          botText: shortReply || copyAskType(hint),
+          botText: shortReply || copyAskType(hint, {
+            originalText,
+            qty: null,
+            city: city || undefined,
+          }, city),
           options: mediums,
           allowMulti: true,
           session: {
@@ -8798,9 +8808,11 @@ function resolveProgressiveTextInner(
       step: 'pick_type',
       botText:
         shortReply
-        || (hint === 'that'
-          ? 'Which option do you need?'
-          : copyAskType(hint)),
+        || copyAskType(
+          hint === 'that' ? 'this' : hint,
+          { originalText, qty: null, city: city || undefined },
+          city,
+        ),
       options: types.length ? types : uniqueMediumOnlyOptions(services),
       allowMulti: true,
       session: {
