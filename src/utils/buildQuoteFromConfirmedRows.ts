@@ -23,6 +23,29 @@ function titleCaseCity(city: string): string {
   return city.charAt(0).toUpperCase() + city.slice(1);
 }
 
+/** Preserve the catalog's exact city value for quote display. */
+function exactDbCity(svc: DbService): string | undefined {
+  const raw = String((svc.metadata as { city?: unknown } | undefined)?.city ?? '').trim();
+  if (raw && raw.toUpperCase() !== 'NA' && raw !== '—') {
+    return raw;
+  }
+  return undefined;
+}
+
+function coordinateKey(meta: Record<string, unknown>): string {
+  const nested = (meta.coordinates || meta.coordinate) as Record<string, unknown> | undefined;
+  const read = (...keys: string[]): string => {
+    for (const key of keys) {
+      const value = meta[key] ?? nested?.[key];
+      if (value != null && String(value).trim() !== '') return String(value).trim().toLowerCase();
+    }
+    return '';
+  };
+  const latitude = read('latitude', 'lat');
+  const longitude = read('longitude', 'lng', 'long', 'lon');
+  return latitude || longitude ? `${latitude || 'na'},${longitude || 'na'}` : 'na,na';
+}
+
 /**
  * Confirmation rows identify catalog records, but several vendor records can
  * represent the same logical quote service. Keep one requested row for each
@@ -69,11 +92,12 @@ function dedupeLogicalQuoteRows(
     const siteKey = siteParts
       .map((v) => v.toLowerCase().replace(/\s+/g, ' ').trim())
       .join('|');
+    const coordinates = coordinateKey(meta);
     // medium_type is part of product identity (Elevated vs Underground,
     // Frontlit vs Nonlit). Only collapse true vendor twins that share type.
     const key = siteKey
-      ? `site:${medium}|${typeKey}|${cityKey}|${siteKey}|${qty}`
-      : `logical:${medium}|${typeKey}|${cityKey}|${qty}`;
+      ? `site:${medium}|${typeKey}|${cityKey}|${siteKey}|${coordinates}|${qty}`
+      : `logical:${medium}|${typeKey}|${cityKey}|${coordinates}|${qty}`;
     const list = byLogical.get(key);
     if (list) list.push(row);
     else byLogical.set(key, [row]);
@@ -129,8 +153,6 @@ export function buildQuoteFromConfirmedRows(
     const qty =
       typeof row.qty === 'number' ? row.qty : parseInt(String(row.qty), 10) || 1;
     const cityHint = row.city && row.city !== '—' ? row.city : null;
-    const cityLabel = cityHint ? titleCaseCity(cityHint) : undefined;
-
     let baseSvc: DbService | undefined;
     if (row.serviceId) {
       baseSvc = services.find((s) => s.service_id === row.serviceId);
@@ -145,6 +167,9 @@ export function buildQuoteFromConfirmedRows(
       unresolved.push(`${row.service} (${row.city})`);
       continue;
     }
+
+    const cityLabel = exactDbCity(baseSvc)
+      || (cityHint ? titleCaseCity(cityHint) : undefined);
 
     const svc = applyVendorPricingForQuoteRow(
       baseSvc,

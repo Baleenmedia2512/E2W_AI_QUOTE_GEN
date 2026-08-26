@@ -273,6 +273,8 @@ export function normalizeVendorRateRow(row: Record<string, unknown>): VendorRate
   const displayWidth = pickDim('display_width', 'width');
   const displayHeight = pickDim('display_height', 'height');
   const displayLength = pickDim('display_length', 'length');
+  const latitude = pickDim('latitude', 'lat');
+  const longitude = pickDim('longitude', 'lng', 'long', 'lon');
   const referenceImage = pickString(meta.reference_image) || undefined;
   const customerReview = pickString(meta.customer_review) || undefined;
   // Unique site id from DB column / metadata (keeps each hoarding area separate)
@@ -329,6 +331,8 @@ export function normalizeVendorRateRow(row: Record<string, unknown>): VendorRate
     min_duration: vendorMinDays,
     direction_remarks: directionRemarks,
     area_name: areaName,
+    latitude,
+    longitude,
     specifications,
     size,
     material,
@@ -1188,6 +1192,8 @@ export function vendorRatesToDbServices(
           : undefined,
         direction_remarks: cleaned.direction_remarks,
         area_name: cleaned.area_name,
+        latitude: cleaned.latitude,
+        longitude: cleaned.longitude,
         // PDF / Display Specification — from vendor_rate_chunks.metadata
         specifications: cleaned.specifications,
         size: cleaned.size,
