@@ -1167,24 +1167,10 @@ function buildPlaceOfferTurn(
       services,
     );
   }
-  if (cities.length === 1) {
-    // Exactly one DB city (often statewide TN) → auto-lock, no duplicate chips
-    const only = cities[0]!;
-    return startMediumFlow(
-      label,
-      {
-        ...sess,
-        city: only.city || only.label,
-        unresolvedPlaceOffer: true,
-        batchUnavailableNote: note,
-        batchUnavailableSpoken: false,
-        candidateServiceIds: cityPool.map((s) => s.service_id),
-      },
-      services,
-      note,
-    );
-  }
-  if (cities.length >= 2) {
+  if (cities.length >= 1) {
+    // Named place is NOT covered (Kudiri outside TN, library miss, etc.).
+    // Never auto-lock the sole statewide city into a silent quote — offer where
+    // we do provide and let the user Confirm.
     const placeLabels = cities.map((c) => c.city || c.label).filter(Boolean) as string[];
     const ask = copyOfferWhereAvailable(label, placeLabels, { ...sess, medium: label });
     const noted = withBatchUnavailableNote(ask, { ...sess, medium: label });
@@ -1192,7 +1178,7 @@ function buildPlaceOfferTurn(
       step: 'pick_city',
       botText: noted.botText,
       options: cities,
-      allowMulti: true,
+      allowMulti: cities.length > 1,
       session: noted.session,
     };
   }
