@@ -3856,6 +3856,7 @@ function matchSegmentHits(
   services: DbService[],
   token: string,
   city: string | null,
+  resolvedLocation?: ResolvedLocation | null,
 ): DbService[] {
   const words = canonicalizeServiceName(normalizeSegmentPhrase(token))
     .split(/\s+/)
@@ -3915,16 +3916,17 @@ function matchSegmentHits(
     }
   }
 
-  // Strict city lock: empty = not offered in this city (do not fall back to all cities)
+  // Strict city lock: empty = not offered in this city (do not fall back to all cities).
+  // Pass Nominatim hierarchy so statewide TN rows cover Chennai / Madurai / etc.
   if (city) {
-    hits = hits.filter((s) => serviceMatchesCityLabel(s, city));
+    hits = hits.filter((s) => serviceMatchesCityLabel(s, city, resolvedLocation));
   }
 
   // "metro" segment → include Train Inside / Train Wrap even without the word "metro"
   if (isMetroSegmentToken(words.join(' ')) || isMetroSegmentToken(token)) {
     hits = mergeMetroFamilyServices(services, hits);
     if (city) {
-      hits = hits.filter((s) => serviceMatchesCityLabel(s, city));
+      hits = hits.filter((s) => serviceMatchesCityLabel(s, city, resolvedLocation));
     }
   }
   return hits;
@@ -4454,7 +4456,7 @@ function startBatchSequentialFunnel(
     }
     seenTok.add(key);
 
-    let hits = matchSegmentHits(services, token, seg.city);
+    let hits = matchSegmentHits(services, token, seg.city, session.resolvedLocation);
     if (!hits.length) {
       if (seg.city) {
         // City was explicit — never widen to other cities; skip this service
@@ -4741,10 +4743,10 @@ function startBatchWithCityCandidates(
 
   const cityHasAny = (city: string): boolean => {
     for (const token of tokens) {
-      let hits = matchSegmentHits(services, token, city);
+      let hits = matchSegmentHits(services, token, city, session.resolvedLocation);
       if (!hits.length) {
         hits = filterForBrowseOrFamily(services, token).filter((s) =>
-          serviceMatchesCityLabel(s, city),
+          serviceMatchesCityLabel(s, city, session.resolvedLocation),
         );
       }
       if (hits.length) return true;
@@ -4876,10 +4878,10 @@ function startBatchWithCityCandidates(
     const med = canonicalizeServiceName(token);
     if (!med) continue;
     for (const city of usable) {
-      let hits = matchSegmentHits(services, token, city);
+      let hits = matchSegmentHits(services, token, city, session.resolvedLocation);
       if (!hits.length) {
         hits = filterForBrowseOrFamily(services, token).filter((s) =>
-          serviceMatchesCityLabel(s, city),
+          serviceMatchesCityLabel(s, city, session.resolvedLocation),
         );
       }
       if (!hits.length) continue;
@@ -4957,6 +4959,7 @@ function startBatchWithCityLock(
   const available: Avail[] = [];
   const missingLabels: string[] = [];
   const qtyByServiceId: Record<string, number> = { ...(session.qtyByServiceId || {}) };
+  const resolved = session.resolvedLocation || null;
 
   // Dedupe by token (bus, bus → one) + metro family specifics
   const deduped = dedupeBatchSegments(segments);
@@ -4967,11 +4970,11 @@ function startBatchWithCityLock(
     if (!key || seenTok.has(key)) continue;
     seenTok.add(key);
 
-    let hits = matchSegmentHits(services, token, city);
+    let hits = matchSegmentHits(services, token, city, resolved);
     const strictHitIds = hits.map((hit) => hit.service_id);
     if (!hits.length) {
       hits = filterForBrowseOrFamily(services, token).filter((s) =>
-        serviceMatchesCityLabel(s, city),
+        serviceMatchesCityLabel(s, city, resolved),
       );
     }
     if (!hits.length) {
@@ -4982,7 +4985,7 @@ function startBatchWithCityLock(
         .split(/\s+/)
         .filter((word) => word.length >= 2 && !STOP_WORDS.has(word));
       hits = services.filter((service) => {
-        if (!serviceMatchesCityLabel(service, city)) return false;
+        if (!serviceMatchesCityLabel(service, city, resolved)) return false;
         const hay = canonicalizeServiceName(
           `${getMediumKey(service)} ${(service.service_name || '').split(/[·—–|]/)[0] || ''}`,
         ).split(/\s+/);
@@ -4995,11 +4998,13 @@ function startBatchWithCityLock(
       inputToken: seg.token,
       refinedToken: token,
       normalizedKey: key,
+      hasResolved: !!resolved,
+      resolvedState: resolved?.state || null,
       strictHitIds,
       finalHitIds: hits.map((hit) => hit.service_id),
       finalHitNames: hits.map((hit) => hit.service_name),
       cityRows: services
-        .filter((service) => serviceMatchesCityLabel(service, city))
+        .filter((service) => serviceMatchesCityLabel(service, city, resolved))
         .filter((service) => canonicalizeServiceName(
           `${getMediumKey(service)} ${(service.service_name || '').split(/[·—–|]/)[0] || ''}`,
         ).includes(key))
