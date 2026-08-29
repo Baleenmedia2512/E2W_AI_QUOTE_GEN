@@ -12,6 +12,15 @@ import {
 const MODEL = 'gemini-3.1-flash-lite';
 const TELEMETRY_MODULE = 'chat_intent';
 
+/** One batch clause from Gemini (validated by parseIntent against DB). */
+export interface ChatIntentSegment {
+  service?: string | null;
+  city?: string | null;
+  qty?: number | null;
+  place?: string | null;
+  raw?: string | null;
+}
+
 export interface ChatIntentHint {
   kind?: 'greeting' | 'help' | 'quote' | 'clarify_type' | 'city_browse' | 'services_browse' | 'other' | null;
   /** Catalog type / family tokens the user wants. */
@@ -26,12 +35,24 @@ export interface ChatIntentHint {
   clarifyHint?: string | null;
   qty?: number | null;
   duration?: string | null;
+  /** Parsed for telemetry / future use — never show in chat bubbles (Phase 1). */
   shortReply?: string | null;
+  /** Multi-service mixed-city batch (Phase 2). Validated per segment in parseIntent. */
+  segments?: ChatIntentSegment[];
 }
 
 export interface ChatPlannerCatalog {
   types: string[];
   cities: string[];
+}
+
+/** Active funnel locks sent to Gemini so refinements do not re-parse from scratch. */
+export interface ChatPlannerSessionContext {
+  medium?: string | null;
+  mediumType?: string | null;
+  city?: string | null;
+  area?: string | null;
+  directionHint?: string | null;
 }
 
 function editDistance(a: string, b: string): number {
@@ -158,7 +179,7 @@ export function resolveMediaAgainstCatalog(
   return out;
 }
 
-function resolveCityAgainstCatalog(
+export function resolveCityAgainstCatalog(
   city: string | null | undefined,
   catalogCities: string[],
 ): string | null {
@@ -172,10 +193,43 @@ function resolveCityAgainstCatalog(
 /**
  * Ask Gemini for a quote plan using DB catalog types + cities only.
  */
+function sessionContextLines(
+  session: ChatPlannerSessionContext | null | undefined,
+): string[] {
+  if (!session) return [];
+  const lines: string[] = ['ACTIVE SESSION (refine — keep locks unless user changes them):'];
+  if (session.medium) lines.push(`- medium: ${session.medium}`);
+  if (session.mediumType) lines.push(`- mediumType: ${session.mediumType}`);
+  if (session.city) lines.push(`- city: ${session.city}`);
+  if (session.area) lines.push(`- area: ${session.area}`);
+  if (session.directionHint) lines.push(`- direction: ${session.directionHint}`);
+  if (lines.length === 1) return [];
+  return lines;
+}
+
+function normalizeAiSegments(raw: unknown): ChatIntentSegment[] {
+  if (!Array.isArray(raw)) return [];
+  return raw
+    .map((item) => {
+      if (!item || typeof item !== 'object') return null;
+      const seg = item as Record<string, unknown>;
+      const service = seg.service != null ? String(seg.service).trim() : null;
+      const city = seg.city != null ? String(seg.city).trim() : null;
+      const place = seg.place != null ? String(seg.place).trim() : null;
+      const qtyRaw = seg.qty;
+      const qty =
+        qtyRaw != null && Number.isFinite(Number(qtyRaw)) ? Number(qtyRaw) : null;
+      if (!service && !city && qty == null && !place) return null;
+      return { service, city, qty, place } satisfies ChatIntentSegment;
+    })
+    .filter((s): s is ChatIntentSegment => !!s);
+}
+
 export async function parseChatIntentWithAi(
   userText: string,
   catalog: ChatPlannerCatalog | string[] = [],
   timeoutMs = 3500,
+  sessionContext?: ChatPlannerSessionContext | null,
 ): Promise<ChatIntentHint | null> {
   const apiKey = getApiKey();
   if (!apiKey || !userText.trim()) return null;
@@ -195,7 +249,7 @@ export async function parseChatIntentWithAi(
     const prompt = [
       'You plan steps for an advertising quote chatbot.',
       'Return ONLY compact JSON (no markdown):',
-      '{"kind":"greeting"|"help"|"quote"|"clarify_type"|"city_browse"|"services_browse"|"other","media":string[],"city":string|null,"areaHint":string|null,"directionHint":string|null,"ambiguous":boolean,"clarifyHint":string|null,"qty":number|null,"duration":string|null,"shortReply":string}',
+      '{"kind":"greeting"|"help"|"quote"|"clarify_type"|"city_browse"|"services_browse"|"other","media":string[],"segments":[{"service":string,"city":string|null,"qty":number|null,"place":string|null}],"city":string|null,"areaHint":string|null,"directionHint":string|null,"ambiguous":boolean,"clarifyHint":string|null,"qty":number|null,"duration":string|null,"shortReply":string}',
       '',
       'SERVICE TYPES IN DATABASE:',
       typeList,
@@ -222,6 +276,10 @@ export async function parseChatIntentWithAi(
       '  Do NOT pick only one type for those.',
       '- kind=quote when types are clear: "bus", "auto", "bus and auto in madurai".',
       '  media = family tokens or catalog type names (bus, auto, …). Multiple allowed.',
+      '- For mixed-city batch use segments[] (one object per service clause):',
+      '  "cab madurai and auto in chennai" → segments=[{"service":"cab","city":"Madurai","qty":null,"place":null},{"service":"auto","city":"Chennai","qty":null,"place":null}], media=[], city=null',
+      '  Each segment.service must be a catalog type/family; segment.city must be from CITIES or null.',
+      '  Invalid / unknown city for a segment → city=null for that segment (never invent).',
       '- If user says a clear type WITHOUT city and cities exist → still kind=quote with media set; city=null; app asks city.',
       '- city = one of CITIES list ONLY when user named that exact city; otherwise null. Never invent a city or use a default city.',
       '- Never put locality/area names (e.g. Anna Nagar, Tenyampet) as city — use areaHint for those.',
@@ -257,6 +315,8 @@ export async function parseChatIntentWithAi(
       '  "give me a quote for chennai" → kind=city_browse, city="Chennai", media=[]',
       '  "list all" → kind=services_browse, media=[], city=null, ambiguous=false',
       '  "bus 30 and auto 60 and 2 hoarding" → kind=quote, media=["bus","auto","hoarding"], city=null',
+      '  "cab madurai and auto in chennai" → kind=quote, segments=[{"service":"cab","city":"Madurai"},{"service":"auto","city":"Chennai"}], media=[]',
+      ...sessionContextLines(sessionContext),
       '',
       `User: ${userText.trim()}`,
     ].join('\n');
@@ -302,23 +362,20 @@ export async function parseChatIntentWithAi(
     const brace = jsonText.match(/\{[\s\S]*\}/);
     if (brace) jsonText = brace[0];
 
-    const parsed = JSON.parse(jsonText) as ChatIntentHint & { media?: unknown };
+    const parsed = JSON.parse(jsonText) as ChatIntentHint & { media?: unknown; segments?: unknown };
     const ambiguous = parsed.ambiguous === true || parsed.kind === 'clarify_type';
+    const segments = normalizeAiSegments(parsed.segments);
 
     let media = normalizeMediaList(parsed.media);
     if (!media.length && parsed.medium) media = normalizeMediaList(parsed.medium);
-    if (!ambiguous) {
+    if (!ambiguous && !segments.length) {
       media = resolveMediaAgainstCatalog(media, types);
-    } else {
+    } else if (ambiguous) {
       media = [];
     }
 
-    let shortReply = parsed.shortReply ? String(parsed.shortReply).trim() : null;
-    if (shortReply) {
-      const lines = shortReply.split(/\n+/).map((s) => s.trim()).filter(Boolean);
-      const words = lines.join(' ').split(/\s+/).filter(Boolean);
-      if (lines.length > 2 || words.length > 12) shortReply = null;
-    }
+    // Keep JSON field for the model; never return it for chat bubbles (Phase 1).
+    void parsed.shortReply;
 
     reportAiTelemetry({
       model: MODEL,
@@ -344,7 +401,8 @@ export async function parseChatIntentWithAi(
       clarifyHint: parsed.clarifyHint ? String(parsed.clarifyHint).trim() : null,
       qty: parsed.qty != null && Number.isFinite(Number(parsed.qty)) ? Number(parsed.qty) : null,
       duration: parsed.duration ? String(parsed.duration) : null,
-      shortReply,
+      shortReply: null,
+      segments: segments.length ? segments : undefined,
     };
   } catch (error) {
     reportAiTelemetry({

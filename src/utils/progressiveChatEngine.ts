@@ -67,6 +67,9 @@ import {
   scoreDirectionMatch,
 } from './directionMatcher';
 import type { ResolvedLocation } from '../types/location';
+import { USE_NEW_CHAT_ENGINE } from '../chat/config';
+import { continueChatActionSync } from '../chat/continueChatAction';
+import { handleChatTurnSync } from '../chat/handleChatTurn';
 
 // Legacy vocabulary used only for typed metro aliases and service-id parsing.
 // City chips, city locks, filtering, and quote generation must use DB metadata
@@ -341,13 +344,18 @@ function isCompactReply(text: string | null | undefined): boolean {
   return countReplyWords(lines.join(' ')) <= MAX_REPLY_WORDS;
 }
 
-/** Join at most two lines. Keep full catalog names — never slice mid-word. */
-function compactFunnelReply(avail?: string | null, ask?: string | null): string {
+/** Availability + ask, max two lines. User-facing copy is DB templates only. */
+function formatReply(avail?: string | null, ask?: string | null): string {
   const lines = [avail, ask]
     .map((s) => (s || '').trim().replace(/\s+/g, ' '))
     .filter(Boolean)
     .slice(0, MAX_REPLY_LINES);
   return lines.join('\n');
+}
+
+/** Join at most two lines. Keep full catalog names — never slice mid-word. */
+function compactFunnelReply(avail?: string | null, ask?: string | null): string {
+  return formatReply(avail, ask);
 }
 
 function clampReplyLines(text: string): string {
@@ -371,8 +379,9 @@ function joinNoteAndAsk(note?: string | null, ask?: string | null): string {
   return compactFunnelReply(n || undefined, a && a !== n ? a : undefined);
 }
 
-function preferEngineCopy(reply: string | null | undefined, engineText: string): string {
-  return isCompactReply(reply) ? String(reply).trim() : engineText;
+/** Phase 1: botText is always DB-driven engine copy — never AI shortReply. */
+function preferEngineCopy(_reply: string | null | undefined, engineText: string): string {
+  return engineText;
 }
 
 function composeReply(
@@ -6314,7 +6323,8 @@ function lockOneCity(
   };
 }
 
-function filterPoolBySession(services: DbService[], session: ProgressiveSession): DbService[] {
+/** Scope catalog rows by active session locks (exported for src/chat/filterCatalog). */
+export function filterPoolBySession(services: DbService[], session: ProgressiveSession): DbService[] {
   let pool = session.candidateServiceIds?.length
     ? services.filter((s) => session.candidateServiceIds!.includes(s.service_id))
     : [...services];
@@ -7528,7 +7538,6 @@ function mergePriorWithDetected(
       originalText: detected.originalText,
       qty: detected.qty,
       durationText: detected.durationText || undefined,
-      aiReply: detected.shortReply,
       medium: newMedia,
       browseToken: newMedia,
       city: cityFromText || (familyUpgrade ? prior.city : undefined),
@@ -7620,7 +7629,6 @@ function mergePriorWithDetected(
     originalText: detected.originalText,
     qty: detected.qty ?? prior.qty,
     durationText: detected.durationText ?? prior.durationText,
-    aiReply: detected.shortReply,
     city: nextCity || undefined,
     area: nextArea,
     placeHint: nextPlace,
@@ -8064,14 +8072,18 @@ export function resolveProgressiveText(
   const safeServices = (services || []).filter(
     (s): s is DbService => !!s && !!(s.service_id || s.service_name),
   );
-  const result = stampResultOpener(
-    resolveProgressiveTextInner(userText, safeServices, prior, intent),
-  );
+  const useNewEngine =
+    USE_NEW_CHAT_ENGINE
+    && parseServiceSegments(userText, safeServices).length < 2;
+  const inner = useNewEngine
+    ? handleChatTurnSync(userText, safeServices, prior, intent)
+    : resolveProgressiveTextLegacy(userText, safeServices, prior, intent);
+  const result = stampResultOpener(inner);
   logFunnelRes(result);
   return result;
 }
 
-function resolveProgressiveTextInner(
+export function resolveProgressiveTextLegacy(
   userText: string,
   services: DbService[],
   prior?: ProgressiveSession | null,
@@ -8100,19 +8112,15 @@ function resolveProgressiveTextInner(
       step: 'small_talk',
       botText: copyGreeting(originalText),
       options: [],
-      session: { originalText, qty: null, aiReply: intent.shortReply },
+      session: { originalText, qty: null },
     };
   }
   if (intent?.kind === 'help') {
     return {
       step: 'small_talk',
-      botText:
-        preferEngineCopy(
-          intent.shortReply,
-          compactFunnelReply('Tell me the service or city you need.'),
-        ),
+      botText: compactFunnelReply('Tell me the service or city you need.'),
       options: [],
-      session: { originalText, qty: null, aiReply: intent.shortReply },
+      session: { originalText, qty: null },
     };
   }
   if (intent?.kind === 'services_browse') {
@@ -8122,10 +8130,9 @@ function resolveProgressiveTextInner(
         ...(prior || {}),
         originalText,
         qty: null,
-        aiReply: intent.shortReply,
       },
       services,
-      intent.shortReply,
+      null,
     );
   }
 
@@ -8290,7 +8297,8 @@ function resolveProgressiveTextInner(
     localityHintPreview: detectLocalityInText(originalText, services),
   });
 
-  const shortReply = intent?.shortReply || null;
+  // Phase 1: AI shortReply is parse-only — never surface in botText or reply args.
+  const shortReply = null;
 
   // Area only from exact locality in user text — ignore invented AI areaHint
   const localityHintRaw = detectLocalityInText(originalText, services);
@@ -8433,7 +8441,6 @@ function resolveProgressiveTextInner(
       pendingMedia: [],
       collectedRows: [],
       collectedServiceIds: [],
-      aiReply: shortReply,
       city: city || undefined,
       area: localityHint || undefined,
       placeHint: localityHint || undefined,
@@ -8679,13 +8686,12 @@ function resolveProgressiveTextInner(
               needsContinueConfirm: true,
             },
             services,
-            shortReply
-              || (onlyMedium || media[0]
-                ? undefined
-                : compactFunnelReply(
-                  `Sites matching “${titleCase(originalText.trim())}”.`,
-                  'Which service do you need?',
-                )),
+            onlyMedium || media[0]
+              ? undefined
+              : compactFunnelReply(
+                `Sites matching “${titleCase(originalText.trim())}”.`,
+                'Which service do you need?',
+              ),
           );
         }
       } else {
@@ -8842,7 +8848,6 @@ function resolveProgressiveTextInner(
           originalText,
           qty: qty ?? prior.qty ?? null,
           durationText: durationText || prior.durationText,
-          aiReply: shortReply,
         },
         services,
         shortReply,
@@ -8879,11 +8884,12 @@ function resolveProgressiveTextInner(
     if (types.length > 1) {
       return {
         step: 'pick_type',
-        botText:
-          shortReply
-          || (hint === 'that'
+          botText: preferEngineCopy(
+            shortReply,
+            hint === 'that'
             ? copyAskType('this', { originalText, qty: null, city: city || undefined })
-            : copyAskType(hint, { originalText, qty: null, city: city || undefined }, city)),
+            : copyAskType(hint, { originalText, qty: null, city: city || undefined }, city),
+          ),
         options: types,
         allowMulti: true,
         session: {
@@ -8897,7 +8903,6 @@ function resolveProgressiveTextInner(
           qty,
           durationText,
           pendingMedia: [],
-          aiReply: shortReply,
           candidateServiceIds: types
             .map((t) => t.serviceId)
             .filter((id): id is string => !!id),
@@ -8922,7 +8927,6 @@ function resolveProgressiveTextInner(
             pendingMedia: [],
             collectedRows: [],
             collectedServiceIds: [],
-            aiReply: shortReply,
           },
           services,
           shortReply,
@@ -8931,11 +8935,11 @@ function resolveProgressiveTextInner(
       if (mediums.length > 1) {
         return {
           step: 'pick_type',
-          botText: shortReply || copyAskType(hint, {
+          botText: preferEngineCopy(shortReply, copyAskType(hint, {
             originalText,
             qty: null,
             city: city || undefined,
-          }, city),
+          }, city)),
           options: mediums,
           allowMulti: true,
           session: {
@@ -8945,20 +8949,20 @@ function resolveProgressiveTextInner(
             qty,
             durationText,
             pendingMedia: [],
-            aiReply: shortReply,
           },
         };
       }
     }
     return {
       step: 'pick_type',
-      botText:
-        shortReply
-        || copyAskType(
+      botText: preferEngineCopy(
+        shortReply,
+        copyAskType(
           hint === 'that' ? 'this' : hint,
           { originalText, qty: null, city: city || undefined },
           city,
         ),
+      ),
       options: types.length ? types : uniqueMediumOnlyOptions(services),
       allowMulti: true,
       session: {
@@ -8971,7 +8975,6 @@ function resolveProgressiveTextInner(
         qty,
         durationText,
         pendingMedia: [],
-        aiReply: shortReply,
       },
     };
   }
@@ -9012,7 +9015,6 @@ function resolveProgressiveTextInner(
           pendingMedia: [],
           collectedRows: [],
           collectedServiceIds: [],
-          aiReply: shortReply,
           resolvedLocation: resolvedLocation || undefined,
         },
         services,
@@ -9034,7 +9036,6 @@ function resolveProgressiveTextInner(
           pendingMedia: [],
           collectedRows: [],
           collectedServiceIds: [],
-          aiReply: shortReply,
           resolvedLocation: resolvedLocation || undefined,
         },
         services,
@@ -9068,7 +9069,6 @@ function resolveProgressiveTextInner(
           pendingMedia: [],
           collectedRows: [],
           collectedServiceIds: [],
-          aiReply: shortReply,
           resolvedLocation,
         },
         services,
@@ -9204,7 +9204,7 @@ function resolveProgressiveTextInner(
   if (words.length === 0 && !city && media.length === 0) {
     return {
       step: 'small_talk',
-      botText: shortReply || copyWhichService(),
+      botText: preferEngineCopy(shortReply, copyWhichService()),
       options: [],
       session: { originalText, qty: null },
     };
@@ -9231,7 +9231,6 @@ function resolveProgressiveTextInner(
       qty: qty ?? baseSessionFields.qty,
       durationText: durationText ?? baseSessionFields.durationText,
       pendingMedia: media.length > 1 ? media.slice(1) : [],
-      aiReply: shortReply,
     }
     : {
       originalText,
@@ -9250,7 +9249,6 @@ function resolveProgressiveTextInner(
       pendingMedia: media.length > 1 ? media.slice(1) : media.length === 1 ? [] : [],
       collectedRows: [],
       collectedServiceIds: [],
-      aiReply: shortReply,
       resolvedLocation: resolvedLocation || baseSessionFields.resolvedLocation || undefined,
     };
 
@@ -9320,7 +9318,6 @@ function resolveProgressiveTextInner(
           originalText,
           qty: qty ?? baseSessionFields.qty,
           durationText: durationText ?? baseSessionFields.durationText,
-          aiReply: shortReply,
           // Keep type/city/area; clear site lock so we re-show previous step (not auto-quote)
           directionHint: undefined,
           candidateServiceIds: undefined,
@@ -9593,15 +9590,14 @@ function resolveProgressiveTextInner(
           placeHint: isKnownMetro ? sessionBase.placeHint : city,
         },
         services,
-        shortReply || copyPlaceServices(city),
+        preferEngineCopy(shortReply, copyPlaceServices(city)),
       );
     }
 
     return softClarifyNeed(
       services,
       sessionBase,
-      shortReply
-        || (city ? copyUnknownCity(city) : undefined),
+      city ? copyUnknownCity(city) : undefined,
     );
   }
 
@@ -10012,16 +10008,13 @@ export function continueProgressiveAction(
     selected: selectedIds,
     session,
   });
-  const result = stampResultOpener(
-    continueProgressiveActionInner(
-      actionId,
-      session,
-      (services || []).filter(
-        (s): s is DbService => !!s && !!(s.service_id || s.service_name),
-      ),
-      selectedIds,
-    ),
+  const safeServices = (services || []).filter(
+    (s): s is DbService => !!s && !!(s.service_id || s.service_name),
   );
+  const inner = USE_NEW_CHAT_ENGINE
+    ? continueChatActionSync(actionId, session, safeServices, selectedIds)
+    : continueProgressiveActionInner(actionId, session, safeServices, selectedIds);
+  const result = stampResultOpener(inner);
   logFunnelRes(result);
   return result;
 }
@@ -11334,4 +11327,34 @@ function continueProgressiveActionInner(
     options: [],
     session,
   };
+}
+
+/** Phase 4 — batch entry (shared / mixed / sequential city). */
+export function resolveBatchFromSegments(
+  segments: BatchSegment[],
+  session: ProgressiveSession,
+  services: DbService[],
+  reply?: string | null,
+): ProgressiveTurnResult {
+  return startBatchMultiSelect(segments, session, services, reply);
+}
+
+/** Phase 4 — advance workQueue / pendingCityQueue after one service completes. */
+export function continueBatchQueue(
+  session: ProgressiveSession,
+  collectedRows: ConfirmationRow[],
+  collectedServiceIds: string[],
+  services: DbService[],
+): ProgressiveTurnResult | null {
+  return continuePendingWork(session, collectedRows, collectedServiceIds, services);
+}
+
+/** Phase 5 — chip/confirm inner (exported for continueChatAction). */
+export function continueProgressiveActionLegacy(
+  actionId: string,
+  session: ProgressiveSession,
+  services: DbService[],
+  selectedIds?: string[],
+): ProgressiveTurnResult {
+  return continueProgressiveActionInner(actionId, session, services, selectedIds);
 }

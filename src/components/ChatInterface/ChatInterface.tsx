@@ -66,22 +66,14 @@ import {
 } from '../../utils/confirmedQuotePipeline';
 import type { DbService } from '../../utils/serviceResolver';
 import {
-  continueProgressiveAction,
-  detectCityInText as detectCatalogCityInText,
-  detectLocalityInText,
-  detectMediaLocal,
-  extractGeocodePlaceHint,
-  isNewServiceSwitch,
-  matchFreeTextToProgressiveOption,
   parseQtyFromText,
   resolveMinQtyEdits,
-  resolveProgressiveText,
   type ProgressiveOption,
   type ProgressiveSession,
   type ProgressiveTurnResult,
 } from '../../utils/progressiveChatEngine';
-import { resolveLocation } from '../../utils/locationResolver';
-import type { ResolvedLocation } from '../../types/location';
+import { continueChatAction } from '../../chat/continueChatAction';
+import { resolvePriorSession, runProgressiveUserText } from '../../chat/runProgressiveUserText';
 
 // ═══════════════════════════════════════════════════════════════════════
 // Progressive DB chat (short friendly replies). Gemini optional for intent only.
@@ -89,32 +81,6 @@ import type { ResolvedLocation } from '../../types/location';
 // ═══════════════════════════════════════════════════════════════════════
 const USE_CLOUD_DATA = true;
 const USE_PROGRESSIVE_CHAT = true;
-
-/**
- * Resolve a city via Nominatim (cached). Used so statewide DB rows covering the
- * same state count as available in that city — no hardcoded city lists.
- */
-async function resolveCityGeography(
-  city: string | null | undefined,
-  prior?: ProgressiveSession | null,
-): Promise<ResolvedLocation | null> {
-  const label = (city || '').trim();
-  if (!label) return prior?.resolvedLocation ?? null;
-  const existing = prior?.resolvedLocation ?? null;
-  if (
-    existing
-    && prior?.city
-    && canonicalizeServiceName(prior.city) === canonicalizeServiceName(label)
-  ) {
-    return existing;
-  }
-  try {
-    const resolved = await resolveLocation(label);
-    return resolved || existing;
-  } catch {
-    return existing;
-  }
-}
 
 /**
  * Drop chip thumbnail URLs from prior turns so decoded images don't linger
@@ -1370,18 +1336,19 @@ const ChatInterfaceContent: React.FC = () => {
     setIsLoading(true);
     try {
       const dbServices = await getCachedDbServices();
-      let sessionForAction = session;
       const opt = (message.progressiveOptions || []).find((o) => o.id === optionId);
       const cityFromChip = opt?.city || (
         optionId.startsWith('city:')
           ? (opt?.label || optionId.replace(/^city:/i, ''))
           : undefined
       );
-      if (cityFromChip) {
-        const resolved = await resolveCityGeography(cityFromChip, session);
-        sessionForAction = { ...session, resolvedLocation: resolved };
-      }
-      const result = continueProgressiveAction(optionId, sessionForAction, dbServices);
+      const result = await continueChatAction(
+        optionId,
+        session,
+        dbServices,
+        undefined,
+        cityFromChip,
+      );
       // No echo bubble for chip selections — bot's reply conveys what was chosen
       await appendProgressiveResult(null, result);
     } catch (err) {
@@ -1401,22 +1368,21 @@ const ChatInterfaceContent: React.FC = () => {
     setIsLoading(true);
     try {
       const dbServices = await getCachedDbServices();
-      let sessionForAction = session;
       const opts = message.progressiveOptions || [];
-      const cityPicks = selected
+      const selectedOpts = selected
         .map((id) => opts.find((o) => o.id === id))
-        .filter((o): o is ProgressiveOption => !!o && !!(o.city || o.label))
+        .filter((o): o is ProgressiveOption => !!o);
+      const cityPicks = selectedOpts
         .filter((o) => (o.id || '').startsWith('city:') || !!o.city);
-      if (cityPicks.length === 1) {
-        const cityLabel = cityPicks[0].city || cityPicks[0].label;
-        const resolved = await resolveCityGeography(cityLabel, session);
-        sessionForAction = { ...session, resolvedLocation: resolved };
-      }
-      const result = continueProgressiveAction(
+      const cityLabel = cityPicks.length === 1
+        ? (cityPicks[0].city || cityPicks[0].label)
+        : undefined;
+      const result = await continueChatAction(
         selected[0],
-        sessionForAction,
+        session,
         dbServices,
         selected,
+        cityLabel,
       );
       // Keep the selection snapshot so the completed checklist remains
       // visibly selected after the funnel advances. The card is made
@@ -1643,11 +1609,6 @@ const ChatInterfaceContent: React.FC = () => {
       setMessages((prev) => [...stripChipImagesFromMessages(prev), userMessage]);
       try {
         const { loadAllServicesFromCloud } = await import('../../services/supabaseProposalService');
-        const {
-          getCatalogTypeKeys,
-          getCatalogCities,
-          canSkipChatIntentAi,
-        } = await import('../../utils/progressiveChatEngine');
         if (!catalogCacheRef.current) {
           catalogLoadRef.current ??= loadAllServicesFromCloud()
             .then((services) => services || [])
@@ -1657,8 +1618,6 @@ const ChatInterfaceContent: React.FC = () => {
           catalogCacheRef.current = await catalogLoadRef.current;
         }
         const dbServices = catalogCacheRef.current;
-        const catalogTypes = getCatalogTypeKeys(dbServices);
-        const catalogCities = getCatalogCities(dbServices);
 
         // Let the typing indicator paint before heavy sync matching (prevents "Page Unresponsive")
         await new Promise<void>((r) => {
@@ -1669,178 +1628,18 @@ const ChatInterfaceContent: React.FC = () => {
           }
         });
 
-        let intent = null as Awaited<
-          ReturnType<typeof import('../../services/chatIntentAiService').parseChatIntentWithAi>
-        >;
-        // Skip Gemini for clear city / media / multi-service — was blocking every send ~3.5s
-        const skipAi = canSkipChatIntentAi(cleanedText, dbServices);
-        console.log('[funnel-debug] chatIntentGate', {
-          text: cleanedText,
-          skipAi,
-          catalogTypeCount: catalogTypes.length,
-          catalogCityCount: catalogCities.length,
-          serviceCount: dbServices.length,
-          sampleMediums: catalogTypes.slice(0, 20),
-        });
-        if (!skipAi) {
-          try {
-            const { parseChatIntentWithAi } = await import('../../services/chatIntentAiService');
-            intent = await parseChatIntentWithAi(
-              cleanedText,
-              { types: catalogTypes, cities: catalogCities },
-              10000,
-            );
-          } catch (err) {
-            console.log('[funnel-debug] chatIntentError', err);
-            intent = null;
-          }
-        }
-        console.log('[funnel-debug] chatIntentResult', {
-          skipped: skipAi,
-          intent: intent
-            ? {
-                kind: intent.kind,
-                media: intent.media,
-                medium: intent.medium,
-                city: intent.city,
-                areaHint: intent.areaHint,
-                directionHint: intent.directionHint,
-                ambiguous: intent.ambiguous,
-                clarifyHint: intent.clarifyHint,
-                shortReply: intent.shortReply,
-              }
-            : null,
-        });
-
-        // Yield again before sync resolve (mega multi-service lists)
-        await new Promise<void>((r) => setTimeout(r, 0));
-
-        // Stateful funnel: keep prior locks unless this message switches service.
-        // Prefer session from last progressive bot turn (survives remount / history).
         const lastProgMsg = [...messages].reverse().find(
           (m) => m.role === 'assistant' && m.progressiveSession,
         );
-        const lastAssistant = [...messages].reverse().find(
-          (m) => m.role === 'assistant',
-        );
-        const completedQuoteSession =
-          !!lastAssistant
-          && /your quotation is ready\./i.test(lastAssistant.content || '');
-        const priorSession: ProgressiveSession | null =
-          completedQuoteSession
-            ? null
-            : (
-              progressiveSession
-              || (lastProgMsg?.progressiveSession as ProgressiveSession | undefined)
-              || null
-            );
+        const priorSession = resolvePriorSession(progressiveSession, messages);
 
-        // ── Typed chip / yes-no / min-qty reply → same as tapping ──
-        // Skip when message names a *different* catalog service (fresh switch).
-        // Also skip chip match on bare same-service echo ("hoarding" while in Hoarding)
-        // so area chips that carry medium=hoarding are not mistaken for a pick.
-        const localMedia = detectMediaLocal(cleanedText, dbServices);
-        const namesCatalogService = isNewServiceSwitch(priorSession, localMedia);
-        const mediaKey = canonicalizeServiceName(localMedia[0] || '');
-        const textKey = canonicalizeServiceName(cleanedText);
-        const priorMedKey = canonicalizeServiceName(
-          priorSession?.medium || priorSession?.browseToken || '',
-        );
-        // Bare echo of the *active* family/medium ("hoarding", "auto") — skip chip
-        // match so area chips carrying medium=hoarding are not stolen.
-        // More-specific picks ("auto full" while browseToken=auto) must still match chips.
-        const sameServiceBareEcho =
-          !!priorSession
-          && !!mediaKey
-          && !!priorMedKey
-          && !namesCatalogService
-          && !detectLocalityInText(cleanedText, dbServices)
-          && (
-            textKey === priorMedKey
-            || mediaKey === priorMedKey
-          )
-          && !(
-            textKey.length > priorMedKey.length
-            && (
-              textKey.startsWith(`${priorMedKey} `)
-              || mediaKey.startsWith(`${priorMedKey} `)
-            )
-          );
-        if (
-          priorSession
-          && lastProgMsg?.progressiveOptions?.length
-          && !namesCatalogService
-          && !sameServiceBareEcho
-        ) {
-          // Area/place answers (omr, near ecr) must refine the funnel — never
-          // mistype-match a long direction chip that merely starts with "OMR".
-          const localityAnswer = detectLocalityInText(cleanedText, dbServices);
-          const matched = localityAnswer
-            ? null
-            : matchFreeTextToProgressiveOption(
-              cleanedText,
-              lastProgMsg.progressiveOptions as ProgressiveOption[],
-            );
-          if (matched) {
-            let sessionForMatch = priorSession;
-            const cityFromChip = matched.city || (
-              matched.id.startsWith('city:')
-                ? (matched.label || matched.id.replace(/^city:/i, ''))
-                : undefined
-            );
-            if (cityFromChip) {
-              const resolved = await resolveCityGeography(cityFromChip, priorSession);
-              sessionForMatch = {
-                ...priorSession,
-                resolvedLocation: resolved,
-              };
-            }
-            const result = continueProgressiveAction(
-              matched.id,
-              sessionForMatch,
-              dbServices,
-            );
-            await appendProgressiveResult(null, result);
-            return;
-          }
-        }
+        await new Promise<void>((r) => setTimeout(r, 0));
 
-        const textCity =
-          detectCatalogCityInText(cleanedText, dbServices)
-          || (intent?.city ? String(intent.city) : null)
-          || null;
-        // Unknown towns (Puliyangudi) still need Nominatim so statewide TN rows match
-        const placeToResolve =
-          textCity
-          || extractGeocodePlaceHint(cleanedText, dbServices)
-          || priorSession?.city
-          || null;
-        const resolvedLocation = placeToResolve
-          ? await resolveCityGeography(placeToResolve, priorSession)
-          : (priorSession?.resolvedLocation ?? null);
-
-        const result = resolveProgressiveText(
+        const result = await runProgressiveUserText(
           cleanedText,
           dbServices,
-          priorSession
-            ? { ...priorSession, resolvedLocation: resolvedLocation ?? priorSession.resolvedLocation }
-            : (resolvedLocation ? { originalText: cleanedText, qty: null, resolvedLocation } : priorSession),
-          intent
-            ? {
-                kind: intent.kind,
-                media: intent.media,
-                medium: intent.medium,
-                city: intent.city,
-                areaHint: intent.areaHint,
-                directionHint: intent.directionHint,
-                ambiguous: intent.ambiguous,
-                clarifyHint: intent.clarifyHint,
-                qty: intent.qty,
-                duration: intent.duration,
-                shortReply: intent.shortReply,
-                resolvedLocation,
-              }
-            : { resolvedLocation },
+          priorSession,
+          lastProgMsg?.progressiveOptions as ProgressiveOption[] | undefined,
         );
         await appendProgressiveResult(null, result);
       } catch (err) {
