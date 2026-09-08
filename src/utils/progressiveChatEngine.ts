@@ -51,18 +51,25 @@ import {
   extractCityFromDbService,
   extractQueryWords,
   getMinQuantityFromDbService,
+  geoNamesLooselyMatch,
+  serviceCoversResolvedLocation,
   serviceMatchesQuery,
 } from './cloudQuoteValidation';
 import { canonicalizeServiceName, KNOWN_CITY_LIST } from './serviceNameUtils';
 import { hasQuotablePricing, pickPreferredDbService } from './dbPricingUtils';
 import type { DbService } from './serviceResolver';
 import { formatServiceDisplayName } from './serviceResolver';
+import { getServiceScopedUserMessage, parseDurationFromUserText, toCampaignDays } from './durationUtils';
 import { resolveMediaAgainstCatalog } from '../services/chatIntentAiService';
 import {
   directionKeys,
   isStrongDirectionMatch,
   scoreDirectionMatch,
 } from './directionMatcher';
+import type { ResolvedLocation } from '../types/location';
+import { USE_NEW_CHAT_ENGINE } from '../chat/config';
+import { continueChatActionSync } from '../chat/continueChatAction';
+import { handleChatTurnSync } from '../chat/handleChatTurn';
 
 // Legacy vocabulary used only for typed metro aliases and service-id parsing.
 // City chips, city locks, filtering, and quote generation must use DB metadata
@@ -182,6 +189,7 @@ export interface ProgressiveSession {
     qty: number | null;
     city?: string;
     area?: string;
+    mediumType?: string;
     candidateServiceIds?: string[];
   }>;
   /**
@@ -204,6 +212,8 @@ export interface ProgressiveSession {
    * Force offering available cities/areas — never silent auto-lock → quote.
    */
   unresolvedPlaceOffer?: boolean;
+  /** Nominatim hierarchy for statewide / state-labelled DB city coverage. */
+  resolvedLocation?: import('../types/location').ResolvedLocation | null;
 }
 
 export interface ProgressiveTurnResult {
@@ -303,10 +313,10 @@ function salesAdLabel(token: string | undefined | null): string {
 
 /**
  * Response style: availability + next ask only.
- * Max 2 lines, max 12 words. Never add filler openers. Never truncate names.
+ * Max 2 lines. Type-ask copy is a bit longer by product request.
  */
 const MAX_REPLY_LINES = 2;
-const MAX_REPLY_WORDS = 12;
+const MAX_REPLY_WORDS = 22;
 
 const OPENER_POOL = [
   '',
@@ -334,13 +344,18 @@ function isCompactReply(text: string | null | undefined): boolean {
   return countReplyWords(lines.join(' ')) <= MAX_REPLY_WORDS;
 }
 
-/** Join at most two lines. Keep full catalog names — never slice mid-word. */
-function compactFunnelReply(avail?: string | null, ask?: string | null): string {
+/** Availability + ask, max two lines. User-facing copy is DB templates only. */
+function formatReply(avail?: string | null, ask?: string | null): string {
   const lines = [avail, ask]
     .map((s) => (s || '').trim().replace(/\s+/g, ' '))
     .filter(Boolean)
     .slice(0, MAX_REPLY_LINES);
   return lines.join('\n');
+}
+
+/** Join at most two lines. Keep full catalog names — never slice mid-word. */
+function compactFunnelReply(avail?: string | null, ask?: string | null): string {
+  return formatReply(avail, ask);
 }
 
 function clampReplyLines(text: string): string {
@@ -350,7 +365,7 @@ function clampReplyLines(text: string): string {
 function extractAskLine(text: string | null | undefined): string {
   const lines = replyLines(text || '');
   const ask = [...lines].reverse().find((l) =>
-    /^(which|please choose|now choosing|starting|did you mean)/i.test(l),
+    /^(which|please choose|now choosing|starting|did you mean|i have the below options|i understand you)/i.test(l),
   );
   return ask || lines[lines.length - 1] || '';
 }
@@ -364,8 +379,9 @@ function joinNoteAndAsk(note?: string | null, ask?: string | null): string {
   return compactFunnelReply(n || undefined, a && a !== n ? a : undefined);
 }
 
-function preferEngineCopy(reply: string | null | undefined, engineText: string): string {
-  return isCompactReply(reply) ? String(reply).trim() : engineText;
+/** Phase 1: botText is always DB-driven engine copy — never AI shortReply. */
+function preferEngineCopy(_reply: string | null | undefined, engineText: string): string {
+  return engineText;
 }
 
 function composeReply(
@@ -426,18 +442,23 @@ function stampResultOpener(result: ProgressiveTurnResult): ProgressiveTurnResult
   };
 }
 
+/**
+ * Service / type chip ask only (Bus Semi vs Shelter, LED vs Non LED, …).
+ * City line only when a city is locked/named — never invent “any city”.
+ */
 function copyAskType(
   token?: string | null,
   session?: ProgressiveSession | null,
+  cityOverride?: string | null,
 ): string {
-  const key = canonicalizeServiceName(token || '');
-  const label = FAMILY_NEEDS_ADS_WORD.has(key)
-    ? `${key} advertising`
-    : titleCase(token || 'advertising');
-  return composeReply(session, {
-    avail: `${label} options available.`,
-    ask: 'Which option do you need?',
-  }).text;
+  const label = titleCase(token || 'this');
+  const city = (cityOverride ?? session?.city ?? '').trim();
+  return compactFunnelReply(
+    `I understand you're looking for advertising services in ${label}.`,
+    city
+      ? `I have the below options for you in ${city}.`
+      : 'I have the below options for you.',
+  );
 }
 
 function copyAskCities(
@@ -486,21 +507,16 @@ function copySingleServiceAtPlace(
   }).text;
 }
 
-/** Family/service at a place → availability + type ask. */
+/**
+ * Type ask at a place — still only mention city when session has a city lock.
+ * Place/corridor alone does not add “in OMR” on this template (product: city or nothing).
+ */
 function copyAskTypeAtPlace(
   medium: string | undefined | null,
-  place: string,
+  _place: string,
   session?: ProgressiveSession | null,
 ): string {
-  const key = canonicalizeServiceName(medium || '');
-  const near = formatPlacePrep(place);
-  const label = FAMILY_NEEDS_ADS_WORD.has(key)
-    ? `${key} advertising`
-    : titleCase(medium || 'this');
-  return composeReply(session, {
-    avail: `${label} options available ${near}.`,
-    ask: 'Which option do you need?',
-  }).text;
+  return copyAskType(medium, session);
 }
 
 /** Type-step copy: never reuse place “which service?” reply after medium was auto-locked. */
@@ -526,6 +542,11 @@ function typeStepBotText(
       || /^great!/i.test(reply.trim()));
   if (place && medium && (!reply || placeAsk || isCityAskCopy(reply) || !isCompactReply(reply))) {
     return copyAskTypeAtPlace(medium, place, session);
+  }
+  // Place-first (avinasi): keep "Services available in … / Which service?"
+  // — do not rewrite to "advertising services in This".
+  if (placeAsk && reply && !medium) {
+    return String(reply).trim();
   }
   if (isCompactReply(reply) && !placeAsk && !isCityAskCopy(reply)) {
     return String(reply).trim();
@@ -806,7 +827,7 @@ function copyOfferWhereAvailable(
   const list = formatAvailablePlaceList(placeLabels);
   return composeReply(session, {
     avail: list ? `Available in ${list}.` : 'Available in other places.',
-    ask: 'Which option do you need?',
+    ask: 'Which city do you need?',
   }).text;
 }
 
@@ -1071,6 +1092,54 @@ function extractUnresolvedSitePhrase(
  * Build a city/area offer turn when the named place is unavailable for this service.
  * Never jumps to quote_ready. Prefer showing where we currently offer (cities/areas).
  */
+/** Statewide inventory labels like "Any City In Tamilnadu" — not a real metro chip. */
+function isStatewideFunnelCityLabel(city: string): boolean {
+  const k = canonicalizeServiceName(city || '');
+  if (!k) return false;
+  return (
+    /^any\s+city\b/.test(k)
+    || /\bin\s+tamil\s*nadu\b/.test(k)
+    || /\bstatewide\b/.test(k)
+  );
+}
+
+/**
+ * Prefer DB rows whose city/area matches Nominatim town or district
+ * (Avinashi → Coimbatore, Adyar → Chennai). Fall back to full covered set
+ * (statewide TN) when no parent-city rows exist (Puliyangudi).
+ */
+function preferResolvedCoveragePool(
+  covered: DbService[],
+  resolved: ResolvedLocation,
+): DbService[] {
+  const town = resolved.town?.trim() || '';
+  const district = resolved.district?.trim() || '';
+  if (!town && !district) return covered;
+
+  const specific = covered.filter((s) => {
+    const city = funnelCityFromDb(s);
+    if (!city || isStatewideFunnelCityLabel(city)) return false;
+    if (town && geoNamesLooselyMatch(city, town)) return true;
+    if (district && geoNamesLooselyMatch(city, district)) return true;
+    const area = getMetaAreaRaw(s);
+    if (town && area && geoNamesLooselyMatch(area, town)) return true;
+    return false;
+  });
+  return specific.length > 0 ? specific : covered;
+}
+
+/** Unique funnel city labels from a pool (canonicalize-deduped). */
+function uniqueFunnelCityLabels(pool: DbService[]): Map<string, string> {
+  const cities = new Map<string, string>();
+  for (const s of pool) {
+    const city = funnelCityFromDb(s);
+    if (!city) continue;
+    const key = canonicalizeServiceName(city);
+    if (key && !cities.has(key)) cities.set(key, city);
+  }
+  return cities;
+}
+
 function buildPlaceOfferTurn(
   medium: string,
   place: string,
@@ -1080,6 +1149,48 @@ function buildPlaceOfferTurn(
 ): ProgressiveTurnResult {
   const medKey = canonicalizeServiceName(medium);
   const pool = filterForBrowseOrFamily(services, medKey);
+
+  // Library hierarchy: if Nominatim says this place is in a state that statewide
+  // inventory covers, continue the funnel — do not say "Not providing".
+  const resolved = session.resolvedLocation;
+  if (resolved) {
+    const covered = pool.filter(
+      (s) => hasQuotablePricing(s) && serviceCoversResolvedLocation(s, resolved),
+    );
+    if (covered.length > 0) {
+      // Prefer parent-city inventory (Avinashi→Coimbatore) over every statewide
+      // TN city. Never lock city to the raw Nominatim town — that is not a DB city
+      // and caused Chennai+Coimbatore re-ask with duplicates.
+      const preferred = preferResolvedCoveragePool(covered, resolved);
+      const coveredCities = uniqueFunnelCityLabels(preferred);
+      const soleDbCity =
+        coveredCities.size === 1 ? [...coveredCities.values()][0]! : null;
+      return startMediumFlow(
+        medKey,
+        {
+          ...session,
+          medium: isExactCatalogMedium(medKey, services) ? medKey : undefined,
+          browseToken: medKey,
+          // Only lock a real DB city label (Adyar→Chennai). Multi-city → ask later.
+          city: soleDbCity || undefined,
+          resolvedLocation: resolved,
+          // Do not force area=Adyar/Avinashi when DB rows live under parent city —
+          // that empties the pool via filterByLocality.
+          area: undefined,
+          placeHint: undefined,
+          directionHint: undefined,
+          candidateServiceIds: preferred.map((s) => s.service_id),
+          unresolvedPlaceOffer: false,
+          batchUnavailableNote: undefined,
+          batchUnavailableSpoken: false,
+          needsContinueConfirm: false,
+          pendingMedia: [],
+        },
+        services,
+      );
+    }
+  }
+
   const note = copyPlaceUnavailableContinue(medKey, place, prep, session);
   const exact = isExactCatalogMedium(medKey, services);
   const sess: ProgressiveSession = {
@@ -1105,7 +1216,33 @@ function buildPlaceOfferTurn(
     if (exactPool.length) cityPool = exactPool;
   }
   const cities = uniqueCityOptionsFromPool(cityPool, label);
+  // Sole DB city that covers the resolved geography → continue without "Not providing"
+  if (
+    cities.length === 1
+    && resolved
+    && cityPool.some((s) => hasQuotablePricing(s) && serviceCoversResolvedLocation(s, resolved))
+  ) {
+    const only = cities[0]!;
+    return startMediumFlow(
+      label,
+      {
+        ...sess,
+        city: only.city || only.label,
+        resolvedLocation: resolved,
+        unresolvedPlaceOffer: false,
+        batchUnavailableNote: undefined,
+        batchUnavailableSpoken: false,
+        candidateServiceIds: cityPool
+          .filter((s) => serviceCoversResolvedLocation(s, resolved))
+          .map((s) => s.service_id),
+      },
+      services,
+    );
+  }
   if (cities.length >= 1) {
+    // Named place is NOT covered (Kudiri outside TN, library miss, etc.).
+    // Never auto-lock the sole statewide city into a silent quote — offer where
+    // we do provide and let the user Confirm.
     const placeLabels = cities.map((c) => c.city || c.label).filter(Boolean) as string[];
     const ask = copyOfferWhereAvailable(label, placeLabels, { ...sess, medium: label });
     const noted = withBatchUnavailableNote(ask, { ...sess, medium: label });
@@ -1113,7 +1250,7 @@ function buildPlaceOfferTurn(
       step: 'pick_city',
       botText: noted.botText,
       options: cities,
-      allowMulti: true,
+      allowMulti: cities.length > 1,
       session: noted.session,
     };
   }
@@ -1319,9 +1456,16 @@ function startCatalogueBrowse(
 ): ProgressiveTurnResult {
   const scopedCity = session.city;
   const scopedMed = session.browseToken || session.medium;
+  const resolved = session.resolvedLocation;
   let pool = [...services];
   if (scopedCity) {
-    pool = pool.filter((s) => serviceMatchesCityLabel(s, scopedCity));
+    pool = pool.filter((s) => serviceMatchesCityLabel(s, scopedCity, resolved));
+  } else if (resolved) {
+    const covered = pool.filter(
+      (s) => hasQuotablePricing(s) && serviceCoversResolvedLocation(s, resolved),
+    );
+    const preferred = preferResolvedCoveragePool(covered, resolved);
+    pool = preferred.length ? preferred : covered;
   }
   // Cities/areas/types can be scoped to a named service; "what services?" lists the full menu
   if (kind !== 'services' && scopedMed) {
@@ -1330,12 +1474,17 @@ function startCatalogueBrowse(
   }
 
   if (!pool.length) {
-    if (scopedCity) {
+    if (scopedCity || resolved) {
+      const placeLabel =
+        scopedCity
+        || resolved?.town
+        || resolved?.district
+        || 'that place';
       return {
         step: 'no_match',
-        botText: copyUnknownCity(scopedCity, session),
+        botText: copyUnknownCity(placeLabel, session),
         options: [],
-        session: stampReplyMeta(session, '', `browse:${kind}:${scopedCity}`),
+        session: stampReplyMeta(session, '', `browse:${kind}:${placeLabel}`),
       };
     }
     return softClarifyNeed(services, session, reply);
@@ -1346,9 +1495,14 @@ function startCatalogueBrowse(
     if (!options.length) {
       return softClarifyNeed(services, session, reply);
     }
+    const placeLabel =
+      scopedCity
+      || resolved?.town
+      || resolved?.district
+      || null;
     const { text, opener } = composeReply(session, {
-      avail: scopedCity
-        ? `Services available in ${scopedCity}.`
+      avail: placeLabel
+        ? `Services available in ${placeLabel}.`
         : 'Advertising services available.',
       ask: 'Which service do you need?',
     });
@@ -1365,6 +1519,15 @@ function startCatalogueBrowse(
           browseToken: undefined,
           mediumType: undefined,
           typesResolved: undefined,
+          // Keep geography; sole parent city when library scoped
+          city:
+            scopedCity
+            || (
+              resolved && uniqueFunnelCityLabels(pool).size === 1
+                ? [...uniqueFunnelCityLabels(pool).values()][0]
+                : session.city
+            ),
+          resolvedLocation: resolved || undefined,
           candidateServiceIds: pool.map((s) => s.service_id),
           needsContinueConfirm: false,
         },
@@ -1515,17 +1678,14 @@ function startCatalogueBrowse(
       reply,
     );
   }
-  const { text, opener } = composeReply(session, {
-    avail: scopedMed
-      ? `${titleCase(scopedMed)} options available${scopedCity ? ` in ${scopedCity}` : ''}.`
-      : scopedCity
-        ? `Options available in ${scopedCity}.`
-        : 'Service types available.',
-    ask: 'Which option do you need?',
-  });
+  const typeAsk = copyAskType(
+    scopedMed || undefined,
+    session,
+    scopedCity || session.city || null,
+  );
   return {
     step: 'pick_type',
-    botText: preferEngineCopy(reply, text),
+    botText: preferEngineCopy(reply, typeAsk),
     options,
     allowMulti: true,
     session: stampReplyMeta(
@@ -1534,7 +1694,7 @@ function startCatalogueBrowse(
         candidateServiceIds: pool.map((s) => s.service_id),
         needsContinueConfirm: false,
       },
-      opener,
+      '',
     ),
   };
 }
@@ -1587,10 +1747,7 @@ function copyBatchSkipCitiesContinue(
 function copyBatchStart(city: string, count: number, firstLabel: string, allLabels?: string[]): string {
   void count;
   void allLabels;
-  return compactFunnelReply(
-    `Starting ${firstLabel} in ${city}.`,
-    'Which option do you need?',
-  );
+  return copyAskType(firstLabel, null, city);
 }
 
 /**
@@ -1611,7 +1768,7 @@ function copyBatchNextService(opts: {
 function copyBatchStepWhy(step: ProgressiveStep | string | undefined): string {
   switch (step) {
     case 'pick_type':
-      return 'Which option do you need?';
+      return 'I have the below options for you.';
     case 'pick_area':
       return 'Which area do you need?';
     case 'pick_direction':
@@ -1632,6 +1789,24 @@ function withBatchStepPrompt(
   // Prefer short handoff + why (avoid stacking long paragraphs)
   if (result.step === 'min_qty_confirm' || result.step === 'quote_ready') {
     return result;
+  }
+  // Type chips → full understand + options copy (with city when locked)
+  if (result.step === 'pick_type') {
+    const med = result.session.browseToken || result.session.medium || '';
+    const typeAsk = copyAskType(med, result.session);
+    const choosing = replyLines(trimmed).find((line) => /^now choosing\b/i.test(line));
+    if (choosing) {
+      const city = (result.session.city || '').trim();
+      const line2 = city
+        ? `I have the below options for you in ${city}.`
+        : 'I have the below options for you.';
+      return { ...result, botText: compactFunnelReply(choosing, line2) };
+    }
+    // Handoff already is a full type ask / auto-added ask — keep if it matches template
+    if (/i understand you'?re looking for advertising services/i.test(trimmed)) {
+      return { ...result, botText: trimmed };
+    }
+    return { ...result, botText: typeAsk };
   }
   const why = copyBatchStepWhy(result.step);
   const choosing = replyLines(trimmed).find((line) => /^now choosing\b/i.test(line));
@@ -1656,6 +1831,7 @@ type BatchWorkItem = {
   qty: number | null;
   city?: string;
   area?: string;
+  mediumType?: string;
   candidateServiceIds?: string[];
 };
 
@@ -1832,6 +2008,7 @@ function launchSequentialBatchWork(
     qtyByServiceId?: Record<string, number>;
     batchUnavailableLabels?: string[];
     lockedCity?: string;
+    autoLabels?: string[];
   },
 ): ProgressiveTurnResult {
   if (!workItems.length) {
@@ -1850,9 +2027,15 @@ function launchSequentialBatchWork(
   const firstLabel = titleCase(askFirst.browseToken || askFirst.medium);
   const sessionCity = opts.lockedCity || askFirst.city;
 
-  const askLine = sessionCity
-    ? copyBatchStart(sessionCity, workItems.length, firstLabel, availLabels)
-    : copyBatchAutoAddedThenAsk([], firstLabel, undefined, availLabels);
+  const askLine = opts.autoLabels?.length
+    ? copyBatchAutoAddedThenAsk(opts.autoLabels, firstLabel, sessionCity, availLabels)
+    : sessionCity
+      ? copyBatchStart(sessionCity, workItems.length, firstLabel, availLabels)
+      : copyBatchAutoAddedThenAsk([], firstLabel, undefined, availLabels);
+
+  // Explicit Mobile Van variants go through the normal funnel (city auto-lock →
+  // "Now choosing …"). Mid-turn auto-add left bot text on Mobile Van while
+  // chips asked No Parking.
 
   let intro = '';
   if (opts.unavailableNote) {
@@ -1863,16 +2046,16 @@ function launchSequentialBatchWork(
     intro = askLine;
   }
 
-  const exact = isExactCatalogMedium(askFirst.medium, services);
+  const exactKey = resolveExactMediumKey(askFirst.medium, services);
   const result = startMediumFlow(
-    askFirst.medium,
+    exactKey || askFirst.medium,
     {
       ...session,
       city: sessionCity,
-      medium: exact ? askFirst.medium : undefined,
+      medium: exactKey || undefined,
       browseToken: askFirst.browseToken || askFirst.medium,
-      mediumType: undefined,
-      typesResolved: undefined,
+      mediumType: askFirst.mediumType,
+      typesResolved: askFirst.mediumType ? true : undefined,
       qty: askFirst.qty,
       qtyByServiceId,
       segments,
@@ -1900,6 +2083,31 @@ function launchSequentialBatchWork(
     batchUnavailableNote: opts.unavailableNote || result.session.batchUnavailableNote,
     batchUnavailableSpoken: false,
   });
+  // If startMediumFlow already advanced to the next batch service (e.g. Mobile Van
+  // auto-locked city → Now choosing No Parking), do NOT overwrite chips' ask with
+  // the stale "Starting Mobile Van…" intro.
+  const resultToken = canonicalizeServiceName(
+    result.session.browseToken || result.session.medium || '',
+  );
+  const askToken = canonicalizeServiceName(askFirst.browseToken || askFirst.medium);
+  const advancedPastFirst =
+    !!resultToken
+    && !!askToken
+    && resultToken !== askToken
+    && !resultToken.startsWith(`${askToken} `)
+    && !askToken.startsWith(`${resultToken} `);
+  if (advancedPastFirst) {
+    return {
+      ...result,
+      botText: noted.botText,
+      session: {
+        ...noted.session,
+        batchServiceLabels: availLabels,
+        batchUnavailableLabels: opts.batchUnavailableLabels,
+        batchUnavailableNote: opts.unavailableNote,
+      },
+    };
+  }
   const prompted = withBatchStepPrompt(
     { ...result, botText: noted.botText, session: noted.session },
     intro.trim(),
@@ -1922,17 +2130,14 @@ function copyBatchAutoAddedThenAsk(
   allLabels?: string[],
 ): string {
   void allLabels;
-  const where = city ? ` in ${city}` : '';
   if (autoLabels.length) {
+    const where = city ? ` in ${city}` : '';
     return compactFunnelReply(
       `${formatBatchServiceList(autoLabels)} added${where}.`,
-      `Which ${nextLabel} option do you need?`,
+      copyAskType(nextLabel, null, city).split('\n').slice(-1)[0],
     );
   }
-  return compactFunnelReply(
-    undefined,
-    `Which ${nextLabel} option do you need${where}?`,
-  );
+  return copyAskType(nextLabel, null, city);
 }
 
 function matchKnownCityLabel(value: string): string | null {
@@ -2273,6 +2478,59 @@ export function detectCityInText(text: string, services?: DbService[]): string |
   if (all[0]) return all[0];
   return null;
 }
+
+/**
+ * Place name to geocode via Nominatim when not already a catalog/metro city.
+ * "bus semi in puliyangudi" → Puliyangudi. Skips multi-city lists and service phrases.
+ * Also: "services in avinasi" / bare "avinasi" (no media words).
+ */
+export function extractGeocodePlaceHint(
+  text: string,
+  services: DbService[],
+): string | null {
+  const known = detectCityInText(text, services);
+  if (known) return known;
+  const cleaned = stripQuoteFiller(normalizeSegmentPhrase(text)).trim();
+  if (!cleaned) return null;
+
+  const takePlace = (raw: string): string | null => {
+    const place = raw.replace(/[.!?]+$/g, '').replace(/\s+/g, ' ').trim();
+    if (place.length < 3) return null;
+    if (/\band\b|,|&|\+/.test(place)) return null;
+    if (detectMediaLocal(place, services).length > 0) return null;
+    if (detectCityInText(place, services)) return detectCityInText(place, services);
+    return titleCase(place);
+  };
+
+  // "services in avinasi" / "options near avinashi"
+  const svcIn = cleaned.match(
+    /\b(?:services?|options?)\s+(?:in|at|near|around)\s+([a-z][a-z\s.'-]{2,40}?)\s*$/i,
+  );
+  if (svcIn) {
+    const hit = takePlace(svcIn[1]!);
+    if (hit) return hit;
+  }
+
+  const m = cleaned.match(/\b(?:in|at|near)\s+([a-z][a-z\s.'-]{2,40}?)\s*$/i);
+  if (m) {
+    const hit = takePlace(m[1]!);
+    if (hit) return hit;
+  }
+
+  // Bare place token (avinasi) — no media, no qty, short phrase
+  if (
+    detectMediaLocal(cleaned, services).length === 0
+    && !/\d/.test(cleaned)
+    && !detectCatalogueBrowseQuery(cleaned)
+    && cleaned.split(/\s+/).filter(Boolean).length <= 4
+    && !/\b(and|,|&|\+|quote|generate|please|hello|hi|thanks|thank)\b/i.test(cleaned)
+  ) {
+    return takePlace(cleaned);
+  }
+
+  return null;
+}
+
 
 /**
  * Match a catalog metadata.city label in free text (DB-backed only).
@@ -2680,13 +2938,28 @@ function startPlaceTypeBrowse(
     qtyByServiceId: undefined,
   };
 
-  const hits = isMetroCity
-    ? filterByCity(services, place)
-    : filterByLocality(services, place);
+  const resolved = session.resolvedLocation;
+  let hits: DbService[] = [];
+  if (resolved) {
+    // Library town/district (Avinashi): list services that cover that geography,
+    // preferring parent-city inventory over every statewide TN row.
+    const covered = services.filter(
+      (s) => hasQuotablePricing(s) && serviceCoversResolvedLocation(s, resolved),
+    );
+    hits = preferResolvedCoveragePool(covered, resolved);
+  }
+  if (!hits.length) {
+    hits = isMetroCity
+      ? filterByCity(services, place, resolved)
+      : filterByLocality(services, place);
+  }
   if (!hits.length) {
     const errKey = `place:${canonicalizeServiceName(place)}`;
-    // Place-only miss → offer nearby / all services, not "this service"
-    const options = uniqueMediumOnlyOptions(services).slice(0, 24);
+    // Place-only miss → do not dump the nationwide catalogue when library said
+    // the place is outside coverage (Kudiri). Offer empty / soft ask only.
+    const options = resolved
+      ? []
+      : uniqueMediumOnlyOptions(services).slice(0, 24);
     return {
       step: options.length ? 'pick_type' : 'no_match',
       botText:
@@ -2706,6 +2979,7 @@ function startPlaceTypeBrowse(
           city: isMetroCity ? place : sess.city,
           area: isMetroCity ? sess.area : place,
           placeHint: isMetroCity ? sess.placeHint : place,
+          resolvedLocation: resolved || undefined,
         },
         '',
         errKey,
@@ -2713,20 +2987,13 @@ function startPlaceTypeBrowse(
     };
   }
   // Multi-city for this place → ask DB city values (OMR / Padur / Chennai as stored)
-  if (!isMetroCity) {
-    const cities = [
-      ...new Set(
-        hits
-          .map((h) => funnelCityFromDb(h))
-          .filter(Boolean) as string[],
-      ),
-    ];
+  // Library-resolved towns: never set area=Avinashi (not in DB) — lock/ask parent cities only.
+  const libraryScoped = !!resolved;
+  if (!isMetroCity || libraryScoped) {
+    const cityMap = uniqueFunnelCityLabels(hits);
+    const cities = [...cityMap.values()];
     if (cities.length > 1) {
-      const cityOpts = cities.sort().map((c) => ({
-        id: `city:${c.toLowerCase()}`,
-        label: c,
-        city: c,
-      }));
+      const cityOpts = uniqueCityOptionsFromPool(hits);
       const { text, opener } = composeReply(sess, {
         avail: `Services near ${place} in more locations.`,
         ask: 'Which city do you need?',
@@ -2739,8 +3006,9 @@ function startPlaceTypeBrowse(
         session: stampReplyMeta(
           {
             ...sess,
-            area: place,
-            placeHint: place,
+            area: libraryScoped ? undefined : place,
+            placeHint: libraryScoped ? undefined : place,
+            resolvedLocation: resolved || undefined,
             needsContinueConfirm: false,
             candidateServiceIds: hits.map((h) => h.service_id),
           },
@@ -2752,10 +3020,11 @@ function startPlaceTypeBrowse(
       return advanceFunnel(
         {
           ...sess,
-          area: place,
-          placeHint: place,
+          area: libraryScoped ? undefined : place,
+          placeHint: libraryScoped ? undefined : place,
           city: cities[0],
-          needsContinueConfirm: true,
+          resolvedLocation: resolved || undefined,
+          needsContinueConfirm: !libraryScoped,
           candidateServiceIds: hits.map((h) => h.service_id),
         },
         services,
@@ -2776,13 +3045,20 @@ function startPlaceTypeBrowse(
       )
       : copyPlaceServices(place, sess));
 
+  const soleCity =
+    libraryScoped && uniqueFunnelCityLabels(hits).size === 1
+      ? [...uniqueFunnelCityLabels(hits).values()][0]
+      : undefined;
+
   return advanceFunnel(
     {
       ...sess,
       // Metro typed as city; place names stay as area/placeHint — city chips use DB values later
-      city: isMetroCity ? place : sess.city,
-      area: isMetroCity ? sess.area : place,
-      placeHint: isMetroCity ? sess.placeHint : place,
+      // Library towns: lock sole parent city; never glue area=town.
+      city: isMetroCity ? place : (soleCity || sess.city),
+      area: isMetroCity || libraryScoped ? sess.area : place,
+      placeHint: isMetroCity || libraryScoped ? sess.placeHint : place,
+      resolvedLocation: resolved || undefined,
       medium:
         mediumOpts.length === 1
           ? canonicalizeServiceName(mediumOpts[0].medium || '')
@@ -2793,7 +3069,7 @@ function startPlaceTypeBrowse(
           : undefined,
       pendingMedia: [],
       candidateServiceIds: hits.map((s) => s.service_id),
-      needsContinueConfirm: true,
+      needsContinueConfirm: !libraryScoped,
       pendingCityQueue: undefined,
       workQueue: undefined,
       collectedRows: [],
@@ -2940,6 +3216,32 @@ function detectExactCatalogSelection(
 ): { medium: string; mediumType?: string } | null {
   const query = canonicalizeServiceName(text);
   if (!query) return null;
+
+  // Mobile Van LED and Non LED are sibling catalog services. Resolve the
+  // explicit variant before broader medium/type matching can merge them.
+  const mobileVanVariant = query.match(/\bmobile\s+van\s+(non\s+led|led)\b/i)?.[1];
+  if (mobileVanVariant) {
+    const wantsNonLed = canonicalizeServiceName(mobileVanVariant) === 'non led';
+    const variantMatches = services.filter((service) => {
+      const haystack = canonicalizeServiceName([
+        service.service_name || '',
+        getMediumKey(service),
+        getMediumTypeFromDb(service) || '',
+        service.service_id || '',
+      ].join(' '));
+      const isNonLed = /\bnon\s+led\b/i.test(haystack);
+      const hasLed = /\bled\b/i.test(haystack);
+      return /\bmobile\s+van\b/i.test(haystack)
+        && (wantsNonLed ? isNonLed : hasLed && !isNonLed);
+    });
+    const selected = pickPreferredDbService(variantMatches);
+    if (selected) {
+      return {
+        medium: getMediumKey(selected),
+        mediumType: getMediumTypeFromDb(selected) || undefined,
+      };
+    }
+  }
 
   const candidates = services
     .map((service) => {
@@ -3326,7 +3628,11 @@ function softCorrectMediaWordsInText(text: string, services: DbService[]): strin
 }
 
 /** True when service belongs to the given city label (DB city or area_name). */
-function serviceMatchesCityLabel(svc: DbService, city: string): boolean {
+function serviceMatchesCityLabel(
+  svc: DbService,
+  city: string,
+  resolvedLocation?: ResolvedLocation | null,
+): boolean {
   const requested = canonicalizeServiceName(city);
   if (!requested) return false;
 
@@ -3337,7 +3643,23 @@ function serviceMatchesCityLabel(svc: DbService, city: string): boolean {
   const dbCity = getMetaCityRaw(svc);
   const dbArea = getMetaAreaRaw(svc);
   const dbValue = dbCity || dbArea;
-  return !!dbValue && canonicalizeServiceName(dbValue) === requested;
+  if (dbValue && canonicalizeServiceName(dbValue) === requested) return true;
+
+  // Nominatim hierarchy: statewide DB rows (e.g. Any City In Tamilnadu) cover
+  // a resolved TN town such as Puliyangudi / Chennai — no hardcoded place lists.
+  if (resolvedLocation && serviceCoversResolvedLocation(svc, resolvedLocation)) {
+    return true;
+  }
+  return false;
+}
+
+/** City match using session.resolvedLocation when present. */
+function serviceMatchesSessionCity(
+  svc: DbService,
+  city: string,
+  session?: ProgressiveSession | null,
+): boolean {
+  return serviceMatchesCityLabel(svc, city, session?.resolvedLocation);
 }
 
 /**
@@ -3350,12 +3672,16 @@ function serviceMatchesExplicitArea(svc: DbService, area: string): boolean {
   if (!wanted) return false;
   return [getMetaAreaRaw(svc), getLocalityFromMetaCity(svc)]
     .filter(Boolean)
-    .some((value) => exactDbValueKey(value as string) === wanted);
+    .some((value) => areaDisplayKey(value as string) === areaDisplayKey(wanted));
 }
 
-function filterByCity(services: DbService[], city: string | null): DbService[] {
+function filterByCity(
+  services: DbService[],
+  city: string | null,
+  resolvedLocation?: ResolvedLocation | null,
+): DbService[] {
   if (!city) return services;
-  return services.filter((s) => serviceMatchesCityLabel(s, city));
+  return services.filter((s) => serviceMatchesCityLabel(s, city, resolvedLocation));
 }
 
 function matchServices(services: DbService[], words: string[], city: string | null): DbService[] {
@@ -3379,10 +3705,16 @@ function browseTokenVariants(token: string, services?: DbService[]): string[] {
   // Silent typo → catalog token (hoardin → hoarding, buss already synonym)
   if (services?.length) {
     const catalogTokens = getCatalogMediaCorrectTokens(services);
-    const compacted = compactAdjacentMediaAgainstCatalog(t, catalogTokens);
+    const compacted = compactAdjacentMediaAgainstCatalog(t, catalogTokens) || t;
     if (compacted) out.add(compacted);
-    for (const part of compacted.split(/\s+/).filter(Boolean)) {
-      out.add(expandMediaPrefixAgainstCatalog(part, catalogTokens));
+    // Multi-word products ("bus shelter") must NOT add bare family parts ("bus") —
+    // that pulled Bus Semi into shelter-only asks.
+    if (!t.includes(' ')) {
+      for (const part of compacted.split(/\s+/).filter(Boolean)) {
+        out.add(expandMediaPrefixAgainstCatalog(part, catalogTokens));
+      }
+    } else {
+      out.add(expandMediaPrefixAgainstCatalog(compacted, catalogTokens));
     }
     const fixed = correctMediaTokenSilent(t, catalogTokens);
     if (fixed) out.add(fixed);
@@ -3457,6 +3789,17 @@ function filterForBrowseOrFamily(services: DbService[], token: string): DbServic
   const family = filterByMediumFamily(services, token);
   let hits = browse.length ? browse : family;
   const t = canonicalizeServiceName(token);
+  // Multi-word product prefix ("bus shelter", "no parking"): keep only mediums
+  // that are that product (or longer), never siblings ("bus semi").
+  const words = t.split(/\s+/).filter(Boolean);
+  if (words.length >= 2) {
+    const prefixed = hits.filter((s) =>
+      getCatalogMediumAliases(s).some(
+        (alias) => alias === t || alias.startsWith(`${t} `),
+      ),
+    );
+    if (prefixed.length) hits = prefixed;
+  }
   // "metro" also covers Train Inside / Train Wrap (may not contain the word metro)
   if (t === 'metro' || t.startsWith('metro ')) {
     hits = mergeMetroFamilyServices(services, hits);
@@ -3522,6 +3865,7 @@ function matchSegmentHits(
   services: DbService[],
   token: string,
   city: string | null,
+  resolvedLocation?: ResolvedLocation | null,
 ): DbService[] {
   const words = canonicalizeServiceName(normalizeSegmentPhrase(token))
     .split(/\s+/)
@@ -3567,19 +3911,31 @@ function matchSegmentHits(
       );
       return words.every((word) => hay.split(/\s+/).includes(word));
     });
-    if (qualifiedHits.length > 0) hits = qualifiedHits;
+    if (qualifiedHits.length > 0) {
+      hits = qualifiedHits;
+    } else if (words.length >= 3) {
+      // User named a longer product ("bus semi wrap") that no row fully covers —
+      // do not keep looser bus+semi siblings (Bus Semi Branding).
+      hits = hits.filter((s) => {
+        const hay = canonicalizeServiceName(
+          `${getMediumKey(s)} ${(s.service_name || '').split(/[·—–|]/)[0] || ''}`,
+        );
+        return words.every((word) => hay.includes(word));
+      });
+    }
   }
 
-  // Strict city lock: empty = not offered in this city (do not fall back to all cities)
+  // Strict city lock: empty = not offered in this city (do not fall back to all cities).
+  // Pass Nominatim hierarchy so statewide TN rows cover Chennai / Madurai / etc.
   if (city) {
-    hits = hits.filter((s) => serviceMatchesCityLabel(s, city));
+    hits = hits.filter((s) => serviceMatchesCityLabel(s, city, resolvedLocation));
   }
 
   // "metro" segment → include Train Inside / Train Wrap even without the word "metro"
   if (isMetroSegmentToken(words.join(' ')) || isMetroSegmentToken(token)) {
     hits = mergeMetroFamilyServices(services, hits);
     if (city) {
-      hits = hits.filter((s) => serviceMatchesCityLabel(s, city));
+      hits = hits.filter((s) => serviceMatchesCityLabel(s, city, resolvedLocation));
     }
   }
   return hits;
@@ -3601,10 +3957,30 @@ function stripQuoteFiller(text: string): string {
 
 /** Compact segment token to catalog media (bus / auto) — never keep filler phrases. */
 function refineSegmentToken(raw: string, services: DbService[]): string {
-  const cleaned = stripQuoteFiller(raw);
+  const cleaned = stripQuoteFiller(raw)
+    // Qty prefixes ("200 lamp post…") must not block catalog phrase match
+    .replace(/^\d+\s*/u, '')
+    .replace(/\b\d+\s*(days?|months?|weeks?)\b/gi, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+  const cleanedKey = canonicalizeServiceName(cleaned);
+  if (!cleanedKey) return cleanedKey;
+
+  // Exact catalog medium key match
+  const exactCatalogMedium = getCatalogTypeKeys(services).find(
+    (medium) => canonicalizeServiceName(medium) === cleanedKey,
+  );
+  if (exactCatalogMedium) return exactCatalogMedium;
+
+  // Longest unambiguous catalog medium covered by this phrase.
+  // "lamp post sun pack with reeper" → Lamp Post Boards (Sun Pack) - With Reeper
+  // "bus semi wrap" → Bus Semi Wrap (not Bus Semi Branding)
+  // Ambiguous short families ("lamp post", "bus semi") stay unresolved → ask.
+  const phraseHit = bestCatalogMediumForPhrase(cleanedKey, services);
+  if (phraseHit) return phraseHit;
+
   const media = detectMediaLocal(cleaned, services);
   if (media.length >= 1) {
-    const cleanedKey = canonicalizeServiceName(cleaned);
     const mediaKey = canonicalizeServiceName(media[0]);
     // Keep catalog qualifiers such as "sticker", "semi", or "back".
     // Previously "auto stickers" became only "auto" here, so the exact
@@ -3620,7 +3996,59 @@ function refineSegmentToken(raw: string, services: DbService[]): string {
     if (again.length >= 1) return again[0];
     return joined;
   }
-  return canonicalizeServiceName(cleaned);
+  return cleanedKey;
+}
+
+/**
+ * Resolve a multi-word user phrase to one catalog medium when the match is unique.
+ * Requires 2+ query words so bare family tokens (bus / lamp) still ask.
+ */
+function bestCatalogMediumForPhrase(
+  phraseKey: string,
+  services: DbService[],
+): string | null {
+  const qWords = phraseKey.split(/\s+/).filter(Boolean);
+  if (qWords.length < 2) return null;
+
+  type Hit = { raw: string; key: string; score: number; qInC: boolean; cInQ: boolean };
+  const hits: Hit[] = [];
+  for (const raw of getCatalogTypeKeys(services)) {
+    const key = canonicalizeServiceName(raw);
+    if (!key || key.length < 4) continue;
+    const cWords = key.split(/\s+/).filter(Boolean);
+    if (cWords.length < 2) continue;
+    const qInC = qWords.every((w) => cWords.includes(w));
+    const cInQ = cWords.every((w) => qWords.includes(w));
+    if (!qInC && !cInQ) continue;
+    const score =
+      (phraseKey === key ? 10000 : 0)
+      + (qInC && cInQ ? 5000 : 0)
+      + (cInQ ? 2000 : 0)
+      + (qInC ? 1000 : 0)
+      + key.length;
+    hits.push({ raw, key, score, qInC, cInQ });
+  }
+  if (!hits.length) return null;
+
+  // Bare family tokens ("mobile van", "no parking board") cover 2+ catalog
+  // mediums via qInC. Prefer length alone would wrongly lock Non LED / Printing.
+  // Only lock when the query uniquely identifies one medium (exact or cInQ),
+  // or when exactly one medium covers all query words.
+  const covering = hits.filter((h) => h.qInC);
+  const coveringKeys = [...new Set(covering.map((h) => h.key))];
+  if (coveringKeys.length > 1) {
+    const precise = covering.filter((h) => h.cInQ || phraseKey === h.key);
+    const preciseKeys = [...new Set(precise.map((h) => h.key))];
+    if (preciseKeys.length === 1) return precise[0]!.raw;
+    return null;
+  }
+
+  hits.sort((a, b) => b.score - a.score || b.key.length - a.key.length);
+  const best = hits[0]!;
+  if (hits.some((h, i) => i > 0 && h.score === best.score && h.key !== best.key)) {
+    return null;
+  }
+  return best.raw;
 }
 
 /**
@@ -3974,8 +4402,8 @@ function startBatchMultiSelect(
 /**
  * Multi-service, no shared city: one service at a time through the full funnel
  * (Type → City → Area → Direction). Skip 0/1; ask only when 2+.
- * Services that exist in exactly one metro city are grouped ("only in Chennai") —
- * city is auto-locked; no OK Continue one-by-one.
+ * Services that exist in exactly one DB city label are auto-locked —
+ * no OK Continue one-by-one. 2+ DB city labels → leave city unlocked.
  */
 function startBatchSequentialFunnel(
   segments: BatchSegment[],
@@ -3989,6 +4417,7 @@ function startBatchSequentialFunnel(
     browseToken?: string;
     qty: number | null;
     city?: string;
+    mediumType?: string;
     candidateServiceIds?: string[];
   };
   const workItems: WorkItem[] = [];
@@ -3997,19 +4426,31 @@ function startBatchSequentialFunnel(
   const cityUnavailable: Array<{ label: string; city: string }> = [];
   const seenTok = new Set<string>();
 
-  const soleRealCityForHits = (hits: DbService[]): string | null => {
-    const cities = [
-      ...new Set(
-        hits
-          .map((h) => extractRealCityFromDbService(h))
-          .filter((c): c is string => !!c && REAL_CITY_KEYS.includes(c.toLowerCase())),
-      ),
-    ];
-    return cities.length === 1 ? cities[0]! : null;
+  /**
+   * Auto-lock only when priced (else all) hits share exactly one funnel city.
+   * Uses DB metadata.city / area_name — never known-metro-only matching that
+   * invents Chennai/Madurai when other DB cities also exist.
+   */
+  const soleFunnelCityForHits = (hits: DbService[]): string | null => {
+    const byKey = new Map<string, string>();
+    for (const h of hits) {
+      const city = funnelCityFromDb(h);
+      if (!city) continue;
+      const key = canonicalizeServiceName(city);
+      if (!key || byKey.has(key)) continue;
+      byKey.set(key, city);
+    }
+    if (byKey.size !== 1) return null;
+    return [...byKey.values()][0]!;
   };
 
   for (const seg of segments) {
-    const token = refineSegmentToken(seg.token, services) || seg.token;
+    // Prefer the already qty/city-stripped segment token from parseServiceSegments.
+    // Refining raw ("200 lamp post…") used to keep the digits and miss the catalog phrase.
+    const token =
+      refineSegmentToken(seg.token, services)
+      || refineSegmentToken(seg.raw, services)
+      || seg.token;
     const key = canonicalizeServiceName(token);
     if (!key || seenTok.has(key)) continue;
     if (
@@ -4024,7 +4465,7 @@ function startBatchSequentialFunnel(
     }
     seenTok.add(key);
 
-    let hits = matchSegmentHits(services, token, seg.city);
+    let hits = matchSegmentHits(services, token, seg.city, session.resolvedLocation);
     if (!hits.length) {
       if (seg.city) {
         // City was explicit — never widen to other cities; skip this service
@@ -4046,14 +4487,47 @@ function startBatchSequentialFunnel(
       for (const h of hits) qtyByServiceId[h.service_id] = seg.qty;
     }
 
-    const soleCity = seg.city || soleRealCityForHits(hits) || undefined;
+    // Prefer priced inventory when auto-locking a sole city so an unpriced
+    // Madurai (or other) row cannot invent a city the user never named.
+    const pricedHits = hits.filter(hasQuotablePricing);
+    const soleCity = seg.city
+      || soleFunnelCityForHits(pricedHits.length ? pricedHits : hits)
+      || undefined;
+
+    const exactSel = detectExactCatalogSelection(seg.raw, services);
+    const exactKey = resolveExactMediumKey(token, services);
+    let medium = exactKey || key;
+    let mediumType: string | undefined;
+    if (exactSel?.medium) {
+      const selKey = canonicalizeServiceName(exactSel.medium);
+      if (
+        selKey === key
+        || selKey === exactKey
+        || selKey.startsWith(`${key} `)
+        || key.startsWith(`${selKey} `)
+        || isSameMediumFamily(selKey, key)
+        || isSameMediumFamily(key, selKey)
+      ) {
+        medium = selKey;
+        mediumType = exactSel.mediumType
+          ? canonicalizeServiceName(exactSel.mediumType)
+          : undefined;
+      }
+    }
 
     workItems.push({
-      medium: key,
-      browseToken: key,
+      medium,
+      browseToken: medium,
       qty: seg.qty ?? null,
       city: soleCity,
-      candidateServiceIds: hits.map((h) => h.service_id),
+      mediumType,
+      candidateServiceIds: (pricedHits.length ? pricedHits : hits)
+        .filter((h) => {
+          if (!exactKey && !exactSel?.medium) return true;
+          const aliases = getCatalogMediumAliases(h);
+          return aliases.includes(canonicalizeServiceName(medium));
+        })
+        .map((h) => h.service_id),
     });
   }
 
@@ -4278,10 +4752,10 @@ function startBatchWithCityCandidates(
 
   const cityHasAny = (city: string): boolean => {
     for (const token of tokens) {
-      let hits = matchSegmentHits(services, token, city);
+      let hits = matchSegmentHits(services, token, city, session.resolvedLocation);
       if (!hits.length) {
         hits = filterForBrowseOrFamily(services, token).filter((s) =>
-          serviceMatchesCityLabel(s, city),
+          serviceMatchesCityLabel(s, city, session.resolvedLocation),
         );
       }
       if (hits.length) return true;
@@ -4413,10 +4887,10 @@ function startBatchWithCityCandidates(
     const med = canonicalizeServiceName(token);
     if (!med) continue;
     for (const city of usable) {
-      let hits = matchSegmentHits(services, token, city);
+      let hits = matchSegmentHits(services, token, city, session.resolvedLocation);
       if (!hits.length) {
         hits = filterForBrowseOrFamily(services, token).filter((s) =>
-          serviceMatchesCityLabel(s, city),
+          serviceMatchesCityLabel(s, city, session.resolvedLocation),
         );
       }
       if (!hits.length) continue;
@@ -4494,6 +4968,7 @@ function startBatchWithCityLock(
   const available: Avail[] = [];
   const missingLabels: string[] = [];
   const qtyByServiceId: Record<string, number> = { ...(session.qtyByServiceId || {}) };
+  const resolved = session.resolvedLocation || null;
 
   // Dedupe by token (bus, bus → one) + metro family specifics
   const deduped = dedupeBatchSegments(segments);
@@ -4504,11 +4979,11 @@ function startBatchWithCityLock(
     if (!key || seenTok.has(key)) continue;
     seenTok.add(key);
 
-    let hits = matchSegmentHits(services, token, city);
+    let hits = matchSegmentHits(services, token, city, resolved);
     const strictHitIds = hits.map((hit) => hit.service_id);
     if (!hits.length) {
       hits = filterForBrowseOrFamily(services, token).filter((s) =>
-        serviceMatchesCityLabel(s, city),
+        serviceMatchesCityLabel(s, city, resolved),
       );
     }
     if (!hits.length) {
@@ -4519,7 +4994,7 @@ function startBatchWithCityLock(
         .split(/\s+/)
         .filter((word) => word.length >= 2 && !STOP_WORDS.has(word));
       hits = services.filter((service) => {
-        if (!serviceMatchesCityLabel(service, city)) return false;
+        if (!serviceMatchesCityLabel(service, city, resolved)) return false;
         const hay = canonicalizeServiceName(
           `${getMediumKey(service)} ${(service.service_name || '').split(/[·—–|]/)[0] || ''}`,
         ).split(/\s+/);
@@ -4532,11 +5007,13 @@ function startBatchWithCityLock(
       inputToken: seg.token,
       refinedToken: token,
       normalizedKey: key,
+      hasResolved: !!resolved,
+      resolvedState: resolved?.state || null,
       strictHitIds,
       finalHitIds: hits.map((hit) => hit.service_id),
       finalHitNames: hits.map((hit) => hit.service_name),
       cityRows: services
-        .filter((service) => serviceMatchesCityLabel(service, city))
+        .filter((service) => serviceMatchesCityLabel(service, city, resolved))
         .filter((service) => canonicalizeServiceName(
           `${getMediumKey(service)} ${(service.service_name || '').split(/[·—–|]/)[0] || ''}`,
         ).includes(key))
@@ -4635,16 +5112,21 @@ function uniqueMediumLabels(services: DbService[]): ProgressiveOption[] {
  */
 function uniqueMediumLabelsWithExamples(services: DbService[]): ProgressiveOption[] {
   const groups = new Map<string, { opt: ProgressiveOption; rows: DbService[] }>();
-  for (const s of services) {
+  for (const s of services.filter(hasQuotablePricing)) {
     const raw = String((s.metadata as { medium?: string } | undefined)?.medium || '').trim();
     const medium = raw && raw.toUpperCase() !== 'NA'
       ? raw
       : getMediumKey(s);
     if (!medium) continue;
-    const key = exactDbValueKey(medium);
+    // Same canonicalize dedupe as uniqueMediumOnlyOptions (dash/case variants)
+    const key = canonicalizeServiceName(medium);
+    if (!key) continue;
     const existing = groups.get(key);
     if (existing) {
       existing.rows.push(s);
+      if (/[–—]/.test(existing.opt.label) && !/[–—]/.test(medium)) {
+        existing.opt = { ...existing.opt, label: medium, medium };
+      }
       continue;
     }
     groups.set(key, {
@@ -4661,11 +5143,7 @@ function uniqueMediumLabelsWithExamples(services: DbService[]): ProgressiveOptio
       ...opt,
       imageUrl: chipImageIfUniqueNext(rows, 'city'),
     }))
-    .sort((a, b) => a.label.localeCompare(b.label))
-    .filter((opt, idx, all) => {
-      const key = exactDbValueKey(opt.label);
-      return all.findIndex((o) => exactDbValueKey(o.label) === key) === idx;
-    });
+    .sort((a, b) => a.label.localeCompare(b.label));
 }
 
 /** Catalog type keys only — never a hardcoded bus/hoarding list. */
@@ -4982,6 +5460,15 @@ function filterByExactMedium(services: DbService[], medium: string): DbService[]
   if (!m) return [];
   const exact = services.filter((s) => getCatalogMediumAliases(s).includes(m));
   if (exact.length) return exact;
+  // Resolve unique catalog phrases ("bus semi wrap", "lamp post … reeper")
+  // before any family widening — never let wrap fall through to branding.
+  const phrase = bestCatalogMediumForPhrase(m, services);
+  if (phrase) {
+    const pk = canonicalizeServiceName(phrase);
+    return services.filter((s) => getCatalogMediumAliases(s).includes(pk));
+  }
+  // Qualified multi-word miss → empty (do not widen to siblings)
+  if (m.split(/\s+/).filter(Boolean).length >= 3) return [];
   return services.filter((s) =>
     getCatalogMediumAliases(s).some((alias) => isSameMediumFamily(alias, m)),
   );
@@ -4990,7 +5477,7 @@ function filterByExactMedium(services: DbService[], medium: string): DbService[]
 function uniqueServiceOptions(services: DbService[], limit = Number.POSITIVE_INFINITY): ProgressiveOption[] {
   const seen = new Set<string>();
   const out: ProgressiveOption[] = [];
-  for (const s of services) {
+  for (const s of services.filter(hasQuotablePricing)) {
     const id = s.service_id;
     if (!id || seen.has(id)) continue;
     seen.add(id);
@@ -5012,7 +5499,7 @@ function uniqueProductOptions(services: DbService[]): ProgressiveOption[] {
   // the funnel before this product stage; merging it here creates duplicate
   // products when one row has a qualifier and sibling rows have NA.
   const groups = new Map<string, { opt: ProgressiveOption; rows: DbService[] }>();
-  for (const s of services) {
+  for (const s of services.filter(hasQuotablePricing)) {
     const medium = getMediumKey(s);
     const label = titleCase(
       medium
@@ -5053,7 +5540,8 @@ function citiesForMedium(services: DbService[], medium: string): ProgressiveOpti
   for (const s of scoped) {
     const c = funnelCityFromDb(s);
     if (!c) continue;
-    const key = c.toLowerCase();
+    const key = canonicalizeServiceName(c);
+    if (!key) continue;
     const existing = groups.get(key);
     if (existing) {
       existing.rows.push(s);
@@ -5085,7 +5573,7 @@ function areasForMediumCity(services: DbService[], medium: string, city: string)
 
 /** Unique place chips: localities as-is; metro+area as "City · Area". */
 function uniquePlaceOptions(services: DbService[], token: string): ProgressiveOption[] {
-  const hits = filterForBrowseOrFamily(services, token);
+  const hits = filterForBrowseOrFamily(services, token).filter(hasQuotablePricing);
   const groups = new Map<string, { opt: ProgressiveOption; rows: DbService[] }>();
 
   for (const s of hits) {
@@ -5122,7 +5610,7 @@ function uniquePlaceOptions(services: DbService[], token: string): ProgressiveOp
  * step because the two chips represent separate DB fields.
  */
 function uniqueAreaOptions(services: DbService[], token: string, city: string): ProgressiveOption[] {
-  const hits = areasForMediumCity(services, token, city);
+  const hits = areasForMediumCity(services, token, city).filter(hasQuotablePricing);
   const groups = new Map<string, { opt: ProgressiveOption; rows: DbService[] }>();
   for (const s of hits) {
     const area = getFunnelAreaLabel(s);
@@ -5266,6 +5754,7 @@ function buildDirectionPicker(
   const options = [...groups.values()]
     .map(({ opt, rows }) => ({
       ...opt,
+      id: `direction:${rows.map((row) => row.service_id).join(',')}`,
       // Direction chip → show image only for a single site
       imageUrl: chipImageIfUniqueNext(rows, 'site'),
       serviceId: rows.length === 1 ? rows[0].service_id : opt.serviceId,
@@ -5307,14 +5796,24 @@ function buildMultiAreaSitePicker(
   session: ProgressiveSession,
   areaLabels: string[],
 ): ProgressiveTurnResult {
-  const options: ProgressiveOption[] = [];
-  const seen = new Set<string>();
+  hits = hits.filter(hasQuotablePricing);
+  const groups = new Map<string, { first: DbService; rows: DbService[] }>();
   for (const s of hits) {
     const area = getFunnelAreaLabel(s) || getAreaLabel(s) || '';
     const dir = getDirectionLabel(s);
     const siteKey = `${areaDisplayKey(area)}|${exactDbValueKey(dir || '')}`;
-    if (seen.has(siteKey)) continue;
-    seen.add(siteKey);
+    const existing = groups.get(siteKey);
+    if (existing) {
+      existing.rows.push(s);
+      continue;
+    }
+    groups.set(siteKey, { first: s, rows: [s] });
+  }
+
+  const options: ProgressiveOption[] = [];
+  for (const { first: s, rows } of groups.values()) {
+    const area = getFunnelAreaLabel(s) || getAreaLabel(s) || '';
+    const dir = getDirectionLabel(s);
     let label: string;
     if (area && dir) {
       label = `${area} · ${dir}`;
@@ -5322,7 +5821,7 @@ function buildMultiAreaSitePicker(
       label = dir || area || friendlyServiceLabel(s);
     }
     options.push({
-      id: `direction:${s.service_id}`,
+      id: `direction:${rows.map((row) => row.service_id).join(',')}`,
       label,
       serviceId: s.service_id,
       city: extractRealCityFromDbService(s) || undefined,
@@ -5367,17 +5866,22 @@ function buildMultiAreaSitePicker(
 /** Service chips only (medium) — Type is a separate funnel step. */
 function uniqueMediumOnlyOptions(services: DbService[]): ProgressiveOption[] {
   const groups = new Map<string, { opt: ProgressiveOption; rows: DbService[] }>();
-  for (const s of services) {
+  for (const s of services.filter(hasQuotablePricing)) {
     const raw = String((s.metadata as { medium?: string } | undefined)?.medium || '').trim();
     const medium = raw && raw.toUpperCase() !== 'NA'
       ? raw
       : getMediumKey(s);
     if (!medium) continue;
-    const key = exactDbValueKey(medium);
+    // Collapse dash/case variants ("Mobile Van - LED" vs "Mobile Van – LED")
+    const key = canonicalizeServiceName(medium);
     if (!key) continue;
     const existing = groups.get(key);
     if (existing) {
       existing.rows.push(s);
+      // Prefer ASCII hyphen label when merging en-dash catalog duplicates
+      if (/[–—]/.test(existing.opt.label) && !/[–—]/.test(medium)) {
+        existing.opt = { ...existing.opt, label: medium, medium };
+      }
       continue;
     }
     groups.set(key, {
@@ -5394,11 +5898,7 @@ function uniqueMediumOnlyOptions(services: DbService[]): ProgressiveOption[] {
       ...opt,
       imageUrl: chipImageIfUniqueNext(rows, 'city'),
     }))
-    .sort((a, b) => a.label.localeCompare(b.label))
-    .filter((opt, idx, all) => {
-      const key = exactDbValueKey(opt.label);
-      return all.findIndex((o) => exactDbValueKey(o.label) === key) === idx;
-    });
+    .sort((a, b) => a.label.localeCompare(b.label));
 }
 
 /** medium_type chips for a selected service (Nonlit / Lit / Elevated …). */
@@ -5409,7 +5909,7 @@ function uniqueTypeOnlyOptions(services: DbService[], medium: string): Progressi
   // Exact medium ("metro station") must only show that medium's medium_type values.
   const bareFamily = want === family;
   const groups = new Map<string, { opt: ProgressiveOption; rows: DbService[] }>();
-  for (const s of services) {
+  for (const s of services.filter(hasQuotablePricing)) {
     const mk = canonicalizeServiceName(getMediumKey(s));
     if (!mk) continue;
     const mediumOk =
@@ -5453,7 +5953,8 @@ function uniqueCityOptionsFromPool(services: DbService[], medium?: string): Prog
     // Raw DB city; if blank → area_name. Never invent Chennai / metro preference.
     const city = funnelCityFromDb(s);
     if (!city) continue;
-    const key = city.toLowerCase();
+    const key = canonicalizeServiceName(city);
+    if (!key) continue;
     const existing = groups.get(key);
     if (existing) {
       existing.rows.push(s);
@@ -5681,11 +6182,19 @@ export function detectDirectionInText(
   return hit;
 }
 
-/** True when `token` is an exact catalog medium key (e.g. "bus semi", "apartment demo"). */
-function isExactCatalogMedium(token: string, services: DbService[]): boolean {
+/** Resolve token to a single catalog medium key, or null if ambiguous/family. */
+function resolveExactMediumKey(token: string, services: DbService[]): string | null {
   const t = canonicalizeServiceName(token);
-  if (!t) return false;
-  return services.some((s) => canonicalizeServiceName(getMediumKey(s)) === t);
+  if (!t) return null;
+  if (services.some((s) => canonicalizeServiceName(getMediumKey(s)) === t)) return t;
+  if (!t.includes(' ')) return null;
+  const hit = bestCatalogMediumForPhrase(t, services);
+  return hit ? canonicalizeServiceName(hit) : null;
+}
+
+/** True when `token` locks exactly one catalog medium (or equals that medium key). */
+function isExactCatalogMedium(token: string, services: DbService[]): boolean {
+  return !!resolveExactMediumKey(token, services);
 }
 
 /** Pool used for the City step — same medium/type scope as the funnel pool. */
@@ -5814,7 +6323,8 @@ function lockOneCity(
   };
 }
 
-function filterPoolBySession(services: DbService[], session: ProgressiveSession): DbService[] {
+/** Scope catalog rows by active session locks (exported for src/chat/filterCatalog). */
+export function filterPoolBySession(services: DbService[], session: ProgressiveSession): DbService[] {
   let pool = session.candidateServiceIds?.length
     ? services.filter((s) => session.candidateServiceIds!.includes(s.service_id))
     : [...services];
@@ -6319,7 +6829,7 @@ export function advanceFunnel(
               `Continuing ${mediumName}${where ? ` in ${where}` : ''}.`,
               'Which location do you need?',
             ),
-          options: finalPool.slice(0, 24).map((s) => ({
+          options: finalPool.filter(hasQuotablePricing).slice(0, 24).map((s) => ({
             id: `svc:${s.service_id}`,
             label: getDirectionLabel(s) || formatServiceDisplayName(s) || getMediumKey(s) || s.service_id,
             serviceId: s.service_id,
@@ -6540,7 +7050,8 @@ function continuePendingWork(
   if (workQueue.length > 0) {
     const next = workQueue.shift()!;
     const browse = canonicalizeServiceName(next.browseToken || next.medium);
-    const med = canonicalizeServiceName(next.medium);
+    const med = resolveExactMediumKey(next.medium, services)
+      || canonicalizeServiceName(next.medium);
     const exact = isExactCatalogMedium(med, services);
     const nextLabel = titleCase(browse || med);
     const sameMediumAsCurrent =
@@ -6615,12 +7126,12 @@ function continueAfterNoPricing(
 function filterHitsBySessionLocation(hits: DbService[], session: ProgressiveSession): DbService[] {
   let out = hits;
   if (session.area) {
-    const areaWanted = exactDbValueKey(session.area);
+      const areaWanted = areaDisplayKey(session.area);
     out = hits.filter((s) => {
-      const label = exactDbValueKey(getAreaLabel(s) || '');
-      const locality = exactDbValueKey(getLocalityFromMetaCity(s) || '');
-      const metaCity = exactDbValueKey(getMetaCityRaw(s) || '');
-      const metaArea = exactDbValueKey(getMetaAreaRaw(s) || '');
+      const label = areaDisplayKey(getAreaLabel(s) || '');
+      const locality = areaDisplayKey(getLocalityFromMetaCity(s) || '');
+      const metaCity = areaDisplayKey(getMetaCityRaw(s) || '');
+      const metaArea = areaDisplayKey(getMetaAreaRaw(s) || '');
       // Area/place selection is an exact normalized DB-field match. Do not
       // widen "Anna Nagar" to "Anna Nagar Chintamani" or other child labels.
       // Place = city metadata OR area_name only — NEVER direction_remarks.
@@ -6630,7 +7141,9 @@ function filterHitsBySessionLocation(hits: DbService[], session: ProgressiveSess
         || metaArea === areaWanted;
     });
     if (session.city && out.length > 0) {
-      const narrowed = out.filter((s) => serviceMatchesCityLabel(s, session.city!));
+      const narrowed = out.filter((s) =>
+        serviceMatchesSessionCity(s, session.city!, session),
+      );
       // Incompatible city+area (e.g. Chittoor + OMR): keep place hits only — never
       // glue foreign city inventory under the wrong city (merge should clear city).
       if (narrowed.length > 0) out = narrowed;
@@ -6638,8 +7151,7 @@ function filterHitsBySessionLocation(hits: DbService[], session: ProgressiveSess
     return out;
   }
   if (session.city) {
-    const c = session.city.toLowerCase();
-    out = out.filter((s) => serviceMatchesCityLabel(s, c));
+    out = out.filter((s) => serviceMatchesSessionCity(s, session.city!, session));
   }
   return out;
 }
@@ -6697,6 +7209,13 @@ function buildRowsForServices(
       || '—';
     // City field = metro only (area · direction belong in PDF service heading, not city)
     const city = metro;
+    const serviceName = (svc.service_name || '').split('·')[0].trim() || friendlyServiceLabel(svc);
+    const scopedDurationText = getServiceScopedUserMessage(originalText, serviceName);
+    const parsedDuration = parseDurationFromUserText(scopedDurationText);
+    const parsedDurationDays = parsedDuration
+      ? toCampaignDays(parsedDuration.value, parsedDuration.unit)
+      : null;
+    const durationDays = parsedDurationDays != null ? parsedDurationDays : undefined;
     const perSvcQty =
       qtyByServiceId && qtyByServiceId[svc.service_id] != null
         ? qtyByServiceId[svc.service_id]
@@ -6711,15 +7230,15 @@ function buildRowsForServices(
       useQty = perSvcQty;
     }
     rows.push({
-      service: (svc.service_name || '').split('·')[0].trim() || friendlyServiceLabel(svc),
+      service: serviceName,
       qty: useQty,
       city,
       serviceId: svc.service_id,
+      durationDays,
     });
   }
 
   void durationText;
-  void originalText;
   return { rows, belowMin };
 }
 
@@ -6745,6 +7264,8 @@ export interface IntentOverlay {
   qty?: number | null;
   duration?: string | null;
   shortReply?: string | null;
+  /** Nominatim hierarchy when ChatInterface resolved a city geography. */
+  resolvedLocation?: import('../types/location').ResolvedLocation | null;
 }
 
 function softPickTypes(
@@ -7017,7 +7538,6 @@ function mergePriorWithDetected(
       originalText: detected.originalText,
       qty: detected.qty,
       durationText: detected.durationText || undefined,
-      aiReply: detected.shortReply,
       medium: newMedia,
       browseToken: newMedia,
       city: cityFromText || (familyUpgrade ? prior.city : undefined),
@@ -7109,7 +7629,6 @@ function mergePriorWithDetected(
     originalText: detected.originalText,
     qty: detected.qty ?? prior.qty,
     durationText: detected.durationText ?? prior.durationText,
-    aiReply: detected.shortReply,
     city: nextCity || undefined,
     area: nextArea,
     placeHint: nextPlace,
@@ -7292,7 +7811,9 @@ function startMediumFlow(
       const set = new Set(session.candidateServiceIds);
       browseHits = browseHits.filter((s) => set.has(s.service_id));
     } else if (session.city) {
-      browseHits = browseHits.filter((s) => serviceMatchesCityLabel(s, session.city!));
+      browseHits = browseHits.filter((s) =>
+        serviceMatchesSessionCity(s, session.city!, session),
+      );
     }
     // Place/corridor must scope BEFORE counting types — else we ask "which type?"
     // with a reply, then empty the pool → text and no chips (looks frozen).
@@ -7551,14 +8072,18 @@ export function resolveProgressiveText(
   const safeServices = (services || []).filter(
     (s): s is DbService => !!s && !!(s.service_id || s.service_name),
   );
-  const result = stampResultOpener(
-    resolveProgressiveTextInner(userText, safeServices, prior, intent),
-  );
+  const useNewEngine =
+    USE_NEW_CHAT_ENGINE
+    && parseServiceSegments(userText, safeServices).length < 2;
+  const inner = useNewEngine
+    ? handleChatTurnSync(userText, safeServices, prior, intent)
+    : resolveProgressiveTextLegacy(userText, safeServices, prior, intent);
+  const result = stampResultOpener(inner);
   logFunnelRes(result);
   return result;
 }
 
-function resolveProgressiveTextInner(
+export function resolveProgressiveTextLegacy(
   userText: string,
   services: DbService[],
   prior?: ProgressiveSession | null,
@@ -7570,25 +8095,32 @@ function resolveProgressiveTextInner(
     services,
   );
 
+  // Carry Nominatim hierarchy from ChatInterface (or prior turn)
+  const resolvedLocation =
+    intent?.resolvedLocation
+    ?? prior?.resolvedLocation
+    ?? null;
+  if (resolvedLocation) {
+    prior = prior
+      ? { ...prior, resolvedLocation }
+      : { originalText, qty: null, resolvedLocation };
+  }
+
   // AI greeting / help shortcuts
   if (intent?.kind === 'greeting') {
     return {
       step: 'small_talk',
       botText: copyGreeting(originalText),
       options: [],
-      session: { originalText, qty: null, aiReply: intent.shortReply },
+      session: { originalText, qty: null },
     };
   }
   if (intent?.kind === 'help') {
     return {
       step: 'small_talk',
-      botText:
-        preferEngineCopy(
-          intent.shortReply,
-          compactFunnelReply('Tell me the service or city you need.'),
-        ),
+      botText: compactFunnelReply('Tell me the service or city you need.'),
       options: [],
-      session: { originalText, qty: null, aiReply: intent.shortReply },
+      session: { originalText, qty: null },
     };
   }
   if (intent?.kind === 'services_browse') {
@@ -7598,10 +8130,9 @@ function resolveProgressiveTextInner(
         ...(prior || {}),
         originalText,
         qty: null,
-        aiReply: intent.shortReply,
       },
       services,
-      intent.shortReply,
+      null,
     );
   }
 
@@ -7701,6 +8232,7 @@ function resolveProgressiveTextInner(
         qty,
         durationText,
         medium: serviceLabel || undefined,
+        resolvedLocation: resolvedLocation || prior?.resolvedLocation || null,
       },
       services,
       placeUnavailablePrep(originalText),
@@ -7765,7 +8297,8 @@ function resolveProgressiveTextInner(
     localityHintPreview: detectLocalityInText(originalText, services),
   });
 
-  const shortReply = intent?.shortReply || null;
+  // Phase 1: AI shortReply is parse-only — never surface in botText or reply args.
+  const shortReply = null;
 
   // Area only from exact locality in user text — ignore invented AI areaHint
   const localityHintRaw = detectLocalityInText(originalText, services);
@@ -7908,7 +8441,6 @@ function resolveProgressiveTextInner(
       pendingMedia: [],
       collectedRows: [],
       collectedServiceIds: [],
-      aiReply: shortReply,
       city: city || undefined,
       area: localityHint || undefined,
       placeHint: localityHint || undefined,
@@ -7917,7 +8449,13 @@ function resolveProgressiveTextInner(
         ? canonicalizeServiceName(typeFromText)
         : undefined,
       typesResolved: typeFromText ? true : undefined,
+      resolvedLocation: resolvedLocation || undefined,
     };
+
+  // Always keep Nominatim hierarchy on the active session
+  if (resolvedLocation && !baseSessionFields.resolvedLocation) {
+    baseSessionFields.resolvedLocation = resolvedLocation;
+  }
 
   // When refining mid-funnel with city/area only, restore media from prior for downstream
   if (preservePrior && media.length === 0) {
@@ -8148,13 +8686,12 @@ function resolveProgressiveTextInner(
               needsContinueConfirm: true,
             },
             services,
-            shortReply
-              || (onlyMedium || media[0]
-                ? undefined
-                : compactFunnelReply(
-                  `Sites matching “${titleCase(originalText.trim())}”.`,
-                  'Which service do you need?',
-                )),
+            onlyMedium || media[0]
+              ? undefined
+              : compactFunnelReply(
+                `Sites matching “${titleCase(originalText.trim())}”.`,
+                'Which service do you need?',
+              ),
           );
         }
       } else {
@@ -8311,7 +8848,6 @@ function resolveProgressiveTextInner(
           originalText,
           qty: qty ?? prior.qty ?? null,
           durationText: durationText || prior.durationText,
-          aiReply: shortReply,
         },
         services,
         shortReply,
@@ -8348,14 +8884,12 @@ function resolveProgressiveTextInner(
     if (types.length > 1) {
       return {
         step: 'pick_type',
-        botText:
-          shortReply
-          || (hint === 'that'
-            ? 'Which option do you need?'
-            : compactFunnelReply(
-              `${salesAdLabel(hint)}${city ? ` in ${city}` : ''} options available.`,
-              'Which option do you need?',
-            )),
+          botText: preferEngineCopy(
+            shortReply,
+            hint === 'that'
+            ? copyAskType('this', { originalText, qty: null, city: city || undefined })
+            : copyAskType(hint, { originalText, qty: null, city: city || undefined }, city),
+          ),
         options: types,
         allowMulti: true,
         session: {
@@ -8369,7 +8903,6 @@ function resolveProgressiveTextInner(
           qty,
           durationText,
           pendingMedia: [],
-          aiReply: shortReply,
           candidateServiceIds: types
             .map((t) => t.serviceId)
             .filter((id): id is string => !!id),
@@ -8394,7 +8927,6 @@ function resolveProgressiveTextInner(
             pendingMedia: [],
             collectedRows: [],
             collectedServiceIds: [],
-            aiReply: shortReply,
           },
           services,
           shortReply,
@@ -8403,7 +8935,11 @@ function resolveProgressiveTextInner(
       if (mediums.length > 1) {
         return {
           step: 'pick_type',
-          botText: shortReply || copyAskType(hint),
+          botText: preferEngineCopy(shortReply, copyAskType(hint, {
+            originalText,
+            qty: null,
+            city: city || undefined,
+          }, city)),
           options: mediums,
           allowMulti: true,
           session: {
@@ -8413,18 +8949,20 @@ function resolveProgressiveTextInner(
             qty,
             durationText,
             pendingMedia: [],
-            aiReply: shortReply,
           },
         };
       }
     }
     return {
       step: 'pick_type',
-      botText:
-        shortReply
-        || (hint === 'that'
-          ? 'Which option do you need?'
-          : copyAskType(hint)),
+      botText: preferEngineCopy(
+        shortReply,
+        copyAskType(
+          hint === 'that' ? 'this' : hint,
+          { originalText, qty: null, city: city || undefined },
+          city,
+        ),
+      ),
       options: types.length ? types : uniqueMediumOnlyOptions(services),
       allowMulti: true,
       session: {
@@ -8437,7 +8975,6 @@ function resolveProgressiveTextInner(
         qty,
         durationText,
         pendingMedia: [],
-        aiReply: shortReply,
       },
     };
   }
@@ -8478,7 +9015,7 @@ function resolveProgressiveTextInner(
           pendingMedia: [],
           collectedRows: [],
           collectedServiceIds: [],
-          aiReply: shortReply,
+          resolvedLocation: resolvedLocation || undefined,
         },
         services,
         shortReply,
@@ -8499,7 +9036,40 @@ function resolveProgressiveTextInner(
           pendingMedia: [],
           collectedRows: [],
           collectedServiceIds: [],
-          aiReply: shortReply,
+          resolvedLocation: resolvedLocation || undefined,
+        },
+        services,
+        shortReply,
+      );
+    }
+  }
+
+  // Library-resolved town (avinasi / services in avinasi) with no service → list covering services
+  if (
+    resolvedLocation
+    && !lockedMedForCity
+    && !textNamesService
+    && media.length === 0
+    && !cityOnly
+    && !localityOnly
+  ) {
+    const placeLabel =
+      extractGeocodePlaceHint(originalText, services)
+      || resolvedLocation.town
+      || resolvedLocation.district
+      || null;
+    if (placeLabel && !REAL_CITY_KEYS.includes(placeLabel.toLowerCase())) {
+      return startPlaceTypeBrowse(
+        placeLabel,
+        false,
+        {
+          originalText,
+          qty,
+          durationText,
+          pendingMedia: [],
+          collectedRows: [],
+          collectedServiceIds: [],
+          resolvedLocation,
         },
         services,
         shortReply,
@@ -8634,7 +9204,7 @@ function resolveProgressiveTextInner(
   if (words.length === 0 && !city && media.length === 0) {
     return {
       step: 'small_talk',
-      botText: shortReply || copyWhichService(),
+      botText: preferEngineCopy(shortReply, copyWhichService()),
       options: [],
       session: { originalText, qty: null },
     };
@@ -8661,7 +9231,6 @@ function resolveProgressiveTextInner(
       qty: qty ?? baseSessionFields.qty,
       durationText: durationText ?? baseSessionFields.durationText,
       pendingMedia: media.length > 1 ? media.slice(1) : [],
-      aiReply: shortReply,
     }
     : {
       originalText,
@@ -8680,7 +9249,7 @@ function resolveProgressiveTextInner(
       pendingMedia: media.length > 1 ? media.slice(1) : media.length === 1 ? [] : [],
       collectedRows: [],
       collectedServiceIds: [],
-      aiReply: shortReply,
+      resolvedLocation: resolvedLocation || baseSessionFields.resolvedLocation || undefined,
     };
 
   if (!services.length) {
@@ -8749,7 +9318,6 @@ function resolveProgressiveTextInner(
           originalText,
           qty: qty ?? baseSessionFields.qty,
           durationText: durationText ?? baseSessionFields.durationText,
-          aiReply: shortReply,
           // Keep type/city/area; clear site lock so we re-show previous step (not auto-quote)
           directionHint: undefined,
           candidateServiceIds: undefined,
@@ -8799,6 +9367,8 @@ function resolveProgressiveTextInner(
         unresolvedPlace,
         media: first,
         prep,
+        hasResolved: !!sessionBase.resolvedLocation,
+        resolvedState: sessionBase.resolvedLocation?.state || null,
       });
       return buildPlaceOfferTurn(
         first,
@@ -8809,6 +9379,11 @@ function resolveProgressiveTextInner(
           qty,
           durationText,
           originalText,
+          resolvedLocation:
+            sessionBase.resolvedLocation
+            || resolvedLocation
+            || intent?.resolvedLocation
+            || null,
         },
         services,
         prep,
@@ -9015,15 +9590,14 @@ function resolveProgressiveTextInner(
           placeHint: isKnownMetro ? sessionBase.placeHint : city,
         },
         services,
-        shortReply || copyPlaceServices(city),
+        preferEngineCopy(shortReply, copyPlaceServices(city)),
       );
     }
 
     return softClarifyNeed(
       services,
       sessionBase,
-      shortReply
-        || (city ? copyUnknownCity(city) : undefined),
+      city ? copyUnknownCity(city) : undefined,
     );
   }
 
@@ -9434,16 +10008,13 @@ export function continueProgressiveAction(
     selected: selectedIds,
     session,
   });
-  const result = stampResultOpener(
-    continueProgressiveActionInner(
-      actionId,
-      session,
-      (services || []).filter(
-        (s): s is DbService => !!s && !!(s.service_id || s.service_name),
-      ),
-      selectedIds,
-    ),
+  const safeServices = (services || []).filter(
+    (s): s is DbService => !!s && !!(s.service_id || s.service_name),
   );
+  const inner = USE_NEW_CHAT_ENGINE
+    ? continueChatActionSync(actionId, session, safeServices, selectedIds)
+    : continueProgressiveActionInner(actionId, session, safeServices, selectedIds);
+  const result = stampResultOpener(inner);
   logFunnelRes(result);
   return result;
 }
@@ -9653,7 +10224,7 @@ function continueProgressiveActionInner(
         const areaLabel =
           areaPool
             .map((s) => getFunnelAreaLabel(s) || getAreaLabel(s) || getLocalityFromMetaCity(s))
-            .find((a) => a && exactDbValueKey(a) === areaKey)
+            .find((a) => a && areaDisplayKey(a) === areaDisplayKey(areaKey))
           || titleCase(areaKey.replace(/-/g, ' '));
         const nextSession: ProgressiveSession = {
           ...session,
@@ -9677,7 +10248,7 @@ function continueProgressiveActionInner(
       const areaLabel =
         pool
           .map((s) => getAreaLabel(s) || getLocalityFromMetaCity(s))
-          .find((a) => a && exactDbValueKey(a) === areaKey)
+          .find((a) => a && areaDisplayKey(a) === areaDisplayKey(areaKey))
         || titleCase(areaKey.replace(/-/g, ' '));
       let city: string | undefined;
       if (isLocality) {
@@ -9761,9 +10332,9 @@ function continueProgressiveActionInner(
           const areaLabel =
             areaPool
               .map((s) => getFunnelAreaLabel(s) || getAreaLabel(s) || getLocalityFromMetaCity(s))
-              .find((a) => a && exactDbValueKey(a) === areaKey)
+              .find((a) => a && areaDisplayKey(a) === areaDisplayKey(areaKey))
             || titleCase(areaKey.replace(/-/g, ' '));
-          const ak = exactDbValueKey(areaLabel);
+          const ak = areaDisplayKey(areaLabel);
           if (areaLabel && !seenArea.has(ak)) {
             seenArea.add(ak);
             uniqueAreas.push(areaLabel);
@@ -9778,9 +10349,9 @@ function continueProgressiveActionInner(
             const areaLabel =
               pool
                 .map((s) => getAreaLabel(s) || getLocalityFromMetaCity(s))
-              .find((a) => a && exactDbValueKey(a) === areaKey)
+                .find((a) => a && areaDisplayKey(a) === areaDisplayKey(areaKey))
               || titleCase(areaKey.replace(/-/g, ' '));
-            const ak = exactDbValueKey(areaLabel);
+            const ak = areaDisplayKey(areaLabel);
             if (areaLabel && !seenArea.has(ak)) {
               seenArea.add(ak);
               uniqueAreas.push(areaLabel);
@@ -9829,7 +10400,7 @@ function continueProgressiveActionInner(
         if (!basePool.length && candPool.length) basePool = candPool;
 
         for (const areaLabel of uniqueAreas) {
-          const areaKey = exactDbValueKey(areaLabel);
+          const areaKey = areaDisplayKey(areaLabel);
           let hits = filterHitsBySessionLocation(basePool, {
             ...session,
             area: areaLabel,
@@ -9844,7 +10415,7 @@ function continueProgressiveActionInner(
                 getMetaAreaRaw(s),
               ];
               return labels.some(
-                (lab) => lab && exactDbValueKey(lab) === areaKey,
+                (lab) => lab && areaDisplayKey(lab) === areaKey,
               );
             });
           }
@@ -10026,7 +10597,7 @@ function continueProgressiveActionInner(
     const areaLabel =
       pool
         .map((s) => getAreaLabel(s))
-        .find((a) => a && exactDbValueKey(a) === areaKey)
+        .find((a) => a && areaDisplayKey(a) === areaDisplayKey(areaKey))
       || titleCase(areaKey.replace(/-/g, ' '));
     const nextSession: ProgressiveSession = {
       ...session,
@@ -10569,8 +11140,8 @@ function continueProgressiveActionInner(
     || (selectedIds?.length && selectedIds.every((id) => id.startsWith('direction:')))
   ) {
     const ids = selectedIds?.length
-      ? selectedIds.map((id) => (id.startsWith('direction:') ? id.slice(10) : id))
-      : [actionId.slice(10)];
+      ? selectedIds.flatMap((id) => (id.startsWith('direction:') ? id.slice(10).split(',') : [id]))
+      : actionId.slice(10).split(',');
     const selected = services.filter((s) => ids.includes(s.service_id));
     if (selected.length) return finalizeSelection(selected, session, services);
   }
@@ -10756,4 +11327,34 @@ function continueProgressiveActionInner(
     options: [],
     session,
   };
+}
+
+/** Phase 4 — batch entry (shared / mixed / sequential city). */
+export function resolveBatchFromSegments(
+  segments: BatchSegment[],
+  session: ProgressiveSession,
+  services: DbService[],
+  reply?: string | null,
+): ProgressiveTurnResult {
+  return startBatchMultiSelect(segments, session, services, reply);
+}
+
+/** Phase 4 — advance workQueue / pendingCityQueue after one service completes. */
+export function continueBatchQueue(
+  session: ProgressiveSession,
+  collectedRows: ConfirmationRow[],
+  collectedServiceIds: string[],
+  services: DbService[],
+): ProgressiveTurnResult | null {
+  return continuePendingWork(session, collectedRows, collectedServiceIds, services);
+}
+
+/** Phase 5 — chip/confirm inner (exported for continueChatAction). */
+export function continueProgressiveActionLegacy(
+  actionId: string,
+  session: ProgressiveSession,
+  services: DbService[],
+  selectedIds?: string[],
+): ProgressiveTurnResult {
+  return continueProgressiveActionInner(actionId, session, services, selectedIds);
 }

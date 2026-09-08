@@ -4,7 +4,8 @@ import { useToast } from '@chakra-ui/react';
 import { useAppStore } from '../store';
 import { useAuthStore } from '../store/authStore';
 import { CorporateMinimal } from '../components/Templates/CorporateMinimal';
-import { exportToPDF } from '../services/pdfExportService';
+import { exportToPDF, openPdfBlobInNewTab } from '../services/pdfExportService';
+import { Capacitor } from '@capacitor/core';
 import { sendQuoteEmail } from '../services/quoteEmailService';
 import { ExtractedPage, ServiceReadyData } from '../types';
 import {
@@ -331,7 +332,15 @@ export const QuotePreviewPage: React.FC = () => {
     (async () => {
       try {
         const { enrichMissingQtyUnitsWithAi } = await import('../services/qtyUnitAiService');
-        const enriched = await enrichMissingQtyUnitsWithAi(itemsSnapshot);
+        const user = useAuthStore.getState().user;
+        
+        const trace = user ? {
+          userId: user.id,
+          userEmail: user.email,
+          userName: user.user_metadata?.full_name || user.email?.split('@')[0]
+        } : undefined;
+
+        const enriched = await enrichMissingQtyUnitsWithAi(itemsSnapshot, trace);
         const unitById = new Map(
           enriched
             .filter((i) => (i.quantityUnit || '').trim() && (i.quantityUnit || '').trim().toUpperCase() !== 'NA')
@@ -616,19 +625,29 @@ export const QuotePreviewPage: React.FC = () => {
     const pdfAttachments: { pdfBlob: Blob; filename: string }[] = [];
     setIsSendingEmail(true);
 
+    // Native: open via FileOpener as each file is saved.
+    // Web: generate first, then open each PDF in a new tab only after ready.
+    const openDuringExport = Capacitor.isNativePlatform();
+
     try {
       if (!hasExecutiveSummary) {
-        const result = await handleExportPDF('full', true);
+        const result = await handleExportPDF('full', openDuringExport);
         if (result) pdfAttachments.push(result);
       } else {
-        const summaryResult = await handleExportPDF('summary', true);
-        const detailedResult = await handleExportPDF('detailed', true);
+        const summaryResult = await handleExportPDF('summary', openDuringExport);
+        const detailedResult = await handleExportPDF('detailed', openDuringExport);
         if (summaryResult) pdfAttachments.push(summaryResult);
         if (detailedResult) pdfAttachments.push(detailedResult);
       }
 
       if (!pdfAttachments.length) {
         throw new Error('Could not generate PDF. Please try again.');
+      }
+
+      if (!openDuringExport) {
+        for (const attachment of pdfAttachments) {
+          openPdfBlobInNewTab(attachment.pdfBlob, attachment.filename);
+        }
       }
 
       const liveQuote = useAppStore.getState().currentQuote ?? currentQuote;

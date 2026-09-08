@@ -159,8 +159,8 @@ export function buildExecutiveSummaryRows(items: QuoteItem[]): ExecutiveSummaryR
     }
 
     const rawServiceId =
-      group.find((i) => i.serviceId?.trim())?.serviceId?.trim() ||
       group.find((i) => i.serviceName?.trim())?.serviceName?.trim() ||
+      group.find((i) => i.serviceId?.trim())?.serviceId?.trim() ||
       extractServiceType(primary.description);
     const serviceId = formatServiceIdDisplay(rawServiceId);
 
