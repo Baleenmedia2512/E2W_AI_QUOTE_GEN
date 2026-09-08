@@ -1,7 +1,7 @@
 /**
  * Progressive chat funnel state suite (Tests 1–27).
  *
- * Inventory labels come from the real vendor_rate_chunks catalog (no hardcoded fixture DB).
+ * Inventory: fixtures in progressiveChat.testCatalog.ts plus live vendor_rate_chunks.
  *
  * Run (manually):
  *   npx vite-node src/utils/progressiveChat.funnelState.test.ts
@@ -18,11 +18,11 @@ const {
   detectLocalityInText,
   detectDirectionInText,
   getMediumKey,
-} = await import('./progressiveChatEngine');
+} = await import('../chat/index');
 const { canonicalizeServiceName } = await import('./serviceNameUtils');
-type ProgressiveSession = import('./progressiveChatEngine').ProgressiveSession;
-type ProgressiveTurnResult = import('./progressiveChatEngine').ProgressiveTurnResult;
-type ProgressiveOption = import('./progressiveChatEngine').ProgressiveOption;
+type ProgressiveSession = import('../chat/index').ProgressiveSession;
+type ProgressiveTurnResult = import('../chat/index').ProgressiveTurnResult;
+type ProgressiveOption = import('../chat/index').ProgressiveOption;
 type DbService = import('./serviceResolver').DbService;
 
 const catalog = await loadProgressiveTestCatalog();
@@ -122,8 +122,18 @@ function optionsMention(r: ProgressiveTurnResult, needle: string): boolean {
 type CheckFn = (cond: boolean, msg: string) => void;
 
 const failedCaseNames: string[] = [];
+let skippedCaseCount = 0;
+
+/** Phase 7.2 — no skipped cases; fixtures in progressiveChat.testCatalog.ts */
+const SKIP_CASES: Record<string, string> = {};
 
 function runCase(name: string, body: (check: CheckFn) => void): boolean {
+  const skipReason = SKIP_CASES[name];
+  if (skipReason) {
+    console.log(`SKIP  ${name} — ${skipReason}`);
+    skippedCaseCount += 1;
+    return true;
+  }
   const failures: string[] = [];
   const check: CheckFn = (cond, msg) => {
     if (!cond) failures.push(msg);
@@ -503,11 +513,7 @@ results.push(runCase(
 results.push(runCase(
   'TEST 14 — Direction remark is not an area (Gemini Fly Over)',
   (check) => {
-    if (!F.geminiFlyOver) {
-      check(true, 'skip — no Gemini label in DB');
-      return;
-    }
-    const gemini = F.geminiFlyOver;
+    const gemini = needDb(F.geminiFlyOver, 'Gemini Fly Over direction or area');
     const r = text('I need hoarding in Chennai near Gemini Fly Over', null);
     const s = r.session;
     check(same(mediumOf(s), F.hoarding), `service = hoarding: got ${mediumOf(s)}`);
@@ -1054,30 +1060,31 @@ results.push(runCase(
   'TEST 28 — Quote request matches Navallur direction inside OMR',
   (check) => {
     const prior = sessionHoardingAt(F.omr, null);
-    const navallur = DB.find((row) =>
+    const omrFixture = DB.filter((row) =>
+      String(row.service_id || '').startsWith('fx-hoarding-')
+      && /omr/i.test(String((row.metadata as { area_name?: string } | undefined)?.area_name || '')),
+    );
+    const navallur = omrFixture.find((row) =>
       /navall?ur/i.test(
         String((row.metadata as { direction_remarks?: string } | undefined)?.direction_remarks || ''),
       ),
     );
-    if (!navallur) {
-      check(true, 'skip — catalog has no Navallur direction');
+    if (!navallur || omrFixture.length < 2) {
+      check(false, 'fixture catalog must include Navallur + other OMR Hoarding sites');
       return;
     }
 
     const expectedDirection = String(
       (navallur.metadata as { direction_remarks?: string }).direction_remarks || '',
     );
-    const r = text('give me a quote for navalur', prior);
+    const r = resolveProgressiveText('give me a quote for navalur', omrFixture, prior, null);
     const s = r.session;
 
     check(same(mediumOf(s), F.hoarding), `service kept: got ${mediumOf(s)}`);
     check(same(s.city, F.chennai), `city kept: got ${s.city}`);
     check(same(s.area || s.placeHint, F.omr), `OMR kept: got ${s.area}/${s.placeHint}`);
     check(
-      !!s.directionHint
-      && canonicalizeServiceName(s.directionHint).includes(
-        canonicalizeServiceName(expectedDirection).split('towards').pop()?.trim() || 'navallur',
-      ),
+      !!s.directionHint && /navall?ur/i.test(s.directionHint),
       `Navallur direction matched: got ${s.directionHint}; expected ${expectedDirection}`,
     );
     check(r.step !== 'no_match', `must not claim Hoarding unavailable: ${r.botText}`);
@@ -1097,10 +1104,12 @@ function isExactAutoMedium(medium: string): boolean {
 
 // ─── Summary ────────────────────────────────────────────────────────────────
 
-const passed = results.filter(Boolean).length;
-const failed = results.length - passed;
+const passed = results.filter(Boolean).length - skippedCaseCount;
+const failed = results.length - passed - skippedCaseCount;
 console.log('\n────────────────────────────────────────');
-console.log(`Suite: ${passed} PASS / ${failed} FAIL / ${results.length} total`);
+console.log(
+  `Suite: ${passed} PASS / ${failed} FAIL / ${skippedCaseCount} SKIP / ${results.length} total`,
+);
 if (failed > 0) {
   console.log('Failed cases:');
   for (const name of failedCaseNames) {

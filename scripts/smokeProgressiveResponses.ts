@@ -24,8 +24,8 @@ const {
   resolveProgressiveText,
   continueProgressiveAction,
   detectDirectionInText,
-} = await import('../src/utils/progressiveChatEngine');
-type ProgressiveSession = import('../src/utils/progressiveChatEngine').ProgressiveSession;
+} = await import('../src/chat/index');
+type ProgressiveSession = import('../src/chat/index').ProgressiveSession;
 import type { DbService } from '../src/utils/serviceResolver';
 
 function svc(

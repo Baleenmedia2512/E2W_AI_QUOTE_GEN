@@ -29,9 +29,9 @@ const memoryStore: Record<string, string> = {};
   },
 } as Storage;
 
-const { resolveProgressiveText } = await import('./progressiveChatEngine');
+const { resolveProgressiveText } = await import('../chat/index');
 const { canonicalizeServiceName } = await import('./serviceNameUtils');
-type ProgressiveSession = import('./progressiveChatEngine').ProgressiveSession;
+type ProgressiveSession = import('../chat/index').ProgressiveSession;
 type DbService = import('./serviceResolver').DbService;
 
 function svc(
@@ -42,7 +42,10 @@ function svc(
   return {
     service_id: id,
     service_name: name,
-    metadata: meta,
+    metadata: {
+      ...meta,
+      pricing: { display_price: 1000 },
+    },
   };
 }
 

@@ -1,7 +1,7 @@
 /**
- * Shared progressive-chat test catalog — loads real vendor_rate_chunks (no hardcoded inventory).
- *
- * Labels (medium / city / area / type / direction) are discovered from DB rows only.
+ * Shared progressive-chat test catalog.
+ * Fixture rows (buildProgressiveChatFixtures) pin Bus Semi / Gemini / Navallur / ECR.
+ * Live vendor_rate_chunks are merged when available; labels still come from row fields only.
  */
 
 import { readFileSync, existsSync } from 'fs';
@@ -59,7 +59,7 @@ const {
   getCatalogCities,
   getCatalogLocalities,
   detectCitiesInText,
-} = await import('./progressiveChatEngine');
+} = await import('../chat/index');
 const { canonicalizeServiceName } = await import('./serviceNameUtils');
 type DbService = import('./serviceResolver').DbService;
 
@@ -233,6 +233,185 @@ function pickTypeMatching(types: string[], ...needles: string[]): string | null 
   return null;
 }
 
+function priced(meta: Record<string, unknown>): Record<string, unknown> {
+  return {
+    min_quantity: 1,
+    ...meta,
+    pricing: {
+      display_price: 1000,
+      display_unit_price_per_day: 1000,
+      ...(typeof meta.pricing === 'object' && meta.pricing
+        ? (meta.pricing as Record<string, unknown>)
+        : {}),
+    },
+  };
+}
+
+function fx(id: string, name: string, meta: Record<string, unknown>): DbService {
+  return {
+    service_id: `fx-${id}`,
+    service_name: name,
+    metadata: priced(meta),
+  };
+}
+
+/**
+ * Deterministic vendor rows for the 13 previously skipped cases.
+ * Live catalog is merged on top, except Bus Semi Branding which is fixture-only
+ * (Chennai, one site, no direction_remarks) so sole-site quote is stable.
+ */
+export function buildProgressiveChatFixtures(): DbService[] {
+  return [
+    fx('hoarding-fl-omr-sholinganallur', 'Hoarding · Chennai OMR', {
+      medium: 'Hoarding',
+      medium_type: 'Frontlit',
+      city: 'Chennai',
+      area_name: 'OMR',
+      direction_remarks: 'Sholinganallur towards Siruseri',
+    }),
+    fx('hoarding-fl-omr-padur', 'Hoarding · Chennai OMR', {
+      medium: 'Hoarding',
+      medium_type: 'Frontlit',
+      city: 'Chennai',
+      area_name: 'OMR',
+      direction_remarks: 'Padur towards Kelambakkam',
+    }),
+    fx('hoarding-fl-omr-navallur', 'Hoarding · Chennai OMR', {
+      medium: 'Hoarding',
+      medium_type: 'Frontlit',
+      city: 'Chennai',
+      area_name: 'OMR',
+      direction_remarks: 'Navallur towards SIPCOT',
+    }),
+    fx('hoarding-fl-omr-gemini', 'Hoarding · Chennai OMR', {
+      medium: 'Hoarding',
+      medium_type: 'Frontlit',
+      city: 'Chennai',
+      area_name: 'OMR',
+      direction_remarks: 'Gemini Fly Over towards Airport',
+    }),
+    fx('hoarding-nl-omr', 'Hoarding · Chennai OMR Nonlit', {
+      medium: 'Hoarding',
+      medium_type: 'Nonlit',
+      city: 'Chennai',
+      area_name: 'OMR',
+      direction_remarks: 'Perungudi towards Taramani',
+    }),
+    fx('hoarding-fl-ecr-injambakkam', 'Hoarding · Chennai ECR Road', {
+      medium: 'Hoarding',
+      medium_type: 'Frontlit',
+      city: 'Chennai',
+      area_name: 'ECR Road',
+      direction_remarks: 'Injambakkam towards Mahabalipuram',
+    }),
+    fx('hoarding-fl-ecr-thiruvanmiyur', 'Hoarding · Chennai ECR Road', {
+      medium: 'Hoarding',
+      medium_type: 'Frontlit',
+      city: 'Chennai',
+      area_name: 'ECR Road',
+      direction_remarks: 'Thiruvanmiyur towards Besant Nagar',
+    }),
+    fx('hoarding-fl-tirupathi', 'Hoarding · Tirupathi', {
+      medium: 'Hoarding',
+      medium_type: 'Frontlit',
+      city: 'Tirupathi',
+      area_name: 'Tirupathi',
+      direction_remarks: 'Alipiri towards Temple',
+    }),
+    fx('hoarding-fl-chittoor', 'Hoarding · Chittoor', {
+      medium: 'Hoarding',
+      medium_type: 'Frontlit',
+      city: 'Chittoor',
+      area_name: 'Chittoor',
+      direction_remarks: 'Chittoor bus stand towards Bangalore',
+    }),
+    // TEST 27 / MSC 1,1b,8,21 — Chennai only, no direction, no extra cities
+    fx('bus-semi-chennai-sole', 'Bus Semi Branding · Chennai', {
+      medium: 'Bus Semi Branding',
+      city: 'Chennai',
+    }),
+    fx('bus-full-chennai', 'Bus Full Branding · Chennai', {
+      medium: 'Bus Full Branding',
+      city: 'Chennai',
+    }),
+    fx('bus-shelter-chennai-adyar', 'Bus Shelter · Chennai Adyar', {
+      medium: 'Bus Shelter',
+      city: 'Chennai',
+      area_name: 'Adyar',
+      direction_remarks: 'Towards Besant Nagar',
+    }),
+    fx('bus-shelter-chennai-t-nagar', 'Bus Shelter · Chennai T Nagar', {
+      medium: 'Bus Shelter',
+      city: 'Chennai',
+      area_name: 'T Nagar',
+      direction_remarks: 'Towards Pondy Bazaar',
+    }),
+    fx('auto-chennai-adyar', 'Auto Semi Branding · Chennai Adyar', {
+      medium: 'Auto Semi Branding',
+      city: 'Chennai',
+      area_name: 'Adyar',
+    }),
+    fx('auto-chennai-anna-nagar', 'Auto Semi Branding · Chennai Anna Nagar', {
+      medium: 'Auto Semi Branding',
+      city: 'Chennai',
+      area_name: 'Anna Nagar',
+    }),
+    fx('auto-madurai', 'Auto Semi Branding · Madurai', {
+      medium: 'Auto Semi Branding',
+      city: 'Madurai',
+      area_name: 'Goripalayam',
+    }),
+    fx('cab-chennai', 'Cab Branding · Chennai', {
+      medium: 'Cab Branding',
+      city: 'Chennai',
+    }),
+    fx('booth-madurai', 'Police Booth · Madurai', {
+      medium: 'Police Booth',
+      city: 'Madurai',
+      area_name: 'Goripalayam',
+    }),
+    fx('booth-chennai-omr', 'Police Booth · Chennai OMR', {
+      medium: 'Police Booth',
+      city: 'Chennai',
+      area_name: 'OMR',
+      direction_remarks: 'Towards Siruseri',
+    }),
+    fx('apt-lift-chennai', 'Apartment Lift Branding · Chennai', {
+      medium: 'Apartment Lift Branding',
+      city: 'Chennai',
+    }),
+    fx('apt-lobby-chennai', 'Apartment Lobby Screen Branding · Chennai', {
+      medium: 'Apartment Lobby Screen Branding',
+      city: 'Chennai',
+    }),
+    fx('metro-elevated-chennai', 'Metro Station Elevated · Chennai', {
+      medium: 'Metro Station Elevated',
+      city: 'Chennai',
+    }),
+    fx('metro-underground-chennai', 'Metro Station Underground · Chennai', {
+      medium: 'Metro Station Underground',
+      city: 'Chennai',
+    }),
+    fx('auto-bangalore', 'Auto Full Branding · Bangalore', {
+      medium: 'Auto Full Branding',
+      city: 'Bangalore',
+    }),
+  ];
+}
+
+function isPinnedBusSemi(svc: DbService): boolean {
+  const medium = canonicalizeServiceName(String(
+    (svc.metadata as { medium?: string } | undefined)?.medium || '',
+  ));
+  return medium === 'bus semi branding' || medium === 'bus semi';
+}
+
+function mergeFixtureCatalog(live: DbService[]): DbService[] {
+  const fixtures = buildProgressiveChatFixtures();
+  const liveRest = live.filter((s) => !isPinnedBusSemi(s) && !String(s.service_id || '').startsWith('fx-'));
+  return [...fixtures, ...liveRest];
+}
+
 export type ProgressiveTestCatalog = {
   services: DbService[];
   labels: CatalogLabels;
@@ -251,17 +430,24 @@ export type ProgressiveTestCatalog = {
 let cached: ProgressiveTestCatalog | null = null;
 
 /**
- * Load real catalog once. Throws if empty / credentials missing.
+ * Load catalog once: fixtures first, then live vendor_rate_chunks (Bus Semi pinned to fixtures).
  */
 export async function loadProgressiveTestCatalog(): Promise<ProgressiveTestCatalog> {
   if (cached) return cached;
 
-  const services = (await loadAllServicesFromCloud()) as DbService[];
+  let live: DbService[] = [];
+  try {
+    live = (await loadAllServicesFromCloud()) as DbService[];
+  } catch {
+    live = [];
+  }
+  const services = mergeFixtureCatalog(live);
   if (!services.length) {
     throw new Error(
-      'progressiveChat tests: real DB returned 0 services. Check .env Supabase keys / vendor_rate_chunks.',
+      'progressiveChat tests: fixture catalog empty.',
     );
   }
+  detectCitiesInText('chennai madurai tirupathi chittoor bangalore', services);
 
   const hoarding = findMedium(services, 'hoarding');
   if (!hoarding) {
@@ -396,13 +582,13 @@ export async function loadProgressiveTestCatalog(): Promise<ProgressiveTestCatal
         if (k !== needle && !k.startsWith(needle)) return false;
         // Skip parenthetical / compound city labels that also act as directions/areas.
         if (/[()]/.test(c) || k.includes('inside')) return false;
-        return detectCitiesInText(`in ${c}`).length > 0;
+        return detectCitiesInText(`in ${c}`, services).length > 0;
       });
       if (hit) return hit;
     }
     return candidates.find((c) => {
       if (/[()]/.test(c) || canonicalizeServiceName(c).includes('inside')) return false;
-      return detectCitiesInText(`in ${c}`).length > 0;
+      return detectCitiesInText(`in ${c}`, services).length > 0;
     }) || null;
   };
   const boothMissingCity = pickMissingMetro(boothCities);

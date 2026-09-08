@@ -1,158 +1,357 @@
 import type { ResolvedLocation } from '../types/location';
+
 import type { DbService } from '../utils/serviceResolver';
+
+import { compactFunnelReply, copyGreeting } from './funnel/copy';
+
 import {
+
   detectUnresolvedPlaceAttempt,
-  parseServiceSegments,
-  resolveProgressiveTextLegacy,
-  type IntentOverlay,
-  type ProgressiveSession,
-  type ProgressiveTurnResult,
-} from '../utils/progressiveChatEngine';
-import { filterCatalog } from './filterCatalog';
+
+  replyUnresolvedPlace,
+
+  startCatalogueBrowse,
+
+} from './funnel/location';
+
+import { resolveTextTurn } from './funnel/textTurn';
+
 import { parseMessage, parseMessageSync } from './parseIntent';
+
 import { parseResultToIntent } from './parseToIntent';
-import { runBatchTextTurn } from './queue';
-import { resolveNextStep } from './resolveNextStep';
-import { buildSessionFromParse } from './sessionFromParse';
-import type { ParseResult } from './types';
+
+import { buildQueue, runBatchTextTurn } from './queue';
+
+import type { IntentOverlay, ParseResult, ProgressiveSession, ProgressiveTurnResult } from './types';
+
+
 
 export function isBatchMessage(text: string, services: DbService[]): boolean {
-  return parseServiceSegments(text, services).length >= 2;
+
+  const { isBatch } = buildQueue(text, services);
+
+  return isBatch;
+
 }
 
-function shouldTryGoldenRule(
+
+
+function greetingOrHelpTurn(
+
   parsed: ParseResult,
+
   text: string,
-  prior?: ProgressiveSession | null,
-  intent?: IntentOverlay | null,
-): boolean {
-  if (parsed.kind !== 'quote') return false;
-  if (parsed.ambiguous) return false;
-  if (parsed.segments.length !== 1) return false;
-  const seg = parsed.segments[0];
-  if (!seg?.service) return false;
 
-  const hasResolved = !!(intent?.resolvedLocation ?? prior?.resolvedLocation);
-  const city = parsed.city || seg.city || prior?.city;
-  const place = parsed.areaHint || seg.place || prior?.area || prior?.placeHint;
-
-  // Geocode-only or place-first → legacy buildPlaceOfferTurn / locality lock
-  if (hasResolved && !city) return false;
-  if (place && !city) return false;
-  if (place && city) return false;
-
-  // Type keywords + combined city/area → legacy detectExactCatalogSelection
-  if (/\b(front\s*lit|non\s*lit|back\s*lit|\bnl\b|\bfl\b)\b/i.test(text)) return false;
-
-  // Near-place phrasing needs legacy direction/area split
-  if (/\bnear\b/i.test(text)) return false;
-
-  // Mid-funnel session → legacy continuation rules
-  if (prior?.medium || prior?.city || prior?.area) return false;
-
-  return true;
-}
-
-function runSingleServiceTurn(
-  parsed: ParseResult,
-  text: string,
-  services: DbService[],
-  prior: ProgressiveSession | null | undefined,
   resolvedLocation?: ResolvedLocation | null,
-  intent?: IntentOverlay | null,
+
 ): ProgressiveTurnResult | null {
-  if (!shouldTryGoldenRule(parsed, text, prior, intent)) return null;
 
-  const session = buildSessionFromParse(parsed, prior, text, resolvedLocation);
-  const pool = filterCatalog(services, session);
-  if (!pool.length) return null;
+  if (parsed.kind === 'greeting') {
 
-  return resolveNextStep(
-    {
-      ...session,
-      candidateServiceIds: pool.map((s) => s.service_id),
-    },
-    services,
-    { allowAutoFinalize: !prior },
-  );
+    return {
+
+      step: 'small_talk',
+
+      botText: copyGreeting(text),
+
+      options: [],
+
+      session: { originalText: text, qty: null, resolvedLocation: resolvedLocation ?? undefined },
+
+    };
+
+  }
+
+  if (parsed.kind === 'help') {
+
+    return {
+
+      step: 'small_talk',
+
+      botText: compactFunnelReply('Tell me the service or city you need.'),
+
+      options: [],
+
+      session: { originalText: text, qty: null, resolvedLocation: resolvedLocation ?? undefined },
+
+    };
+
+  }
+
+  return null;
+
 }
 
-/** Sync turn resolver — used when USE_NEW_CHAT_ENGINE routes via resolveProgressiveText. */
-export function handleChatTurnSync(
+
+
+function browseTurn(
+
+  parsed: ParseResult,
+
   text: string,
+
   services: DbService[],
+
   prior?: ProgressiveSession | null,
+
+  resolvedLocation?: ResolvedLocation | null,
+
+): ProgressiveTurnResult | null {
+
+  // Mid-funnel city token = city change, not catalogue browse
+
+  if (prior?.medium || prior?.browseToken) return null;
+
+  if (parsed.kind === 'services_browse') {
+
+    return startCatalogueBrowse(
+
+      'services',
+
+      {
+
+        ...(prior || {}),
+
+        originalText: text,
+
+        qty: prior?.qty ?? null,
+
+        resolvedLocation: resolvedLocation ?? prior?.resolvedLocation,
+
+      },
+
+      services,
+
+      null,
+
+    );
+
+  }
+
+  if (parsed.kind === 'city_browse' && parsed.city) {
+
+    return startCatalogueBrowse(
+
+      'cities',
+
+      {
+
+        ...(prior || {}),
+
+        originalText: text,
+
+        city: parsed.city,
+
+        qty: prior?.qty ?? null,
+
+        resolvedLocation: resolvedLocation ?? prior?.resolvedLocation,
+
+      },
+
+      services,
+
+      null,
+
+    );
+
+  }
+
+  return null;
+
+}
+
+
+
+function singleServiceTurn(
+
+  parsed: ParseResult,
+
+  text: string,
+
+  services: DbService[],
+
+  prior?: ProgressiveSession | null,
+
   intent?: IntentOverlay | null,
+
+  resolvedLocation?: ResolvedLocation | null,
+
 ): ProgressiveTurnResult {
-  if (isBatchMessage(text, services)) {
-    return runBatchTextTurn(text, services, prior, intent);
-  }
 
-  const parsed = parseMessageSync(text, prior, services);
-  const overlay: IntentOverlay = {
-    ...parseResultToIntent(parsed, intent?.resolvedLocation ?? prior?.resolvedLocation),
-    ...intent,
-    shortReply: null,
-  };
+  const greeting = greetingOrHelpTurn(parsed, text, resolvedLocation);
 
-  if (parsed.kind === 'greeting' || parsed.kind === 'help' || parsed.ambiguous) {
-    return resolveProgressiveTextLegacy(text, services, prior, overlay);
-  }
+  if (greeting) return greeting;
+
+
+
+  const browse = browseTurn(parsed, text, services, prior, resolvedLocation);
+
+  if (browse) return browse;
+
+
 
   if (detectUnresolvedPlaceAttempt(text, services)) {
-    return resolveProgressiveTextLegacy(text, services, prior, overlay);
+
+    const place = detectUnresolvedPlaceAttempt(text, services)!;
+
+    return replyUnresolvedPlace(place, services, text, null);
+
   }
 
-  const golden = runSingleServiceTurn(
-    parsed,
-    text,
-    services,
-    prior,
-    overlay.resolvedLocation ?? undefined,
-    overlay,
-  );
-  if (golden && golden.step !== 'no_match') {
-    return golden;
-  }
 
-  return resolveProgressiveTextLegacy(text, services, prior, overlay);
+
+  const overlay: IntentOverlay = {
+
+    ...parseResultToIntent(parsed, resolvedLocation),
+
+    ...intent,
+
+    shortReply: null,
+
+  };
+
+
+
+  return resolveTextTurn(text, services, prior, overlay);
+
 }
+
+
+
+/** Sync turn resolver — used when USE_NEW_CHAT_ENGINE routes via resolveProgressiveText. */
+
+export function handleChatTurnSync(
+
+  text: string,
+
+  services: DbService[],
+
+  prior?: ProgressiveSession | null,
+
+  intent?: IntentOverlay | null,
+
+): ProgressiveTurnResult {
+
+  if (isBatchMessage(text, services)) {
+
+    return runBatchTextTurn(text, services, prior, intent);
+
+  }
+
+
+
+  const parsed = parseMessageSync(text, prior, services);
+
+  const resolvedLocation = intent?.resolvedLocation ?? prior?.resolvedLocation ?? undefined;
+
+
+
+  return singleServiceTurn(parsed, text, services, prior, intent, resolvedLocation);
+
+}
+
+
 
 export async function handleChatTurn(
+
   text: string,
+
   services: DbService[],
+
   prior?: ProgressiveSession | null,
+
   opts?: {
+
     resolvedLocation?: ResolvedLocation | null;
+
     skipAi?: boolean;
+
     intent?: IntentOverlay | null;
+
   },
+
 ): Promise<ProgressiveTurnResult> {
+
   if (isBatchMessage(text, services)) {
+
     return runBatchTextTurn(text, services, prior, {
+
       ...opts?.intent,
+
       resolvedLocation: opts?.resolvedLocation ?? opts?.intent?.resolvedLocation,
+
       shortReply: null,
+
     });
+
   }
+
+
 
   const parsed = await parseMessage(text, prior, services, {
+
     skipAi: opts?.skipAi,
+
   });
+
+
 
   if (parsed.segments.length >= 2) {
+
     return runBatchTextTurn(text, services, prior, {
+
       ...parseResultToIntent(parsed, opts?.resolvedLocation),
+
       ...opts?.intent,
+
       resolvedLocation: opts?.resolvedLocation ?? opts?.intent?.resolvedLocation,
+
       shortReply: null,
+
     });
+
   }
 
-  return handleChatTurnSync(text, services, prior, {
-    ...parseResultToIntent(parsed, opts?.resolvedLocation),
-    ...opts?.intent,
-    resolvedLocation: opts?.resolvedLocation ?? opts?.intent?.resolvedLocation,
-    shortReply: null,
-  });
+
+
+  const resolvedLocation =
+
+    opts?.resolvedLocation
+
+    ?? opts?.intent?.resolvedLocation
+
+    ?? prior?.resolvedLocation
+
+    ?? undefined;
+
+
+
+  return singleServiceTurn(
+
+    parsed,
+
+    text,
+
+    services,
+
+    prior,
+
+    {
+
+      ...parseResultToIntent(parsed, resolvedLocation),
+
+      ...opts?.intent,
+
+      resolvedLocation,
+
+      shortReply: null,
+
+    },
+
+    resolvedLocation,
+
+  );
+
 }
+
+

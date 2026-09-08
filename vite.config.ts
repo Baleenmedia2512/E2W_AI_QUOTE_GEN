@@ -5,6 +5,17 @@ import path from 'path';
 export default defineConfig({
   base: './',
   plugins: [react()],
+  server: {
+    proxy: {
+      // Dev-only: same-origin proxy so AI Token Monitor POSTs are not blocked by CORS.
+      '/api/token-monitor': {
+        target: 'https://e2-w-ai-token-monitor.vercel.app/api',
+        changeOrigin: true,
+        secure: true,
+        rewrite: (path) => path.replace(/^\/api\/token-monitor/, ''),
+      },
+    },
+  },
   resolve: {
     alias: {
       '@': path.resolve(__dirname, './src'),

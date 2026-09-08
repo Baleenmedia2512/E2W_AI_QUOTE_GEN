@@ -22,10 +22,9 @@ import {
   getCatalogTypeKeys,
   parseDurationFromText,
   parseQtyFromText,
-  parseServiceSegments,
-  type BatchSegment,
-  type ProgressiveSession,
-} from '../utils/progressiveChatEngine';
+} from './funnel';
+import { parseServiceSegments } from './funnel/batchResolve';
+import type { BatchSegment, ProgressiveSession } from './funnel/types';
 import type { ParseKind, ParsedSegment, ParseResult, ParseSession } from './types';
 
 function validateServiceToken(

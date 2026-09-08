@@ -66,14 +66,15 @@ import {
 } from '../../utils/confirmedQuotePipeline';
 import type { DbService } from '../../utils/serviceResolver';
 import {
+  continueChatAction,
   parseQtyFromText,
   resolveMinQtyEdits,
+  resolvePriorSession,
+  runProgressiveUserText,
   type ProgressiveOption,
   type ProgressiveSession,
   type ProgressiveTurnResult,
-} from '../../utils/progressiveChatEngine';
-import { continueChatAction } from '../../chat/continueChatAction';
-import { resolvePriorSession, runProgressiveUserText } from '../../chat/runProgressiveUserText';
+} from '../../chat';
 
 // ═══════════════════════════════════════════════════════════════════════
 // Progressive DB chat (short friendly replies). Gemini optional for intent only.

@@ -1,7 +1,7 @@
 /**
  * Progressive chat — multi-service + multi-city batch suite.
  *
- * Inventory labels come from the real vendor_rate_chunks catalog (no hardcoded fixture DB).
+ * Inventory: fixtures in progressiveChat.testCatalog.ts plus live vendor_rate_chunks.
  *
  * Run (manually):
  *   npx vite-node src/utils/progressiveChat.multiServiceCity.test.ts
@@ -15,10 +15,10 @@ const {
   getMediumKey,
   getDbCityLabel,
   getDirectionLabel,
-} = await import('./progressiveChatEngine');
+} = await import('../chat/index');
 const { canonicalizeServiceName } = await import('./serviceNameUtils');
-type ProgressiveSession = import('./progressiveChatEngine').ProgressiveSession;
-type ProgressiveTurnResult = import('./progressiveChatEngine').ProgressiveTurnResult;
+type ProgressiveSession = import('../chat/index').ProgressiveSession;
+type ProgressiveTurnResult = import('../chat/index').ProgressiveTurnResult;
 type DbService = import('./serviceResolver').DbService;
 
 const catalog = await loadProgressiveTestCatalog();
@@ -88,8 +88,18 @@ function botMentions(r: ProgressiveTurnResult, re: RegExp): boolean {
 type CheckFn = (cond: boolean, msg: string) => void;
 
 const failedCaseNames: string[] = [];
+let skippedCaseCount = 0;
+
+/** Phase 7.2 — no skipped cases; fixtures in progressiveChat.testCatalog.ts */
+const SKIP_CASES: Record<string, string> = {};
 
 function runCase(name: string, body: (check: CheckFn) => void): boolean {
+  const skipReason = SKIP_CASES[name];
+  if (skipReason) {
+    console.log(`SKIP  ${name} — ${skipReason}`);
+    skippedCaseCount += 1;
+    return true;
+  }
   const failures: string[] = [];
   const check: CheckFn = (cond, msg) => {
     if (!cond) failures.push(msg);
@@ -117,7 +127,7 @@ function assertBusSemiSkipMaduraiContinueChennai(
   check: CheckFn,
   phrase: string,
 ): void {
-  const cities = detectCitiesInText(phrase);
+  const cities = detectCitiesInText(phrase, DB);
   check(
     cities.length >= 2
     && cities.some((c) => same(c, F.madurai))
@@ -365,7 +375,7 @@ results.push(runCase(
     const shelterMed = catalog.mediums.find((m) =>
       canonicalizeServiceName(m).includes('bus shelter'),
     );
-    check(!!shelterMed, 'DB must include a Bus Shelter medium');
+    check(!!shelterMed, 'fixture catalog must include a Bus Shelter medium');
     if (!shelterMed) return;
 
     const first = text(
@@ -519,7 +529,7 @@ results.push(runCase(
 results.push(runCase(
   'MSC 8 — Typo maddurai + Chennai Bus Semi → same as MSC 1',
   (check) => {
-    const cities = detectCitiesInText('bus semi in maddurai and chennai');
+    const cities = detectCitiesInText('bus semi in maddurai and chennai', DB);
     check(
       cities.some((c) => same(c, F.madurai)),
       `typo maddurai → Madurai: got ${cities.join('|')}`,
@@ -1255,7 +1265,7 @@ results.push(runCase(
     );
 
     if (!first || !second) {
-      check(true, 'skip — need 2 catalog mediums with 2+ areas in the same city');
+      check(false, 'fixture catalog must include 2 mediums with 2+ areas in the same city');
       return;
     }
 
@@ -1344,10 +1354,12 @@ results.push(runCase(
 
 // ─── Summary ────────────────────────────────────────────────────────────────
 
-const passed = results.filter(Boolean).length;
-const failed = results.length - passed;
+const passed = results.filter(Boolean).length - skippedCaseCount;
+const failed = results.length - passed - skippedCaseCount;
 console.log('\n────────────────────────────────────────');
-console.log(`Suite: ${passed} PASS / ${failed} FAIL / ${results.length} total`);
+console.log(
+  `Suite: ${passed} PASS / ${failed} FAIL / ${skippedCaseCount} SKIP / ${results.length} total`,
+);
 if (failed > 0) {
   console.log('Failed cases:');
   for (const name of failedCaseNames) {
