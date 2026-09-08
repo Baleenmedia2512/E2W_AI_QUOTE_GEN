@@ -40,48 +40,91 @@ export const AutocompleteInput: React.FC<AutocompleteInputProps> = ({
   const [suggestions, setSuggestions] = useState<LeadSearchResult[]>([]);
   const [selectedIndex, setSelectedIndex] = useState(-1);
   const [hasSearched, setHasSearched] = useState(false);
+  /** Only search/open while focused — not for pre-filled client.name on Preview mount. */
+  const [isFocused, setIsFocused] = useState(false);
   const inputRef = useRef<HTMLInputElement>(null);
   const listRef = useRef<HTMLDivElement>(null);
+  const blurTimerRef = useRef<number | null>(null);
+  const isFocusedRef = useRef(false);
 
   // Close dropdown when clicking outside
   useOutsideClick({
     ref: listRef,
-    handler: () => setIsOpen(false),
+    handler: () => {
+      isFocusedRef.current = false;
+      setIsOpen(false);
+      setIsFocused(false);
+    },
   });
 
-  // Debounced search
+  // Debounced search — only while the input is focused (skips Preview preload)
   useEffect(() => {
-    const timer = setTimeout(async () => {
-      if (value.length >= 2) {
-        console.log('🔍 Autocomplete: Searching for:', value);
-        setIsLoading(true);
-        setHasSearched(false);
-        const results = await onSearch(value);
-        console.log('✅ Autocomplete: Got results:', results.length, results);
-        setSuggestions(results);
-        setIsOpen(true); // Always open to show results or "no results" message
-        setHasSearched(true);
-        setIsLoading(false);
-        setSelectedIndex(-1);
-      } else {
+    if (!isFocused || value.length < 2) {
+      if (!isFocused) {
+        setIsOpen(false);
+      }
+      if (value.length < 2) {
         setSuggestions([]);
         setIsOpen(false);
         setHasSearched(false);
       }
+      return;
+    }
+
+    const timer = setTimeout(async () => {
+      console.log('🔍 Autocomplete: Searching for:', value);
+      setIsLoading(true);
+      setHasSearched(false);
+      const results = await onSearch(value);
+      console.log('✅ Autocomplete: Got results:', results.length, results);
+      if (!isFocusedRef.current) {
+        setIsLoading(false);
+        return;
+      }
+      setSuggestions(results);
+      setIsOpen(true);
+      setHasSearched(true);
+      setIsLoading(false);
+      setSelectedIndex(-1);
     }, debounceMs);
 
     return () => clearTimeout(timer);
-  }, [value, onSearch, debounceMs]);
+  }, [value, onSearch, debounceMs, isFocused]);
 
   const handleInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     onChange(e.target.value);
   };
 
+  const handleFocus = () => {
+    if (blurTimerRef.current != null) {
+      window.clearTimeout(blurTimerRef.current);
+      blurTimerRef.current = null;
+    }
+    isFocusedRef.current = true;
+    setIsFocused(true);
+  };
+
+  const handleBlur = () => {
+    // Delay so a list-item mousedown/click can run before we tear down
+    blurTimerRef.current = window.setTimeout(() => {
+      isFocusedRef.current = false;
+      setIsFocused(false);
+      setIsOpen(false);
+      blurTimerRef.current = null;
+    }, 150);
+  };
+
   const handleSelect = (lead: LeadSearchResult) => {
+    if (blurTimerRef.current != null) {
+      window.clearTimeout(blurTimerRef.current);
+      blurTimerRef.current = null;
+    }
+    isFocusedRef.current = false;
     onSelect(lead);
     setIsOpen(false);
     setSuggestions([]);
     setSelectedIndex(-1);
+    setIsFocused(false);
   };
 
   const handleKeyDown = (e: React.KeyboardEvent) => {
@@ -127,13 +170,14 @@ export const AutocompleteInput: React.FC<AutocompleteInputProps> = ({
           ref={inputRef}
           value={value}
           onChange={handleInputChange}
+          onFocus={handleFocus}
+          onBlur={handleBlur}
           onKeyDown={handleKeyDown}
           placeholder={placeholder}
           isDisabled={isDisabled}
-          isInvalid={isInvalid}
           bg="white"
           borderWidth="2px"
-          borderColor={isInvalid ? 'red.500' : 'gray.300'}
+          borderColor={isInvalid ? 'red.300' : 'gray.300'}
           fontWeight="500"
           _hover={{ 
             borderColor: 'red.300', 
@@ -180,6 +224,7 @@ export const AutocompleteInput: React.FC<AutocompleteInputProps> = ({
                 bg={selectedIndex === index ? 'red.50' : 'white'}
                 borderBottomWidth={index < suggestions.length - 1 ? '1px' : '0'}
                 borderBottomColor="gray.100"
+                onMouseDown={(e) => e.preventDefault()}
                 onClick={() => handleSelect(lead)}
                 _hover={{ 
                   bg: 'red.50',

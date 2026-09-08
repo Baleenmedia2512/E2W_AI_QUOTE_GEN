@@ -1,5 +1,6 @@
 import { useEffect } from 'react';
 import { useAppStore } from '../store';
+import { useAuthStore } from '../store/authStore';
 
 /**
  * Hook to initialize company database sync
@@ -11,9 +12,15 @@ import { useAppStore } from '../store';
  * 3. Enable real-time sync (optional)
  */
 export const useCompanySync = (enableRealtime: boolean = false) => {
+  const syncCompanyFromDatabase = useAppStore((state) => state.syncCompanyFromDatabase);
+  const enableCompanySync = useAppStore((state) => state.enableCompanySync);
+  const clearCompanyInfo = useAppStore((state) => state.clearCompanyInfo);
+  const userId = useAuthStore((state) => state.user?.id);
+
   useEffect(() => {
-    // Access state directly to prevent "Invalid hook call" if multiple React instances exist
-    const { syncCompanyFromDatabase, enableCompanySync } = useAppStore.getState();
+    // Never retain a previous user's company while auth is changing or logged out.
+    clearCompanyInfo();
+    if (!userId) return;
 
     // Initial sync from database
     console.log('🔄 Initializing company database sync...');
@@ -32,5 +39,5 @@ export const useCompanySync = (enableRealtime: boolean = false) => {
         subscription.unsubscribe();
       }
     };
-  }, [enableRealtime]);
+  }, [syncCompanyFromDatabase, enableCompanySync, clearCompanyInfo, enableRealtime, userId]);
 };

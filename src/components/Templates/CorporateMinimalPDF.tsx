@@ -24,6 +24,8 @@ import { TemplateData } from '../../types/template';
 import { formatRecurringRateUnitLabel, formatUnitRateInr } from '../../utils/rateDisplay';
 import { hyphenateLongWords } from '../../utils/hyphenateLongWords';
 import { getSharedReviewIfAllSame } from '../../utils/reviewGrouping';
+import { formatReviewerDisplayName } from '../../utils/reviewDisplay';
+import { formatQuoteDate } from '../../utils/dateFormat';
 import {
   isMultiServiceQuote,
   groupItemsByServiceType,
@@ -34,7 +36,8 @@ import {
   buildPricingBreakdownLines,
   type ExecutiveSummaryRow,
 } from '../../utils/quoteGrouping';
-import { resolveMergedDisplayTermEntries, formatServiceLabelPrefix, type DisplayTerm } from '../../utils/termsMerge';
+import { formatServiceHeadingDisplay } from '../../utils/serviceHeading';
+import { resolveMergedDisplayTermEntries, groupDisplayTermsBySection, type DisplayTerm } from '../../utils/termsMerge';
 import { s, C } from './CorporateMinimalPDF.styles';
 import type { PdfSpecGroup } from '../../utils/metroSpecParser';
 import { segmentBreakdownFormula } from '../../utils/breakdownFormulaDisplay';
@@ -109,10 +112,7 @@ const formatCurrency = (amount: number) =>
 
 const formatRate = (amount: number) => formatUnitRateInr(amount);
 
-const formatDate = (date: Date | string) => {
-  const d = typeof date === 'string' ? new Date(date) : date;
-  return d.toLocaleDateString('en-IN', { year: 'numeric', month: 'short', day: 'numeric' });
-};
+const formatDate = (date: Date | string) => formatQuoteDate(date);
 
 const ensureHttps = (url: string) => (url.startsWith('http') ? url : `https://${url}`);
 
@@ -222,9 +222,10 @@ const PageFooter: React.FC<{ company: TemplateData['company'] }> = ({ company })
 const Header: React.FC<{
   data: TemplateData;
   showMeta?: boolean;
+  title?: string;
   /** Continuation pages: skip logo + QUOTATION title to maximize table fill. */
   compact?: boolean;
-}> = ({ data, showMeta = true, compact = false }) => {
+}> = ({ data, showMeta = true, title = 'QUOTATION', compact = false }) => {
   const { company, quote } = data;
   return (
     <View>
@@ -233,7 +234,7 @@ const Header: React.FC<{
           <Image style={s.logo} src={company.logo} />
         </View>
       )}
-      {!compact && showMeta && <Text style={s.quoteTitle}>QUOTATION</Text>}
+      {!compact && showMeta && <Text style={s.quoteTitle}>{title}</Text>}
       <View style={s.headerInfoRow}>
         <View style={s.companyDetails}>
           {company.phone && (
@@ -275,55 +276,44 @@ const Header: React.FC<{
   );
 };
 
-/** Client details block — first line left-aligned, overflow fields centered */
+/** Client details — Name + Phone + Email only (no address / GST here). */
 const ClientDetails: React.FC<{ client: TemplateData['client'] }> = ({ client }) => {
   const sep = { color: '#95a5a6' } as const;
-  const primaryFields: React.ReactNode[] = [];
-  const overflowFields: React.ReactNode[] = [];
+  const fields: React.ReactNode[] = [];
 
   if (client.phone) {
-    primaryFields.push(
+    fields.push(
       <Text key="ph">
         <Text style={sep}> | </Text>
         <Text>PH: </Text>
-        <Link style={{ color: C.blue, textDecoration: 'none' }} src={`tel:${client.phone}`}>{client.phone}</Link>
-      </Text>
+        <Link style={{ color: C.blue, textDecoration: 'none' }} src={`tel:${client.phone}`}>
+          {client.phone}
+        </Link>
+      </Text>,
     );
   }
   if (client.email) {
-    overflowFields.push(
+    fields.push(
       <Text key="em">
+        <Text style={sep}> | </Text>
         <Text>Email: </Text>
-        <Link style={{ color: C.blue, textDecoration: 'none', textTransform: 'none' }} src={`mailto:${client.email}`}>
+        <Link
+          style={{ color: C.blue, textDecoration: 'none', textTransform: 'none' }}
+          src={`mailto:${client.email}`}
+        >
           <Text style={{ textTransform: 'none' }}>{client.email}</Text>
         </Link>
-      </Text>
+      </Text>,
     );
-  }
-  if (client.address) {
-    overflowFields.push(<Text key="ad"><Text>Address: {client.address}</Text></Text>);
-  }
-  if (client.gst) {
-    overflowFields.push(<Text key="gst"><Text>GST: {client.gst}</Text></Text>);
   }
 
   return (
     <View style={s.clientSection}>
       <Text style={s.clientInlineRow}>
         <Text style={s.clientHeading}>Quote Prepared For: </Text>
-        <Text style={s.clientName}>{(client.company || client.name).toUpperCase()}</Text>
-        {primaryFields}
+        <Text style={s.clientName}>{(client.company || client.name || '').toUpperCase()}</Text>
+        {fields}
       </Text>
-      {overflowFields.length > 0 && (
-        <Text style={s.clientOverflowRow}>
-          {overflowFields.map((f, i) => (
-            <Text key={i}>
-              {i > 0 && <Text style={sep}> | </Text>}
-              {f}
-            </Text>
-          ))}
-        </Text>
-      )}
     </View>
   );
 };
@@ -716,18 +706,12 @@ const SpecSection: React.FC<{
     return rowIndex === totalRows ? [s.specRow, s.specRowLast] : s.specRow;
   };
 
-  const remarkRowStyle = () => {
-    rowIndex += 1;
-    const base = rowIndex === totalRows ? [s.specRemarkRow, s.specRowLast] : s.specRemarkRow;
-    return base;
-  };
-
   return (
     <View style={s.specTable}>
       {trimmedRemark ? (
-        <View style={remarkRowStyle()}>
+        <View style={s.specRemarkBlock}>
           <Text style={s.specLabel}>Remark</Text>
-          <Text style={s.specRemarkValue}>
+          <Text style={s.specRemarkBlockValue}>
             {hyphenateLongWords(trimmedRemark, 36)}
           </Text>
         </View>
@@ -960,20 +944,20 @@ const DisplaySpecificationBlock: React.FC<{
   const specImagesAfterTables = (leadGroup || hasFields || trimmedRemark) && firstBatch.length > 0;
 
   const remarkRow = trimmedRemark ? (
-    <View style={s.specTable}>
-      <View style={[s.specRemarkRow, !(leadGroup || hasFields) ? s.specRowLast : {}]}>
-        <Text style={s.specLabel}>Remark</Text>
-        <Text style={s.specRemarkValue}>
-          {hyphenateLongWords(trimmedRemark, 36)}
-        </Text>
-      </View>
+    <View style={s.specRemarkBlock}>
+      <Text style={s.specLabel}>Remark</Text>
+      <Text style={s.specRemarkBlockValue}>
+        {hyphenateLongWords(trimmedRemark, 36)}
+      </Text>
     </View>
   ) : null;
 
   return (
     <View wrap={true}>
       {/* Heading stays with remark + first table/field block */}
-      <View wrap={false}>
+      {/* Allow a long remark to flow onto the next PDF page instead of being
+          clipped by a non-wrapping block. */}
+      <View wrap={true}>
         <SubHeading>{heading}</SubHeading>
         {/* Remark first, then Width / Height / Length / other specs */}
         {hasGroups && trimmedRemark ? remarkRow : null}
@@ -1031,7 +1015,8 @@ const StarRating: React.FC<{ count: number }> = ({ count }) => (
 /** Customer review box — matches .review-card in ReferenceImages.css */
 const ReviewBox: React.FC<{ review: ServicePdfData['review'] }> = ({ review }) => {
   if (!review) return null;
-  const initial = review.reviewerName.charAt(0).toUpperCase();
+  const displayName = formatReviewerDisplayName(review.reviewerName);
+  const initial = displayName.charAt(0);
   return (
     <View style={s.reviewBox} wrap={false}>
       {/* Header: avatar + name + stars */}
@@ -1040,7 +1025,7 @@ const ReviewBox: React.FC<{ review: ServicePdfData['review'] }> = ({ review }) =
           <Text style={s.reviewAvatarText}>{initial}</Text>
         </View>
         <View style={s.reviewMeta}>
-          <Text style={s.reviewName}>{review.reviewerName}</Text>
+          <Text style={s.reviewName}>{displayName}</Text>
           <StarRating count={review.starCount} />
         </View>
       </View>
@@ -1057,49 +1042,84 @@ const ReviewBox: React.FC<{ review: ServicePdfData['review'] }> = ({ review }) =
   );
 };
 
-/** One T&C bullet — packs like a table row and may flow page-to-page. */
-const TermRow: React.FC<{ term: DisplayTerm }> = ({ term }) => {
-  const prefix =
-    term.labels.length === 0
-      ? 'General T&C'
-      : formatServiceLabelPrefix(term.labels);
-  return (
-    <View style={s.termItem} wrap={false} minPresenceAhead={14}>
-      <Text style={s.termBullet}>{'•'}</Text>
-      <Text style={s.termText}>
-        {prefix ? (
-          <Text style={s.termServiceLabel}>{`${prefix}: `}</Text>
-        ) : null}
-        <Text style={s.termBody}>{term.text}</Text>
-      </Text>
-    </View>
-  );
-};
+/** One T&C bullet — body only (section heading rendered separately). */
+const TermRow: React.FC<{ term: DisplayTerm }> = ({ term }) => (
+  <View style={s.termItem} wrap={false} minPresenceAhead={14}>
+    <Text style={s.termBullet}>{'•'}</Text>
+    <Text style={s.termText}>
+      <Text style={s.termBody}>{term.text}</Text>
+    </Text>
+  </View>
+);
 
 /**
- * Terms & Conditions — heading never orphans alone.
- * wrap={false} keeps heading + first bullet together (minPresenceAhead on Text
- * alone is unreliable in React-PDF). Continuation uses a seamless joined box
- * so it still reads as one container.
+ * Terms & Conditions — main heading, then per-section headings
+ * (General T&C / service name) with body-only bullets.
+ * wrap={false} keeps each section heading + first bullet together.
  */
-const TermsBlock: React.FC<{ terms: DisplayTerm[] }> = ({ terms }) => {
+const TermsBlock: React.FC<{
+  terms: DisplayTerm[];
+  hideGeneralHeading?: boolean;
+}> = ({ terms, hideGeneralHeading = false }) => {
   if (!terms || terms.length === 0) return null;
-  const [first, ...rest] = terms;
-  const hasMore = rest.length > 0;
+  const sections = groupDisplayTermsBySection(terms);
+  if (sections.length === 0) return null;
+
+  const [firstSection, ...restSections] = sections;
+  const [firstTerm, ...firstRest] = firstSection.terms;
+  const hasContinuation =
+    firstRest.length > 0 || restSections.some((sec) => sec.terms.length > 0);
+
+  const renderSectionBody = (
+    section: { title: string; terms: DisplayTerm[] },
+    opts: { includeHeading: boolean; terms: DisplayTerm[] },
+  ) => (
+    <>
+      {opts.includeHeading ? (
+        <Text style={s.termSectionHeading}>{section.title}</Text>
+      ) : null}
+      {opts.terms.map((term, i) => (
+        <TermRow key={`${section.title}-${i}`} term={term} />
+      ))}
+    </>
+  );
 
   return (
     <View>
       <View wrap={false}>
         <Text style={s.sectionHeading}>Terms & Conditions</Text>
-        <View style={hasMore ? s.termsSectionStart : s.termsSection}>
-          <TermRow term={first} />
+        <View style={hasContinuation ? s.termsSectionStart : s.termsSection}>
+          {firstTerm
+            ? renderSectionBody(firstSection, {
+                includeHeading: !(hideGeneralHeading && firstSection.title === 'General'),
+                terms: [firstTerm],
+              })
+            : null}
         </View>
       </View>
-      {hasMore ? (
+      {hasContinuation ? (
         <View style={s.termsSectionContinued}>
-          {rest.map((term, i) => (
-            <TermRow key={i + 1} term={term} />
+          {firstRest.map((term, i) => (
+            <TermRow key={`${firstSection.title}-rest-${i}`} term={term} />
           ))}
+          {restSections.map((section) => {
+            const [secFirst, ...secRest] = section.terms;
+            return (
+              <View key={section.title}>
+                {secFirst ? (
+                  <View wrap={false}>
+                    {renderSectionBody(section, {
+                      includeHeading: true,
+                      terms: [secFirst],
+                    })}
+                  </View>
+                ) : null}
+                {secRest.map((term, i) => (
+                  <TermRow key={`${section.title}-rest-${i}`} term={term} />
+                ))}
+              </View>
+            );
+          })}
         </View>
       ) : null}
     </View>
@@ -1111,22 +1131,28 @@ const TermsBlock: React.FC<{ terms: DisplayTerm[] }> = ({ terms }) => {
  */
 const BankDetails: React.FC = () => {
   const rows: { label: string; value: string }[] = [
-    { label: 'Account Holder', value: 'BALEEN MEDIA' },
-    { label: 'Account Number', value: '99999566030153' },
+    { label: 'HDFC Account Name', value: 'BALEEN MEDIA' },
+    { label: 'Current Account Number', value: '99999566030153' },
     { label: 'IFSC', value: 'HDFC0001866' },
-    { label: 'Branch', value: 'ADYAR' },
-    { label: 'Account Type', value: 'Current Account' },
   ];
 
   return (
     <View style={s.bankCard}>
-      <Text style={s.bankCardTitle}>BANK DETAILS</Text>
+      <Text style={s.bankCardTitle}>Our Bank Details</Text>
       <View style={s.bankCardDivider} />
       {rows.map((row) => (
-        <View key={row.label} style={s.bankRow}>
-          <Text style={s.bankLabel}>{row.label}</Text>
-          <Text style={s.bankColon}>:</Text>
-          <Text style={s.bankValue}>{row.value}</Text>
+        <View key={row.label} style={s.bankRow} wrap={false}>
+          <View style={s.bankLabelCol}>
+            <Text style={s.bankLabel} wrap={false}>
+              {row.label}
+            </Text>
+          </View>
+          <Text style={s.bankColon} wrap={false}>
+            :
+          </Text>
+          <Text style={s.bankValue} wrap={false}>
+            {row.value}
+          </Text>
         </View>
       ))}
     </View>
@@ -1188,7 +1214,9 @@ const CorporateMinimalPDF: React.FC<CorporateMinimalPDFProps> = ({ data, pdfData
   // ― SINGLE SERVICE ―
   if (!isMultiService) {
     const item0 = quote.items[0];
-    const serviceType = extractServiceType(item0?.description || '');
+    const serviceType = formatServiceHeadingDisplay(
+      item0?.serviceName || extractServiceType(item0?.description || ''),
+    );
     const city0 = (item0?.city || '').trim().toLowerCase();
     const singleKey =
       city0 && city0 !== '\u2014'
@@ -1199,6 +1227,7 @@ const CorporateMinimalPDF: React.FC<CorporateMinimalPDFProps> = ({ data, pdfData
       serviceName: serviceType,
       city: city0,
     });
+    const singleRemark = collectServiceRemarks(quote.items);
 
     return (
       <Document
@@ -1210,7 +1239,10 @@ const CorporateMinimalPDF: React.FC<CorporateMinimalPDFProps> = ({ data, pdfData
           <View style={s.accentBar} fixed />
           <PageFooter company={company} />
 
-          <Header data={data} />
+          <Header
+            data={data}
+            title={exportMode === 'summary' ? 'Summarized quotation' : 'Detailed quotation'}
+          />
           <ClientDetails client={client} />
 
           {/* Service name + Pricing Breakdown (no orphan heading) */}
@@ -1219,27 +1251,27 @@ const CorporateMinimalPDF: React.FC<CorporateMinimalPDFProps> = ({ data, pdfData
             gstPercentage={quote.gstPercentage}
             heading={
               <View style={{ width: '100%' }}>
-                <Text style={s.sectionHeading}>{serviceType.toUpperCase()}</Text>
+                <Text style={s.sectionHeading}>{serviceType}</Text>
                 <SubHeading>1. Pricing Breakdown</SubHeading>
               </View>
             }
           />
 
           {/* Reference images + display spec share one flow so tables fill space below images */}
-          {singlePdf && (
+          {(singlePdf || singleRemark) && (
             <View wrap={true}>
-              {normalizeImageSrcs(singlePdf.refImages).length > 0 && (
+              {normalizeImageSrcs(singlePdf?.refImages || []).length > 0 && (
                 <RefImages
-                  images={singlePdf.refImages}
+                  images={singlePdf?.refImages || []}
                   heading="2. Reference Image(s)"
                 />
               )}
               <DisplaySpecificationBlock
                 heading="3. Specification"
-                fields={singlePdf.specFields}
-                specGroups={singlePdf.specGroups}
-                images={singlePdf.specImages || []}
-                remark={collectServiceRemarks(quote.items)}
+                fields={singlePdf?.specFields || []}
+                specGroups={singlePdf?.specGroups}
+                images={singlePdf?.specImages || []}
+                remark={singleRemark}
               />
             </View>
           )}
@@ -1309,6 +1341,7 @@ const CorporateMinimalPDF: React.FC<CorporateMinimalPDFProps> = ({ data, pdfData
             serviceName: group.serviceType,
             city,
           });
+          const groupRemark = collectServiceRemarks(group.items);
 
           let sectionNum = 1;
 
@@ -1325,31 +1358,31 @@ const CorporateMinimalPDF: React.FC<CorporateMinimalPDFProps> = ({ data, pdfData
                 }
               />
 
-              {spd && (
-                normalizeImageSrcs(spd.refImages).length > 0 ||
-                hasSpecGroupContent(spd.specGroups) ||
-                spd.specFields.length > 0 ||
-                normalizeImageSrcs(spd.specImages || []).length > 0 ||
-                !!collectServiceRemarks(group.items)
+              {(spd || groupRemark) && (
+                normalizeImageSrcs(spd?.refImages || []).length > 0 ||
+                hasSpecGroupContent(spd?.specGroups) ||
+                (spd?.specFields?.length || 0) > 0 ||
+                normalizeImageSrcs(spd?.specImages || []).length > 0 ||
+                !!groupRemark
               ) && (
                 <View wrap={true}>
-                  {normalizeImageSrcs(spd.refImages).length > 0 && (
+                  {normalizeImageSrcs(spd?.refImages || []).length > 0 && (
                     <RefImages
-                      images={spd.refImages}
+                      images={spd?.refImages || []}
                       heading={`${sectionNum++}. Reference Image(s)`}
-                      imageDimensions={spd.refImageDimensions}
+                      imageDimensions={spd?.refImageDimensions}
                     />
                   )}
-                  {(hasSpecGroupContent(spd.specGroups) ||
-                    spd.specFields.length > 0 ||
-                    normalizeImageSrcs(spd.specImages || []).length > 0 ||
-                    !!collectServiceRemarks(group.items)) && (
+                  {(hasSpecGroupContent(spd?.specGroups) ||
+                    (spd?.specFields?.length || 0) > 0 ||
+                    normalizeImageSrcs(spd?.specImages || []).length > 0 ||
+                    !!groupRemark) && (
                     <DisplaySpecificationBlock
                       heading={`${sectionNum++}. Specification`}
-                      fields={spd.specFields}
-                      specGroups={spd.specGroups}
-                      images={spd.specImages || []}
-                      remark={collectServiceRemarks(group.items)}
+                      fields={spd?.specFields || []}
+                      specGroups={spd?.specGroups}
+                      images={spd?.specImages || []}
+                      remark={groupRemark}
                     />
                   )}
                 </View>
@@ -1370,6 +1403,14 @@ const CorporateMinimalPDF: React.FC<CorporateMinimalPDFProps> = ({ data, pdfData
   // Terms: heading + first bullet stay together; rest flow. Bank + notice atomic.
   const termsBlock =
     mergedTermsList.length > 0 ? <TermsBlock terms={mergedTermsList} /> : null;
+  const generalTermsBlock = (() => {
+    const generalTerms = filterGSTDisplayTerms(
+      DEFAULT_GENERAL_TERMS.map((text) => ({ text, labels: [] })),
+    );
+    return generalTerms.length > 0 ? (
+      <TermsBlock terms={generalTerms} hideGeneralHeading={exportMode === 'summary'} />
+    ) : null;
+  })();
 
   // When every service shares one review, show it once above bank details.
   const sharedReviewBlock = sharedReview ? (
@@ -1413,7 +1454,12 @@ const CorporateMinimalPDF: React.FC<CorporateMinimalPDFProps> = ({ data, pdfData
           <View style={s.accentBar} fixed />
           <PageFooter company={company} />
 
-          {page.showCompanyHeader && <Header data={data} />}
+          {page.showCompanyHeader && (
+            <Header
+              data={data}
+              title={exportMode === 'summary' ? 'Summarized quotation' : 'Detailed quotation'}
+            />
+          )}
           {page.showClientDetails && <ClientDetails client={client} />}
           {page.showSectionHeading && (
             <Text style={s.sectionHeading}>Executive Pricing Summary</Text>
@@ -1432,7 +1478,7 @@ const CorporateMinimalPDF: React.FC<CorporateMinimalPDFProps> = ({ data, pdfData
             <>
               {exportMode === 'summary' ? (
                 <>
-                  {termsBlock}
+                  {generalTermsBlock}
                   {bankAndNotice}
                 </>
               ) : (

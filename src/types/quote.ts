@@ -2,6 +2,8 @@ export interface LineItem {
   id: string;
   description: string;
   quantity: number;
+  /** Independent quantity for one-time Printing/Fixing/Mounting charges. */
+  oneTimeQuantity?: number;
   quantityUnit?: string; // Qty column label e.g. "bus", "vehicle" (not "per bus")
   unitPrice: number;
   duration?: number; // Campaign duration (only when user requested months/days)
@@ -18,6 +20,8 @@ export interface QuoteItem {
   description: string;
   details?: string;
   quantity: number;
+  /** Independent quantity for one-time Printing/Fixing/Mounting charges. */
+  oneTimeQuantity?: number;
   quantityUnit?: string; // Qty column label e.g. "bus", "vehicle" (not "per bus")
   rate: number;
   duration?: number; // Campaign duration (only when user requested months/days)

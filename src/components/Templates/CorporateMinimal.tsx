@@ -1,14 +1,17 @@
-import React, { useState, useCallback } from 'react';
+import React, { useState, useCallback, useEffect, useRef } from 'react';
 import { useToast } from '@chakra-ui/react';
+import { useAppStore } from '../../store';
 import { TemplateProps } from '../../types';
 import { QuoteItem } from '../../types/quote';
 import { ReferenceImages } from './ReferenceImages';
 import { isMultiServiceQuote, groupItemsByServiceType, DEFAULT_GENERAL_TERMS, getServiceGroupHeading, extractServiceType, buildExecutiveSummaryRows, buildPricingBreakdownLines, ExecutiveSummaryRow, PricingBreakdownLine } from '../../utils/quoteGrouping';
-import { resolveMergedDisplayTermEntries, formatServiceLabelPrefix, type DisplayTerm } from '../../utils/termsMerge';
+import { formatServiceHeadingDisplay } from '../../utils/serviceHeading';
+import { resolveMergedDisplayTermEntries, groupDisplayTermsBySection, type DisplayTerm } from '../../utils/termsMerge';
 import { segmentBreakdownFormula } from '../../utils/breakdownFormulaDisplay';
 import {
   applyExecutiveSummaryFieldEdit,
   applyOneTimeComponentEdit,
+  floorToastTitle,
   getVendorEditFloors,
   mergeFloorsWithQuoteItem,
   recalcQuoteTotals,
@@ -30,9 +33,15 @@ import {
   type CustomerReview,
 } from '../../utils/reviewGrouping';
 import { collectServiceRemarks } from '../../utils/specMaterial';
+import { formatReviewerDisplayName } from '../../utils/reviewDisplay';
+import { formatQuoteDate } from '../../utils/dateFormat';
+import { PreparedForClientFields } from '../ClientInfoForm/PreparedForClientFields';
 import './CorporateMinimal.css';
 
-type ExecEditField = 'quantity' | 'duration' | 'requiringCharge' | 'oneTimeCharge';
+type ExecEditField = 'quantity' | 'duration' | 'requiringCharge' | 'oneTimeCharge' | 'oneTimeQuantity';
+type ExecEditMeta = {
+  hasDisplayRental?: boolean;
+};
 
 const EMPTY_FLOORS: VendorEditFloors = {
   minQty: null,
@@ -103,8 +112,26 @@ const ExecNumberCell: React.FC<{
   autoFocus = false,
 }) => {
   const [draft, setDraft] = useState<string | null>(null);
+  const inputRef = useRef<HTMLInputElement>(null);
+  const draftRef = useRef<string | null>(null);
+  const valueRef = useRef(value);
+  const commitDraftRef = useRef<() => void>(() => undefined);
   const formatRateView = (n: number) =>
     currency ? formatUnitRateInr(n) : formatUnitRateDisplay(n);
+  valueRef.current = value;
+  draftRef.current = draft;
+
+  const commitDraft = () => {
+    const raw = draftRef.current;
+    draftRef.current = null;
+    setDraft(null);
+    if (raw == null || raw.trim() === '') return;
+    const n = format === 'rate' ? parseRateInput(raw) : parseFloat(raw.replace(/,/g, ''));
+    if (!Number.isFinite(n)) return;
+    if (valueRef.current != null && Math.abs(n - valueRef.current) < 1e-9) return;
+    onCommit(n);
+  };
+  commitDraftRef.current = commitDraft;
   const display =
     draft != null
       ? draft
@@ -113,6 +140,19 @@ const ExecNumberCell: React.FC<{
         : format === 'rate'
           ? formatRateView(value)
           : String(value);
+
+  useEffect(() => {
+    const handlePointerDown = (event: PointerEvent) => {
+      const input = inputRef.current;
+      if (input && event.target instanceof Node && !input.contains(event.target)) {
+        commitDraftRef.current();
+        input.blur();
+      }
+    };
+
+    document.addEventListener('pointerdown', handlePointerDown, true);
+    return () => document.removeEventListener('pointerdown', handlePointerDown, true);
+  }, []);
 
   if (!editable) {
     if (value == null || !Number.isFinite(value) || value <= 0 && format === 'rate') {
@@ -140,6 +180,7 @@ const ExecNumberCell: React.FC<{
 
   return (
     <input
+      ref={inputRef}
       className={className}
       type="text"
       inputMode="decimal"
@@ -148,29 +189,30 @@ const ExecNumberCell: React.FC<{
       autoFocus={autoFocus}
       size={sizeChars}
       style={compact ? { width: `${sizeChars}ch` } : undefined}
-      onChange={(e) => setDraft(e.target.value)}
+      onChange={(e) => {
+        draftRef.current = e.target.value;
+        setDraft(e.target.value);
+      }}
       onFocus={(e) => {
-        setDraft(
+        const nextDraft =
           value == null || !Number.isFinite(value)
             ? ''
             : format === 'rate'
               ? formatUnitRateDisplay(value)
-              : String(value),
-        );
+              : String(value);
+        draftRef.current = nextDraft;
+        setDraft(nextDraft);
         e.target.select();
       }}
-      onBlur={() => {
-        const raw = draft;
-        setDraft(null);
-        if (raw == null || raw.trim() === '') return;
-        const n = format === 'rate' ? parseRateInput(raw) : parseFloat(raw.replace(/,/g, ''));
-        if (!Number.isFinite(n)) return;
-        if (value != null && Math.abs(n - value) < 1e-9) return;
-        onCommit(n);
-      }}
+      onBlur={commitDraft}
       onKeyDown={(e) => {
-        if (e.key === 'Enter') (e.target as HTMLInputElement).blur();
+        if (e.key === 'Enter') {
+          e.preventDefault();
+          commitDraft();
+          (e.target as HTMLInputElement).blur();
+        }
         if (e.key === 'Escape') {
+          draftRef.current = null;
           setDraft(null);
           (e.target as HTMLInputElement).blur();
         }
@@ -192,14 +234,20 @@ const BreakdownFormulaBody: React.FC<{
   line: PricingBreakdownLine;
   canEdit: boolean;
   isEditing: boolean;
-  onCommit: (row: ExecutiveSummaryRow, field: ExecEditField, value: number) => void;
+  onCommit: (
+    row: ExecutiveSummaryRow,
+    field: ExecEditField,
+    value: number,
+    meta?: ExecEditMeta,
+  ) => void;
   onCommitOneTimeComponent?: (
     row: ExecutiveSummaryRow,
     components: { label: string; amount: number }[],
     label: string,
     value: number,
   ) => void;
-}> = ({ line, canEdit, isEditing, onCommit, onCommitOneTimeComponent }) => {
+  hasDisplayRental?: boolean;
+}> = ({ line, canEdit, isEditing, onCommit, onCommitOneTimeComponent, hasDisplayRental }) => {
   const formula = line.descriptionLines.slice(1).join(' ') || '';
   const row = line.editRow;
 
@@ -294,11 +342,11 @@ const BreakdownFormulaBody: React.FC<{
         <div className="breakdown-edit-qty-row">
           <span className="breakdown-edit-times" aria-hidden>×</span>
           <ExecNumberCell
-            value={row.quantity}
+            value={row.oneTimeQuantity}
             editable
             compact
             bordered
-            onCommit={(n) => onCommit(row, 'quantity', n)}
+            onCommit={(n) => onCommit(row, 'oneTimeQuantity', n, { hasDisplayRental })}
           />
           <span className="breakdown-rate-unit"> ({qtyUnit})</span>
         </div>
@@ -338,14 +386,20 @@ const BreakdownDescCell: React.FC<{
   line: PricingBreakdownLine;
   canEdit: boolean;
   amountBlock: React.ReactNode;
-  onCommit: (row: ExecutiveSummaryRow, field: ExecEditField, value: number) => void;
+  onCommit: (
+    row: ExecutiveSummaryRow,
+    field: ExecEditField,
+    value: number,
+    meta?: ExecEditMeta,
+  ) => void;
   onCommitOneTimeComponent?: (
     row: ExecutiveSummaryRow,
     components: { label: string; amount: number }[],
     label: string,
     value: number,
   ) => void;
-}> = ({ line, canEdit, amountBlock, onCommit, onCommitOneTimeComponent }) => {
+  hasDisplayRental?: boolean;
+}> = ({ line, canEdit, amountBlock, onCommit, onCommitOneTimeComponent, hasDisplayRental }) => {
   const [isEditing, setIsEditing] = useState(false);
   const title = line.descriptionLines[0] || '';
   const formula = line.descriptionLines.slice(1).join(' ') || null;
@@ -392,6 +446,7 @@ const BreakdownDescCell: React.FC<{
               isEditing={isEditing}
               onCommit={onCommit}
               onCommitOneTimeComponent={onCommitOneTimeComponent}
+              hasDisplayRental={hasDisplayRental}
             />
           </>
         ) : (
@@ -409,6 +464,8 @@ export const CorporateMinimal: React.FC<TemplateProps> = ({
   data,
   editable = false,
   onDataChange,
+  onClientChange,
+  showClientValidation = false,
   onNavigateToSection,
 }) => {
   const { company, client, quote } = data;
@@ -456,7 +513,7 @@ export const CorporateMinimal: React.FC<TemplateProps> = ({
   const showFloorToast = useCallback(
     (message: string) => {
       toast({
-        title: message.includes('margin') ? 'Below margin' : 'Below minimum',
+        title: floorToastTitle(message),
         description: message,
         status: 'warning',
         duration: 4000,
@@ -468,17 +525,43 @@ export const CorporateMinimal: React.FC<TemplateProps> = ({
   );
 
   const commitExecEdit = useCallback(
-    async (row: ExecutiveSummaryRow, field: ExecEditField, value: number) => {
+    async (row: ExecutiveSummaryRow, field: ExecEditField, value: number, meta?: ExecEditMeta) => {
       if (!onDataChange) return;
 
+      const liveQuote = useAppStore.getState().currentQuote ?? quote;
       const primary =
-        quote.items.find((i) => i.id === row.id) ||
-        quote.items.find(
+        liveQuote.items.find((i) => i.id === row.id) ||
+        liveQuote.items.find(
           (i) =>
             (i.serviceId || '').trim().toLowerCase() ===
             (row.catalogServiceId || '').trim().toLowerCase(),
         );
       if (!primary) return;
+
+      // Keep display rental and P&F qty in lockstep so Executive Summary REQ. QUANTITY updates.
+      const applyField: ExecEditField =
+        field === 'oneTimeQuantity' && meta?.hasDisplayRental ? 'quantity' : field;
+
+      let storeValue = value;
+      if (applyField === 'duration') {
+        storeValue = uiEditToStorageValue('duration', value, row);
+      } else if (applyField === 'requiringCharge') {
+        storeValue = uiEditToStorageValue('requiringCharge', value, row);
+      }
+      const applyValue =
+        applyField === 'duration' || applyField === 'requiringCharge' ? storeValue : value;
+
+      const snapshot = liveQuote;
+      const optimisticItems = applyExecutiveSummaryFieldEdit(
+        liveQuote.items,
+        primary.id,
+        applyField,
+        applyValue,
+      );
+      onDataChange({
+        ...data,
+        quote: recalcQuoteTotals({ ...liveQuote, items: optimisticItems }),
+      });
 
       const floors = mergeFloorsWithQuoteItem(
         await resolveEditFloors({
@@ -488,19 +571,13 @@ export const CorporateMinimal: React.FC<TemplateProps> = ({
           city: primary.city,
         }),
         primary,
-        quote.items,
+        optimisticItems,
       );
-      let storeValue = value;
-      if (field === 'duration') {
-        storeValue = uiEditToStorageValue('duration', value, row);
-      } else if (field === 'requiringCharge') {
-        storeValue = uiEditToStorageValue('requiringCharge', value, row);
-      }
 
       let validationField: 'quantity' | 'duration' | 'displayRate' | 'pfRate';
-      if (field === 'quantity') validationField = 'quantity';
-      else if (field === 'duration') validationField = 'duration';
-      else if (field === 'requiringCharge') validationField = 'displayRate';
+      if (applyField === 'quantity' || applyField === 'oneTimeQuantity') validationField = 'quantity';
+      else if (applyField === 'duration') validationField = 'duration';
+      else if (applyField === 'requiringCharge') validationField = 'displayRate';
       else validationField = 'pfRate';
 
       const durationDays = row.durationDays ?? 0;
@@ -511,7 +588,7 @@ export const CorporateMinimal: React.FC<TemplateProps> = ({
             ? (row.requiringCharge || 0) / 30
             : row.requiringCharge || 0;
       const packageContext = {
-        quantity: row.quantity,
+        quantity: applyField === 'quantity' || applyField === 'oneTimeQuantity' ? value : row.quantity,
         durationDays,
         displayDailyRate: displayDaily,
         pfUnitRate: row.oneTimeCharge || 0,
@@ -520,29 +597,33 @@ export const CorporateMinimal: React.FC<TemplateProps> = ({
       const result = validateQuoteEdit({
         field: validationField,
         value:
-          field === 'requiringCharge'
-            ? value // validate against UI unit via rateUiMode
-            : field === 'duration'
-              ? storeValue // duration floor is always in days
+          applyField === 'requiringCharge'
+            ? value
+            : applyField === 'duration'
+              ? storeValue
               : value,
         floors,
         rateUiMode: row.ratePeriod === 'per_month' ? 'per_month' : 'per_day',
         packageContext,
       });
       if (!result.ok) {
+        onDataChange({ ...data, quote: snapshot });
         showFloorToast(result.message || 'Invalid value');
         return;
       }
 
-      const nextItems = applyExecutiveSummaryFieldEdit(
-        quote.items,
+      const latest = useAppStore.getState().currentQuote ?? snapshot;
+      const repairedItems = applyExecutiveSummaryFieldEdit(
+        latest.items,
         primary.id,
-        field,
-        field === 'duration' || field === 'requiringCharge' ? storeValue : value,
+        applyField,
+        applyValue,
         floors,
       );
-      const nextQuote = recalcQuoteTotals({ ...quote, items: nextItems });
-      onDataChange({ ...data, quote: nextQuote });
+      onDataChange({
+        ...data,
+        quote: recalcQuoteTotals({ ...latest, items: repairedItems }),
+      });
     },
     [data, onDataChange, quote, showFloorToast],
   );
@@ -701,43 +782,34 @@ export const CorporateMinimal: React.FC<TemplateProps> = ({
     }).format(amount);
   };
 
-  const formatDate = (date: Date | string) => {
-    const d = typeof date === 'string' ? new Date(date) : date;
-    return d.toLocaleDateString('en-IN', {
-      year: 'numeric',
-      month: 'short',
-      day: 'numeric'
-    });
-  };
+  const formatDate = (date: Date | string) => formatQuoteDate(date);
 
   // Filter GST lines from T&C (GST amount shown separately in a later phase)
   const filterGSTDisplayTerms = (terms: DisplayTerm[]) =>
     terms.filter(t => !/gst|tax\s*%|inclusive\s*of\s*(gst|tax)|exclusive\s*of\s*(gst|tax)|\+\s*gst|\d+\s*%\s*(gst|tax)/i.test(t.text));
 
-  const renderTermsList = (terms: DisplayTerm[]) => (
-    <ul>
-      {terms.map((term, i) => {
-        const prefix =
-          term.labels.length === 0
-            ? 'General T&C'
-            : formatServiceLabelPrefix(term.labels);
-        return (
-          <li key={i}>
-            <span className="bullet-dot"></span>
-            <span className="term-line">
-              {prefix ? (
-                <>
-                  <strong className="term-service-label">{prefix}</strong>
-                  <span className="term-service-sep">: </span>
-                </>
-              ) : null}
-              <span className="term-body">{term.text}</span>
-            </span>
-          </li>
-        );
-      })}
-    </ul>
-  );
+  const renderTermsList = (terms: DisplayTerm[]) => {
+    const sections = groupDisplayTermsBySection(terms);
+    return (
+      <div className="terms-sections">
+        {sections.map((section) => (
+          <div key={section.title} className="terms-subsection">
+            <h4 className="term-section-heading">{section.title}</h4>
+            <ul>
+              {section.terms.map((term, i) => (
+                <li key={`${section.title}-${i}`}>
+                  <span className="bullet-dot"></span>
+                  <span className="term-line">
+                    <span className="term-body">{term.text}</span>
+                  </span>
+                </li>
+              ))}
+            </ul>
+          </div>
+        ))}
+      </div>
+    );
+  };
 
   // Executive summary: one row per service_id (Display + P&F collapsed), amounts excl. GST
   const renderItemsTable = (items: QuoteItem[]) => {
@@ -920,6 +992,13 @@ export const CorporateMinimal: React.FC<TemplateProps> = ({
           </thead>
           <tbody>
             {detailLines.map((line, idx) => {
+              const hasDisplayRental =
+                line.kind === 'onetime' &&
+                detailLines.some(
+                  (candidate) =>
+                    candidate.kind === 'display' &&
+                    candidate.editRow?.id === line.editRow?.id,
+                );
               const amountBlock = (
                 <div className="breakdown-amount-stack">
                   <div className="breakdown-amount-inline">{formatCurrency(line.amount)}</div>
@@ -935,9 +1014,10 @@ export const CorporateMinimal: React.FC<TemplateProps> = ({
                       amountBlock={amountBlock}
                       onCommit={commitExecEdit}
                       onCommitOneTimeComponent={commitOneTimeComponentEdit}
+                      hasDisplayRental={hasDisplayRental}
                     />
-                  </td>
-                </tr>
+                </td>
+              </tr>
               );
             })}
             <tr className="breakdown-summary-block">
@@ -1006,31 +1086,54 @@ export const CorporateMinimal: React.FC<TemplateProps> = ({
     </div>
   );
 
-  // Render client details component (reusable)
+  // Render client details — editable Name / Phone / Email on preview; PDF still static via CorporateMinimalPDF
   const renderClientDetails = () => {
-    const primaryFields: React.ReactNode[] = [];
-    const overflowFields: React.ReactNode[] = [];
-    if (client.phone) primaryFields.push(<span key="ph">PH: <a className="contact-link" href={`tel:${client.phone}`}>{client.phone}</a></span>);
-    if (client.email) overflowFields.push(<span key="em">Email: <a className="contact-link" href={`mailto:${client.email}`}>{client.email}</a></span>);
-    if (client.address) overflowFields.push(<span key="ad">Address: {client.address}</span>);
-    if (client.gst) overflowFields.push(<span key="gst">GST: {client.gst}</span>);
+    if (editable && onClientChange) {
+      return (
+        <PreparedForClientFields
+          client={client}
+          onChange={onClientChange}
+          showValidation={showClientValidation}
+        />
+      );
+    }
+
+    const bits: React.ReactNode[] = [];
+    if (client.phone) {
+      bits.push(
+        <span key="ph">
+          PH:{' '}
+          <a className="contact-link" href={`tel:${client.phone}`}>
+            {client.phone}
+          </a>
+        </span>,
+      );
+    }
+    if (client.email) {
+      bits.push(
+        <span key="em">
+          Email:{' '}
+          <a className="contact-link" href={`mailto:${client.email}`}>
+            {client.email}
+          </a>
+        </span>,
+      );
+    }
 
     return (
       <div className="client-section">
         <div className="client-inline-row">
           <span className="client-inline-label">Quote Prepared For: </span>
-          <span className="client-inline-name">{(client.company || client.name).toUpperCase()}</span>
-          {primaryFields.map((f, i) => (
-            <span key={i}><span className="client-inline-sep"> | </span>{f}</span>
+          <span className="client-inline-name">
+            {(client.company || client.name || '').toUpperCase()}
+          </span>
+          {bits.map((f, i) => (
+            <span key={i}>
+              <span className="client-inline-sep"> | </span>
+              {f}
+            </span>
           ))}
         </div>
-        {overflowFields.length > 0 && (
-          <div className="client-overflow-row">
-            {overflowFields.map((f, i) => (
-              <span key={i}>{i > 0 && <span className="client-inline-sep"> | </span>}{f}</span>
-            ))}
-          </div>
-        )}
       </div>
     );
   };
@@ -1078,7 +1181,10 @@ export const CorporateMinimal: React.FC<TemplateProps> = ({
           >
             <div data-pdf-block="atomic" style={{ paddingBottom: '1px' }}>
               <h3 style={{ textAlign: 'center', fontSize: '16px', fontWeight: '700', textTransform: 'uppercase', letterSpacing: '0.08em', color: '#3b0a14', margin: '0 0 8px 0', paddingBottom: '10px', borderBottom: '2px solid #2980b9' }}>
-                {extractServiceType(quote.items[0]?.description || '').toUpperCase()}
+                {formatServiceHeadingDisplay(
+                  quote.items[0]?.serviceName
+                    || extractServiceType(quote.items[0]?.description || ''),
+                )}
               </h3>
               <h3 className="smart-section-heading" style={{ fontSize: '15px', fontWeight: '700', textTransform: 'uppercase', letterSpacing: '0.06em', color: '#1a1a2e', margin: '16px 0 14px 0', paddingBottom: '8px', borderBottom: '2px solid #2980b9' }}>
                 <span className="smart-heading-bar" />
@@ -1122,14 +1228,12 @@ export const CorporateMinimal: React.FC<TemplateProps> = ({
 
           {/* Bank Details */}
           <div id="preview-bank-details" className="bank-details-card" data-pdf-block="atomic">
-            <h3 className="bank-details-card-title">Bank Details</h3>
+            <h3 className="bank-details-card-title">Our Bank Details</h3>
             <table className="bank-details-table">
               <tbody>
-                <tr><td className="bank-label">Account Holder</td><td className="bank-colon">:</td><td className="bank-value">BALEEN MEDIA</td></tr>
-                <tr><td className="bank-label">Account Number</td><td className="bank-colon">:</td><td className="bank-value">99999566030153</td></tr>
+                <tr><td className="bank-label">HDFC Account Name</td><td className="bank-colon">:</td><td className="bank-value">BALEEN MEDIA</td></tr>
+                <tr><td className="bank-label">Current Account Number</td><td className="bank-colon">:</td><td className="bank-value">99999566030153</td></tr>
                 <tr><td className="bank-label">IFSC</td><td className="bank-colon">:</td><td className="bank-value">HDFC0001866</td></tr>
-                <tr><td className="bank-label">Branch</td><td className="bank-colon">:</td><td className="bank-value">ADYAR</td></tr>
-                <tr><td className="bank-label">Account Type</td><td className="bank-colon">:</td><td className="bank-value">Current Account</td></tr>
               </tbody>
             </table>
           </div>
@@ -1232,10 +1336,12 @@ export const CorporateMinimal: React.FC<TemplateProps> = ({
             <div className="review-card">
               <div className="review-header">
                 <span className="review-avatar">
-                  {sharedReview.reviewerName.charAt(0).toUpperCase()}
+                  {formatReviewerDisplayName(sharedReview.reviewerName).charAt(0)}
                 </span>
                 <div className="review-meta">
-                  <span className="review-name">{sharedReview.reviewerName}</span>
+                  <span className="review-name">
+                    {formatReviewerDisplayName(sharedReview.reviewerName)}
+                  </span>
                   <span className="review-stars">
                     {'★'.repeat(sharedReview.starCount)}
                     {'☆'.repeat(Math.max(0, 5 - sharedReview.starCount))}
@@ -1279,14 +1385,12 @@ export const CorporateMinimal: React.FC<TemplateProps> = ({
 
         {/* Bank + notice last — after T&C */}
         <div id="preview-bank-details" className="bank-details-card" data-pdf-block="atomic">
-          <h3 className="bank-details-card-title">Bank Details</h3>
+          <h3 className="bank-details-card-title">Our Bank Details</h3>
           <table className="bank-details-table">
             <tbody>
-              <tr><td className="bank-label">Account Holder</td><td className="bank-colon">:</td><td className="bank-value">BALEEN MEDIA</td></tr>
-              <tr><td className="bank-label">Account Number</td><td className="bank-colon">:</td><td className="bank-value">99999566030153</td></tr>
+              <tr><td className="bank-label">HDFC Account Name</td><td className="bank-colon">:</td><td className="bank-value">BALEEN MEDIA</td></tr>
+              <tr><td className="bank-label">Current Account Number</td><td className="bank-colon">:</td><td className="bank-value">99999566030153</td></tr>
               <tr><td className="bank-label">IFSC</td><td className="bank-colon">:</td><td className="bank-value">HDFC0001866</td></tr>
-              <tr><td className="bank-label">Branch</td><td className="bank-colon">:</td><td className="bank-value">ADYAR</td></tr>
-              <tr><td className="bank-label">Account Type</td><td className="bank-colon">:</td><td className="bank-value">Current Account</td></tr>
             </tbody>
           </table>
         </div>
@@ -1303,5 +1407,3 @@ export const CorporateMinimal: React.FC<TemplateProps> = ({
     </>
   );
 };
-
-

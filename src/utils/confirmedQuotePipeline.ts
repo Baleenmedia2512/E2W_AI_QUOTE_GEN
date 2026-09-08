@@ -9,9 +9,35 @@ import {
   validateConfirmationRowsMinQty,
 } from './cloudQuoteValidation';
 import { DbService, resolveServiceIdFromCatalog } from './serviceResolver';
+import {
+  getServiceScopedUserMessage,
+  parseDurationFromUserText,
+  toCampaignDays,
+  vendorMinDays,
+} from './durationUtils';
+import { resolveDisplayUnitPricePerDay } from './marginUtils';
 
-/** True when segment text contains a complete service name (not a vague category). */
-export function isSegmentFullySpecified(segmentRaw: string): boolean {
+/** True when segment text contains a complete DB service phrase. */
+export function isSegmentFullySpecified(
+  segmentRaw: string,
+  services?: DbService[],
+): boolean {
+  const queryKey = canonicalizeServiceName(segmentRaw);
+  if (services?.length && queryKey) {
+    const catalogMatch = services.some((service) => {
+      const medium = canonicalizeServiceName(String(service.metadata?.medium || ''));
+      const name = canonicalizeServiceName(
+        (service.service_name || '').split(/[·|]/)[0],
+      );
+      return (
+        medium === queryKey
+        || name === queryKey
+        || medium.startsWith(`${queryKey} `)
+        || name.startsWith(`${queryKey} `)
+      );
+    });
+    if (catalogMatch) return true;
+  }
   return FULL_SERVICE_PATTERNS.some((p) => p.test(segmentRaw));
 }
 
@@ -152,12 +178,97 @@ export function mergeDirectPartsIntoGroupedServices(
 
 export type MinQtyGateResult =
   | { type: 'confirm'; rows: ConfirmationRow[] }
-  | { type: 'min_qty'; rows: ConfirmationRow[]; violations: MinQtyViolation[] };
+  | { type: 'min_qty'; rows: ConfirmationRow[]; violations: MinQtyViolation[] }
+  | { type: 'min_duration'; rows: ConfirmationRow[]; violations: MinDurationViolation[] };
+
+export interface MinDurationViolation {
+  description: string;
+  requested: number;
+  minimum: number;
+  serviceId?: string;
+}
+
+/** Compare explicit per-service duration against the vendor minimum duration. */
+export function validateConfirmationRowsMinDuration(
+  rows: ConfirmationRow[],
+  services: DbService[],
+  originalUserInput: string,
+): MinDurationViolation[] {
+  const violations: MinDurationViolation[] = [];
+  console.log('[DurationDebug] validate start', {
+    originalUserInput,
+    rowCount: rows.length,
+    rows: rows.map((row) => ({
+      service: row.service,
+      serviceId: row.serviceId,
+      city: row.city,
+    })),
+    catalogCount: services.length,
+  });
+  for (const row of dedupeConfirmationRows(rows)) {
+    const cityHint = row.city && row.city !== '—' ? row.city : null;
+    const svc = row.serviceId
+      ? services.find((service) => service.service_id === row.serviceId)
+      : (() => {
+          const resolved = resolveServiceIdFromCatalog(row.service, services, cityHint);
+          return resolved
+            ? services.find((service) => service.service_id === resolved.serviceId)
+            : undefined;
+        })();
+    if (!svc) {
+      console.log('[DurationDebug] service unresolved', {
+        service: row.service,
+        serviceId: row.serviceId,
+        cityHint,
+      });
+      continue;
+    }
+
+    // A minimum duration is meaningful only for a recurring display-priced service.
+    const metadata = (svc.metadata || {}) as Record<string, unknown>;
+    const pricing = (metadata.pricing || {}) as Record<string, unknown>;
+    const dailyDisplayRate = resolveDisplayUnitPricePerDay(pricing, metadata);
+    const minimum = vendorMinDays(metadata);
+    const scopedInput = getServiceScopedUserMessage(
+      originalUserInput,
+      svc.service_name || row.service,
+    );
+    const parsedDuration = parseDurationFromUserText(scopedInput);
+    const requested = row.durationDays != null && row.durationDays > 0
+      ? row.durationDays
+      : toCampaignDays(parsedDuration?.value, parsedDuration?.unit);
+    console.log('[DurationDebug] service evaluated', {
+      service: row.service,
+      resolvedServiceId: svc.service_id,
+      resolvedServiceName: svc.service_name,
+      scopedInput,
+      parsedDuration,
+      requestedDays: requested,
+      minimumDays: minimum,
+      dailyDisplayRate,
+      metadataMinDays: metadata.min_days,
+      metadataMinDuration: metadata.min_duration,
+      pricingKeys: Object.keys(pricing),
+    });
+    if (!Number.isFinite(minimum) || minimum <= 0 || dailyDisplayRate <= 0) continue;
+    if (requested != null && requested < minimum) {
+      violations.push({
+        description: `${row.service} - ${row.city}`,
+        requested,
+        minimum,
+        serviceId: svc.service_id,
+      });
+    }
+  }
+  console.log('[DurationDebug] validate result', { violations });
+  return violations;
+}
 
 /** Min-qty check before opening the confirm table. */
 export function gateMinQtyBeforeConfirm(
   rows: ConfirmationRow[],
   services: DbService[],
+  originalUserInput?: string,
 ): MinQtyGateResult {
   const deduped = dedupeConfirmationRows(rows);
   if (!services.length) {
@@ -166,6 +277,16 @@ export function gateMinQtyBeforeConfirm(
   const violations = validateConfirmationRowsMinQty(deduped, services);
   if (violations.length > 0) {
     return { type: 'min_qty', rows: deduped, violations };
+  }
+  if (originalUserInput) {
+    const durationViolations = validateConfirmationRowsMinDuration(
+      deduped,
+      services,
+      originalUserInput,
+    );
+    if (durationViolations.length > 0) {
+      return { type: 'min_duration', rows: deduped, violations: durationViolations };
+    }
   }
   return { type: 'confirm', rows: deduped };
 }
@@ -297,7 +418,7 @@ export function resolveDbServiceNameForSegment(
     .replace(/\b(need|for|the|a|an|in|at|of|and|i|want|please|generate|quote)\b/gi, '')
     .trim();
 
-  if (isSegmentFullySpecified(segmentRaw)) {
+  if (isSegmentFullySpecified(segmentRaw, services)) {
     const resolved = resolveServiceIdFromCatalog(words, services, cityHint);
     return resolved?.serviceName ?? null;
   }

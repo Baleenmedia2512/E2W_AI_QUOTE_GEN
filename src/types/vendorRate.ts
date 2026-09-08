@@ -72,6 +72,8 @@ export interface VendorRateRow {
   /** Site location label (e.g. "100 feet Road towards Power house") */
   direction_remarks?: string;
   area_name?: string;
+  latitude?: string | number;
+  longitude?: string | number;
   /** Design / coach specs for PDF Specification section */
   specifications?: Record<string, unknown>;
   size?: string | Record<string, unknown>;

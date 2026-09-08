@@ -36,6 +36,7 @@ import {
   quoteHasAnyDuration,
 } from '../../utils/durationUtils';
 import {
+  floorToastTitle,
   getVendorEditFloors,
   rateFieldForLineDescription,
   resolveDbServiceForQuoteItem,
@@ -105,7 +106,7 @@ const QuotePreview: React.FC<QuotePreviewProps> = ({ quote, onUpdate, onSave }) 
 
   const showFloorToast = (message: string) => {
     toast({
-      title: message.includes('margin') ? 'Below margin' : 'Below minimum',
+      title: floorToastTitle(message),
       description: message,
       status: 'warning',
       duration: 4000,
@@ -534,6 +535,7 @@ const QuotePreview: React.FC<QuotePreviewProps> = ({ quote, onUpdate, onSave }) 
   const subtotal = calculateQuoteSubtotal();
   const gst = calculateGST(subtotal);
   const total = calculateTotal(subtotal, gst);
+  const totalServices = localQuote?.items?.length || 0;
 
   const formatCurrency = (amount: number) => amount.toLocaleString('en-IN', { style: 'currency', currency: 'INR', minimumFractionDigits: 2, maximumFractionDigits: 2 });
 
@@ -554,6 +556,20 @@ const QuotePreview: React.FC<QuotePreviewProps> = ({ quote, onUpdate, onSave }) 
           </Heading>
           <Text fontSize="sm" color="gray.600" fontWeight="500">
             Review and customize your quote
+          </Text>
+          <Text
+            mt={2}
+            display="inline-flex"
+            alignItems="center"
+            px={3}
+            py={1}
+            borderRadius="999px"
+            bg="red.50"
+            color="red.700"
+            fontSize="sm"
+            fontWeight="700"
+          >
+            Total services: {totalServices}
           </Text>
         </Box>
         {false && onSave && (

@@ -111,13 +111,14 @@ export function collectServiceRemarks(
     const candidates: string[] = [];
     if (item.lineItems?.length) {
       for (const li of item.lineItems) {
-        if (li.remark?.trim()) candidates.push(li.remark.trim());
+        if (li.remark?.trim()) candidates.push(li.remark);
       }
     }
-    if (item.remark?.trim()) candidates.push(item.remark.trim());
+    if (item.remark?.trim()) candidates.push(item.remark);
     for (const r of candidates) {
-      if (!seen.has(r)) {
-        seen.add(r);
+      const dedupeKey = r.trim();
+      if (!seen.has(dedupeKey)) {
+        seen.add(dedupeKey);
         out.push(r);
       }
     }

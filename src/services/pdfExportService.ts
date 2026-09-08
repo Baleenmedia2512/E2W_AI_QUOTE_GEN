@@ -1,4 +1,4 @@
-﻿/**
+/**
  * pdfExportService.ts  (React-PDF version)
  *
  * Replaces the html2canvas + jsPDF pipeline with @react-pdf/renderer.
@@ -9,8 +9,8 @@
  *  3. Build pdfData[] directly from metadata.images
  *  4. Falls back to DOM store (ReferenceImages) if DB has no images for a service
  *  5. Render CorporateMinimalPDF to a blob — zero Gemini calls
- *  6. Mobile: save to Documents + open in native viewer
- *  7. Web: browser download
+ *  6. Mobile: save without prompting and open in the platform's download/documents location
+ *  7. Web: after PDF is ready, open it in a new browser tab (fallback to download if blocked)
  */
 
 import React from 'react';
@@ -25,6 +25,7 @@ import { loadAllServicesFromCloud, buildMetroSpecText } from './supabaseProposal
 import type { DbService } from '../utils/serviceResolver';
 import { extractMetroMultiTableSpec, type PdfSpecGroup } from '../utils/metroSpecParser';
 import { pickMaterialFromMeta, pickDisplayDimensionFields } from '../utils/specMaterial';
+import { useAppStore } from '../store';
 
 const isMobile = () => Capacitor.isNativePlatform();
 const DEBUG_PDF_EXPORT = true;
@@ -124,6 +125,17 @@ const readTemplateDataFromDom = (): TemplateData | null => {
   } catch {
     return null;
   }
+};
+
+const formatClientNameForFilename = (clientName: string): string => {
+  const trimmed = clientName.trim().replace(/\s+/g, ' ');
+  if (!trimmed) return 'Client';
+  return trimmed.charAt(0).toUpperCase() + trimmed.slice(1);
+};
+
+const getQuoteFilenameLabel = (exportMode: PdfExportMode): string => {
+  if (exportMode === 'summary') return 'Summarized Quote';
+  return 'Detailed Quote';
 };
 
 /**
@@ -568,7 +580,8 @@ export const exportToPDF = async (
   clientName?: string,
   documentIds?: string[],      // proposal document IDs to load images from DB
   exportMode: PdfExportMode = 'full',
-): Promise<void> => {
+  shouldDownload = true,
+): Promise<{ pdfBlob: Blob; filename: string }> => {
   const originalCursor = document.body.style.cursor;
   document.body.style.cursor = 'wait';
 
@@ -577,6 +590,13 @@ export const exportToPDF = async (
     if (!templateData) {
       throw new Error('Template data not found. Please wait for the preview to load.');
     }
+
+    // DOM JSON can lag behind preview edits (huge data-template-store / async floors).
+    // Quote, company, and client in the Zustand store are the source of truth.
+    const live = useAppStore.getState();
+    if (live.currentQuote) templateData.quote = live.currentQuote;
+    if (live.companyInfo) templateData.company = live.companyInfo;
+    if (live.clientInfo) templateData.client = live.clientInfo;
 
     // Always load vendor catalog for images/specs (documentIds kept for API compat).
     // Rank-1 vendor_rate_chunks is the source of truth — not proposal_chunks.
@@ -616,34 +636,48 @@ export const exportToPDF = async (
     const blob = await pdf(doc).toBlob();
 
     // Generate filename
-    const dateStr = new Date().toISOString().slice(0, 10).replace(/-/g, '');
-    const clientStr = (clientName || '').replace(/\s+/g, '');
-    const suffix = exportMode === 'summary' ? '_Summary' : exportMode === 'detailed' ? '_Detailed Summary' : '';
-    const filename = `${dateStr}_${clientStr}_${quoteNumber}${suffix}.pdf`;
+    const clientStr = formatClientNameForFilename(clientName || '');
+    const quoteLabel = getQuoteFilenameLabel(exportMode);
+    const stamp = new Date();
+    const pad = (n: number) => String(n).padStart(2, '0');
+    const timePart = `${pad(stamp.getHours())}${pad(stamp.getMinutes())}${pad(stamp.getSeconds())}`;
+    const filename = `${quoteNumber}_${clientStr}_${quoteLabel}_${timePart}.pdf`;
 
-    if (isMobile()) {
-      // ── Mobile: save to Documents folder and open ──────────────────
-      const arrayBuffer = await blob.arrayBuffer();
-      const base64 = btoa(
-        new Uint8Array(arrayBuffer).reduce((data, byte) => data + String.fromCharCode(byte), ''),
-      );
-      const result = await Filesystem.writeFile({
-        path: `QuoteBuddy/${filename}`,
-        data: base64,
-        directory: Directory.Documents,
-        recursive: true,
-      });
-      await FileOpener.open({ filePath: result.uri, contentType: 'application/pdf' });
-    } else {
-      // ── Web: browser download ───────────────────────────────────────
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement('a');
-      a.href = url;
-      a.download = filename;
-      a.click();
-      setTimeout(() => URL.revokeObjectURL(url), 10000);
-    }
+      if (shouldDownload && isMobile()) {
+        // ── Mobile: save to Documents folder and open ──────────────────
+        const arrayBuffer = await blob.arrayBuffer();
+        const base64 = btoa(
+          new Uint8Array(arrayBuffer).reduce((data, byte) => data + String.fromCharCode(byte), ''),
+        );
+        const isAndroid = Capacitor.getPlatform() === 'android';
+        const result = await Filesystem.writeFile({
+          // Android exposes the shared Downloads folder through ExternalStorage.
+          // iOS has no shared Downloads directory, so Documents is the closest
+          // system-managed location and does not show a folder picker.
+          path: isAndroid ? `Download/QuoteBuddy/${filename}` : `QuoteBuddy/${filename}`,
+          data: base64,
+          directory: isAndroid ? Directory.ExternalStorage : Directory.Documents,
+          recursive: true,
+        });
+        await FileOpener.open({ filePath: result.uri, contentType: 'application/pdf' });
+      } else if (shouldDownload) {
+        openPdfBlobInNewTab(blob, filename);
+      }
+      return { pdfBlob: blob, filename };
   } finally {
     document.body.style.cursor = originalCursor;
   }
+};
+
+/** Open a generated PDF in a new tab after it is ready (web). Falls back to download if blocked. */
+export const openPdfBlobInNewTab = (blob: Blob, filename: string): void => {
+  const url = URL.createObjectURL(blob);
+  const opened = window.open(url, '_blank');
+  if (!opened) {
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = filename;
+    a.click();
+  }
+  setTimeout(() => URL.revokeObjectURL(url), 60_000);
 };

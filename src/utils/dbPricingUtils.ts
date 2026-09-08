@@ -7,6 +7,7 @@ import {
 import { resolveDisplayUnitPricePerDay, resolveDisplayUnitCostPerDay, resolvePfCostFloor } from './marginUtils';
 import type { DbService } from './serviceResolver';
 import { formatServiceDisplayName } from './serviceResolver';
+import { buildStructuredServiceHeading } from './serviceHeading';
 
 function isNaLike(value: unknown): boolean {
   if (value == null || value === '') return true;
@@ -275,7 +276,8 @@ export function buildLineItemsFromDbPricing(
   const f = extractDbPricingFields(svc);
   const m = svc.metadata || {};
   const meta = m as DbMetadataLike;
-  const serviceName = formatServiceDisplayName(svc);
+  const structured = buildStructuredServiceHeading(svc);
+  const serviceName = structured || formatServiceDisplayName(svc);
   const minQty = getMinQtyFromService(svc) ?? undefined;
   const items: QuoteItem[] = [];
   let lineIndex = 0;

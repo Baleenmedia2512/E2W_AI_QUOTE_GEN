@@ -31,9 +31,19 @@ const FILLER_TOKENS = new Set([
 ]);
 
 let vendorRatesCache: VendorRateRow[] = [];
+let vendorRatesCacheAt = 0;
+const VENDOR_RATES_CACHE_TTL_MS = 60_000;
+let vendorRatesInflight: Promise<VendorRateRow[]> | null = null;
 
 export function getVendorRatesCache(): VendorRateRow[] {
   return vendorRatesCache;
+}
+
+/** Drop in-memory vendor cache (e.g. after upload). */
+export function invalidateVendorRatesCache(): void {
+  vendorRatesCache = [];
+  vendorRatesCacheAt = 0;
+  vendorRatesInflight = null;
 }
 
 function isNaLike(value: unknown): boolean {
@@ -171,11 +181,11 @@ export function normalizeVendorRateRow(row: Record<string, unknown>): VendorRate
       : row;
 
   const pricingRaw = meta.pricing ?? row.pricing;
-  if (!pricingRaw || typeof pricingRaw !== 'object' || Array.isArray(pricingRaw)) {
-    return null;
-  }
-
-  const pricing = pricingRaw as VendorPricingBlock;
+  const pricing = (
+    pricingRaw && typeof pricingRaw === 'object' && !Array.isArray(pricingRaw)
+      ? pricingRaw
+      : {}
+  ) as VendorPricingBlock;
   // Accept both snake_case and camelCase price fields from vendor metadata
   const displayUnitPricePerDay =
     pricing.display_unit_price_per_day ??
@@ -185,18 +195,8 @@ export function normalizeVendorRateRow(row: Record<string, unknown>): VendorRate
   const pfPrice =
     pricing.printing_and_mounting_price ??
     (pricing as { printingAndMountingPrice?: unknown }).printingAndMountingPrice;
-  const hasPrice =
-    hasUsableAmount(displayUnitPricePerDay) ||
-    hasUsableAmount(displayPrice) ||
-    hasUsableAmount(pfPrice) ||
-    hasUsableAmount(pricing.printing_price) ||
-    hasUsableAmount(pricing.mounting_price) ||
-    hasUsableAmount(pricing.official_and_incidental_price) ||
-    hasUsableAmount(pricing.rto_price) ||
-    hasUsableAmount(pricing.space_rental_price) ||
-    hasUsableAmount(pricing.total_price);
-
-  if (!hasPrice) return null;
+  // Keep rank-1 identity rows even when price is 0 / NA so chat can discover
+  // the medium. Quote generation still rejects non-quotable pricing later.
 
   // Normalize camelCase into snake_case for downstream quote builders
   if (displayUnitPricePerDay != null && pricing.display_unit_price_per_day == null) {
@@ -273,6 +273,8 @@ export function normalizeVendorRateRow(row: Record<string, unknown>): VendorRate
   const displayWidth = pickDim('display_width', 'width');
   const displayHeight = pickDim('display_height', 'height');
   const displayLength = pickDim('display_length', 'length');
+  const latitude = pickDim('latitude', 'lat');
+  const longitude = pickDim('longitude', 'lng', 'long', 'lon');
   const referenceImage = pickString(meta.reference_image) || undefined;
   const customerReview = pickString(meta.customer_review) || undefined;
   // Unique site id from DB column / metadata (keeps each hoarding area separate)
@@ -302,8 +304,12 @@ export function normalizeVendorRateRow(row: Record<string, unknown>): VendorRate
     return undefined;
   };
 
+  const medium = pickString(meta.medium, row.medium, meta.medium_name, row.medium_name);
+  const serviceName = pickString(row.service_name, meta.service_name);
+  if (!medium && !serviceId && !serviceName) return null;
+
   return {
-    medium: pickString(meta.medium, row.medium, meta.medium_name, row.medium_name),
+    medium,
     city: pickString(meta.city, row.city).toLowerCase(),
     vendor_name: pickString(meta.vendor_name, row.vendor_name) || undefined,
     service_id: serviceId,
@@ -325,6 +331,8 @@ export function normalizeVendorRateRow(row: Record<string, unknown>): VendorRate
     min_duration: vendorMinDays,
     direction_remarks: directionRemarks,
     area_name: areaName,
+    latitude,
+    longitude,
     specifications,
     size,
     material,
@@ -353,89 +361,130 @@ export function normalizeVendorRateRow(row: Record<string, unknown>): VendorRate
 }
 
 export async function loadVendorRatesFromCloud(): Promise<VendorRateRow[]> {
-  try {
-    let data: Record<string, unknown>[] | null = null;
-    let error: { message: string } | null = null;
-
-    const ranked = await supabase
-      .from('vendor_rate_chunks')
-      .select('*')
-      .eq('preferred_vendor_rank', 1);
-
-    if (ranked.error) {
-      console.warn(
-        '⚠️ [vendor_rate_chunks] Rank filter failed, loading all then filtering client-side:',
-        ranked.error.message,
-      );
-      const all = await supabase.from('vendor_rate_chunks').select('*');
-      data = (all.data || []) as Record<string, unknown>[];
-      error = all.error;
-    } else {
-      data = (ranked.data || []) as Record<string, unknown>[];
-    }
-
-    if (error) {
-      console.warn(
-        '⚠️ [vendor_rate_chunks] Unavailable — full fallback to proposal_chunks:',
-        error.message,
-      );
-      vendorRatesCache = [];
-      return [];
-    }
-
-    const rank1Rows = (data || []).filter((row) => {
-      const rank = Number(
-        row.preferred_vendor_rank ??
-          (row.metadata as Record<string, unknown> | undefined)?.preferred_vendor_rank,
-      );
-      if (!Number.isFinite(rank)) return true;
-      return rank === 1;
-    });
-
-    const rows = rank1Rows
-      .map((row) => normalizeVendorRateRow(row))
-      .filter((r): r is VendorRateRow => r != null)
-      .map(sanitizeVendorPipeFields);
-
-    vendorRatesCache = rows;
-    console.log(
-      `💰 [vendor_rate_chunks] Rank=1: ${rank1Rows.length}; usable: ${rows.length}` +
-        (rank1Rows.length > rows.length
-          ? ` (${rank1Rows.length - rows.length} skipped — no usable pricing)`
-          : ''),
-    );
-    if (rows.length > 0) {
-      console.log(
-        '💰 [vendor_rate_chunks] Sample:',
-        rows.slice(0, 3).map((r) => ({
-          service_id: r.service_id,
-          medium: r.medium,
-          medium_type: r.medium_type,
-          rate_key: r.rate_key,
-          city: r.city,
-          direction: r.direction_remarks,
-          vendor: r.vendor_name,
-          display_price: r.pricing?.display_price,
-          hasTerms: !!r.terms,
-          imageCount: r.images?.length ?? 0,
-          hasReview: !!r.review,
-          hasSpecifications: !!r.specifications && Object.keys(r.specifications).length > 0,
-        })),
-      );
-    }
-    return rows;
-  } catch (err) {
-    console.warn('⚠️ [vendor_rate_chunks] Load failed — full fallback to proposal_chunks:', err);
-    vendorRatesCache = [];
-    return [];
+  const now = Date.now();
+  if (
+    vendorRatesCache.length > 0
+    && now - vendorRatesCacheAt < VENDOR_RATES_CACHE_TTL_MS
+  ) {
+    return vendorRatesCache;
   }
+  if (vendorRatesInflight) return vendorRatesInflight;
+
+  vendorRatesInflight = (async () => {
+    try {
+      let data: Record<string, unknown>[] | null = null;
+      let error: { message: string } | null = null;
+
+      const ranked = await supabase
+        .from('vendor_rate_chunks')
+        .select('*')
+        .eq('preferred_vendor_rank', 1);
+
+      if (ranked.error) {
+        console.warn(
+          '⚠️ [vendor_rate_chunks] Rank filter failed, loading all then filtering client-side:',
+          ranked.error.message,
+        );
+        const all = await supabase.from('vendor_rate_chunks').select('*');
+        data = (all.data || []) as Record<string, unknown>[];
+        error = all.error;
+      } else {
+        data = (ranked.data || []) as Record<string, unknown>[];
+      }
+
+      if (error) {
+        console.warn(
+          '⚠️ [vendor_rate_chunks] Unavailable — full fallback to proposal_chunks:',
+          error.message,
+        );
+        vendorRatesCache = [];
+        vendorRatesCacheAt = 0;
+        return [];
+      }
+
+      const rank1Rows = (data || []).filter((row) => {
+        const rank = Number(
+          row.preferred_vendor_rank ??
+            (row.metadata as Record<string, unknown> | undefined)?.preferred_vendor_rank,
+        );
+        if (!Number.isFinite(rank)) return true;
+        return rank === 1;
+      });
+
+      const rows = rank1Rows
+        .map((row) => normalizeVendorRateRow(row))
+        .filter((r): r is VendorRateRow => r != null)
+        .map(sanitizeVendorPipeFields);
+
+      vendorRatesCache = rows;
+      vendorRatesCacheAt = Date.now();
+      console.log(
+        `💰 [vendor_rate_chunks] Rank=1: ${rank1Rows.length}; catalog: ${rows.length}` +
+          (rank1Rows.length > rows.length
+            ? ` (${rank1Rows.length - rows.length} skipped — no medium/service identity)`
+            : ''),
+      );
+      return rows;
+    } catch (err) {
+      console.warn('⚠️ [vendor_rate_chunks] Load failed — full fallback to proposal_chunks:', err);
+      vendorRatesCache = [];
+      vendorRatesCacheAt = 0;
+      return [];
+    } finally {
+      vendorRatesInflight = null;
+    }
+  })();
+
+  return vendorRatesInflight;
 }
 
 function citiesMatch(a: string, b: string): boolean {
-  const x = a.toLowerCase().trim();
-  const y = b.toLowerCase().trim();
+  const x = a.toLowerCase().replace(/\s+/g, ' ').trim();
+  const y = b.toLowerCase().replace(/\s+/g, ' ').trim();
   if (!x || !y) return false;
-  return x === y || x.includes(y) || y.includes(x);
+  return x === y;
+}
+
+function vendorRateHasUsablePricing(row: VendorRateRow): boolean {
+  const pricing = row.pricing || {};
+  return [
+    pricing.display_price,
+    pricing.printing_and_mounting_price,
+    pricing.total_price,
+  ].some((value) => Number(value) > 0);
+}
+
+/**
+ * Select one vendor deterministically when the database contains duplicate
+ * rank-1 rows for the same service/site. Rank remains the primary rule;
+ * completeness and stable vendor identity only resolve ties.
+ */
+function compareVendorRatePreference(a: VendorRateRow, b: VendorRateRow): number {
+  const rankA = Number.isFinite(Number(a.preferred_vendor_rank))
+    ? Number(a.preferred_vendor_rank)
+    : Number.MAX_SAFE_INTEGER;
+  const rankB = Number.isFinite(Number(b.preferred_vendor_rank))
+    ? Number(b.preferred_vendor_rank)
+    : Number.MAX_SAFE_INTEGER;
+  if (rankA !== rankB) return rankA - rankB;
+
+  const usableA = vendorRateHasUsablePricing(a);
+  const usableB = vendorRateHasUsablePricing(b);
+  if (usableA !== usableB) return usableA ? -1 : 1;
+
+  const vendorA = (a.vendor_name || '').trim().toLowerCase();
+  const vendorB = (b.vendor_name || '').trim().toLowerCase();
+  const vendorCompare = vendorA.localeCompare(vendorB);
+  if (vendorCompare !== 0) return vendorCompare;
+
+  return (a.rate_key || '').localeCompare(b.rate_key || '');
+}
+
+function pickPreferredVendorRate(rows: VendorRateRow[]): VendorRateRow {
+  if (rows.length === 0) {
+    throw new Error('Cannot select a preferred vendor from an empty list');
+  }
+  return [...rows].sort(compareVendorRatePreference)[0];
 }
 
 /** Resolve full preferred vendor row (or null → keep all proposal_chunks data). */
@@ -469,9 +518,9 @@ export function resolveVendorRateRow(
     }
     if (byServiceId.length > 1) {
       console.warn(
-        `⚠️ [VendorMatch] Duplicate service_id "${sid}" (${byServiceId.length} rows) — using first`,
+        `⚠️ [VendorMatch] Duplicate service_id "${sid}" (${byServiceId.length} rows) — selecting preferred row`,
       );
-      return byServiceId[0];
+      return pickPreferredVendorRate(byServiceId);
     }
 
     // Fallback: rate_key / medium_id match (legacy cleaned keys)
@@ -480,18 +529,12 @@ export function resolveVendorRateRow(
       if (!key) return false;
       return key === sid || key.startsWith(sid) || sid.startsWith(key) || key.includes(sid) || sid.includes(key);
     });
-    const byKeyCity = city
+    // When a city is supplied, never fall back to a rate from another city.
+    const keyPool = city
       ? byKey.filter((r) => citiesMatch(r.city, city))
       : byKey;
-    const keyPool = byKeyCity.length > 0 ? byKeyCity : byKey;
     if (keyPool.length >= 1) {
-      const chosen = keyPool.length === 1
-        ? keyPool[0]
-        : [...keyPool].sort((a, b) => {
-            const ta = Number(a.pricing?.total_price) || Number(a.pricing?.display_price) || 0;
-            const tb = Number(b.pricing?.total_price) || Number(b.pricing?.display_price) || 0;
-            return ta - tb;
-          })[0];
+      const chosen = pickPreferredVendorRate(keyPool);
       console.log(
         `💰 [VendorMatch] rate_key~service_id "${sid}" → ${chosen.vendor_name || 'unknown'} (${chosen.rate_key})`,
       );
@@ -521,8 +564,8 @@ export function resolveVendorRateRow(
   );
 
   if (city) {
-    const cityFiltered = matches.filter((r) => citiesMatch(r.city, city));
-    if (cityFiltered.length > 0) matches = cityFiltered;
+    // A requested city with no exact match must remain unresolved.
+    matches = matches.filter((r) => citiesMatch(r.city, city));
   }
 
   // Prefer vendor rows whose medium / rate_key encodes the same medium type
@@ -553,9 +596,7 @@ export function resolveVendorRateRow(
       const scoreDiff =
         fuzzyMatchScore(b.medium, matchLabel) - fuzzyMatchScore(a.medium, matchLabel);
       if (scoreDiff !== 0) return scoreDiff;
-      const ta = Number(a.pricing?.total_price) || Number(a.pricing?.display_price) || 0;
-      const tb = Number(b.pricing?.total_price) || Number(b.pricing?.display_price) || 0;
-      return ta - tb;
+      return compareVendorRatePreference(a, b);
     });
   }
 
@@ -1028,27 +1069,35 @@ function displayNameFromVendor(v: VendorRateRow): string {
 
   let base = '';
 
-  // 1) Prefer clean rate_key / medium-id slug (kebab) — only when not a city-collapsed stub
-  const slugSource =
-    (rateKey && !rateKey.includes('|') ? rateKey : '') ||
-    (/^[a-z0-9]+(?:-[a-z0-9]+)+$/i.test(rawMedium) ? rawMedium : '');
-
-  if (slugSource) {
-    let slug = slugSource.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '');
-    const city = cityFromRateKey(slug);
-    if (city) slug = slug.slice(0, -(city.length + 1));
-    // Strip trailing medium_type from slug for base label (re-added below as " — Type")
-    const typeSlug = normalizeMediumTypeToken(v.medium_type);
-    if (typeSlug && slug.endsWith(`-${typeSlug}`)) {
-      slug = slug.slice(0, -(typeSlug.length + 1));
-    }
-    base = titleCaseWords(slug.split('-'));
-  }
-
-  // 2) Fallback: short clean medium name only
-  if (!base && rawMedium && !isPollutedMediumLabel(rawMedium)) {
+  // 1) Prefer clean medium field (short product name)
+  if (rawMedium && !isPollutedMediumLabel(rawMedium)) {
     base = titleCaseWords(rawMedium.split(/[\s–—\-/]+/));
   }
+
+  // 2) Fallback: clean rate_key / medium-id slug (kebab) — strip city + type suffixes
+  if (!base) {
+    const slugSource =
+      (rateKey && !rateKey.includes('|') ? rateKey : '') ||
+      (/^[a-z0-9]+(?:-[a-z0-9]+)+$/i.test(rawMedium) ? rawMedium : '');
+
+    if (slugSource) {
+      let slug = slugSource.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '');
+      const city = cityFromRateKey(slug);
+      if (city) slug = slug.slice(0, -(city.length + 1));
+      const typeSlug = normalizeMediumTypeToken(v.medium_type);
+      if (typeSlug && slug.endsWith(`-${typeSlug}`)) {
+        slug = slug.slice(0, -(typeSlug.length + 1));
+      }
+      // Drop trailing direction/area fragments (towards-*, flyover, road tokens after first 1–3 words)
+      const parts = slug.split('-').filter(Boolean);
+      const cutAt = parts.findIndex((p, i) =>
+        i > 0 && /^(towards|near|flyover|opp|opposite|junction)$/i.test(p),
+      );
+      const keep = cutAt >= 0 ? parts.slice(0, cutAt) : parts.slice(0, Math.min(parts.length, 4));
+      base = titleCaseWords(keep.length ? keep : parts);
+    }
+  }
+
   if (!base) base = 'Service';
 
   const typeSlug = normalizeMediumTypeToken(v.medium_type);
@@ -1060,15 +1109,8 @@ function displayNameFromVendor(v: VendorRateRow): string {
     }
   }
 
-  // Site location so Power house / Mettupalayam etc. are distinguishable in lists
-  const location = pickString(v.direction_remarks, v.area_name);
-  if (location) {
-    const locCanon = canonicalizeServiceName(location);
-    if (locCanon && !canonicalizeServiceName(label).includes(locCanon)) {
-      label = `${label} · ${location}`;
-    }
-  }
-
+  // Do NOT append area/direction here — those belong in structured PDF headings only.
+  // (Appending them caused "Hoarding … — Area · Dir — Hoarding City Dir" duplicates.)
   return label;
 }
 
@@ -1150,6 +1192,8 @@ export function vendorRatesToDbServices(
           : undefined,
         direction_remarks: cleaned.direction_remarks,
         area_name: cleaned.area_name,
+        latitude: cleaned.latitude,
+        longitude: cleaned.longitude,
         // PDF / Display Specification — from vendor_rate_chunks.metadata
         specifications: cleaned.specifications,
         size: cleaned.size,
@@ -1177,11 +1221,15 @@ export function vendorRatesToDbServices(
       byKey.set(mapKey, svc);
       return;
     }
-    // Prefer row with usable day-wise display rate if duplicate service_id somehow appears
+    // Resolve duplicate service_id rows deterministically. The database normally
+    // assigns one preferred rank, but duplicate rank-1 rows must not make the
+    // quote depend on query order.
     const prevPricing = (existing.metadata?.pricing || {}) as Record<string, unknown>;
     const nextPricing = (svc.metadata?.pricing || {}) as Record<string, unknown>;
     const prevMeta = (existing.metadata || {}) as Record<string, unknown>;
     const nextMeta = (svc.metadata || {}) as Record<string, unknown>;
+    const prevRank = Number(prevMeta.preferred_vendor_rank);
+    const nextRank = Number(nextMeta.preferred_vendor_rank);
     const prevPrice =
       Number(prevPricing.display_unit_price_per_day) ||
       Number(prevMeta.display_unit_price_per_day) ||
@@ -1192,7 +1240,21 @@ export function vendorRatesToDbServices(
       Number(nextMeta.display_unit_price_per_day) ||
       Number(nextPricing.display_price) ||
       0;
-    if (nextPrice > 0 && prevPrice <= 0) {
+    const prevVendor = String(prevMeta.vendor_name || '').trim().toLowerCase();
+    const nextVendor = String(nextMeta.vendor_name || '').trim().toLowerCase();
+    const preferNext =
+      (Number.isFinite(nextRank) && !Number.isFinite(prevRank)) ||
+      (Number.isFinite(nextRank) &&
+        Number.isFinite(prevRank) &&
+        nextRank < prevRank) ||
+      ((nextRank === prevRank || (!Number.isFinite(nextRank) && !Number.isFinite(prevRank))) &&
+        nextPrice > 0 &&
+        prevPrice <= 0) ||
+      ((nextRank === prevRank || (!Number.isFinite(nextRank) && !Number.isFinite(prevRank))) &&
+        nextPrice > 0 &&
+        prevPrice > 0 &&
+        nextVendor.localeCompare(prevVendor) < 0);
+    if (preferNext) {
       byKey.set(mapKey, svc);
     }
   });

@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useEffect } from 'react';
 import {
   Box,
   Container,
@@ -16,14 +16,36 @@ import { useAppStore } from '../store';
 import { CompanyInfo } from '../types/company';
 import { saveCompanyInfo } from '../utils/localStorage';
 import { Header } from '../components/Header';
+import { useAuthStore } from '../store/authStore';
+import { canAccessCompanyProfile } from '../utils/profileAccess';
+import { companyService } from '../services/companyService';
 
 const CompanySettingsPage: React.FC = () => {
   const history = useHistory();
   const toast = useToast();
   const { companyInfo, setCompanyInfo } = useAppStore();
+  const user = useAuthStore((state) => state.user);
 
-  const handleSubmit = (info: CompanyInfo) => {
-    setCompanyInfo(info);
+  useEffect(() => {
+    if (!canAccessCompanyProfile(user)) {
+      history.replace('/unauthorized');
+    }
+  }, [user, history]);
+
+  const handleSubmit = async (info: CompanyInfo) => {
+    const saved = await companyService.saveCompanySettings(info);
+    if (!saved) {
+      toast({
+        title: 'Unable to save company profile',
+        description: 'The company profile could not be saved to the database.',
+        status: 'error',
+        duration: 4000,
+        isClosable: true,
+      });
+      return;
+    }
+
+    setCompanyInfo(info, false);
     saveCompanyInfo(info);
     toast({
       title: 'Company details saved',
@@ -59,7 +81,7 @@ const CompanySettingsPage: React.FC = () => {
           >
             Back
           </Button>
-          <Heading size="sm">Company Settings</Heading>
+            <Heading size="sm">Company Profile</Heading>
         </HStack>
       </Box>
 
@@ -75,7 +97,7 @@ const CompanySettingsPage: React.FC = () => {
             Back
           </Button>
           <Heading size="lg" color="gray.800" mb={1}>
-            Company Settings
+            Company Profile
           </Heading>
           <Text color="gray.600" fontSize="sm">
             Edit your company details once — they are reused on every quote PDF.

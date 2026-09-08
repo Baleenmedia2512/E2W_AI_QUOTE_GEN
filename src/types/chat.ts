@@ -2,6 +2,9 @@ export interface ServiceSuggestion {
   name: string;
   category: string;
   similarity?: string;
+  /** First reference image belonging to this exact catalog service. */
+  imageUrl?: string;
+  serviceId?: string;
   /** Per-service qty when multiple segments share one category group */
   requestedQuantity?: number;
 }
@@ -88,6 +91,8 @@ export interface Message {
     | 'pick_direction'
     | 'no_match'
     | 'min_qty_confirm'
+    | 'min_duration_confirm'
+    | 'qty_or_duration_clarify'
     | 'quote_ready'
     | 'small_talk';
   progressiveOptions?: Array<{
@@ -97,10 +102,29 @@ export interface Message {
     city?: string;
     medium?: string;
     group?: string;
+    /** Optional DB reference thumbnail for chip UI. */
+    imageUrl?: string;
   }>;
   progressiveAllowMulti?: boolean;
+  /** Selected option IDs retained so completed checklists survive remounts. */
+  progressiveSelected?: string[];
   progressiveAutoConfirmed?: string[];
+  /** Batch: service currently being asked about (one chip). */
+  progressiveCurrentService?: string;
+  /** Batch: services already added to the quote (grows after each Confirm). */
+  progressiveQuotedServices?: string[];
+  /** Batch: how many services left after the current one. */
+  progressiveBatchRemaining?: number;
+  /** Services requested but not offered in the locked city (Cab in Madurai). */
+  progressiveUnavailable?: string[];
+  progressiveUnavailableCity?: string;
   progressiveBelowMin?: Array<{
+    service: string;
+    requested: number;
+    minimum: number;
+    serviceId?: string;
+  }>;
+  progressiveBelowMinDuration?: Array<{
     service: string;
     requested: number;
     minimum: number;
@@ -110,6 +134,7 @@ export interface Message {
     originalText: string;
     medium?: string;
     mediumType?: string;
+    typesResolved?: boolean;
     browseToken?: string;
     city?: string;
     area?: string;
@@ -121,9 +146,9 @@ export interface Message {
     bestGuessServiceId?: string;
     bestGuessLabel?: string;
     bestGuessKind?: 'place' | 'service';
-    pendingRows?: Array<{ service: string; qty: number | string; city: string; serviceId?: string }>;
+    pendingRows?: Array<{ service: string; qty: number | string; city: string; serviceId?: string; durationDays?: number }>;
     pendingMedia?: string[];
-    collectedRows?: Array<{ service: string; qty: number | string; city: string; serviceId?: string }>;
+    collectedRows?: Array<{ service: string; qty: number | string; city: string; serviceId?: string; durationDays?: number }>;
     collectedServiceIds?: string[];
     aiReply?: string | null;
     segments?: Array<{ raw: string; token: string; qty: number | null; city: string | null }>;
@@ -134,8 +159,24 @@ export interface Message {
       browseToken?: string;
       qty: number | null;
       city?: string;
+      area?: string;
+      mediumType?: string;
       candidateServiceIds?: string[];
     }>;
+    batchServiceLabels?: string[];
+    batchUnavailableLabels?: string[];
+    batchUnavailableNote?: string;
+    batchUnavailableSpoken?: boolean;
+    needsContinueConfirm?: boolean;
+    unresolvedPlaceOffer?: boolean;
+    /** Nominatim hierarchy for statewide / state-labelled DB city coverage. */
+    resolvedLocation?: {
+      town: string;
+      district: string | null;
+      state: string | null;
+      country: string | null;
+      confidence: number;
+    } | null;
   };
 
   // DEPRECATED (kept for backward compatibility)

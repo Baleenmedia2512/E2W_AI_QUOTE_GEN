@@ -12,6 +12,8 @@ import {
 import { formatUnitRateInr } from './rateDisplay';
 import { listOneTimeAddOnComponents } from './dbPricingUtils';
 import { resolveDbServiceForQuoteItem } from './quoteEditValidation';
+import { canonicalizeServiceName } from './serviceNameUtils';
+import { formatServiceHeadingDisplay } from './serviceHeading';
 
 export interface ServiceGroup {
   serviceType: string;
@@ -59,6 +61,8 @@ export interface ExecutiveSummaryRow {
   /** Raw catalog service_id for vendor lookup / grouping */
   catalogServiceId?: string;
   quantity: number;
+  /** Independent quantity used by Printing/Fixing/Mounting. */
+  oneTimeQuantity: number;
   quantityUnit?: string;
   /** Display duration value (months when exact ×30, else days) */
   duration?: number;
@@ -74,6 +78,8 @@ export interface ExecutiveSummaryRow {
   ratePeriod?: 'per_day' | 'per_month';
   /** Printing & Fixing / one-time unit rate (excl. GST) */
   oneTimeCharge: number;
+  /** Optional one-time component breakdown used by inline summary edits. */
+  oneTimeComponents?: { label: string; amount: number }[];
   /** Combined line totals excl. GST */
   amountExclGst: number;
   remark?: string;
@@ -153,12 +159,13 @@ export function buildExecutiveSummaryRows(items: QuoteItem[]): ExecutiveSummaryR
     }
 
     const rawServiceId =
-      group.find((i) => i.serviceId?.trim())?.serviceId?.trim() ||
       group.find((i) => i.serviceName?.trim())?.serviceName?.trim() ||
+      group.find((i) => i.serviceId?.trim())?.serviceId?.trim() ||
       extractServiceType(primary.description);
     const serviceId = formatServiceIdDisplay(rawServiceId);
 
-    // Exact ×30 days → months + per month; otherwise day-wise (incl. 34, 45)
+    // Vendor catalog display rates are stored per day. Show monthly only for
+    // complete 30-day periods; partial campaigns stay explicitly day-wise.
     const durationDays = toCampaignDays(primary.duration, primary.durationUnit);
     const dailyRate =
       durationDays != null && requiringCharge > 0
@@ -168,11 +175,21 @@ export function buildExecutiveSummaryRows(items: QuoteItem[]): ExecutiveSummaryR
     const displayRate =
       dailyRate > 0 ? toDisplayRecurringRate(dailyRate, durationDays) : null;
 
+    const displayLine = group.find((i) => !isOneTimeLineDescription(i.description));
+    const pfLine = group.find((i) => isOneTimeLineDescription(i.description));
+    const summaryQty = displayLine
+      ? displayLine.quantity
+      : (pfLine?.oneTimeQuantity ?? pfLine?.quantity ?? primary.quantity);
+
     rows.push({
       id: primary.id,
       serviceId,
       catalogServiceId: rawServiceId,
-      quantity: primary.quantity,
+      quantity: summaryQty,
+      oneTimeQuantity:
+        pfLine?.oneTimeQuantity ??
+        pfLine?.quantity ??
+        primary.quantity,
       quantityUnit: primary.quantityUnit,
       duration: displayDur?.value,
       durationUnit: displayDur?.unit,
@@ -368,6 +385,7 @@ export function buildPricingBreakdownLines(items: QuoteItem[]): {
 
     if (pfItem && (pfItem.rate > 0 || pfItem.total > 0)) {
       const unitRate = pfItem.rate > 0 ? pfItem.rate : row.oneTimeCharge;
+      const oneTimeQty = row.oneTimeQuantity ?? qty;
       const svc = resolveDbServiceForQuoteItem({
         serviceId: row.catalogServiceId || primary.serviceId || pfItem.serviceId,
         serviceName: primary.serviceName || pfItem.serviceName,
@@ -377,7 +395,7 @@ export function buildPricingBreakdownLines(items: QuoteItem[]): {
       const pricing = (svc?.metadata?.pricing || undefined) as Record<string, unknown> | undefined;
       const { titlePrefix, formula, components } = buildOneTimeFormula(
         unitRate,
-        qty,
+        row.oneTimeQuantity,
         unitForFormula,
         pricing,
         pfItem.oneTimeComponents,
@@ -386,7 +404,7 @@ export function buildPricingBreakdownLines(items: QuoteItem[]): {
       lines.push({
         kind: 'onetime',
         descriptionLines: [
-          `${titlePrefix} for ${qty} ${unitPlural}`,
+          `${titlePrefix} for ${oneTimeQty} ${pluralizeQtyUnit(row.quantityUnit ?? primary.quantityUnit, oneTimeQty)}`,
           formula,
         ],
         amount: computeQuoteItemTotal(pfItem),
@@ -412,11 +430,11 @@ export function buildPricingBreakdownLines(items: QuoteItem[]): {
  */
 export const DEFAULT_GENERAL_TERMS = [
   'Prices are exclusive of GST',
-  'Ad. Material shall be shared by the client or Design charges extra applicable',
-  '100% Upfront payment required for releasing the Ads',
-  'Printed colors may look different from digital design',
-  'Client must approved the final design before printing. Once approved, Baleen Media will not be responsible for any design errors.',
-  'If the client stops the campaign during campaign period, no refund will be provided'
+  'Ad material shall be provided by the client. Otherwise, design charges will be applicable.',
+  '100% upfront payment is required before releasing the ads.',
+  'Printed colors may differ from the digital design.',
+  'The client must approve the final design before printing. Once approved, Baleen Media will not be responsible for any design errors.',
+  'If the client stops the campaign during the campaign period, no refund will be provided.',
 ];
 
 /**
@@ -761,13 +779,17 @@ export function filterNotesByServiceType(notes: string | undefined, serviceType:
 
 /**
  * Get a clean heading for a service group.
- * group.serviceType is now the specific service name (e.g. "Bus Semi Branding",
- * "Bus Shelter Panel - Lit") so we return it directly.
+ * Order: Medium · Type · City · Area · Direction — deduped, ALL CAPS.
  */
 export function getServiceGroupHeading(group: ServiceGroup): string {
-  if (group.city?.trim() && group.city !== '—') {
-    const cityLabel = group.city.charAt(0).toUpperCase() + group.city.slice(1);
-    return `${cityLabel} — ${group.serviceType}`;
-  }
-  return group.serviceType;
+  const primary = group.items.find((i) => !isOneTimeLineDescription(i.description)) || group.items[0];
+  const raw =
+    (primary?.serviceName || '').trim()
+    || extractServiceType(primary?.description || group.serviceType || '');
+  const withCity =
+    group.city?.trim() && group.city !== '—'
+    && !canonicalizeServiceName(raw).includes(canonicalizeServiceName(group.city))
+      ? `${raw} · ${group.city}`
+      : raw;
+  return formatServiceHeadingDisplay(withCity);
 }

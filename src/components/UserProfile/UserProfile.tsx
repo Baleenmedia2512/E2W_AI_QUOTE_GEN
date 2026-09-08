@@ -1,25 +1,22 @@
 import React from 'react';
 import {
-  Box,
-  Button,
-  Menu,
-  MenuButton,
-  MenuList,
-  MenuItem,
-  MenuDivider,
   Avatar,
-  Text,
+  Button,
   HStack,
+  IconButton,
+  Text,
+  Tooltip,
   VStack,
-  Badge,
   useToast,
 } from '@chakra-ui/react';
-import { ChevronDownIcon } from '@chakra-ui/icons';
 import { useHistory } from 'react-router-dom';
 import { useAuthStore } from '../../store/authStore';
+import { useAppStore } from '../../store';
+import { FiLogOut, FiUser } from 'react-icons/fi';
 
 export const UserProfile: React.FC = () => {
   const { user, logout, isAuthenticated } = useAuthStore();
+  const openChatProfile = useAppStore((state) => state.openChatProfile);
   const history = useHistory();
   const toast = useToast();
 
@@ -46,83 +43,71 @@ export const UserProfile: React.FC = () => {
     history.push('/login');
   };
 
-  // Get role color
-  const getRoleColor = (roleName: string) => {
-    const colors: Record<string, string> = {
-      admin: 'red',
-      manager: 'purple',
-      sales: 'blue',
-      user: 'gray',
-      viewer: 'green',
-    };
-    return colors[roleName.toLowerCase()] || 'gray';
-  };
+  const roleName = user.role?.role_name || 'User';
 
   return (
-    <Menu>
-      <MenuButton
-        as={Button}
-        rightIcon={<ChevronDownIcon display={{ base: 'none', md: 'inline' }} />}
-        variant="ghost"
-        size="sm"
-        px={{ base: 1, md: 3 }}
-      >
-        <HStack spacing={2}>
-          <Avatar
-            size="sm"
-            name={user.full_name}
-            bg="blue.500"
-            color="white"
-          />
-          <VStack spacing={0} align="start" display={{ base: 'none', md: 'flex' }}>
-            <Text fontSize="sm" fontWeight="medium" lineHeight="1.2">
-              {user.full_name}
-            </Text>
-            <Badge
-              fontSize="xs"
-              colorScheme={getRoleColor(user.role.role_name)}
-              variant="subtle"
+    <HStack spacing={{ base: 2, md: 3 }}>
+      <Tooltip label="Open profile">
+        <HStack
+          as="button"
+          type="button"
+          onClick={() => {
+            openChatProfile();
+            if (history.location.pathname !== '/') history.push('/');
+          }}
+          spacing={{ base: 1.5, md: 2 }}
+          minW={{ base: 'auto', md: '145px' }}
+          textAlign="left"
+          cursor="pointer"
+          _hover={{ opacity: 0.8 }}
+        >
+          {user.profileImage ? (
+            <Avatar size="sm" name={user.full_name} src={user.profileImage} />
+          ) : (
+            <Avatar
+              size="sm"
+              name={user.full_name}
+              bg="gray.100"
+              color="gray.600"
+              icon={<FiUser />}
+            />
+          )}
+          <VStack
+            align="flex-start"
+            spacing={0}
+            display={{ base: 'none', sm: 'flex' }}
+            maxW={{ sm: '105px', md: '135px' }}
+          >
+            <Text
+              fontSize={{ sm: 'xs', md: 'sm' }}
+              fontWeight="700"
+              color="gray.800"
+              noOfLines={1}
             >
-              {user.role.role_name}
-            </Badge>
+              {user.full_name || 'User'}
+            </Text>
+            <Text
+              fontSize="xs"
+              color="gray.500"
+              noOfLines={1}
+            >
+              {roleName}
+            </Text>
           </VStack>
         </HStack>
-      </MenuButton>
-      <MenuList>
-        <Box px={3} py={2}>
-          <Text fontWeight="bold" fontSize="sm">
-            {user.full_name}
-          </Text>
-          <Text fontSize="xs" color="gray.600">
-            {user.email}
-          </Text>
-          <Badge
-            mt={1}
-            fontSize="xs"
-            colorScheme={getRoleColor(user.role.role_name)}
-          >
-            {user.role.role_name}
-          </Badge>
-        </Box>
-        <MenuDivider />
-        <MenuItem onClick={() => history.push('/company-settings')}>
-          Company Settings
-        </MenuItem>
-        {/* AI Token Usage — hidden for now
-        <MenuDivider />
-        <MenuItem 
-          icon={<Text fontSize="sm">📊</Text>}
-          onClick={() => history.push('/token-usage')}
-        >
-          AI Token Usage
-        </MenuItem>
-        */}
-        <MenuDivider />
-        <MenuItem onClick={handleLogout} color="red.600">
-          Logout
-        </MenuItem>
-      </MenuList>
-    </Menu>
+      </Tooltip>
+      <Tooltip label="Logout">
+        <IconButton
+          aria-label="Logout"
+          icon={<FiLogOut />}
+          onClick={handleLogout}
+          variant="ghost"
+          color="red.500"
+          borderRadius="full"
+          _hover={{ bg: 'red.50', color: 'red.600' }}
+        />
+      </Tooltip>
+    </HStack>
   );
 };
 

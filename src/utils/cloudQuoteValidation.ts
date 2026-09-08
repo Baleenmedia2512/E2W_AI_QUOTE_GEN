@@ -1,5 +1,5 @@
 import { QuoteItem } from '../types/quote';
-import { canonicalizeServiceName } from './serviceNameUtils';
+import { canonicalizeServiceName, MEDIA_PLURAL_MAP } from './serviceNameUtils';
 import {
   DbService,
   extractCityHint,
@@ -11,6 +11,7 @@ import {
   stripMediumTypeFromDisplayName,
 } from './serviceResolver';
 import { hasQuotablePricing, pickPreferredDbService } from './dbPricingUtils';
+import type { ResolvedLocation } from '../types/location';
 
 /** Known city keys used across the app (lowercase). DB locations may add more at runtime. */
 export const CLOUD_CITY_KEYS = [
@@ -49,18 +50,7 @@ function titleCaseCity(key: string): string {
 }
 
 /** Plural → singular map for vehicle/category keywords only. */
-const PLURAL_NORMALIZE_MAP: Record<string, string> = {
-  buses: 'bus',
-  autos: 'auto',
-  cabs: 'cab',
-  tempos: 'tempo',
-  vans: 'van',
-  hoardings: 'hoarding',
-  shelters: 'shelter',
-  vehicles: 'vehicle',
-  trains: 'train',
-  billboards: 'billboard',
-};
+const PLURAL_NORMALIZE_MAP: Record<string, string> = { ...MEDIA_PLURAL_MAP };
 
 /** Extract meaningful query words (supports single-word queries like "bus"). */
 export function extractQueryWords(query: string): string[] {
@@ -74,8 +64,57 @@ export function extractQueryWords(query: string): string[] {
     .map((w) => PLURAL_NORMALIZE_MAP[w] ?? w);
 }
 
-/** True when the user typed a category (e.g. "bus") rather than a full service name. */
-export function isVagueCategoryQuery(query: string): boolean {
+/**
+ * True when the user typed a category (e.g. "bus") rather than a full service
+ * name. When the catalog is available, exact and multi-word DB-medium
+ * prefixes take precedence over the legacy hardcoded category heuristic.
+ */
+export function isVagueCategoryQuery(query: string, services?: DbService[]): boolean {
+  if (services?.length) {
+    const queryKey = canonicalizeServiceName(query);
+    const compact = queryKey.replace(/\s+/g, '');
+    const queryWordCount = queryKey.split(/\s+/).filter(Boolean).length;
+    if (queryKey) {
+      const relatedMediums = new Set<string>();
+      let exactOrPrefix = false;
+      for (const service of services) {
+        const medium = canonicalizeServiceName(
+          String(service.metadata?.medium || '').trim(),
+        );
+        const serviceName = canonicalizeServiceName(
+          (service.service_name || '').split(/[·|]/)[0],
+        );
+        for (const field of [medium, serviceName]) {
+          if (!field) continue;
+          const first = field.split(/\s+/).filter(Boolean)[0] || field;
+          if (field === queryKey || field.startsWith(`${queryKey} `)) {
+            exactOrPrefix = true;
+            relatedMediums.add(medium || field);
+          } else if (
+            first === queryKey
+            || first === compact
+            || field.replace(/\s+/g, '') === compact
+            || (queryKey.length >= 4 && first.startsWith(queryKey))
+          ) {
+            relatedMediums.add(medium || field);
+          }
+        }
+      }
+      if (exactOrPrefix && queryWordCount >= 2) return false;
+      if (relatedMediums.size >= 1) {
+        const isExactFirstToken =
+          queryWordCount === 1
+          && [...relatedMediums].some((medium) => {
+            const first = medium.split(/\s+/).filter(Boolean)[0];
+            return first === queryKey;
+          });
+        // Classic 1-word families (bus, auto) still use the city-picker path.
+        if (!(isExactFirstToken && VEHICLE_CATEGORY_PATTERN.test(query))) {
+          return false;
+        }
+      }
+    }
+  }
   if (FULL_SERVICE_PATTERNS.some((p) => p.test(query))) return false;
   const words = extractQueryWords(query);
   if (words.length === 0) return false;
@@ -219,9 +258,9 @@ export function detectCityOnlyInList(text: string, cityListLower: string[]): str
 }
 
 function citiesMatch(svcCity: string, selectedCity: string): boolean {
-  const a = svcCity.toLowerCase();
-  const b = selectedCity.toLowerCase();
-  return a.includes(b) || b.includes(a);
+  const a = svcCity.toLowerCase().replace(/\s+/g, ' ').trim();
+  const b = selectedCity.toLowerCase().replace(/\s+/g, ' ').trim();
+  return Boolean(a && b && a === b);
 }
 
 /** Medium-type tokens that should filter matches, not require literal name inclusion. */
@@ -265,14 +304,44 @@ function expandQueryWord(word: string): string[] {
 function haystackHasWord(haystacks: string[], word: string): boolean {
   return expandQueryWord(word).some((v) =>
     haystacks.some((h) => {
-      if (!v) return false;
-      if (h.includes(v)) return true;
-      if (v.length >= 4 && new RegExp(`\\b${v.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}s?\\b`, 'i').test(h)) {
-        return true;
-      }
-      return false;
+      if (!v || !h) return false;
+      return new RegExp(`\\b${escapeRegExp(v)}s?\\b`, 'i').test(h);
     }),
   );
+}
+
+function serviceNameMatchFields(svc: DbService): string[] {
+  const name = canonicalizeServiceName(
+    (svc.service_name || '').split(/[·|]/)[0] || '',
+  );
+  const display = canonicalizeServiceName(
+    stripMediumTypeFromDisplayName(formatServiceDisplayName(svc)),
+  );
+  const fullDisplay = canonicalizeServiceName(formatServiceDisplayName(svc));
+  return [...new Set([name, display, fullDisplay].filter(Boolean))];
+}
+
+/** True when the query is the catalog name or a leading prefix ("bus semi" → "bus semi branding"). */
+export function serviceIsExactQueryMatch(svc: DbService, words: string[]): boolean {
+  const queryCanonical = canonicalizeServiceName(words.join(' '));
+  if (!queryCanonical) return false;
+  return serviceNameMatchFields(svc).some(
+    (n) => n === queryCanonical || n.startsWith(`${queryCanonical} `),
+  );
+}
+
+/**
+ * Prefer exact/prefix catalog names. Only use fuzzy AND-matching when nothing
+ * in the pool is an exact service name for this query.
+ */
+export function filterServicesMatchingQuery(
+  services: DbService[],
+  words: string[],
+): DbService[] {
+  if (words.length === 0) return [];
+  const exact = services.filter((svc) => serviceIsExactQueryMatch(svc, words));
+  if (exact.length > 0) return exact;
+  return services.filter((svc) => serviceMatchesQuery(svc, words));
 }
 
 /** Pull elevated/underground (etc.) from free text for medium filtering. */
@@ -288,32 +357,20 @@ export function extractMediumHintFromQuery(text: string): string | null {
 
 export function serviceMatchesQuery(svc: DbService, words: string[]): boolean {
   if (words.length === 0) return false;
-  const name = (svc.service_name || '').toLowerCase();
-  const sid = (svc.service_id || '').toLowerCase();
-  const sidSpaced = sid.replace(/-/g, ' ');
-  const display = formatServiceDisplayName(svc).toLowerCase();
-  const canonical = canonicalizeServiceName(svc.service_name || '');
-  const displayCanon = canonicalizeServiceName(formatServiceDisplayName(svc));
-  const queryCanonical = canonicalizeServiceName(words.join(' '));
-  const haystacks = [name, sid, sidSpaced, display, canonical, displayCanon];
+  if (serviceIsExactQueryMatch(svc, words)) return true;
+
+  const nameFields = serviceNameMatchFields(svc);
+  const sid = canonicalizeServiceName(svc.service_id || '');
+  const nameHaystacks = [...nameFields, sid];
 
   if (words.length === 1) {
-    const w = words[0];
-    if (haystackHasWord(haystacks, w)) return true;
-    if (canonical && queryCanonical && (canonical.includes(queryCanonical) || queryCanonical.includes(canonical))) {
-      return true;
-    }
-    return false;
+    return haystackHasWord(nameHaystacks, words[0]);
   }
 
-  if (canonical && queryCanonical && (canonical.includes(queryCanonical) || queryCanonical.includes(canonical))) {
-    return true;
-  }
-  if (displayCanon && queryCanonical && (displayCanon.includes(queryCanonical) || queryCanonical.includes(displayCanon))) {
-    return true;
-  }
-  // Every content word must appear in name, id, or display (with spelling variants)
-  return words.every((w) => haystackHasWord(haystacks, w));
+  // Multi-word fuzzy: every word must be a whole token on the product name
+  // (not a substring somewhere in id/keywords). "bus semi" must not match
+  // Auto Semi or Bus Shelter.
+  return words.every((w) => haystackHasWord(nameFields, w));
 }
 
 function filterServicesByMediumHint(services: DbService[], mediumHint: string | null): DbService[] {
@@ -384,9 +441,7 @@ export function getCitiesForServiceQuery(query: string, services: DbService[]): 
   const words = extractQueryWords(queryBody);
   if (words.length === 0 || services.length === 0) return [];
 
-  const matched = services.filter(
-    (svc) => serviceMatchesQuery(svc, words) && hasQuotablePricing(svc),
-  );
+  const matched = filterServicesMatchingQuery(services, words).filter(hasQuotablePricing);
   if (matched.length === 0) return [];
 
   const citySet = new Set<string>();
@@ -675,7 +730,13 @@ export interface CloudPreGeminiResult {
   vagueGroups: Array<{
     vehicleType: string;
     requestedQuantity: number;
-    services: Array<{ name: string; category: string }>;
+    services: Array<{
+      name: string;
+      category: string;
+      serviceId?: string;
+      imageUrl?: string;
+      requestedQuantity?: number;
+    }>;
   }>;
   belowMinSegments: Array<{
     rawSegment: string;
@@ -825,12 +886,107 @@ export function runCloudPreGeminiValidation(
   return result;
 }
 
+/**
+ * Loose name compare for geo labels (Tamil Nadu ↔ tamilnadu ↔ Any City In Tamilnadu).
+ * No hardcoded place list — only string overlap after canonicalize.
+ */
+export function geoNamesLooselyMatch(a: string, b: string): boolean {
+  const ca = canonicalizeServiceName(a || '');
+  const cb = canonicalizeServiceName(b || '');
+  if (!ca || !cb) return false;
+  if (ca === cb) return true;
+  if (ca.includes(cb) || cb.includes(ca)) return true;
+  const aa = ca.replace(/\s+/g, '');
+  const bb = cb.replace(/\s+/g, '');
+  return aa === bb || aa.includes(bb) || bb.includes(aa);
+}
+
+/** Collect city/area/location strings from a DB row for hierarchy matching. */
+function serviceLocationLabels(svc: DbService): string[] {
+  const meta = (svc.metadata || {}) as Record<string, unknown>;
+  const out: string[] = [];
+  const push = (v: unknown) => {
+    if (typeof v === 'string' && v.trim() && v.trim().toUpperCase() !== 'NA') {
+      out.push(v.trim());
+    }
+  };
+  push(meta.city);
+  push(meta.area);
+  push(meta.area_name);
+  push(meta.state);
+  push(meta.district);
+  push(meta.region);
+  if (Array.isArray(meta.locations)) {
+    for (const loc of meta.locations) push(loc);
+  }
+  return out;
+}
+
+/**
+ * True when a DB row covers a place resolved by the location library
+ * (town / district / state), including statewide labels that mention the state.
+ */
+export function serviceCoversResolvedLocation(
+  svc: DbService,
+  resolvedLocation: ResolvedLocation,
+): boolean {
+  if (!resolvedLocation) return false;
+
+  const town = resolvedLocation.town?.trim() || '';
+  const district = resolvedLocation.district?.trim() || '';
+  const state = resolvedLocation.state?.trim() || '';
+
+  const meta = (svc.metadata || {}) as Record<string, unknown>;
+  if (state && typeof meta.state === 'string' && geoNamesLooselyMatch(meta.state, state)) {
+    return true;
+  }
+  if (
+    district
+    && typeof meta.district === 'string'
+    && geoNamesLooselyMatch(meta.district, district)
+  ) {
+    return true;
+  }
+
+  const labels = serviceLocationLabels(svc);
+  for (const label of labels) {
+    if (town && geoNamesLooselyMatch(label, town)) return true;
+    if (district && geoNamesLooselyMatch(label, district)) return true;
+    if (state && geoNamesLooselyMatch(label, state)) return true;
+  }
+  return false;
+}
+
+/**
+ * Check if a service matches resolved location hierarchy (state/district/city labels).
+ * Only used when location resolver returns geographic hierarchy.
+ */
+export function serviceMatchesLocationHierarchy(
+  svc: DbService,
+  resolvedLocation: ResolvedLocation,
+): boolean {
+  return serviceCoversResolvedLocation(svc, resolvedLocation);
+}
+
 /** All DB services matching query scoped to one city. */
 export function getMatchingServicesForCity(
   query: string,
   city: string,
   services: DbService[],
+  resolvedLocation?: ResolvedLocation,
 ): DbService[] {
+  // Filter console by `[locationResolver-usage]` — chat rarely hits this with hierarchy.
+  // eslint-disable-next-line no-console
+  console.log('[locationResolver-usage] getMatchingServicesForCity', {
+    query,
+    city,
+    hasResolvedLocation: !!resolvedLocation,
+    resolvedLocation: resolvedLocation || null,
+    note: resolvedLocation
+      ? 'hierarchy filter ENABLED (someone passed ResolvedLocation)'
+      : 'hierarchy filter OFF — exact city only (locationResolver NOT used here)',
+  });
+
   const allCities = collectCitiesFromDbServices(services);
   const queryBody = stripCitiesFromSegment(query, allCities.length ? allCities : [city]);
   const mediumHint = extractMediumHintFromQuery(queryBody);
@@ -844,11 +1000,18 @@ export function getMatchingServicesForCity(
 
   const matchWithWords = (words: string[]) =>
     dedupeDbServices(
-      services
+      filterServicesMatchingQuery(services, words)
         .filter((svc) => {
-          if (!serviceMatchesQuery(svc, words)) return false;
+          // Location match SECOND: Try exact city, then hierarchy
           const svcCity = extractCityFromDbService(svc);
-          return svcCity != null && citiesMatch(svcCity, city);
+          if (svcCity != null && citiesMatch(svcCity, city)) return true;
+          
+          // HIERARCHICAL MATCH: If location resolved, check state/district
+          if (resolvedLocation) {
+            return serviceMatchesLocationHierarchy(svc, resolvedLocation);
+          }
+          
+          return false;
         })
         .filter(hasQuotablePricing),
     );
@@ -894,6 +1057,23 @@ export function getMatchingServicesForCity(
   return matched;
 }
 
+/** First usable reference/thumbnail URL from one DB service row (exact match only). */
+export function getServiceListImageUrl(svc: DbService | null | undefined): string | undefined {
+  if (!svc?.metadata) return undefined;
+  const images = svc.metadata.images;
+  if (Array.isArray(images) && images.length > 0) {
+    const ref = images.find((i) => {
+      const t = (i.type || '').toLowerCase();
+      return t === 'reference' || t === 'reference_image' || t.includes('ref');
+    });
+    const url = String(ref?.url || images[0]?.url || '').trim();
+    if (url) return url;
+  }
+  const single = (svc.metadata as { reference_image?: unknown }).reference_image;
+  if (typeof single === 'string' && single.trim()) return single.trim();
+  return undefined;
+}
+
 /** Build checkbox service entries from DB rows for one city. */
 export function buildGroupedServicesFromDb(
   query: string,
@@ -903,7 +1083,7 @@ export function buildGroupedServicesFromDb(
 ): {
   vehicleType: string;
   requestedQuantity: number;
-  services: Array<{ name: string; category: string; serviceId?: string; requestedQuantity?: number }>;
+  services: Array<{ name: string; category: string; serviceId?: string; imageUrl?: string; requestedQuantity?: number }>;
 } | null {
   const matched = getMatchingServicesForCity(query, city, services);
   if (matched.length === 0) return null;
@@ -918,15 +1098,34 @@ export function buildGroupedServicesFromDb(
   const groupLabel = baseWord.charAt(0).toUpperCase() + baseWord.slice(1);
   const cityLabel = city.charAt(0).toUpperCase() + city.slice(1);
 
+  const mapped = ordered.map((svc) => {
+    const imageUrl = getServiceListImageUrl(svc);
+    if (MULTI_SVC_DEBUG) {
+      console.log('[MultiSvcDebug] service-list image', {
+        name: formatServiceDisplayName(svc),
+        service_id: svc.service_id,
+        imageUrl: imageUrl || null,
+        found: Boolean(imageUrl),
+      });
+    } else if (!imageUrl) {
+      console.warn(
+        `[service-list] no image for "${formatServiceDisplayName(svc)}" (${svc.service_id || 'no-id'})`,
+      );
+    }
+    return {
+      name: formatServiceDisplayName(svc),
+      serviceId: svc.service_id,
+      // Exact matched DB row only — never borrow another service/area/direction image.
+      imageUrl,
+      category: groupLabel,
+      requestedQuantity: qty,
+    };
+  });
+
   return {
     vehicleType: `${groupLabel}|${cityLabel}`,
     requestedQuantity: qty,
-    services: ordered.map((svc) => ({
-      name: formatServiceDisplayName(svc),
-      serviceId: svc.service_id,
-      category: groupLabel,
-      requestedQuantity: qty,
-    })),
+    services: mapped,
   };
 }
 
@@ -954,7 +1153,13 @@ export function mergeGroupedServicesByCategory<
   T extends {
     vehicleType: string;
     requestedQuantity?: number;
-    services: Array<{ name: string; category: string; serviceId?: string; requestedQuantity?: number }>;
+    services: Array<{
+      name: string;
+      category: string;
+      serviceId?: string;
+      imageUrl?: string;
+      requestedQuantity?: number;
+    }>;
   },
 >(groups: T[]): T[] {
   if (!groups.length) return groups;
@@ -963,6 +1168,7 @@ export function mergeGroupedServicesByCategory<
   for (const g of groups) {
     const key = normalizeGroupedServiceKey(g.vehicleType);
     const category = key.split('|')[0];
+    // Spread preserves imageUrl / serviceId from buildGroupedServicesFromDb.
     const servicesWithQty = g.services.map((s) => ({
       ...s,
       category,
@@ -993,6 +1199,8 @@ export function mergeGroupedServicesByCategory<
         existing.services[idx] = {
           ...prev,
           ...s,
+          // Keep whichever imageUrl is present after merge.
+          imageUrl: s.imageUrl || prev.imageUrl,
           requestedQuantity: s.requestedQuantity ?? prev.requestedQuantity,
         };
       }
@@ -1003,7 +1211,8 @@ export function mergeGroupedServicesByCategory<
 }
 
 /** Read minimum order quantity from vendor top-level metadata only (never pricing.min_qty). */
-export function getMinQuantityFromDbService(svc: DbService): number | null {
+export function getMinQuantityFromDbService(svc: DbService | null | undefined): number | null {
+  if (!svc) return null;
   const m = svc.metadata || {};
   const raw =
     (m as { min_qty?: number | string }).min_qty ??
@@ -1028,6 +1237,8 @@ export interface ConfirmationRow {
   city: string;
   /** Optional — when set, quote build uses this exact catalog row */
   serviceId?: string;
+  /** Optional duration override selected by the minimum-duration warning. */
+  durationDays?: number;
 }
 
 /** Min-qty check for confirm-table rows BEFORE sending to Gemini. */

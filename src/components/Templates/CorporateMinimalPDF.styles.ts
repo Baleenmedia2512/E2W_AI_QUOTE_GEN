@@ -839,6 +839,19 @@ export const s = StyleSheet.create({
     paddingVertical: 7,
     paddingHorizontal: 12,
   },
+  /** Full-width remark block so long text keeps one consistent left edge
+   * when React-PDF flows it onto the next page. */
+  specRemarkBlock: {
+    borderBottomWidth: 0.75,
+    borderBottomColor: '#e4ecf5',
+    paddingVertical: 7,
+    paddingHorizontal: 12,
+  },
+  specRemarkBlockValue: {
+    fontSize: PDF_FONT.specValue,
+    color: '#1a202c',
+    lineHeight: 1.4,
+  },
   specSectionHeader: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -1066,6 +1079,16 @@ export const s = StyleSheet.create({
     lineHeight: 1.25,
   },
 
+  /** Section title once per group (General T&C / Mobile Van Chennai). */
+  termSectionHeading: {
+    fontSize: PDF_FONT.termText,
+    color: C.burgundy,
+    fontWeight: 700,
+    lineHeight: 1.25,
+    marginTop: 4,
+    marginBottom: 2,
+  },
+
   termBody: {
     fontSize: PDF_FONT.termText,
     color: C.bodyGrey,
@@ -1079,7 +1102,9 @@ export const s = StyleSheet.create({
     marginTop: 8,
     marginBottom: 10,
     paddingVertical: 10,
-    paddingHorizontal: 14,
+    // Match the preview card's breathing room and keep the aligned
+    // three-column bank table away from the card edge.
+    paddingHorizontal: 40,
     backgroundColor: '#f4f7fb',
     borderWidth: 1,
     borderColor: '#d6e0ec',
@@ -1102,29 +1127,52 @@ export const s = StyleSheet.create({
   bankRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    marginBottom: 4,
+    justifyContent: 'center',
+    marginBottom: 5,
+    width: '100%',
+  },
+  /** Fixed label column — keeps colon/value vertically aligned (single line). */
+  bankLabelCol: {
+    width: 190,
+    flexGrow: 0,
+    flexShrink: 0,
   },
   bankLabel: {
-    width: 130,
-    fontSize: PDF_FONT.bankLabel,
+    fontSize: 11.5,
     fontWeight: 700,
     color: C.darkText,
-    textAlign: 'left',
+    textAlign: 'right',
   },
   bankColon: {
-    width: 12,
-    fontSize: PDF_FONT.bankLabel,
+    width: 24,
+    fontSize: 11.5,
     fontWeight: 700,
     color: C.darkText,
-    textAlign: 'left',
+    textAlign: 'center',
+    flexGrow: 0,
+    flexShrink: 0,
   },
   bankValue: {
-    flex: 1,
-    fontSize: PDF_FONT.bankValue,
+    flexGrow: 1,
+    flexShrink: 1,
+    fontSize: 11.5,
     color: C.bodyText,
     textAlign: 'left',
-    paddingLeft: 84,
-    paddingRight: 6,
+    paddingLeft: 12,
+  },
+  bankLine: {
+    fontSize: 11.5,
+    marginBottom: 5,
+    color: C.darkText,
+    lineHeight: 1.4,
+  },
+  bankLineLabel: {
+    fontWeight: 700,
+    color: C.darkText,
+  },
+  bankLineValue: {
+    fontWeight: 400,
+    color: C.bodyText,
   },
 
   // ── System Generated Notice ───────────────────────────────────────────────

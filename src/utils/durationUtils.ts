@@ -1,3 +1,5 @@
+import { canonicalizeServiceName } from './serviceNameUtils';
+
 /** Parse campaign length from user chat text (e.g. "6 months", "12 days"). */
 export function parseDurationFromUserText(
   text: string,
@@ -12,6 +14,71 @@ export function parseDurationFromUserText(
 
 export function userMentionedDuration(text: string): boolean {
   return parseDurationFromUserText(text) !== null;
+}
+
+const DURATION_SEGMENT_STOP_WORDS = new Set([
+  'and', 'for', 'the', 'a', 'an', 'in', 'at', 'of', 'need', 'want',
+  'quote', 'generate', 'days', 'day', 'months', 'month',
+]);
+
+function durationMeaningfulWords(value: string): string[] {
+  return canonicalizeServiceName(value)
+    .split(/\s+/)
+    .filter((word) => word.length >= 2 && !DURATION_SEGMENT_STOP_WORDS.has(word) && !/^\d+$/.test(word));
+}
+
+/**
+ * Return only the user-message segment belonging to a service.
+ * A duration before "and" therefore cannot leak into the next service.
+ */
+export function getServiceScopedUserMessage(
+  original: string,
+  serviceName: string,
+): string {
+  const parts = original
+    .split(/\s*(?:,|&|\+|\band\b)\s*/i)
+    .map((part) => part.trim())
+    .filter(Boolean);
+
+  if (parts.length <= 1) return original;
+
+  const serviceWords = durationMeaningfulWords(serviceName);
+  let bestPart = '';
+  let bestOverlap = 0;
+  for (const part of parts) {
+    const partWords = new Set(durationMeaningfulWords(part));
+    const overlap = serviceWords.filter((word) => partWords.has(word)).length;
+    if (overlap > bestOverlap) {
+      bestOverlap = overlap;
+      bestPart = part;
+    }
+  }
+
+  // Prefer an explicit duration segment containing the service's family word.
+  // This handles selections such as "apartment 15 days" where the selected
+  // catalog name is "Apartment Lobby Screen Ads".
+  const familyWord = serviceWords[0];
+  const familyDurationPart = parts.find((part) => {
+    const parsed = parseDurationFromUserText(part);
+    return Boolean(parsed && familyWord && durationMeaningfulWords(part).includes(familyWord));
+  });
+  if (familyDurationPart) {
+    console.log('[DurationDebug] family duration segment matched', {
+      serviceName,
+      familyWord,
+      familyDurationPart,
+    });
+    return familyDurationPart;
+  }
+
+  // A family-only segment with an explicit duration (for example,
+  // "apartment 15 days") intentionally applies that duration to the
+  // selected service from that family. Without an explicit duration,
+  // require two words to avoid matching unrelated services.
+  const requiredOverlap = parseDurationFromUserText(bestPart)
+    ? Math.min(1, serviceWords.length)
+    : Math.min(2, serviceWords.length);
+  return bestOverlap >= requiredOverlap ? bestPart : serviceName;
 }
 
 /**
@@ -210,6 +277,7 @@ export function computeRecurringLineTotal(
  */
 export function computeQuoteItemTotal(item: {
   quantity: number;
+  oneTimeQuantity?: number;
   rate?: number;
   unitPrice?: number;
   duration?: number;
@@ -217,11 +285,12 @@ export function computeQuoteItemTotal(item: {
   description?: string;
 }): number {
   const qty = Number.isFinite(item.quantity) ? item.quantity : 0;
+  const oneTimeQty = Number.isFinite(item.oneTimeQuantity) ? (item.oneTimeQuantity ?? 0) : qty;
   const rawRate = item.rate ?? item.unitPrice ?? 0;
   const rate = Number.isFinite(rawRate) ? rawRate : 0;
 
   if (item.description && isOneTimeLineDescription(item.description)) {
-    return qty * rate;
+    return oneTimeQty * rate;
   }
 
   const days = toCampaignDays(item.duration, item.durationUnit);

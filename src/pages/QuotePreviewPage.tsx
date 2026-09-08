@@ -1,18 +1,28 @@
 import React, { useState, useRef, useEffect, useMemo, useCallback } from 'react';
 import { useHistory } from 'react-router-dom';
+import { useToast } from '@chakra-ui/react';
 import { useAppStore } from '../store';
 import { useAuthStore } from '../store/authStore';
 import { CorporateMinimal } from '../components/Templates/CorporateMinimal';
-import { exportToPDF } from '../services/pdfExportService';
+import { exportToPDF, openPdfBlobInNewTab } from '../services/pdfExportService';
+import { Capacitor } from '@capacitor/core';
+import { sendQuoteEmail } from '../services/quoteEmailService';
 import { ExtractedPage, ServiceReadyData } from '../types';
-import { resolveServiceIdsForItems } from '../utils/serviceResolver';
+import {
+  extractCityHint,
+  extractServiceNameFromItem,
+  resolveServiceIdFromCatalog,
+} from '../utils/serviceResolver';
 import { ServicePdfData, PdfExportMode } from '../components/Templates/CorporateMinimalPDF';
 import { isMultiServiceQuote } from '../utils/quoteGrouping';
 import {
   buildPreviewTocItems,
   scrollToPreviewSection,
 } from '../utils/previewNavigation';
+import { buildExecutiveSummaryRows } from '../utils/quoteGrouping';
 import QuoteFlowNav from '../components/QuoteWizard/QuoteFlowNav';
+import { EMPTY_CLIENT } from '../components/ClientInfoForm/ClientEditDrawer';
+import { ClientInfo } from '../types/client';
 import './QuotePreviewPage.css';
 
 // ═══════════════════════════════════════════════════════════════════════
@@ -31,13 +41,25 @@ export const QuotePreviewPage: React.FC = () => {
     selectedTemplate,
     setSelectedTemplate,
     setCurrentQuote,
+    setClientInfo,
     proposal,
     activeProposals,
     restoreActiveProposals,
     loadRecentProposals,
     cloudServicePages,      // NEW: Cloud service pages from proposal_chunks
     loadCloudServices,      // NEW: Load cloud services function
+    openChatProfile,
   } = useAppStore();
+
+  const toast = useToast();
+  const { user } = useAuthStore();
+
+  /** Allow preview without saved client — edit via inline Name / Phone / Email */
+  const effectiveClient: ClientInfo = clientInfo || EMPTY_CLIENT;
+  const clientReady = !!(
+    effectiveClient.name.trim()
+    && /^\d{10}$/.test(effectiveClient.phone.trim())
+  );
 
   // Build flat merged pages — reactive to activeProposals (populated after async restore)
   const mergedActiveImages = useMemo<ExtractedPage[]>(() => {
@@ -66,6 +88,7 @@ export const QuotePreviewPage: React.FC = () => {
   }, [activeProposals]);
 
   const [isExporting, setIsExporting] = useState(false);
+  const [showClientValidation, setShowClientValidation] = useState(false);
   const [isRestoring, setIsRestoring] = useState(false); // Set to false to avoid blocking
   const [isContentReady, setIsContentReady] = useState(true); // Set to true for immediate display
   const [zoom, setZoom] = useState(100);
@@ -134,17 +157,18 @@ export const QuotePreviewPage: React.FC = () => {
   
   const [pageImages, setPageImages] = useState<ExtractedPage[]>(mergedAllImages);
 
-  // Early validation and redirect
+  // Early validation — quote + company required; client is editable on this page
   useEffect(() => {
-    if (!currentQuote || !companyInfo || !clientInfo) {
+    if (!currentQuote || !companyInfo) {
       console.warn('⚠️ Missing required data for preview...');
       if (!companyInfo) {
-        history.push('/company-settings');
-      } else if (!clientInfo || !currentQuote) {
-        history.push(!currentQuote ? '/' : '/quote');
+        openChatProfile();
+        history.push('/');
+      } else if (!currentQuote) {
+        history.push('/');
       }
     }
-  }, [currentQuote, companyInfo, clientInfo, history]);
+  }, [currentQuote, companyInfo, history, openChatProfile]);
 
   // On mount: Load data in background (non-blocking)
   useEffect(() => {
@@ -207,26 +231,78 @@ export const QuotePreviewPage: React.FC = () => {
     }
   }, [cloudServicePages, activeProposals, mergedAllImages]);
 
-  // Stamp serviceId on quote items at preview time (covers old quotes saved before this field existed)
+  // Stamp serviceId from the FULL vendor catalog (includes rates with no images).
+  // Never resolve against cloudServicePages alone — that pool only contains services
+  // that already have image/spec pages, so Auto Semi / ROTN without images got a
+  // sibling serviceId and showed unrelated photos.
   useEffect(() => {
-    if (!currentQuote?.items?.length || !cloudServicePages?.length) return;
+    if (!currentQuote?.items?.length) return;
     const needsEnrich = currentQuote.items.some((i) => !i.serviceId);
     if (!needsEnrich) return;
 
-    const enrichedItems = currentQuote.items.map((item) => {
-      if (item.serviceId) return item;
-      const ids = resolveServiceIdsForItems([item], cloudServicePages);
-      if (ids.size === 0) return item;
-      const serviceId = [...ids][0];
-      const page = cloudServicePages.find((p) => p.serviceId === serviceId);
-      return { ...item, serviceId, serviceName: page?.serviceName || item.serviceName };
-    });
+    let cancelled = false;
+    (async () => {
+      const {
+        getVendorRatesCache,
+        loadVendorRatesFromCloud,
+        vendorRatesToDbServices,
+      } = await import('../services/vendorRateService');
+      let rates = getVendorRatesCache();
+      if (!rates.length) {
+        try {
+          rates = await loadVendorRatesFromCloud();
+        } catch (err) {
+          console.warn('🔗 [QuotePreview] Vendor catalog load failed for serviceId enrich:', err);
+          return;
+        }
+      }
+      if (cancelled) return;
 
-    if (enrichedItems.some((item, i) => item.serviceId !== currentQuote.items[i].serviceId)) {
-      console.log('🔗 [QuotePreview] Enriched quote items with serviceId');
-      setCurrentQuote({ ...currentQuote, items: enrichedItems });
-    }
-  }, [currentQuote, cloudServicePages, setCurrentQuote]);
+      const catalog = vendorRatesToDbServices(rates);
+      if (!catalog.length) return;
+
+      const { currentQuote: latest, setCurrentQuote: setQuote } = useAppStore.getState();
+      if (!latest?.items?.length) return;
+
+      const enrichedItems = latest.items.map((item) => {
+        if (item.serviceId) return item;
+        const name =
+          extractServiceNameFromItem(item) ||
+          item.serviceName ||
+          item.title ||
+          item.description;
+        const cityHint =
+          (item.city || '').trim().toLowerCase() ||
+          extractCityHint(
+            [item.city, item.description, item.serviceName, item.title]
+              .filter(Boolean)
+              .join(' '),
+          );
+        const resolved = resolveServiceIdFromCatalog(name, catalog, cityHint);
+        if (!resolved) return item;
+        return {
+          ...item,
+          serviceId: resolved.serviceId,
+          serviceName: resolved.serviceName || item.serviceName,
+        };
+      });
+
+      if (
+        enrichedItems.some(
+          (item, i) => item.serviceId !== latest.items[i].serviceId,
+        )
+      ) {
+        console.log(
+          '🔗 [QuotePreview] Enriched quote items with serviceId from vendor catalog',
+        );
+        setQuote({ ...latest, items: enrichedItems });
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [currentQuote, setCurrentQuote]);
 
   // Fill missing quantityUnit via isolated AI — preview page only (no RAG)
   const qtyUnitAiQuoteIdRef = useRef<string | null>(null);
@@ -406,12 +482,11 @@ export const QuotePreviewPage: React.FC = () => {
   console.log('Quote Items:', currentQuote?.items);
   console.log('Quote Items Length:', currentQuote?.items?.length);
 
-  // Check if all required data is available
-  if (!currentQuote || !companyInfo || !clientInfo) {
+  // Check if quote + company are available (client edited on this page)
+  if (!currentQuote || !companyInfo) {
     console.error('❌ Missing required data for preview');
     console.error('Missing Quote:', !currentQuote);
     console.error('Missing Company:', !companyInfo);
-    console.error('Missing Client:', !clientInfo);
     
     return (
       <div className="preview-error">
@@ -419,23 +494,20 @@ export const QuotePreviewPage: React.FC = () => {
           <h2>Missing Information</h2>
           <p>Please complete all required steps before previewing your quote.</p>
           <p style={{ fontSize: '14px', marginTop: '16px', color: '#666' }}>
-            {!currentQuote && '• Quote data is missing'}<br />
-            {!companyInfo && '• Company information is missing'}<br />
-            {!clientInfo && '• Client information is missing'}
+            {!currentQuote && '• Quote data is missing'}
+            <br />
+            {!companyInfo && '• Company information is missing'}
           </p>
           <button
-            onClick={() =>
-              history.push(
-                !companyInfo ? '/company-settings' : !clientInfo ? '/quote' : '/'
-              )
-            }
+            onClick={() => {
+              if (!companyInfo) {
+                openChatProfile();
+              }
+              history.push('/');
+            }}
             className="back-button"
           >
-            {!companyInfo
-              ? 'Go to Company Settings'
-              : !clientInfo
-              ? 'Go to Client Info'
-              : 'Go to Chat'}
+            Go to Chat
           </button>
         </div>
       </div>
@@ -444,7 +516,7 @@ export const QuotePreviewPage: React.FC = () => {
 
   const templateData = {
     company: companyInfo,
-    client: clientInfo,
+    client: effectiveClient,
     quote: currentQuote,
     proposalPages: pageImages,
     proposalPageMap,
@@ -473,16 +545,41 @@ export const QuotePreviewPage: React.FC = () => {
       <CorporateMinimal
         data={templateData}
         editable
+        showClientValidation={showClientValidation}
         onDataChange={(next) => {
           setCurrentQuote(next.quote);
+        }}
+        onClientChange={(info) => {
+          setClientInfo(info);
+          if (info.name.trim() && /^\d{10}$/.test(info.phone.trim())) {
+            setShowClientValidation(false);
+          }
         }}
         onNavigateToSection={handleNavigateToSection}
       />
     );
   };
 
-  const handleExportPDF = async (mode: PdfExportMode = 'full') => {
+  const handleExportPDF = async (
+    mode: PdfExportMode = 'full',
+    shouldDownload = true,
+  ): Promise<{ pdfBlob: Blob; filename: string } | undefined> => {
     console.log(`📄 Export PDF clicked (mode: ${mode})`);
+
+    if (!clientReady) {
+      setShowClientValidation(true);
+      if (!toast.isActive('client-details-required')) {
+        toast({
+          id: 'client-details-required',
+          title: 'Missing details',
+          description: 'Please enter the client name and 10-digit phone number.',
+          status: 'warning',
+          duration: 3500,
+          isClosable: true,
+        });
+      }
+      return;
+    }
 
     if (!previewRef.current) {
       alert('Preview content not loaded. Please refresh and try again.');
@@ -497,27 +594,110 @@ export const QuotePreviewPage: React.FC = () => {
     setIsExporting(true);
 
     try {
+      const liveQuote = useAppStore.getState().currentQuote ?? currentQuote;
       const docIds = activeProposals
         .map((p) => p.id)
         .filter(Boolean) as string[];
 
-      await exportToPDF(
+      const { pdfBlob, filename } = await exportToPDF(
         previewRef.current,
-        currentQuote.quoteNumber,
+        liveQuote.quoteNumber,
         selectedTemplate,
-        clientInfo?.name,
+        effectiveClient.name,
         docIds.length > 0 ? docIds : undefined,
         mode,
+        shouldDownload,
       );
       console.log('✅ PDF exported successfully');
+      return { pdfBlob, filename };
     } catch (error) {
       console.error('❌ PDF export error:', error);
       alert(`Failed to export PDF: ${error instanceof Error ? error.message : 'Unknown error'}`);
     } finally {
       setIsExporting(false);
     }
+    return undefined;
   };
 
+  const handleDownloadPDF = async () => {
+    if (isExporting || isSendingEmail) return;
+    const hasExecutiveSummary = !!currentQuote && isMultiServiceQuote(currentQuote.items);
+    const pdfAttachments: { pdfBlob: Blob; filename: string }[] = [];
+    setIsSendingEmail(true);
+
+    // Native: open via FileOpener as each file is saved.
+    // Web: generate first, then open each PDF in a new tab only after ready.
+    const openDuringExport = Capacitor.isNativePlatform();
+
+    try {
+      if (!hasExecutiveSummary) {
+        const result = await handleExportPDF('full', openDuringExport);
+        if (result) pdfAttachments.push(result);
+      } else {
+        const summaryResult = await handleExportPDF('summary', openDuringExport);
+        const detailedResult = await handleExportPDF('detailed', openDuringExport);
+        if (summaryResult) pdfAttachments.push(summaryResult);
+        if (detailedResult) pdfAttachments.push(detailedResult);
+      }
+
+      if (!pdfAttachments.length) {
+        throw new Error('Could not generate PDF. Please try again.');
+      }
+
+      if (!openDuringExport) {
+        for (const attachment of pdfAttachments) {
+          openPdfBlobInNewTab(attachment.pdfBlob, attachment.filename);
+        }
+      }
+
+      const liveQuote = useAppStore.getState().currentQuote ?? currentQuote;
+      if (!liveQuote) {
+        throw new Error('Could not generate PDF. Please try again.');
+      }
+
+      if (user?.canSendQuoteEmail !== true) {
+        toast({
+          title: 'PDF Downloaded',
+          description: 'Email sending is not enabled for this account.',
+          status: 'success',
+          duration: 5000,
+          isClosable: true,
+        });
+        return;
+      }
+
+      const emailSendResult = await sendQuoteEmail({
+        pdfAttachments,
+        quote: liveQuote,
+        client: effectiveClient,
+        company: companyInfo,
+        downloadedBy: user?.full_name || 'Unknown User',
+      });
+
+      toast({
+        title: emailSendResult.success ? 'PDF Downloaded & Emailed' : 'Email Not Sent',
+        description: emailSendResult.success
+          ? 'The PDF was downloaded and sent to your logged-in email with the configured CC.'
+          : emailSendResult.message,
+        status: emailSendResult.success ? 'success' : 'error',
+        duration: 7000,
+        isClosable: true,
+      });
+    } catch (error) {
+      console.error('❌ PDF download or email error:', error);
+      toast({
+        title: 'Download or Email Failed',
+        description: error instanceof Error ? error.message : 'Could not complete the operation.',
+        status: 'error',
+        duration: 7000,
+        isClosable: true,
+      });
+    } finally {
+      setIsSendingEmail(false);
+      }
+  };
+
+  const [isSendingEmail, setIsSendingEmail] = useState(false);
   const handleZoomIn = () => {
     setZoom(prev => Math.min(prev + 10, 150));
   };
@@ -530,14 +710,17 @@ export const QuotePreviewPage: React.FC = () => {
     setZoom(100);
   };
 
+  const totalServices = currentQuote ? buildExecutiveSummaryRows(currentQuote.items).length : 0;
+
   return (
     <div className="quote-preview-page">
       <QuoteFlowNav
         step="preview"
-        onDownloadPdf={() => handleExportPDF('full')}
-        onDownloadPdfMode={handleExportPDF}
-        multiDownloadOptions={!!currentQuote && isMultiServiceQuote(currentQuote.items)}
+        onDownloadPdf={handleDownloadPDF}
         isDownloading={isExporting}
+        isSendingMail={isSendingEmail}
+        // Keep the button visible and let handleExportPDF show the validation
+        // popup when required client details are missing.
         canDownload={isContentReady && !isExporting}
       />
 
@@ -556,7 +739,10 @@ export const QuotePreviewPage: React.FC = () => {
             </svg>
             {showToc ? 'Hide TOC' : 'Open TOC'}
           </button>
-          <h1 className="toolbar-title">Quote Preview</h1>
+          <div className="toolbar-title-wrap">
+            <h1 className="toolbar-title">Quote Preview</h1>
+            <span className="toolbar-service-count">Total services: {totalServices}</span>
+          </div>
         </div>
 
         <div className="toolbar-section">
@@ -650,35 +836,14 @@ export const QuotePreviewPage: React.FC = () => {
 
       {isContentReady && (
         <div className="mobile-actions">
-          {currentQuote && isMultiServiceQuote(currentQuote.items) ? (
-            <>
-              <button
-                type="button"
-                onClick={() => handleExportPDF('summary')}
-                className="mobile-action-btn"
-                disabled={isExporting}
-              >
-                {isExporting ? 'Downloading...' : 'Summary Only'}
-              </button>
-              <button
-                type="button"
-                onClick={() => handleExportPDF('detailed')}
-                className="mobile-action-btn primary"
-                disabled={isExporting}
-              >
-                {isExporting ? 'Downloading...' : 'Detailed Summary'}
-              </button>
-            </>
-          ) : (
-            <button
-              type="button"
-              onClick={() => handleExportPDF('full')}
-              className="mobile-action-btn primary"
-              disabled={isExporting}
-            >
-              {isExporting ? 'Downloading...' : 'Download PDF'}
-            </button>
-          )}
+          <button
+            type="button"
+            onClick={handleDownloadPDF}
+            className="mobile-action-btn primary"
+            disabled={isExporting || isSendingEmail}
+          >
+            {isExporting ? 'Downloading...' : 'Download PDF'}
+          </button>
         </div>
       )}
     </div>

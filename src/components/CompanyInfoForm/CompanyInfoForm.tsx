@@ -19,15 +19,23 @@ import {
 } from '@chakra-ui/react';
 import { FiUploadCloud } from 'react-icons/fi';
 import { CompanyInfo } from '../../types/company';
-import { saveCompanyInfo, loadCompanyInfo } from '../../utils/localStorage';
 import './CompanyInfoForm.css';
 
 interface CompanyInfoFormProps {
-  onSubmit: (companyInfo: CompanyInfo) => void;
+  onSubmit: (companyInfo: CompanyInfo) => void | Promise<void>;
   initialData?: CompanyInfo | null;
+  submitLabel?: string;
+  secondaryLabel?: string;
+  onSecondaryAction?: () => void;
 }
 
-const CompanyInfoForm: React.FC<CompanyInfoFormProps> = ({ onSubmit, initialData }) => {
+const CompanyInfoForm: React.FC<CompanyInfoFormProps> = ({
+  onSubmit,
+  initialData,
+  submitLabel = 'Continue →',
+  secondaryLabel = '🔄 Clear',
+  onSecondaryAction,
+}) => {
   const [formData, setFormData] = useState<CompanyInfo>({
     name: '',
     address: '',
@@ -42,7 +50,6 @@ const CompanyInfoForm: React.FC<CompanyInfoFormProps> = ({ onSubmit, initialData
 
   const [errors, setErrors] = useState<Partial<Record<keyof CompanyInfo, string>>>({});
   const [logoPreview, setLogoPreview] = useState<string>('');
-  const [useSaved, setUseSaved] = useState(false);
 
   useEffect(() => {
     if (initialData) {
@@ -105,23 +112,11 @@ const CompanyInfoForm: React.FC<CompanyInfoFormProps> = ({ onSubmit, initialData
     return Object.keys(newErrors).length === 0;
   };
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     
     if (validateForm()) {
-      onSubmit(formData);
-      saveCompanyInfo(formData);
-    }
-  };
-
-  const handleUseSavedInfo = () => {
-    const savedInfo = loadCompanyInfo();
-    if (savedInfo) {
-      setFormData(savedInfo);
-      if (savedInfo.logo) {
-        setLogoPreview(savedInfo.logo);
-      }
-      setUseSaved(true);
+      await onSubmit(formData);
     }
   };
 
@@ -139,12 +134,10 @@ const CompanyInfoForm: React.FC<CompanyInfoFormProps> = ({ onSubmit, initialData
     });
     setLogoPreview('');
     setErrors({});
-    setUseSaved(false);
   };
 
   return (
     <Box className="company-form-card" py={8}>
-      {/* Section Title with Use Saved Info Button */}
       <HStack justify="space-between" flexWrap="wrap" gap={3} mb={8}>
         <Box>
           <Heading 
@@ -161,26 +154,6 @@ const CompanyInfoForm: React.FC<CompanyInfoFormProps> = ({ onSubmit, initialData
             Tell us about your company
           </Text>
         </Box>
-        {loadCompanyInfo() && !useSaved && (
-          <Button 
-            size="md" 
-            variant="outline" 
-            borderColor="red.300"
-            color="red.600"
-            fontWeight="600"
-            borderRadius="12px"
-            px={6}
-            _hover={{ 
-              bg: 'red.50', 
-              borderColor: 'red.400',
-              transform: 'translateY(-2px)',
-              boxShadow: '0 4px 12px rgba(201, 31, 61, 0.2)'
-            }}
-            onClick={handleUseSavedInfo}
-          >
-            Use Saved Info
-          </Button>
-        )}
       </HStack>
 
       <form onSubmit={handleSubmit}>
@@ -475,7 +448,7 @@ const CompanyInfoForm: React.FC<CompanyInfoFormProps> = ({ onSubmit, initialData
             <HStack justify="flex-end" spacing={4} pt={8}>
               <Button 
                 variant="outline" 
-                onClick={handleClearForm}
+                onClick={onSecondaryAction || handleClearForm}
                 size="lg"
                 borderWidth="2px"
                 borderColor="gray.300"
@@ -491,7 +464,7 @@ const CompanyInfoForm: React.FC<CompanyInfoFormProps> = ({ onSubmit, initialData
                 }}
                 _active={{ transform: 'scale(0.98)' }}
               >
-                🔄 Clear
+                {secondaryLabel}
               </Button>
               <Button 
                 type="submit" 
@@ -509,7 +482,7 @@ const CompanyInfoForm: React.FC<CompanyInfoFormProps> = ({ onSubmit, initialData
                 }}
                 _active={{ transform: 'scale(0.98)' }}
               >
-                Continue →
+                {submitLabel}
               </Button>
             </HStack>
           </VStack>

@@ -1,6 +1,7 @@
 import React, { useState, useRef, useEffect } from 'react';
 import {
   Box,
+  Image,
   Input,
   VStack,
   HStack,
@@ -12,6 +13,7 @@ import {
   Flex,
   Icon,
   Checkbox,
+  SimpleGrid,
 } from '@chakra-ui/react';
 import { FiSend, FiCheck, FiMic, FiChevronUp, FiChevronDown, FiX, FiEdit2 } from 'react-icons/fi';
 import { useHistory } from 'react-router-dom';
@@ -19,12 +21,19 @@ import { useAppStore } from '../../store';
 import { useAuthStore } from '../../store/authStore';
 import { Message } from '../../types/chat';
 import { Quote } from '../../types/quote';
-import { saveChatHistory, loadChatHistory } from '../../utils/localStorage';
+import { saveChatHistory, loadChatHistory, clearChatHistory } from '../../utils/localStorage';
 import { SpeechRecognition } from '@capacitor-community/speech-recognition';
 import { Capacitor } from '@capacitor/core';
-import { KNOWN_CITY_LIST, type ServiceQuantity } from '../../utils/serviceNameUtils';
+import { canonicalizeServiceName, KNOWN_CITY_LIST, type ServiceQuantity } from '../../utils/serviceNameUtils';
 import { resolveServiceIdFromCatalog } from '../../utils/serviceResolver';
-import { computeQuoteItemTotal } from '../../utils/durationUtils';
+import {
+  computeQuoteItemTotal,
+  parseDurationFromUserText,
+  toCampaignDays,
+} from '../../utils/durationUtils';
+import { ChatChipThumb } from './ChatChipThumb';
+import ChatProfilePanel from './ChatProfilePanel';
+import { ChipImageLightbox, closeChipImagePreview, openChipImagePreview } from './ChipImageLightbox';
 import {
   buildCityServiceListFromDb,
   buildCloudSegmentCityPlan,
@@ -42,6 +51,8 @@ import {
   MULTI_SVC_DEBUG,
   runCloudPreGeminiValidation,
   validateQuoteItemsAgainstDbMinQty,
+  validateConfirmationRowsMinQty,
+  type MinQtyViolation,
   VEHICLE_CATEGORY_PATTERN,
 } from '../../utils/cloudQuoteValidation';
 import {
@@ -50,15 +61,19 @@ import {
   mergeDirectPartsIntoGroupedServices,
   parseMessageToConfirmRows,
   rowsFromCloudBelowMin,
+  type MinDurationViolation,
+  validateConfirmationRowsMinDuration,
 } from '../../utils/confirmedQuotePipeline';
 import type { DbService } from '../../utils/serviceResolver';
 import {
-  continueProgressiveAction,
+  parseQtyFromText,
   resolveMinQtyEdits,
-  resolveProgressiveText,
+  type ProgressiveOption,
   type ProgressiveSession,
   type ProgressiveTurnResult,
 } from '../../utils/progressiveChatEngine';
+import { continueChatAction } from '../../chat/continueChatAction';
+import { resolvePriorSession, runProgressiveUserText } from '../../chat/runProgressiveUserText';
 
 // ═══════════════════════════════════════════════════════════════════════
 // Progressive DB chat (short friendly replies). Gemini optional for intent only.
@@ -66,6 +81,28 @@ import {
 // ═══════════════════════════════════════════════════════════════════════
 const USE_CLOUD_DATA = true;
 const USE_PROGRESSIVE_CHAT = true;
+
+/**
+ * Drop chip thumbnail URLs from prior turns so decoded images don't linger
+ * when the user continues chatting (keeps labels / checkboxes, frees memory).
+ */
+function stripChipImagesFromMessages(
+  messages: Message[],
+  keepMessageId?: string | null,
+): Message[] {
+  let changed = false;
+  const next = messages.map((m) => {
+    if (keepMessageId && m.id === keepMessageId) return m;
+    const opts = m.progressiveOptions;
+    if (!opts?.length || !opts.some((o) => o.imageUrl)) return m;
+    changed = true;
+    return {
+      ...m,
+      progressiveOptions: opts.map(({ imageUrl: _drop, ...rest }) => rest),
+    };
+  });
+  return changed ? next : messages;
+}
 
 const SUGGESTION_PROMPTS = [
   'Give quote for bus branding',
@@ -113,11 +150,10 @@ interface CityPickerSegment {
   matchedCities?: string[];       // Cities where service is available (from DB catalog)
 }
 
-const ChatInterface: React.FC = () => {
+const ChatInterfaceContent: React.FC = () => {
   const history = useHistory();
   const { proposal, setCurrentQuote, activeProposals, loadCloudServices } = useAppStore();
   const [messages, setMessages] = useState<Message[]>([]);
-  const [inputValue, setInputValue] = useState('');
   const [isLoading, setIsLoading] = useState(false);
   const [_error, setError] = useState<string | null>(null);
   const [isRecording, setIsRecording] = useState(false);
@@ -125,6 +161,25 @@ const ChatInterface: React.FC = () => {
   const recognitionRef = useRef<any>(null);
   // Cache: service key (lowercase) -> minimum quantity, persists across messages in the same session
   const minQtyCacheRef = useRef<Map<string, number>>(new Map());
+  // The catalog is immutable for the lifetime of this chat. Reusing it avoids
+  // downloading and rebuilding the same service list on every user message.
+  const catalogCacheRef = useRef<DbService[] | null>(null);
+  const catalogLoadRef = useRef<Promise<DbService[]> | null>(null);
+
+  const getCachedDbServices = async (): Promise<DbService[]> => {
+    if (catalogCacheRef.current) return catalogCacheRef.current;
+    if (!catalogLoadRef.current) {
+      const { loadAllServicesFromCloud } = await import('../../services/supabaseProposalService');
+      catalogLoadRef.current = loadAllServicesFromCloud()
+        .then((services) => services || [])
+        .finally(() => {
+          catalogLoadRef.current = null;
+        });
+    }
+    catalogCacheRef.current = await catalogLoadRef.current;
+    return catalogCacheRef.current;
+  };
+
   /** Locked confirm rows for the current generate request (scoped Gemini context). */
   const confirmedRowsRef = useRef<Array<{ service: string; qty: number | string; city: string }> | null>(null);
 
@@ -134,6 +189,19 @@ const ChatInterface: React.FC = () => {
   const [historyIndex, setHistoryIndex] = useState(-1);
   const [draftInput, setDraftInput] = useState('');
   const inputRef = useRef<HTMLInputElement>(null);
+  /**
+   * Keep the draft out of ChatInterface state. The previous controlled input
+   * updated this 5k-line component on every keystroke, including the message
+   * history and all of its interactive chips.
+   */
+  const getInputValue = () => inputRef.current?.value ?? '';
+  const setInputValue = (next: string | ((previous: string) => string)) => {
+    const current = inputRef.current?.value ?? '';
+    const value = typeof next === 'function' ? next(current) : next;
+    if (inputRef.current) {
+      inputRef.current.value = value;
+    }
+  };
   const prevUserIdRef = useRef<string | undefined>(undefined);
   // ──────────────────────────────────────────────────────────────────────────
 
@@ -179,13 +247,13 @@ const ChatInterface: React.FC = () => {
   // Confirmation table state: shown after service selection, before final Gemini call
   const [confirmationTable, setConfirmationTable] = useState<{
     messageId: string;
-    rows: Array<{ service: string; qty: number | string; city: string }>;
+    rows: Array<{ service: string; qty: number | string; city: string; durationDays?: number }>;
     originalUserInput: string;
     /** When set, Edit returns to the min-qty modal instead of closing the flow. */
     minQtySnapshot?: {
       items: Array<{ description: string; requested: number; originalRequested: number; minimum: number }>;
       aboveMinItems?: Array<{ description: string; requested: number; minimum: number }>;
-      pendingRows: Array<{ service: string; qty: number | string; city: string }>;
+      pendingRows: Array<{ service: string; qty: number | string; city: string; durationDays?: number }>;
       messageId: string;
       originalUserInput: string;
     };
@@ -203,7 +271,7 @@ const ChatInterface: React.FC = () => {
 
   // Pending rows after min-qty modal → opens confirm table (not direct Gemini)
   const [pendingConfirmGeneration, setPendingConfirmGeneration] = useState<{
-    rows: Array<{ service: string; qty: number | string; city: string }>;
+    rows: Array<{ service: string; qty: number | string; city: string; durationDays?: number }>;
     originalUserInput: string;
     messageId: string;
   } | null>(null);
@@ -219,6 +287,18 @@ const ChatInterface: React.FC = () => {
     aboveMinItems?: Array<{ description: string; requested: number; minimum: number }>;
     pendingQuote: Quote | null;
   } | null>(null);
+
+  const [minDurationWarning, setMinDurationWarning] = useState<{
+    items: MinDurationViolation[];
+  } | null>(null);
+  const [pendingDurationInput, setPendingDurationInput] = useState<{
+    rows: Array<{ service: string; qty: number | string; city: string; durationDays?: number }>;
+    originalUserInput: string;
+    messageId: string;
+    violations: MinDurationViolation[];
+  } | null>(null);
+  const [editingDurationIndex, setEditingDurationIndex] = useState<number | null>(null);
+  const [editedDuration, setEditedDuration] = useState<string>('');
 
   // State to track which item is being edited in the min qty warning modal
   const [editingItemIndex, setEditingItemIndex] = useState<number | null>(null);
@@ -242,11 +322,31 @@ const ChatInterface: React.FC = () => {
   // Progressive chat session (city → area → min-qty → quote)
   const [progressiveSession, setProgressiveSession] = useState<ProgressiveSession | null>(null);
   const [progressiveMultiSelect, setProgressiveMultiSelect] = useState<Record<string, string[]>>({});
+  /** Progressive checklist page size — rendering 90+ chips freezes the main thread. */
+  const [progressiveChipVisible, setProgressiveChipVisible] = useState<Record<string, number>>({});
+  const PROGRESSIVE_CHIP_PAGE = 24;
+
+  const updateProgressiveSelection = (messageId: string, selected: string[]) => {
+    setProgressiveMultiSelect((prev) => ({
+      ...prev,
+      [messageId]: selected,
+    }));
+    setMessages((prev) =>
+      prev.map((message) =>
+        message.id === messageId
+          ? { ...message, progressiveSelected: selected }
+          : message,
+      ),
+    );
+  };
   /** messageId → serviceKey currently being edited on min-qty card */
   const [minQtyEditingKey, setMinQtyEditingKey] = useState<Record<string, string | null>>({});
   /** messageId → serviceKey → draft string while typing */
   const [minQtyDrafts, setMinQtyDrafts] = useState<Record<string, Record<string, string>>>({});
   const minQtyApplyLock = useRef(false);
+  const [minDurationDrafts, setMinDurationDrafts] = useState<Record<string, Record<string, string>>>({});
+  const [minDurationEditingKey, setMinDurationEditingKey] = useState<Record<string, string | null>>({});
+  const minDurationApplyLock = useRef(false);
   /** Gemini EXACT_MATCH hint only — cloud gate handles validation first. */
   const isFullySpecifiedRequest = (userRequest: string): boolean => {
     if (isMultiSegmentQuoteRequest(userRequest)) {
@@ -397,25 +497,107 @@ const ChatInterface: React.FC = () => {
   // Load chat history on mount
   useEffect(() => {
     const history = loadChatHistory();
-    if (history && history.length > 0) {
-      setMessages(history.map(msg => ({
-        ...msg,
-        timestamp: new Date(msg.timestamp),
-      })));
+    if (!history || history.length === 0) return;
+
+    // Drop turns that still carry legacy mega batch-group UUID dumps (freeze on paint)
+    const safe = history.filter((msg) => {
+      const opts = msg?.progressiveOptions;
+      if (!Array.isArray(opts)) return true;
+      if (opts.length > 48) return false;
+      return !opts.some((o: { id?: string }) => String(o?.id || '').length > 200);
+    });
+
+    if (safe.length === 0) {
+      clearChatHistory();
+      return;
     }
+    if (safe.length < history.length) {
+      saveChatHistory(safe);
+    }
+    const restoredSelections: Record<string, string[]> = {};
+    safe.forEach((msg) => {
+      if (msg.progressiveSelected?.length) {
+        restoredSelections[msg.id] = msg.progressiveSelected;
+      }
+    });
+    setProgressiveMultiSelect(restoredSelections);
+    setMessages(
+      stripChipImagesFromMessages(
+        safe.map((msg) => ({
+          ...msg,
+          timestamp: new Date(msg.timestamp),
+        })),
+        // Keep thumbs only on the latest progressive chip message (if any)
+        [...safe].reverse().find((m) =>
+          m.progressiveOptions?.some((o: { imageUrl?: string }) => !!o.imageUrl),
+        )?.id,
+      ),
+    );
   }, []);
 
   // Save chat history when messages change
   useEffect(() => {
-    if (messages.length > 0) {
-      saveChatHistory(messages);
-    }
+    if (messages.length === 0) return;
+    // Avoid serializing the complete conversation synchronously on every
+    // keystroke/turn. The latest state is still persisted after the user
+    // pauses briefly.
+    const timer = window.setTimeout(() => saveChatHistory(messages), 400);
+    return () => window.clearTimeout(timer);
   }, [messages]);
 
-  // Scroll to bottom when messages change
+  // Scroll to bottom when messages change — avoid scrollIntoView (it can scroll
+  // ancestors / fight the fixed composer and leave the input unfocusable).
   useEffect(() => {
-    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+    let firstFrame = 0;
+    let secondFrame = 0;
+    const scrollLatest = () => {
+      const end = messagesEndRef.current;
+      const scroller = end?.closest?.('.qb-chat-scroll') as HTMLElement | null;
+      if (scroller) {
+        scroller.scrollTop = scroller.scrollHeight;
+        return;
+      }
+      end?.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+    };
+
+    // Progressive cards can grow after their images/grid finish layout.
+    firstFrame = window.requestAnimationFrame(() => {
+      scrollLatest();
+      secondFrame = window.requestAnimationFrame(scrollLatest);
+    });
+
+    return () => {
+      window.cancelAnimationFrame(firstFrame);
+      window.cancelAnimationFrame(secondFrame);
+    };
   }, [messages, isLoading]);
+
+  const scrollChatToLatest = () => {
+    const end = messagesEndRef.current;
+    const scroller = end?.closest?.('.qb-chat-scroll') as HTMLElement | null;
+    if (scroller) {
+      scroller.scrollTop = scroller.scrollHeight;
+      return;
+    }
+    end?.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+  };
+
+  // After a plain text reply (no chips), put caret back in the composer
+  useEffect(() => {
+    if (isLoading) return;
+    if (messages.length === 0) return;
+    const last = messages[messages.length - 1];
+    if (!last || last.role !== 'assistant') return;
+    if (last.progressiveOptions && last.progressiveOptions.length > 0) return;
+    if (last.progressiveBelowMin && last.progressiveBelowMin.length > 0) return;
+    if (last.progressiveBelowMinDuration && last.progressiveBelowMinDuration.length > 0) return;
+    if (document.querySelector('[aria-label="Close image preview"]')) return;
+
+    const t = window.setTimeout(() => {
+      inputRef.current?.focus({ preventScroll: true });
+    }, 50);
+    return () => window.clearTimeout(t);
+  }, [isLoading, messages]);
 
   // Handle keyboard appearance on mobile - adjust viewport
   useEffect(() => {
@@ -511,16 +693,18 @@ const ChatInterface: React.FC = () => {
   };
   // ──────────────────────────────────────────────────────────────────────────
 
-  // Thin wrapper: reads inputValue from state and delegates to sendMessageWithContent
+  // Thin wrapper: reads the isolated draft and delegates to sendMessageWithContent
   const handleSendMessage = () => {
-    if (!inputValue.trim() || isLoading) return;
-    const text = inputValue;
+    const text = getInputValue();
+    if (!text.trim() || isLoading) return;
     // Don't save pure city-only queries (e.g. "chennai", "madurai") — they just open
     // the service list and are not useful to recall via arrow-up history.
     if (detectCityOnlyQuery(text).length === 0) {
       pushToHistory(text);
     }
     setInputValue('');
+    // Ensure image lightbox never traps the composer after send
+    closeChipImagePreview();
     sendMessageWithContent(text);
   };
 
@@ -530,14 +714,14 @@ const ChatInterface: React.FC = () => {
 
     const el = inputRef.current;
     const cursorPos = el?.selectionStart ?? 0;
-    const valueLen = inputValue.length;
+    const valueLen = getInputValue().length;
 
     if (e.key === 'ArrowUp' && cursorPos === 0) {
       e.preventDefault();
       const newIdx = historyIndex === -1
         ? inputHistory.length - 1
         : Math.max(0, historyIndex - 1);
-      if (historyIndex === -1) setDraftInput(inputValue);
+      if (historyIndex === -1) setDraftInput(getInputValue());
       setHistoryIndex(newIdx);
       setInputValue(inputHistory[newIdx].text);
       setTimeout(() => {
@@ -568,10 +752,10 @@ const ChatInterface: React.FC = () => {
   };
   // ──────────────────────────────────────────────────────────────────────────
 
-  /** Min-qty gate then confirm table (shared: modal proceed, cloud valid segments, checkboxes). */
+  /** Quantity and duration gates, then confirm table. */
   const applyMinQtyGateOrConfirmTable = async (
     messageId: string,
-    rows: Array<{ service: string; qty: number | string; city: string }>,
+    rows: Array<{ service: string; qty: number | string; city: string; durationDays?: number }>,
     originalUserInput: string,
   ) => {
     let dbServices: DbService[] = [];
@@ -583,7 +767,12 @@ const ChatInterface: React.FC = () => {
         console.warn('⚠️ Min-qty gate skipped — could not load cloud catalog');
       }
     }
-    const gate = gateMinQtyBeforeConfirm(rows, dbServices);
+    const gate = gateMinQtyBeforeConfirm(rows, dbServices, originalUserInput);
+    console.log('[DurationDebug] pre-confirm gate', {
+      originalUserInput,
+      gateType: gate.type,
+      rows,
+    });
     if (gate.type === 'min_qty') {
       // Compute above-min rows for display (green rows) — display-only, not used by handlers
       const violationDescs = new Set(gate.violations.map(v => v.description.toLowerCase()));
@@ -600,8 +789,10 @@ const ChatInterface: React.FC = () => {
         });
       setPendingConfirmGeneration({ rows: gate.rows, originalUserInput, messageId });
       setMinQtyWarning({ items: gate.violations, aboveMinItems, pendingQuote: null as any });
+    } else if (gate.type === 'min_duration') {
+      showDurationWarningInChat(gate.rows, originalUserInput, gate.violations);
     } else {
-      setConfirmationTable({ messageId, rows: gate.rows, originalUserInput });
+      await executeConfirmedGeneration(gate.rows, originalUserInput, messageId);
     }
   };
 
@@ -642,7 +833,7 @@ const ChatInterface: React.FC = () => {
     result: ProgressiveTurnResult,
   ) => {
     setProgressiveSession(result.session);
-    // Never quote while Continue (Yes/No) is showing — wait for yes_generate
+    // Never quote while Continue (OK) is showing — wait for yes_generate
     if (
       result.quoteRows
       && result.quoteRows.length > 0
@@ -651,11 +842,35 @@ const ChatInterface: React.FC = () => {
     ) {
       // Skip "Creating your quote..." interim message — go straight to quote
       if (userMessage) {
-        setMessages((prev) => [...prev, userMessage]);
+        setMessages((prev) => [...stripChipImagesFromMessages(prev), userMessage]);
       }
       await generateQuoteFromProgressiveRows(result.quoteRows, result.session.originalText);
       return;
     }
+
+    const sess = result.session;
+    const isBatch =
+      (sess.batchServiceLabels?.length ?? 0) >= 2
+      || (sess.segments?.length ?? 0) >= 2
+      || (sess.workQueue?.length ?? 0) > 0;
+    const tokenRaw = (sess.browseToken || sess.medium || '').trim();
+    const currentService = isBatch && tokenRaw
+      ? (
+        (sess.batchServiceLabels || []).find(
+          (l) => l.toLowerCase() === tokenRaw.toLowerCase(),
+        )
+        || tokenRaw.replace(/\b\w/g, (c) => c.toUpperCase())
+      )
+      : undefined;
+    const quotedServices = isBatch
+      ? [
+          ...new Set(
+            (sess.collectedRows || [])
+              .map((r) => (r.service || '').split('·')[0].trim())
+              .filter(Boolean),
+          ),
+        ]
+      : undefined;
 
     const assistantMsg: Message = {
       id: (Date.now() + 1).toString(),
@@ -667,16 +882,191 @@ const ChatInterface: React.FC = () => {
       progressiveOptions: result.options,
       progressiveAllowMulti: result.allowMulti,
       progressiveSession: result.session,
-      progressiveAutoConfirmed: result.autoConfirmedList,
+      progressiveAutoConfirmed: isBatch
+        ? undefined
+        : (result.autoConfirmedList?.length
+          ? result.autoConfirmedList
+          : result.session.batchServiceLabels),
+      progressiveCurrentService: currentService,
+      progressiveQuotedServices: quotedServices,
+      progressiveBatchRemaining: isBatch ? (sess.workQueue?.length ?? 0) : undefined,
+      progressiveUnavailable: result.session.batchUnavailableLabels,
+      progressiveUnavailableCity: result.session.city,
       progressiveBelowMin: result.belowMinDetails,
     };
-    setMessages((prev) =>
-      userMessage ? [...prev, userMessage, assistantMsg] : [...prev, assistantMsg],
-    );
+    setMessages((prev) => {
+      const stripped = stripChipImagesFromMessages(prev);
+      return userMessage
+        ? [...stripped, userMessage, assistantMsg]
+        : [...stripped, assistantMsg];
+    });
+  };
+
+  const durationWarningDetails = (violations: MinDurationViolation[]) =>
+    violations.map((item) => {
+      const dashIdx = item.description.lastIndexOf(' - ');
+      return {
+        service: dashIdx !== -1 ? item.description.slice(0, dashIdx) : item.description,
+        requested: item.requested,
+        minimum: item.minimum,
+        serviceId: item.serviceId,
+      };
+    });
+
+  const qtyWarningDetails = (
+    violations: MinQtyViolation[],
+    rows: Array<{ service: string; serviceId?: string }>,
+  ) =>
+    violations.map((item) => {
+      const dashIdx = item.description.lastIndexOf(' - ');
+      const service = dashIdx !== -1 ? item.description.slice(0, dashIdx) : item.description;
+      const row = rows.find((r) =>
+        (r.serviceId && item.description.toLowerCase().includes(r.service.toLowerCase()))
+        || r.service.toLowerCase() === service.toLowerCase()
+        || item.description.toLowerCase().includes(r.service.toLowerCase()),
+      );
+      return {
+        service,
+        requested: item.requested,
+        minimum: item.minimum,
+        serviceId: row?.serviceId,
+      };
+    });
+
+  const showQtyWarningInChat = (
+    rows: Array<{ service: string; qty: number | string; city: string; serviceId?: string; durationDays?: number }>,
+    originalUserInput: string,
+    violations: MinQtyViolation[],
+  ) => {
+    const details = qtyWarningDetails(violations, rows);
+    const last = messages[messages.length - 1];
+    const reuseId = last?.progressiveStep === 'min_qty_confirm'
+      ? last.id
+      : Date.now().toString();
+    const nextDrafts: Record<string, string> = {};
+    for (const item of details) {
+      nextDrafts[item.serviceId || item.service] = String(item.requested);
+    }
+    const session = {
+      ...(progressiveSession || { originalText: originalUserInput, qty: null }),
+      originalText: originalUserInput,
+      pendingRows: rows,
+    };
+    setPendingConfirmGeneration({ rows, originalUserInput, messageId: reuseId });
+    setPendingDurationInput(null);
+    setProgressiveSession(session as ProgressiveSession);
+    setMinQtyDrafts((drafts) => ({ ...drafts, [reuseId]: nextDrafts }));
+    setMinQtyEditingKey((keys) => ({ ...keys, [reuseId]: null }));
+    const assistantMsg: Message = {
+      id: reuseId,
+      role: 'assistant',
+      content: '',
+      timestamp: new Date(),
+      isProgressiveChat: true,
+      progressiveStep: 'min_qty_confirm',
+      progressiveAllowMulti: false,
+      progressiveBelowMin: details,
+      progressiveOptions: [
+        { id: 'yes_min', label: 'Yes, use minimums' },
+        { id: 'no_min', label: "No, I'll adjust" },
+      ],
+      progressiveSession: session,
+    };
+    setMessages((prev) => {
+      const prevLast = prev[prev.length - 1];
+      if (prevLast?.progressiveStep === 'min_qty_confirm') {
+        return prev.map((message, index) => (index === prev.length - 1 ? assistantMsg : message));
+      }
+      return [...prev, assistantMsg];
+    });
+  };
+
+  const showDurationWarningInChat = (
+    rows: Array<{ service: string; qty: number | string; city: string; serviceId?: string; durationDays?: number }>,
+    originalUserInput: string,
+    violations: MinDurationViolation[],
+  ) => {
+    const details = durationWarningDetails(violations);
+    const last = messages[messages.length - 1];
+    const reuseId = last?.progressiveStep === 'min_duration_confirm'
+      ? last.id
+      : Date.now().toString();
+    const nextDrafts: Record<string, string> = {};
+    for (const item of details) {
+      nextDrafts[item.serviceId || item.service] = String(item.requested);
+    }
+    const session = {
+      ...(progressiveSession || { originalText: originalUserInput, qty: null }),
+      originalText: originalUserInput,
+      pendingRows: rows,
+    };
+    setPendingConfirmGeneration({ rows, originalUserInput, messageId: reuseId });
+    setPendingDurationInput(null);
+    setMinDurationWarning(null);
+    setProgressiveSession(session as ProgressiveSession);
+    setMinDurationDrafts((drafts) => ({ ...drafts, [reuseId]: nextDrafts }));
+    setMinDurationEditingKey((keys) => ({ ...keys, [reuseId]: null }));
+    const assistantMsg: Message = {
+      id: reuseId,
+      role: 'assistant',
+      content: '',
+      timestamp: new Date(),
+      isProgressiveChat: true,
+      progressiveStep: 'min_duration_confirm',
+      progressiveAllowMulti: false,
+      progressiveBelowMinDuration: details,
+      progressiveOptions: [
+        { id: 'yes_min_duration', label: 'Yes, use minimums' },
+        { id: 'no_min_duration', label: "No, I'll adjust" },
+      ],
+      progressiveSession: session,
+    };
+    setMessages((prev) => {
+      const prevLast = prev[prev.length - 1];
+      if (prevLast?.progressiveStep === 'min_duration_confirm') {
+        return prev.map((message, index) => (index === prev.length - 1 ? assistantMsg : message));
+      }
+      return [...prev, assistantMsg];
+    });
+  };
+
+  const rowMatchesAdjustDetail = (
+    row: { service: string; serviceId?: string },
+    item: { service: string; serviceId?: string },
+  ) =>
+    (item.serviceId && row.serviceId && item.serviceId === row.serviceId)
+    || item.service.toLowerCase() === row.service.toLowerCase()
+    || row.service.toLowerCase().includes(item.service.toLowerCase())
+    || item.service.toLowerCase().includes(row.service.toLowerCase());
+
+  const applyDurationToWarnedRows = (
+    rows: Array<{ service: string; qty: number | string; city: string; serviceId?: string; durationDays?: number }>,
+    details: Array<{ service: string; requested: number; minimum: number; serviceId?: string }>,
+    days: number,
+  ) => {
+    if (!details.length) return rows.map((row) => ({ ...row, durationDays: days }));
+    return rows.map((row) => (
+      details.some((item) => rowMatchesAdjustDetail(row, item))
+        ? { ...row, durationDays: days }
+        : row
+    ));
+  };
+
+  const applyQtyToWarnedRows = (
+    rows: Array<{ service: string; qty: number | string; city: string; serviceId?: string; durationDays?: number }>,
+    details: Array<{ service: string; requested: number; minimum: number; serviceId?: string }>,
+    qty: number,
+  ) => {
+    if (!details.length) return rows.map((row) => ({ ...row, qty }));
+    return rows.map((row) => (
+      details.some((item) => rowMatchesAdjustDetail(row, item))
+        ? { ...row, qty }
+        : row
+    ));
   };
 
   const generateQuoteFromProgressiveRows = async (
-    rows: Array<{ service: string; qty: number | string; city: string; serviceId?: string }>,
+    rows: Array<{ service: string; qty: number | string; city: string; serviceId?: string; durationDays?: number }>,
     originalUserInput: string,
   ) => {
     setIsLoading(true);
@@ -685,8 +1075,31 @@ const ChatInterface: React.FC = () => {
       const { loadAllServicesFromCloud } = await import('../../services/supabaseProposalService');
       const { buildQuoteFromConfirmedRows } = await import('../../utils/buildQuoteFromConfirmedRows');
       const dbServices = (await loadAllServicesFromCloud()) || [];
+      const uniqueRows = dedupeConfirmationRows(rows);
+      const qtyViolations = validateConfirmationRowsMinQty(uniqueRows, dbServices);
+      if (qtyViolations.length > 0) {
+        showQtyWarningInChat(uniqueRows, originalUserInput, qtyViolations);
+        setIsLoading(false);
+        return;
+      }
+      const durationViolations = validateConfirmationRowsMinDuration(
+        uniqueRows,
+        dbServices,
+        originalUserInput,
+      );
+      console.log('[DurationDebug] progressive gate', {
+        originalUserInput,
+        rows: uniqueRows,
+        violationCount: durationViolations.length,
+        durationViolations,
+      });
+      if (durationViolations.length > 0) {
+        showDurationWarningInChat(uniqueRows, originalUserInput, durationViolations);
+        setIsLoading(false);
+        return;
+      }
       const result = buildQuoteFromConfirmedRows(
-        dedupeConfirmationRows(rows),
+        uniqueRows,
         dbServices,
         originalUserInput,
       );
@@ -696,7 +1109,7 @@ const ChatInterface: React.FC = () => {
           {
             id: Date.now().toString(),
             role: 'assistant',
-            content: `Could not build quote: ${result.message}`,
+            content: `I couldn't build that quote: ${result.message}. Happy to try again if you'd like.`,
             timestamp: new Date(),
             isError: true,
           },
@@ -705,18 +1118,23 @@ const ChatInterface: React.FC = () => {
       }
       setCurrentQuote(result.quote);
       loadCloudServices().catch(() => undefined);
+      const skippedNote = result.skipped?.length
+        ? `Currently no pricing for ${result.skipped.join('; ')}. We can't include ${
+          result.skipped.length === 1 ? 'this service' : 'these services'
+        } in the quote.\n`
+        : '';
       setMessages((prev) => [
         ...prev,
         {
           id: (Date.now() + 1).toString(),
           role: 'assistant',
-          content: '✓ Your quote is ready!',
+          content: `${skippedNote}Your quotation is ready.\nOpening quotation preview.`,
           timestamp: new Date(),
         },
       ]);
       setProgressiveSession(null);
       setTimeout(() => {
-        history.push('/quote');
+        history.push('/preview');
       }, 1000);
     } catch (err) {
       setMessages((prev) => [
@@ -734,6 +1152,105 @@ const ChatInterface: React.FC = () => {
     }
   };
 
+  type AdjustPendingRow = {
+    service: string;
+    qty: number | string;
+    city: string;
+    serviceId?: string;
+    durationDays?: number;
+  };
+
+  const getAdjustRows = (source?: Message | null): AdjustPendingRow[] =>
+    (source?.progressiveSession?.pendingRows
+      || progressiveSession?.pendingRows
+      || pendingConfirmGeneration?.rows
+      || pendingDurationInput?.rows
+      || []) as AdjustPendingRow[];
+
+  const getAdjustOriginalText = (source?: Message | null): string =>
+    source?.progressiveSession?.originalText
+    || progressiveSession?.originalText
+    || pendingConfirmGeneration?.originalUserInput
+    || pendingDurationInput?.originalUserInput
+    || '';
+
+  const applyTypedQtyAndContinue = async (qty: number, source?: Message | null) => {
+    const rows = getAdjustRows(source);
+    const details = source?.progressiveBelowMin || [];
+    const updated = applyQtyToWarnedRows(rows, details, qty);
+    setPendingDurationInput(null);
+    await generateQuoteFromProgressiveRows(updated, getAdjustOriginalText(source));
+  };
+
+  const applyTypedDurationAndContinue = async (days: number, source?: Message | null) => {
+    const rows = getAdjustRows(source);
+    const details = source?.progressiveBelowMinDuration
+      || pendingDurationInput?.violations.map((item) => ({
+        service: item.description,
+        requested: item.requested,
+        minimum: item.minimum,
+        serviceId: item.serviceId,
+      }))
+      || [];
+    const updated = applyDurationToWarnedRows(rows, details, days);
+    setPendingDurationInput(null);
+    setMinDurationWarning(null);
+    await generateQuoteFromProgressiveRows(updated, getAdjustOriginalText(source));
+  };
+
+  const askQtyOrDaysClarify = (value: number, source?: Message | null) => {
+    const session = {
+      ...(source?.progressiveSession || progressiveSession || { originalText: getAdjustOriginalText(source), qty: null }),
+      pendingRows: getAdjustRows(source),
+    };
+    const assistantMsg: Message = {
+      id: Date.now().toString(),
+      role: 'assistant',
+      content: `Did you mean ${value} qty or ${value} days?`,
+      timestamp: new Date(),
+      isProgressiveChat: true,
+      progressiveStep: 'qty_or_duration_clarify',
+      progressiveAllowMulti: false,
+      progressiveOptions: [
+        { id: `adjust_as_qty:${value}`, label: `${value} qty` },
+        { id: `adjust_as_days:${value}`, label: `${value} days` },
+      ],
+      progressiveBelowMin: source?.progressiveBelowMin,
+      progressiveBelowMinDuration: source?.progressiveBelowMinDuration,
+      progressiveSession: session,
+    };
+    setProgressiveSession(session as ProgressiveSession);
+    setMessages((prev) => [...prev, assistantMsg]);
+  };
+
+  const parseQtyOrDurationAdjust = (
+    text: string,
+  ):
+    | { kind: 'qty'; value: number }
+    | { kind: 'duration'; days: number }
+    | { kind: 'ambiguous'; value: number }
+    | { kind: 'none' } => {
+    const t = text.trim();
+    const qtyExplicit = t.match(
+      /^(?:use|set|change\s+to|make\s+it|give)?\s*(?:(\d+)\s*(?:qty|quantity|units?|pcs|nos?\.?)|(?:qty|quantity|units?)\s*[:=]?\s*(\d+))\s*$/i,
+    );
+    if (qtyExplicit) {
+      const n = parseInt(qtyExplicit[1] || qtyExplicit[2], 10);
+      if (Number.isFinite(n) && n > 0) return { kind: 'qty', value: n };
+    }
+    const parsed = parseDurationFromUserText(t);
+    const days = toCampaignDays(parsed?.value, parsed?.unit);
+    if (days != null && days > 0 && /\d+\s*(days?|months?|mos?\.?)/i.test(t)) {
+      return { kind: 'duration', days };
+    }
+    const bare = t.match(/^(?:use|set|change\s+to|make\s+it|give|for)?\s*(\d+)\s*$/i);
+    if (bare) {
+      const n = parseInt(bare[1], 10);
+      if (Number.isFinite(n) && n > 0) return { kind: 'ambiguous', value: n };
+    }
+    return { kind: 'none' };
+  };
+
   const handleProgressiveOptionClick = async (
     message: Message,
     optionId: string,
@@ -742,6 +1259,75 @@ const ChatInterface: React.FC = () => {
     const session = message.progressiveSession || progressiveSession;
     if (!session) return;
 
+    const qtyChip = optionId.match(/^adjust_as_qty:(\d+)$/);
+    if (qtyChip) {
+      await applyTypedQtyAndContinue(parseInt(qtyChip[1], 10), message);
+      return;
+    }
+    const daysChip = optionId.match(/^adjust_as_days:(\d+)$/);
+    if (daysChip) {
+      await applyTypedDurationAndContinue(parseInt(daysChip[1], 10), message);
+      return;
+    }
+
+    if (optionId === 'no_min') {
+      window.setTimeout(() => {
+        inputRef.current?.focus({ preventScroll: true });
+      }, 50);
+      return;
+    }
+
+    if (optionId === 'yes_min_duration') {
+      const details = message.progressiveBelowMinDuration || [];
+      const rows = (session.pendingRows || pendingConfirmGeneration?.rows || []) as Array<{
+        service: string;
+        qty: number | string;
+        city: string;
+        serviceId?: string;
+        durationDays?: number;
+      }>;
+      const updatedRows = rows.map((row) => {
+        const match = details.find((item) =>
+          (item.serviceId && row.serviceId && item.serviceId === row.serviceId)
+          || item.service.toLowerCase() === row.service.toLowerCase()
+          || row.service.toLowerCase().includes(item.service.toLowerCase())
+          || item.service.toLowerCase().includes(row.service.toLowerCase()),
+        );
+        return match ? { ...row, durationDays: match.minimum } : row;
+      });
+      setPendingDurationInput(null);
+      setMinDurationWarning(null);
+      setPendingConfirmGeneration(null);
+      await generateQuoteFromProgressiveRows(updatedRows, session.originalText);
+      return;
+    }
+
+    if (optionId === 'no_min_duration') {
+      const details = message.progressiveBelowMinDuration || [];
+      const rows = (session.pendingRows || pendingConfirmGeneration?.rows || []) as Array<{
+        service: string;
+        qty: number | string;
+        city: string;
+        serviceId?: string;
+        durationDays?: number;
+      }>;
+      setPendingDurationInput({
+        rows,
+        originalUserInput: session.originalText,
+        messageId: message.id,
+        violations: details.map((item) => ({
+          description: item.service,
+          requested: item.requested,
+          minimum: item.minimum,
+          serviceId: item.serviceId,
+        })),
+      });
+      window.setTimeout(() => {
+        inputRef.current?.focus({ preventScroll: true });
+      }, 50);
+      return;
+    }
+
     if (message.progressiveAllowMulti) {
       // Toggle handled in chip UI — do not navigate yet
       return;
@@ -749,9 +1335,20 @@ const ChatInterface: React.FC = () => {
 
     setIsLoading(true);
     try {
-      const { loadAllServicesFromCloud } = await import('../../services/supabaseProposalService');
-      const dbServices = (await loadAllServicesFromCloud()) || [];
-      const result = continueProgressiveAction(optionId, session, dbServices);
+      const dbServices = await getCachedDbServices();
+      const opt = (message.progressiveOptions || []).find((o) => o.id === optionId);
+      const cityFromChip = opt?.city || (
+        optionId.startsWith('city:')
+          ? (opt?.label || optionId.replace(/^city:/i, ''))
+          : undefined
+      );
+      const result = await continueChatAction(
+        optionId,
+        session,
+        dbServices,
+        undefined,
+        cityFromChip,
+      );
       // No echo bubble for chip selections — bot's reply conveys what was chosen
       await appendProgressiveResult(null, result);
     } catch (err) {
@@ -770,19 +1367,26 @@ const ChatInterface: React.FC = () => {
 
     setIsLoading(true);
     try {
-      const { loadAllServicesFromCloud } = await import('../../services/supabaseProposalService');
-      const dbServices = (await loadAllServicesFromCloud()) || [];
-      const result = continueProgressiveAction(
+      const dbServices = await getCachedDbServices();
+      const opts = message.progressiveOptions || [];
+      const selectedOpts = selected
+        .map((id) => opts.find((o) => o.id === id))
+        .filter((o): o is ProgressiveOption => !!o);
+      const cityPicks = selectedOpts
+        .filter((o) => (o.id || '').startsWith('city:') || !!o.city);
+      const cityLabel = cityPicks.length === 1
+        ? (cityPicks[0].city || cityPicks[0].label)
+        : undefined;
+      const result = await continueChatAction(
         selected[0],
         session,
         dbServices,
         selected,
+        cityLabel,
       );
-      setProgressiveMultiSelect((prev) => {
-        const next = { ...prev };
-        delete next[message.id];
-        return next;
-      });
+      // Keep the selection snapshot so the completed checklist remains
+      // visibly selected after the funnel advances. The card is made
+      // read-only by the render layer once a newer progressive message exists.
       // No echo bubble for confirm — bot's reply confirms the selection
       await appendProgressiveResult(null, result);
     } finally {
@@ -859,9 +1463,125 @@ const ChatInterface: React.FC = () => {
     }
   };
 
+  const applyMinDurationPencilEdits = async (message: Message) => {
+    if (isLoading || minDurationApplyLock.current) return;
+    const session = message.progressiveSession || progressiveSession;
+    const details = message.progressiveBelowMinDuration;
+    if (!session || !details?.length) return;
+
+    const drafts = minDurationDrafts[message.id] || {};
+    const rows = (session.pendingRows || pendingConfirmGeneration?.rows || []) as Array<{
+      service: string;
+      qty: number | string;
+      city: string;
+      serviceId?: string;
+      durationDays?: number;
+    }>;
+    const stillBelow: Array<{ service: string; requested: number; minimum: number; serviceId?: string }> = [];
+    let changed = false;
+    const updatedRows = rows.map((row) => {
+      const item = details.find((detail) =>
+        (detail.serviceId && row.serviceId && detail.serviceId === row.serviceId)
+        || detail.service.toLowerCase() === row.service.toLowerCase()
+        || row.service.toLowerCase().includes(detail.service.toLowerCase())
+        || detail.service.toLowerCase().includes(row.service.toLowerCase()),
+      );
+      if (!item) return row;
+      const key = minQtyItemKey(item);
+      const raw = drafts[key];
+      if (raw == null || String(raw).trim() === '') {
+        return { ...row, durationDays: item.requested };
+      }
+      const n = parseInt(String(raw).replace(/,/g, ''), 10);
+      if (!Number.isFinite(n) || n <= 0) return row;
+      changed = true;
+      if (n < item.minimum) {
+        stillBelow.push({ ...item, requested: n });
+      }
+      return { ...row, durationDays: n };
+    });
+
+    if (!changed) {
+      setMinDurationEditingKey((prev) => ({ ...prev, [message.id]: null }));
+      return;
+    }
+
+    minDurationApplyLock.current = true;
+    setIsLoading(true);
+    setMinDurationEditingKey((prev) => ({ ...prev, [message.id]: null }));
+    try {
+      setProgressiveSession({ ...session, pendingRows: updatedRows });
+      if (stillBelow.length > 0) {
+        setMessages((prev) =>
+          prev.map((m) =>
+            m.id === message.id
+              ? {
+                  ...m,
+                  progressiveBelowMinDuration: stillBelow,
+                  progressiveOptions: [
+                    { id: 'yes_min_duration', label: 'Yes, use minimums' },
+                    { id: 'no_min_duration', label: "No, I'll adjust" },
+                  ],
+                  progressiveSession: { ...session, pendingRows: updatedRows },
+                  timestamp: new Date(),
+                }
+              : m,
+          ),
+        );
+        const nextDrafts: Record<string, string> = {};
+        for (const item of stillBelow) {
+          nextDrafts[minQtyItemKey(item)] = String(item.requested);
+        }
+        setMinDurationDrafts((prev) => ({ ...prev, [message.id]: nextDrafts }));
+        return;
+      }
+      setPendingDurationInput(null);
+      setMinDurationWarning(null);
+      await generateQuoteFromProgressiveRows(updatedRows, session.originalText);
+    } finally {
+      setIsLoading(false);
+      minDurationApplyLock.current = false;
+    }
+  };
+
   // Core send logic — accepts text directly, no reliance on inputValue state
   const sendMessageWithContent = async (text: string) => {
     if (!text.trim() || isLoading) return;
+
+    // Qty / duration adjust: "5 qty" → quantity, "5 days" → duration,
+    // bare "5" → ask which. Then re-run min qty then min duration gates.
+    const lastAssistant = [...messages].reverse().find((m) => m.role === 'assistant');
+    const inMinAdjust =
+      !!pendingDurationInput
+      || lastAssistant?.progressiveStep === 'min_qty_confirm'
+      || lastAssistant?.progressiveStep === 'min_duration_confirm'
+      || lastAssistant?.progressiveStep === 'qty_or_duration_clarify'
+      || (lastAssistant?.progressiveBelowMin?.length ?? 0) > 0
+      || (lastAssistant?.progressiveBelowMinDuration?.length ?? 0) > 0;
+    if (inMinAdjust && lastAssistant) {
+      const parsedAdjust = parseQtyOrDurationAdjust(text.trim());
+      if (parsedAdjust.kind !== 'none') {
+        setInputValue('');
+        pushToHistory(text.trim());
+        const adjustUserMsg: Message = {
+          id: Date.now().toString(),
+          role: 'user',
+          content: text.trim(),
+          timestamp: new Date(),
+        };
+        setMessages((prev) => [...prev, adjustUserMsg]);
+        if (parsedAdjust.kind === 'ambiguous') {
+          askQtyOrDaysClarify(parsedAdjust.value, lastAssistant);
+          return;
+        }
+        if (parsedAdjust.kind === 'qty') {
+          await applyTypedQtyAndContinue(parsedAdjust.value, lastAssistant);
+          return;
+        }
+        await applyTypedDurationAndContinue(parsedAdjust.days, lastAssistant);
+        return;
+      }
+    }
 
     // Strip internal bypass flags (never shown to user or sent to Gemini)
     const isQtyOverride = text.includes('[QTY_OVERRIDE]');
@@ -884,54 +1604,42 @@ const ChatInterface: React.FC = () => {
       pushToHistory(cleanedText);
       setIsLoading(true);
       setError(null);
-      setMessages((prev) => [...prev, userMessage]);
+      closeChipImagePreview();
+      // Clear prior chip thumbs immediately so the UI stays responsive
+      setMessages((prev) => [...stripChipImagesFromMessages(prev), userMessage]);
       try {
         const { loadAllServicesFromCloud } = await import('../../services/supabaseProposalService');
-        const { getCatalogTypeKeys, getCatalogCities } = await import('../../utils/progressiveChatEngine');
-        const dbServices = (await loadAllServicesFromCloud()) || [];
-        const catalogTypes = getCatalogTypeKeys(dbServices);
-        const catalogCities = getCatalogCities(dbServices);
-
-        let intent = null as Awaited<
-          ReturnType<typeof import('../../services/chatIntentAiService').parseChatIntentWithAi>
-        >;
-        try {
-          const { parseChatIntentWithAi } = await import('../../services/chatIntentAiService');
-          intent = await parseChatIntentWithAi(
-            cleanedText, 
-            {
-              types: catalogTypes,
-              cities: catalogCities,
-            },
-            3500,
-            {
-              userId: user?.id || null,
-              userName: user?.full_name || null,
-              userEmail: user?.email || null,
-            }
-          );
-        } catch {
-          intent = null;
+        if (!catalogCacheRef.current) {
+          catalogLoadRef.current ??= loadAllServicesFromCloud()
+            .then((services) => services || [])
+            .finally(() => {
+              catalogLoadRef.current = null;
+            });
+          catalogCacheRef.current = await catalogLoadRef.current;
         }
+        const dbServices = catalogCacheRef.current;
 
-        const result = resolveProgressiveText(
+        // Let the typing indicator paint before heavy sync matching (prevents "Page Unresponsive")
+        await new Promise<void>((r) => {
+          if (typeof requestAnimationFrame === 'function') {
+            requestAnimationFrame(() => requestAnimationFrame(() => r()));
+          } else {
+            setTimeout(r, 0);
+          }
+        });
+
+        const lastProgMsg = [...messages].reverse().find(
+          (m) => m.role === 'assistant' && m.progressiveSession,
+        );
+        const priorSession = resolvePriorSession(progressiveSession, messages);
+
+        await new Promise<void>((r) => setTimeout(r, 0));
+
+        const result = await runProgressiveUserText(
           cleanedText,
           dbServices,
-          progressiveSession,
-          intent
-            ? {
-                kind: intent.kind,
-                media: intent.media,
-                medium: intent.medium,
-                city: intent.city,
-                areaHint: intent.areaHint,
-                ambiguous: intent.ambiguous,
-                clarifyHint: intent.clarifyHint,
-                qty: intent.qty,
-                duration: intent.duration,
-                shortReply: intent.shortReply,
-              }
-            : null,
+          priorSession,
+          lastProgMsg?.progressiveOptions as ProgressiveOption[] | undefined,
         );
         await appendProgressiveResult(null, result);
       } catch (err) {
@@ -991,8 +1699,8 @@ const ChatInterface: React.FC = () => {
             id: (Date.now() + 1).toString(),
             role: 'assistant',
             content: lists.length === 1
-              ? `Here are all services available in ${lists[0].city}. Tap any to start a quote:`
-              : `Here are services available in: ${lists.map(l => l.city).join(', ')}. Tap any to start:`,
+              ? `I understand you're looking in ${lists[0].city}. Here's everything we offer — tap any to start a quote:`
+              : `I understand — here's what we offer in ${lists.map(l => l.city).join(', ')}. Tap any to start a quote:`,
             timestamp: new Date(),
             isCityServiceList: true,
             cityServiceList: lists,
@@ -1023,7 +1731,7 @@ const ChatInterface: React.FC = () => {
           const dynamicCities = getMergedDynamicCities(dbList);
           const cityDetectionList = getCityDetectionList(dbList);
           const isMultiSegment = isMultiSegmentQuoteRequest(cleanedText);
-          const isVagueWhole = isVagueCategoryQuery(cleanedText);
+          const isVagueWhole = isVagueCategoryQuery(cleanedText, dbList);
           const knownCityWhole = detectKnownCityInText(cleanedText, dbList);
 
           // ── Single-segment vague with no city (e.g. "bus") → always city picker ──
@@ -1043,8 +1751,8 @@ const ChatInterface: React.FC = () => {
                 id: pickerMsgId,
                 role: 'assistant',
                 content: cloudCities.length >= 2
-                  ? '🏙️ This service is available in multiple cities. Please select your city:'
-                  : '🏙️ Please select your city to see available services:',
+                  ? 'I understand — this service is available in multiple cities. Which city should I prepare for?'
+                  : 'I understand — please select your city and I’ll show what’s available:',
                 timestamp: new Date(),
                 isCityPicker: true,
               };
@@ -1084,7 +1792,7 @@ const ChatInterface: React.FC = () => {
             const pickerMsg: Message = {
               id: pickerMsgId,
               role: 'assistant',
-              content: '🏙️ Please select the city for each service below:',
+              content: 'I understand — please select the city for each service below so I can prepare your quote:',
               timestamp: new Date(),
               isCityPicker: true,
             };
@@ -1165,7 +1873,7 @@ const ChatInterface: React.FC = () => {
               const assistantMsg = prepareMultipleMatchMessage({
                 id: assistantId,
                 role: 'assistant',
-                content: '🔀 Multiple services found. Select all you need:',
+                content: 'I understand — a few matching services came up. Select all you need for the quote:',
                 timestamp: new Date(),
                 isMultipleMatch: true,
                 groupedServices: mergeGroupedServicesByCategory(cloudResult.vagueGroups),
@@ -1202,7 +1910,7 @@ const ChatInterface: React.FC = () => {
                   kept: cloudResult.validSegmentLabels,
                 });
               }
-              setMessages(prev => [...prev, userMessage]);
+              setMessages(prev => [...stripChipImagesFromMessages(prev), userMessage]);
               setInputValue('');
               setUnavailableServices(cloudResult.preAlerts);
               if (cloudResult.validSegmentLabels.length === 0) {
@@ -1232,7 +1940,7 @@ const ChatInterface: React.FC = () => {
               if (cloudResult.preAlerts.length > 0) {
                 setUnavailableServices(cloudResult.preAlerts);
               }
-              setMessages(prev => [...prev, userMessage]);
+              setMessages(prev => [...stripChipImagesFromMessages(prev), userMessage]);
               const confirmRows = rowsFromCloudBelowMin(
                 cloudResult.validSegmentLabels,
                 cloudResult.belowMinSegments.map((bm) => ({
@@ -1265,7 +1973,7 @@ const ChatInterface: React.FC = () => {
               cloudResult.vagueGroups.length === 0 &&
               cloudResult.belowMinSegments.length === 0
             ) {
-              setMessages(prev => [...prev, userMessage]);
+              setMessages(prev => [...stripChipImagesFromMessages(prev), userMessage]);
               setInputValue('');
               const confirmRows = labelsToConfirmRows(cloudResult.validSegmentLabels);
               if (confirmRows.length > 0) {
@@ -1281,7 +1989,8 @@ const ChatInterface: React.FC = () => {
     }
     // ─────────────────────────────────────────────────────────────────────────
 
-    setMessages(prev => [...prev, userMessage]);
+    closeChipImagePreview();
+    setMessages(prev => [...stripChipImagesFromMessages(prev), userMessage]);
     setIsLoading(true);
     setError(null);
 
@@ -1526,8 +2235,8 @@ const ChatInterface: React.FC = () => {
         id: msgId,
         role: 'assistant',
         content: mergedGroups.length === 1
-          ? `🔀 Multiple services found in ${mergedGroups[0].vehicleType.split('|')[1] || 'your city'}. Select all you need:`
-          : `🔀 Multiple services found across ${mergedGroups.length} groups. Select all you need:`,
+          ? `I understand — a few matching services in ${mergedGroups[0].vehicleType.split('|')[1] || 'your city'}. Select all you need for the quote:`
+          : `I understand — matching services across ${mergedGroups.length} groups. Select all you need for the quote:`,
         timestamp: new Date(),
         isMultipleMatch: true,
         groupedServices: mergedGroups,
@@ -1560,7 +2269,7 @@ const ChatInterface: React.FC = () => {
     const assistantMsg = prepareMultipleMatchMessage({
       id: msgId,
       role: 'assistant',
-      content: `🔀 Multiple services found across ${mergedGroups.length} group${mergedGroups.length !== 1 ? 's' : ''}. Select all you need:`,
+      content: `I understand — matching services across ${mergedGroups.length} group${mergedGroups.length !== 1 ? 's' : ''}. Select all you need for the quote:`,
       timestamp: new Date(),
       isMultipleMatch: true,
       groupedServices: mergedGroups,
@@ -1571,8 +2280,10 @@ const ChatInterface: React.FC = () => {
     setMessages(prev => [...prev, assistantMsg]);
   };
 
-  const handleSuggestionClick = (suggestion: string) => {
-    setInputValue(suggestion);
+  const handleSuggestionClick = async (suggestion: string) => {
+    setHistoryIndex(-1);
+    setDraftInput('');
+    await sendMessageWithContent(suggestion);
   };
 
   // Back button on the multi-match checkbox UI: re-open the city picker
@@ -1592,7 +2303,7 @@ const ChatInterface: React.FC = () => {
     const pickerMsg: Message = {
       id: pickerMsgId,
       role: 'assistant',
-      content: '🏙️ Multiple city rate cards are loaded. Please select the city for each service below:',
+      content: 'I understand — multiple city rate cards are loaded. Please select the city for each service below:',
       timestamp: new Date(),
       isCityPicker: true,
     };
@@ -1646,8 +2357,75 @@ const ChatInterface: React.FC = () => {
     setEditedQuantity('');
   };
 
+  const handleMinDurationEdit = (index: number) => {
+    if (!minDurationWarning) return;
+    setEditingDurationIndex(index);
+    setEditedDuration(String(minDurationWarning.items[index].requested));
+  };
+
+  const handleMinDurationSave = (index: number) => {
+    if (!minDurationWarning || editingDurationIndex !== index) return;
+    const newDuration = parseInt(editedDuration, 10);
+    if (!Number.isFinite(newDuration) || newDuration <= 0) return;
+    setMinDurationWarning({
+      items: minDurationWarning.items.map((item, itemIndex) =>
+        itemIndex === index ? { ...item, requested: newDuration } : item,
+      ),
+    });
+    setEditingDurationIndex(null);
+    setEditedDuration('');
+  };
+
+  const handleMinDurationCancelEdit = () => {
+    setEditingDurationIndex(null);
+    setEditedDuration('');
+  };
+
+  const handleMinDurationClose = () => {
+    setMinDurationWarning(null);
+    setEditingDurationIndex(null);
+    setEditedDuration('');
+    setPendingDurationInput(null);
+    setPendingConfirmGeneration(null);
+  };
+
+  // "No, I'll adjust" keeps the user in chat so they can type a new duration.
+  const handleMinDurationContinue = () => {
+    if (!minDurationWarning || !pendingConfirmGeneration) return;
+    const pending = pendingConfirmGeneration;
+    setPendingDurationInput({
+      rows: pending.rows,
+      originalUserInput: pending.originalUserInput,
+      messageId: pending.messageId,
+      violations: minDurationWarning.items,
+    });
+    setMinDurationWarning(null);
+    setEditingDurationIndex(null);
+    setEditedDuration('');
+    setInputValue('');
+  };
+
+  const handleMinDurationUseMinimum = async () => {
+    if (!minDurationWarning || !pendingConfirmGeneration) return;
+    const pending = pendingConfirmGeneration;
+    const updatedRows = pending.rows.map((row) => {
+      const violation = minDurationWarning.items.find(
+        (item) =>
+          item.description.toLowerCase().includes(row.service.toLowerCase())
+          && (row.city === '—' || item.description.toLowerCase().includes(row.city.toLowerCase())),
+      );
+      return violation ? { ...row, durationDays: violation.minimum } : row;
+    });
+    setMinDurationWarning(null);
+    setEditingDurationIndex(null);
+    setEditedDuration('');
+    setPendingDurationInput(null);
+    setPendingConfirmGeneration(null);
+    await generateQuoteFromProgressiveRows(updatedRows, pending.originalUserInput);
+  };
+
   // Handle min qty warning: user chooses to continue with requested qty
-  const handleMinQtyContinue = () => {
+  const handleMinQtyContinue = async () => {
     if (!minQtyWarning) return;
     const pending = pendingValidMessage;
     const currentItems = minQtyWarning.items;
@@ -1663,13 +2441,11 @@ const ChatInterface: React.FC = () => {
         const gen = pendingConfirmGeneration;
         const updatedRows = applyMinQtyToConfirmRows(gen.rows, currentItems, 'continue');
         setPendingConfirmGeneration(null);
-        openConfirmationTable(gen.messageId, updatedRows, gen.originalUserInput, {
-          items: currentItems,
-          aboveMinItems,
-          pendingRows: gen.rows,
-          messageId: gen.messageId,
-          originalUserInput: gen.originalUserInput,
-        });
+        await applyMinQtyGateOrConfirmTable(
+          gen.messageId,
+          updatedRows,
+          gen.originalUserInput,
+        );
         return;
       }
       if (pending) {
@@ -1693,13 +2469,7 @@ const ChatInterface: React.FC = () => {
             .replace(/\s*\[QTY_OVERRIDE\]/g, '')
             .trim();
           const messageId = Date.now().toString();
-          openConfirmationTable(messageId, updatedRows, displayText, {
-            items: currentItems,
-            aboveMinItems,
-            pendingRows: parsedRows,
-            messageId,
-            originalUserInput: displayText,
-          });
+          await applyMinQtyGateOrConfirmTable(messageId, updatedRows, displayText);
           return;
         }
         let rewrittenMsg = pending;
@@ -1738,11 +2508,11 @@ const ChatInterface: React.FC = () => {
     updatedQuote.gstAmount = newGst;
     updatedQuote.total = newSubtotal + newGst;
     setCurrentQuote(updatedQuote);
-    setTimeout(() => { history.push('/quote'); }, 1500);
+    setTimeout(() => { history.push('/preview'); }, 1500);
   };
 
   // Handle min qty warning: user chooses to use minimum quantities
-  const handleMinQtyUseMinimum = () => {
+  const handleMinQtyUseMinimum = async () => {
     if (!minQtyWarning) return;
     const pending = pendingValidMessage;
     const currentItems = minQtyWarning.items;
@@ -1758,13 +2528,11 @@ const ChatInterface: React.FC = () => {
         const gen = pendingConfirmGeneration;
         const updatedRows = applyMinQtyToConfirmRows(gen.rows, currentItems, 'minimum');
         setPendingConfirmGeneration(null);
-        openConfirmationTable(gen.messageId, updatedRows, gen.originalUserInput, {
-          items: currentItems,
-          aboveMinItems,
-          pendingRows: gen.rows,
-          messageId: gen.messageId,
-          originalUserInput: gen.originalUserInput,
-        });
+        await applyMinQtyGateOrConfirmTable(
+          gen.messageId,
+          updatedRows,
+          gen.originalUserInput,
+        );
         return;
       }
       if (pending) {
@@ -1788,13 +2556,7 @@ const ChatInterface: React.FC = () => {
             .replace(/\s*\[QTY_OVERRIDE\]/g, '')
             .trim();
           const messageId = Date.now().toString();
-          openConfirmationTable(messageId, updatedRows, displayText, {
-            items: currentItems,
-            aboveMinItems,
-            pendingRows: parsedRows,
-            messageId,
-            originalUserInput: displayText,
-          });
+          await applyMinQtyGateOrConfirmTable(messageId, updatedRows, displayText);
           return;
         }
         let newMsg = pending;
@@ -1839,11 +2601,11 @@ const ChatInterface: React.FC = () => {
     const quoteReadyMessage: Message = {
       id: (Date.now() + 2).toString(),
       role: 'assistant',
-      content: '✓ Quote generated with minimum quantities! Redirecting to quote preview...',
+      content: '✓ Quote ready with catalogue minimums — taking you to the preview.',
       timestamp: new Date(),
     };
     setMessages(prev => [...prev, quoteReadyMessage]);
-    setTimeout(() => { history.push('/quote'); }, 1500);
+    setTimeout(() => { history.push('/preview'); }, 1500);
   };
 
   // Handle clicking a service suggestion button (auto-sends as new message)
@@ -1961,7 +2723,7 @@ const ChatInterface: React.FC = () => {
     messageId: string,
     rows: Array<{ service: string; qty: number | string; city: string }>,
     originalUserInput: string,
-    minQtySnapshot?: {
+    _minQtySnapshot?: {
       items: Array<{ description: string; requested: number; originalRequested: number; minimum: number }>;
       aboveMinItems?: Array<{ description: string; requested: number; minimum: number }>;
       pendingRows: Array<{ service: string; qty: number | string; city: string }>;
@@ -1969,12 +2731,7 @@ const ChatInterface: React.FC = () => {
       originalUserInput: string;
     },
   ) => {
-    setConfirmationTable({
-      messageId,
-      rows: dedupeConfirmationRows(rows),
-      originalUserInput,
-      minQtySnapshot,
-    });
+    void executeConfirmedGeneration(dedupeConfirmationRows(rows), originalUserInput, messageId);
   };
 
   const syncMinQtyItemsFromConfirmRows = (
@@ -2083,7 +2840,8 @@ const ChatInterface: React.FC = () => {
       content: displayRequest,
       timestamp: new Date(),
     };
-    setMessages(prev => [...prev, userMessage]);
+    closeChipImagePreview();
+    setMessages(prev => [...stripChipImagesFromMessages(prev), userMessage]);
     setIsLoading(true);
     setError(null);
 
@@ -2114,14 +2872,19 @@ const ChatInterface: React.FC = () => {
               console.warn('⚠️ Could not refresh cloud services after quote:', err);
             });
 
+            const skippedNote = result.skipped?.length
+              ? `Currently no pricing for ${result.skipped.join('; ')}. We can't include ${
+                result.skipped.length === 1 ? 'this service' : 'these services'
+              } in the quote.\n`
+              : '';
             const quoteReadyMessage: Message = {
               id: (Date.now() + 1).toString(),
               role: 'assistant',
-              content: '✓ Your Quote generated successfully!',
+              content: `${skippedNote}Your quotation is ready.\nOpening quotation preview.`,
               timestamp: new Date(),
             };
             setMessages(prev => [...prev, quoteReadyMessage]);
-            setTimeout(() => { history.push('/quote'); }, 1500);
+            setTimeout(() => { history.push('/preview'); }, 1500);
             setIsLoading(false);
             return;
           }
@@ -2129,7 +2892,7 @@ const ChatInterface: React.FC = () => {
           const failMsg: Message = {
             id: (Date.now() + 1).toString(),
             role: 'assistant',
-            content: `Could not build quote from rate card: ${result.message}. Please verify the service exists in your uploaded proposals.`,
+            content: `I couldn't build the quote from the rate card: ${result.message}. Please check the service exists in your uploaded proposals, and I'll try again.`,
             timestamp: new Date(),
           };
           setMessages(prev => [...prev, failMsg]);
@@ -2144,7 +2907,7 @@ const ChatInterface: React.FC = () => {
           id: (Date.now() + 1).toString(),
           role: 'assistant',
           content:
-            'Could not load rate-card services from the cloud catalog. Chat AI is disabled — please retry after services load, or check your connection.',
+            'I couldn’t load rate-card services from the cloud catalog just now. Please retry once they load, or check your connection — happy to pick up from there.',
           timestamp: new Date(),
         };
         setMessages(prev => [...prev, failMsg]);
@@ -2165,7 +2928,7 @@ const ChatInterface: React.FC = () => {
       const errorMessage: Message = {
         id: (Date.now() + 1).toString(),
         role: 'assistant',
-        content: `Sorry, quote generation failed: ${errText}`,
+        content: `Sorry — quote generation didn't go through (${errText}). Happy to try again whenever you're ready.`,
         timestamp: new Date(),
       };
       setMessages(prev => [...prev, errorMessage]);
@@ -2266,7 +3029,7 @@ const ChatInterface: React.FC = () => {
             const errorMessage: Message = {
               id: Date.now().toString(),
               role: 'assistant',
-              content: `Voice input error: ${err.message || 'Could not access microphone'}`,
+              content: `Voice input ran into an issue: ${err.message || 'Could not access the microphone'}. You're welcome to type instead.`,
               timestamp: new Date(),
               isError: true,
             };
@@ -2304,7 +3067,7 @@ const ChatInterface: React.FC = () => {
           const errorMessage: Message = {
             id: Date.now().toString(),
             role: 'assistant',
-            content: 'Voice input is not supported in this browser.',
+            content: 'Voice input isn’t supported in this browser — you’re welcome to type your brief instead.',
             timestamp: new Date(),
             isError: true,
           };
@@ -2313,6 +3076,11 @@ const ChatInterface: React.FC = () => {
       }
     }
   };
+
+  const latestProgressiveId = [...messages]
+    .reverse()
+    .find((message) => message.role === 'assistant' && message.isProgressiveChat)
+    ?.id;
 
   return (
     <Box
@@ -2375,16 +3143,21 @@ const ChatInterface: React.FC = () => {
           overflowY="auto"
           minH="0"
           w="100%"
+          position="relative"
+          zIndex={0}
           sx={{ 
             '::-webkit-scrollbar': { 
-              width: '6px',
+              width: '16px',
+              height: '16px',
             },
             '::-webkit-scrollbar-track': {
               background: 'transparent',
             },
             '::-webkit-scrollbar-thumb': {
-              background: 'gray.300',
-              borderRadius: '3px',
+              background: '#b8c0cc',
+              border: '3px solid transparent',
+              backgroundClip: 'padding-box',
+              borderRadius: '8px',
             },
           }}
         >
@@ -2394,6 +3167,14 @@ const ChatInterface: React.FC = () => {
                   <Box
                     key={message.id}
                     className={`qb-msg-row${message.role === 'assistant' ? ' qb-msg-row--assistant' : ''}`}
+                    sx={{
+                      // Let the browser skip layout/paint work for rows far
+                      // outside the viewport while retaining their height and
+                      // all existing interaction/state behavior.
+                      contentVisibility: 'auto',
+                      contain: 'layout paint style',
+                      containIntrinsicSize: '0 120px',
+                    }}
                     alignSelf={message.role === 'user' ? 'flex-end' : 'flex-start'}
                     maxW={{
                       base: message.role === 'user' ? '80%' : '92%',
@@ -2403,7 +3184,7 @@ const ChatInterface: React.FC = () => {
                   >
                     <Box>
                         {!message.isCityPicker && !message.isMultipleMatch && <Box>
-                          <Box
+                          {message.content && <Box
                             bgGradient={message.role === 'user' 
                               ? 'linear(135deg, #dc2626 0%, #be123c 50%, #9f1239 100%)' 
                               : undefined
@@ -2443,16 +3224,25 @@ const ChatInterface: React.FC = () => {
                             <HStack spacing={2} mb={message.isError ? 1 : 0} align="flex-start">
                               {message.isError && <Text fontSize="16px">❌</Text>}
                               <Text 
-                                fontSize="14px"
+                                fontSize="13.2px"
                                 whiteSpace="pre-wrap"
                                 lineHeight="1.55"
-                                fontWeight={message.role === 'user' ? '500' : (message.isError ? '600' : '500')}
+                                fontWeight={
+                                  message.role === 'user'
+                                    ? '500'
+                                    : (message.isError ? '630' : '555')
+                                }
                                 letterSpacing="normal"
                                 flex={1}
                                 color={
                                   message.role === 'user'
                                     ? 'white'
                                     : (message.isError ? 'red.700' : 'gray.800')
+                                }
+                                className={
+                                  message.role === 'assistant'
+                                    ? 'qb-assistant-text'
+                                    : undefined
                                 }
                               >
                                 {message.content}
@@ -2471,7 +3261,7 @@ const ChatInterface: React.FC = () => {
                                 minute: '2-digit',
                               })}
                             </Text>
-                          </Box>
+                          </Box>}
 
                           {/* Soft note for single-city services is already in message.content */}
 
@@ -2497,7 +3287,7 @@ const ChatInterface: React.FC = () => {
                                     <Text fontSize="12px" fontWeight="600" color="gray.700">{item.service}</Text>
                                     <HStack mt={0.5} spacing={3} align="flex-end">
                                       <Box>
-                                        <Text fontSize="10px" color="gray.500" fontWeight="500">Requested</Text>
+                                  <Text fontSize="10px" color="gray.500" fontWeight="500">Requested Qty</Text>
                                         <HStack spacing={1} align="center">
                                           {isEditing ? (
                                             <Input
@@ -2568,7 +3358,7 @@ const ChatInterface: React.FC = () => {
                                       </Box>
                                       <Text fontSize="16px" color="gray.300" pb="2px">→</Text>
                                       <Box>
-                                        <Text fontSize="10px" color="gray.500" fontWeight="500">Minimum</Text>
+                                  <Text fontSize="10px" color="gray.500" fontWeight="500">Minimum Qty</Text>
                                         <Text fontSize="13px" fontWeight="700" color="green.600">
                                           {item.minimum.toLocaleString()}
                                         </Text>
@@ -2580,12 +3370,189 @@ const ChatInterface: React.FC = () => {
                             </Box>
                           )}
 
-                          {/* Progressive chat option chips */}
-                          {message.isProgressiveChat && message.progressiveOptions && message.progressiveOptions.length > 0 && (
+                          {/* Min duration details card — same layout as min qty */}
+                          {message.progressiveBelowMinDuration && message.progressiveBelowMinDuration.length > 0 && (
+                            <Box mt={3} p={3} bg="orange.50" border="1px solid" borderColor="orange.200" borderRadius="lg">
+                              <HStack mb={2} spacing={1} justify="space-between" align="flex-start">
+                                <Text fontSize="12px" fontWeight="700" color="orange.700">
+                                  ⚠ Minimum Duration Required
+                                </Text>
+                                <Text fontSize="10px" color="orange.600" fontWeight="500" maxW="55%" textAlign="right">
+                                  Tap pencil to edit duration
+                                </Text>
+                              </HStack>
+                              {message.progressiveBelowMinDuration.map((item, i) => {
+                                const itemKey = item.serviceId || item.service;
+                                const isEditing = minDurationEditingKey[message.id] === itemKey;
+                                const draft =
+                                  minDurationDrafts[message.id]?.[itemKey]
+                                  ?? String(item.requested);
+                                return (
+                                  <Box key={itemKey} mb={i < message.progressiveBelowMinDuration!.length - 1 ? 2 : 0}>
+                                    <Text fontSize="12px" fontWeight="600" color="gray.700">{item.service}</Text>
+                                    <HStack mt={0.5} spacing={3} align="flex-end">
+                                      <Box>
+                                        <Text fontSize="10px" color="gray.500" fontWeight="500">Requested Duration</Text>
+                                        <HStack spacing={1} align="center">
+                                          {isEditing ? (
+                                            <Input
+                                              size="xs"
+                                              type="number"
+                                              min={1}
+                                              w="72px"
+                                              value={draft}
+                                              autoFocus
+                                              bg="white"
+                                              borderColor="orange.300"
+                                              fontWeight="600"
+                                              onChange={(e) => {
+                                                const v = e.target.value;
+                                                setMinDurationDrafts((prev) => ({
+                                                  ...prev,
+                                                  [message.id]: {
+                                                    ...(prev[message.id] || {}),
+                                                    [itemKey]: v,
+                                                  },
+                                                }));
+                                              }}
+                                              onKeyDown={(e) => {
+                                                if (e.key === 'Enter') {
+                                                  e.preventDefault();
+                                                  void applyMinDurationPencilEdits(message);
+                                                }
+                                                if (e.key === 'Escape') {
+                                                  setMinDurationEditingKey((prev) => ({ ...prev, [message.id]: null }));
+                                                }
+                                              }}
+                                              onBlur={() => void applyMinDurationPencilEdits(message)}
+                                            />
+                                          ) : (
+                                            <Text fontSize="13px" fontWeight="700" color="red.500">
+                                              {item.requested.toLocaleString()} days
+                                            </Text>
+                                          )}
+                                          <IconButton
+                                            aria-label="Edit duration"
+                                            icon={<FiEdit2 />}
+                                            size="xs"
+                                            variant="ghost"
+                                            color="brand.600"
+                                            isDisabled={isLoading}
+                                            onClick={() => {
+                                              setMinDurationDrafts((prev) => ({
+                                                ...prev,
+                                                [message.id]: {
+                                                  ...(prev[message.id] || {}),
+                                                  [itemKey]: String(
+                                                    prev[message.id]?.[itemKey] ?? item.requested,
+                                                  ),
+                                                },
+                                              }));
+                                              setMinDurationEditingKey((prev) => ({
+                                                ...prev,
+                                                [message.id]: itemKey,
+                                              }));
+                                            }}
+                                            _hover={{ bg: 'orange.100' }}
+                                            fontSize="11px"
+                                            w="22px"
+                                            h="22px"
+                                            minW="22px"
+                                          />
+                                        </HStack>
+                                      </Box>
+                                      <Text fontSize="16px" color="gray.300" pb="2px">→</Text>
+                                      <Box>
+                                        <Text fontSize="10px" color="gray.500" fontWeight="500">Minimum Duration</Text>
+                                        <Text fontSize="13px" fontWeight="700" color="green.600">
+                                          {item.minimum.toLocaleString()} days
+                                        </Text>
+                                      </Box>
+                                    </HStack>
+                                  </Box>
+                                );
+                              })}
+                            </Box>
+                          )}
+
+                          {/* Batch: skipped services only (no “Now choosing” banner) */}
+                          {message.isProgressiveChat
+                            && message.progressiveUnavailable
+                            && message.progressiveUnavailable.length > 0 && (
+                            <Box
+                              mt={3}
+                              mb={message.progressiveOptions?.length ? 0 : 1}
+                              px={3}
+                              py={2.5}
+                              borderRadius="xl"
+                              border="1px solid"
+                              borderColor="gray.200"
+                              bg="gray.50"
+                            >
+                              <Text
+                                fontSize="10px"
+                                fontWeight="700"
+                                color="gray.500"
+                                textTransform="uppercase"
+                                letterSpacing="0.06em"
+                                mb={1.5}
+                              >
+                                Skipped
+                                {message.progressiveUnavailableCity
+                                  ? ` — not in ${message.progressiveUnavailableCity}`
+                                  : ''}
+                              </Text>
+                              <Flex flexWrap="wrap" gap={1.5}>
+                                {message.progressiveUnavailable.map((name) => (
+                                  <Text
+                                    key={`miss-${name}`}
+                                    as="span"
+                                    px={2.5}
+                                    py={1}
+                                    fontSize="12px"
+                                    fontWeight="500"
+                                    color="gray.500"
+                                    bg="white"
+                                    border="1px dashed"
+                                    borderColor="gray.300"
+                                    borderRadius="full"
+                                    lineHeight="1.2"
+                                  >
+                                    {name}
+                                  </Text>
+                                ))}
+                              </Flex>
+                            </Box>
+                          )}
+
+                          {/* Progressive chat option chips — only the latest turn stays interactive */}
+                          {message.isProgressiveChat
+                            && message.progressiveOptions
+                            && message.progressiveOptions.length > 0
+                            && (
+                              message.id === latestProgressiveId
+                              || (
+                                message.progressiveAllowMulti
+                                && (
+                                  progressiveMultiSelect[message.id]?.length
+                                  ?? message.progressiveSelected?.length
+                                  ?? 0
+                                ) > 0
+                              )
+                            ) && (
                             <Box mt={3}>
                               {message.progressiveAllowMulti ? (
                                 /* Scrollable checklist — fixed ~10 rows visible */
                                 <Box
+                                  sx={{
+                                    // Once the funnel advances, preserve the
+                                    // old checklist visually but prevent it
+                                    // from mutating state again.
+                                    pointerEvents:
+                                      message.id === latestProgressiveId ? 'auto' : 'none',
+                                    opacity:
+                                      message.id === latestProgressiveId ? 1 : 0.62,
+                                  }}
                                   border="1px solid"
                                   borderColor="brand.100"
                                   borderRadius="xl"
@@ -2610,10 +3577,10 @@ const ChatInterface: React.FC = () => {
                                       fontSize="12px"
                                       _hover={{ color: 'brand.700', textDecoration: 'underline' }}
                                       onClick={() =>
-                                        setProgressiveMultiSelect((prev) => ({
-                                          ...prev,
-                                          [message.id]: message.progressiveOptions!.map((o) => o.id),
-                                        }))
+                                        updateProgressiveSelection(
+                                          message.id,
+                                          message.progressiveOptions!.map((o) => o.id),
+                                        )
                                       }
                                     >
                                       Select all
@@ -2627,10 +3594,7 @@ const ChatInterface: React.FC = () => {
                                       fontSize="12px"
                                       _hover={{ color: 'gray.700', textDecoration: 'underline' }}
                                       onClick={() =>
-                                        setProgressiveMultiSelect((prev) => ({
-                                          ...prev,
-                                          [message.id]: [],
-                                        }))
+                                        updateProgressiveSelection(message.id, [])
                                       }
                                     >
                                       Clear
@@ -2647,16 +3611,22 @@ const ChatInterface: React.FC = () => {
                                       border="1px solid"
                                       borderColor="gray.200"
                                     >
-                                      {progressiveMultiSelect[message.id]?.length
-                                        ? `${progressiveMultiSelect[message.id].length} selected`
+                                      {(progressiveMultiSelect[message.id]?.length
+                                        ?? message.progressiveSelected?.length
+                                        ?? 0)
+                                        ? `${(
+                                          progressiveMultiSelect[message.id]
+                                          ?? message.progressiveSelected
+                                          ?? []
+                                        ).length} selected`
                                         : `${message.progressiveOptions.length} options`}
                                     </Text>
                                   </HStack>
 
-                                  {/* Horizontal wrap checklist (groups as section headers) */}
+                                  {/* Compact square-thumb checklist (groups as section headers) */}
                                   <Box
                                     overflowY="auto"
-                                    maxH="280px"
+                                    maxH="320px"
                                     px={2.5}
                                     py={2.5}
                                     bg="gray.50"
@@ -2668,8 +3638,8 @@ const ChatInterface: React.FC = () => {
                                   >
                                     {(() => {
                                       const opts = message.progressiveOptions!;
+                                      const visibleN = progressiveChipVisible[message.id] || PROGRESSIVE_CHIP_PAGE;
                                       const hasGroups = opts.some((o) => o.group);
-                                      // Group options for horizontal rows under section headers
                                       const sections: Array<{ group: string | null; items: typeof opts }> = [];
                                       if (!hasGroups) {
                                         sections.push({ group: null, items: opts });
@@ -2682,7 +3652,19 @@ const ChatInterface: React.FC = () => {
                                         }
                                         for (const [g, items] of map) sections.push({ group: g, items });
                                       }
-                                      return sections.map((sec) => (
+                                      let shown = 0;
+                                      const limited = sections.map((sec) => {
+                                        if (shown >= visibleN) return { ...sec, items: [] as typeof opts };
+                                        const room = visibleN - shown;
+                                        const items = sec.items.slice(0, room);
+                                        shown += items.length;
+                                        return { ...sec, items };
+                                      }).filter((sec) => sec.items.length > 0);
+                                      const hasMore = opts.length > visibleN;
+                                      const THUMB = 56;
+                                      return (
+                                        <>
+                                          {limited.map((sec) => (
                                         <Box key={sec.group || '_all'} mb={sec.group ? 2.5 : 0}>
                                           {sec.group && (
                                             <Text
@@ -2697,20 +3679,26 @@ const ChatInterface: React.FC = () => {
                                               {sec.group}
                                             </Text>
                                           )}
-                                          <Box display="flex" flexWrap="wrap" gap={2}>
+                                          <SimpleGrid columns={{ base: 1, sm: 2 }} spacing={2}>
                                             {sec.items.map((opt) => {
-                                              const isSelected = (progressiveMultiSelect[message.id] || []).includes(opt.id);
+                                              const isSelected = (
+                                                progressiveMultiSelect[message.id]
+                                                ?? message.progressiveSelected
+                                                ?? []
+                                              ).includes(opt.id);
+                                              const showThumb = !!opt.imageUrl;
                                               return (
                                                 <Box
                                                   key={opt.id}
                                                   as="button"
                                                   type="button"
-                                                  display="inline-flex"
+                                                  display="flex"
                                                   alignItems="center"
                                                   gap={2}
-                                                  px={3}
-                                                  py={2}
-                                                  borderRadius="full"
+                                                  textAlign="left"
+                                                  px={2}
+                                                  py={1.5}
+                                                  borderRadius="12px"
                                                   border="1.5px solid"
                                                   borderColor={isSelected ? 'brand.500' : 'gray.200'}
                                                   bg={isSelected ? 'brand.50' : 'white'}
@@ -2729,13 +3717,11 @@ const ChatInterface: React.FC = () => {
                                                   disabled={isLoading}
                                                   onClick={() => {
                                                     if (isLoading) return;
-                                                    setProgressiveMultiSelect((prev) => {
-                                                      const cur = prev[message.id] || [];
-                                                      const next = cur.includes(opt.id)
-                                                        ? cur.filter((x) => x !== opt.id)
-                                                        : [...cur, opt.id];
-                                                      return { ...prev, [message.id]: next };
-                                                    });
+                                                    const current = progressiveMultiSelect[message.id] || [];
+                                                    const next = current.includes(opt.id)
+                                                      ? current.filter((x) => x !== opt.id)
+                                                      : [...current, opt.id];
+                                                    updateProgressiveSelection(message.id, next);
                                                   }}
                                                 >
                                                   <Box
@@ -2754,22 +3740,71 @@ const ChatInterface: React.FC = () => {
                                                       <Text fontSize="9px" color="white" fontWeight="700" lineHeight="1">✓</Text>
                                                     )}
                                                   </Box>
+                                                  {showThumb ? (
+                                                    <Box
+                                                      flexShrink={0}
+                                                      w={`${THUMB}px`}
+                                                      h={`${THUMB}px`}
+                                                      borderRadius="8px"
+                                                      bg="gray.100"
+                                                      overflow="hidden"
+                                                      onClick={(e: React.MouseEvent) => {
+                                                        e.preventDefault();
+                                                        e.stopPropagation();
+                                                        openChipImagePreview(opt.imageUrl!, opt.label);
+                                                      }}
+                                                      cursor="zoom-in"
+                                                      title="View image"
+                                                    >
+                                                      <Image
+                                                        src={opt.imageUrl}
+                                                        alt={opt.label}
+                                                        w="100%"
+                                                        h="100%"
+                                                        objectFit="cover"
+                                                        loading="lazy"
+                                                        fallback={
+                                                          <Box w="100%" h="100%" bg="gray.100" />
+                                                        }
+                                                      />
+                                                    </Box>
+                                                  ) : null}
                                                   <Text
+                                                    flex="1"
                                                     fontSize="13px"
-                                                    fontWeight="500"
+                                                    fontWeight="600"
                                                     color={isSelected ? 'brand.700' : 'gray.700'}
-                                                    maxW="240px"
                                                     noOfLines={2}
                                                     textAlign="left"
+                                                    lineHeight="1.35"
                                                   >
                                                     {opt.label}
                                                   </Text>
                                                 </Box>
                                               );
                                             })}
-                                          </Box>
+                                          </SimpleGrid>
                                         </Box>
-                                      ));
+                                          ))}
+                                          {hasMore && (
+                                            <Button
+                                              mt={2}
+                                              size="xs"
+                                              variant="ghost"
+                                              color="brand.600"
+                                              fontWeight="600"
+                                              onClick={() =>
+                                                setProgressiveChipVisible((prev) => ({
+                                                  ...prev,
+                                                  [message.id]: (prev[message.id] || PROGRESSIVE_CHIP_PAGE) + PROGRESSIVE_CHIP_PAGE,
+                                                }))
+                                              }
+                                            >
+                                              Show more ({opts.length - visibleN} left)
+                                            </Button>
+                                          )}
+                                        </>
+                                      );
                                     })()}
                                   </Box>
 
@@ -2799,39 +3834,170 @@ const ChatInterface: React.FC = () => {
                                         cursor: 'not-allowed',
                                         boxShadow: 'none',
                                       }}
-                                      isDisabled={isLoading || !(progressiveMultiSelect[message.id]?.length)}
+                                      isDisabled={
+                                        isLoading
+                                        || !(
+                                          progressiveMultiSelect[message.id]?.length
+                                          ?? message.progressiveSelected?.length
+                                        )
+                                      }
                                       onClick={() => void handleProgressiveMultiConfirm(message)}
                                     >
                                       Confirm
-                                      {progressiveMultiSelect[message.id]?.length
-                                        ? ` (${progressiveMultiSelect[message.id].length})`
+                                      {(progressiveMultiSelect[message.id]?.length
+                                        ?? message.progressiveSelected?.length)
+                                        ? ` (${(
+                                          progressiveMultiSelect[message.id]
+                                          ?? message.progressiveSelected
+                                          ?? []
+                                        ).length})`
                                         : ''}
                                     </Button>
                                   </Box>
                                 </Box>
                               ) : (
-                                <Box display="flex" flexWrap="wrap" gap={2}>
-                                  {message.progressiveOptions.map((opt) => (
-                                    <Button
-                                      key={opt.id}
-                                      size="sm"
-                                      variant="outline"
-                                      borderColor="gray.200"
-                                      color="gray.700"
-                                      bg="white"
-                                      borderRadius="full"
-                                      fontWeight="500"
-                                      fontSize="13px"
-                                      px={3}
-                                      h="34px"
-                                      boxShadow="0 1px 2px rgba(0, 0, 0, 0.04)"
-                                      _hover={{ borderColor: 'brand.400', color: 'brand.700', bg: 'brand.50' }}
-                                      isDisabled={isLoading}
-                                      onClick={() => void handleProgressiveOptionClick(message, opt.id)}
-                                    >
-                                      {opt.label}
-                                    </Button>
-                                  ))}
+                                <Box>
+                                  {(() => {
+                                    const opts = message.progressiveOptions!;
+                                    const isYesNo = opts.every(
+                                      (o) =>
+                                        o.id === 'yes_generate'
+                                        || o.id === 'no_generate'
+                                        || o.id === 'yes'
+                                        || o.id === 'no'
+                                        || o.id === 'yes_min'
+                                        || o.id === 'no_min'
+                                        || o.id === 'yes_min_duration'
+                                        || o.id === 'no_min_duration',
+                                    );
+                                    const previewUrl = isYesNo
+                                      ? opts.find((o) => o.imageUrl)?.imageUrl
+                                      : undefined;
+                                    const previewLabel =
+                                      opts.find((o) => o.imageUrl)?.medium
+                                      || opts.find((o) => o.imageUrl)?.label
+                                      || 'Reference';
+                                    const useImageCards = !isYesNo && opts.some((o) => !!o.imageUrl);
+                                    return (
+                                      <>
+                                        {previewUrl ? (
+                                          <Box
+                                            mb={2.5}
+                                            display="flex"
+                                            justifyContent="flex-start"
+                                          >
+                                            <ChatChipThumb
+                                              url={previewUrl}
+                                              label={previewLabel}
+                                              size={96}
+                                              radius="md"
+                                            />
+                                          </Box>
+                                        ) : null}
+                                        {useImageCards ? (
+                                          <SimpleGrid columns={{ base: 1, sm: 2 }} spacing={2}>
+                                            {opts.map((opt) => (
+                                              <Box
+                                                key={opt.id}
+                                                as="button"
+                                                type="button"
+                                                display="flex"
+                                                alignItems="center"
+                                                gap={2}
+                                                textAlign="left"
+                                                px={2}
+                                                py={1.5}
+                                                borderRadius="12px"
+                                                border="1.5px solid"
+                                                borderColor="gray.200"
+                                                bg="white"
+                                                boxShadow="0 1px 2px rgba(0, 0, 0, 0.04)"
+                                                cursor={isLoading ? 'not-allowed' : 'pointer'}
+                                                _hover={{
+                                                  borderColor: 'brand.400',
+                                                  bg: 'brand.50',
+                                                  boxShadow: '0 2px 6px rgba(201, 31, 61, 0.12)',
+                                                }}
+                                                transition="all 0.15s ease"
+                                                disabled={isLoading}
+                                                onClick={() =>
+                                                  void handleProgressiveOptionClick(message, opt.id)
+                                                }
+                                              >
+                                                {opt.imageUrl ? (
+                                                  <Box
+                                                    flexShrink={0}
+                                                    w="56px"
+                                                    h="56px"
+                                                    borderRadius="8px"
+                                                    bg="gray.100"
+                                                    overflow="hidden"
+                                                    cursor="zoom-in"
+                                                    title="View image"
+                                                    onClick={(e: React.MouseEvent) => {
+                                                      e.preventDefault();
+                                                      e.stopPropagation();
+                                                      openChipImagePreview(opt.imageUrl!, opt.label);
+                                                    }}
+                                                  >
+                                                    <Image
+                                                      src={opt.imageUrl}
+                                                      alt={opt.label}
+                                                      w="100%"
+                                                      h="100%"
+                                                      objectFit="cover"
+                                                      loading="lazy"
+                                                      fallback={<Box w="100%" h="100%" bg="gray.100" />}
+                                                    />
+                                                  </Box>
+                                                ) : null}
+                                                <Text
+                                                  flex="1"
+                                                  fontSize="13px"
+                                                  fontWeight="600"
+                                                  color="gray.700"
+                                                  noOfLines={2}
+                                                  lineHeight="1.35"
+                                                >
+                                                  {opt.label}
+                                                </Text>
+                                              </Box>
+                                            ))}
+                                          </SimpleGrid>
+                                        ) : (
+                                          <Box display="flex" flexWrap="wrap" gap={2}>
+                                            {opts.map((opt) => (
+                                              <Button
+                                                key={opt.id}
+                                                size="sm"
+                                                variant="outline"
+                                                borderColor="gray.200"
+                                                color="gray.700"
+                                                bg="white"
+                                                borderRadius="full"
+                                                fontWeight="500"
+                                                fontSize="13px"
+                                                px={3}
+                                                h="34px"
+                                                boxShadow="0 1px 2px rgba(0, 0, 0, 0.04)"
+                                                _hover={{
+                                                  borderColor: 'brand.400',
+                                                  color: 'brand.700',
+                                                  bg: 'brand.50',
+                                                }}
+                                                isDisabled={isLoading}
+                                                onClick={() =>
+                                                  void handleProgressiveOptionClick(message, opt.id)
+                                                }
+                                              >
+                                                <Text as="span">{opt.label}</Text>
+                                              </Button>
+                                            ))}
+                                          </Box>
+                                        )}
+                                      </>
+                                    );
+                                  })()}
                                 </Box>
                               )}
                             </Box>
@@ -2957,27 +4123,62 @@ const ChatInterface: React.FC = () => {
                                         {allShownSelected ? 'Clear shown' : 'Select shown'}
                                       </Button>
                                     </HStack>
-                                    <VStack align="stretch" spacing={2}>
+                                    <SimpleGrid columns={{ base: 1, sm: 2 }} spacing={2}>
                                       {visibleServices.map((svc, sIdx) => {
                                         const isChecked = selectedForGroup.includes(svc.name);
                                         return (
                                           <Box
                                             key={`${svc.name}-${sIdx}`}
-                                            p={3}
+                                            display="flex"
+                                            alignItems="center"
+                                            gap={2}
+                                            px={2}
+                                            py={1.5}
                                             borderRadius="12px"
                                             border="2px solid"
                                             borderColor={isChecked ? 'blue.400' : 'gray.200'}
                                             bg={isChecked ? 'blue.50' : 'white'}
+                                            transition="all 0.15s ease"
+                                            _hover={{ borderColor: isChecked ? 'blue.500' : 'blue.300', boxShadow: 'sm' }}
                                           >
+                                            {svc.imageUrl ? (
+                                              <Box
+                                                flexShrink={0}
+                                                w="56px"
+                                                h="56px"
+                                                borderRadius="8px"
+                                                bg="gray.100"
+                                                overflow="hidden"
+                                                cursor="zoom-in"
+                                                title="View image"
+                                                onClick={(e: React.MouseEvent) => {
+                                                  e.preventDefault();
+                                                  e.stopPropagation();
+                                                  openChipImagePreview(svc.imageUrl!, svc.name);
+                                                }}
+                                              >
+                                                <Image
+                                                  src={svc.imageUrl}
+                                                  alt={svc.name}
+                                                  w="100%"
+                                                  h="100%"
+                                                  objectFit="cover"
+                                                  loading="lazy"
+                                                  fallback={<Box w="100%" h="100%" bg="gray.100" />}
+                                                />
+                                              </Box>
+                                            ) : null}
                                             <Checkbox
+                                              flex="1"
                                               isChecked={isChecked}
                                               onChange={(e) => handleServiceCheckbox(message.id, group.vehicleType, svc.name, e.target.checked)}
                                               colorScheme="blue"
                                               size="md"
-                                              spacing={3}
+                                              spacing={2}
                                               cursor="pointer"
+                                              alignItems="flex-start"
                                             >
-                                              <Text fontSize="13px" fontWeight="500" color={isChecked ? 'blue.700' : 'gray.700'}>
+                                              <Text fontSize="13px" fontWeight="600" color={isChecked ? 'blue.700' : 'gray.700'} noOfLines={2}>
                                                 {svc.name}
                                                 {svc.requestedQuantity != null && svc.requestedQuantity > 0
                                                   ? ` (qty ${svc.requestedQuantity})`
@@ -2987,7 +4188,7 @@ const ChatInterface: React.FC = () => {
                                           </Box>
                                         );
                                       })}
-                                    </VStack>
+                                    </SimpleGrid>
                                     {remaining > 0 && (
                                       <Button
                                         mt={2}
@@ -3267,6 +4468,8 @@ const ChatInterface: React.FC = () => {
                                               <img
                                                 src={imgUrl}
                                                 alt={`${result.service_name} - Image ${imgIdx + 1}`}
+                                                loading="lazy"
+                                                decoding="async"
                                                 style={{
                                                   width: '100%',
                                                   height: '100%',
@@ -3774,6 +4977,10 @@ Generate a detailed quote based on the above information.`;
           alignSelf={messages.length === 0 ? { base: 'stretch', md: 'center' } : 'stretch'}
           mx={messages.length === 0 ? { base: 0, md: 'auto' } : 0}
           flexShrink={0}
+          position="relative"
+          zIndex={20}
+          isolation="isolate"
+          pointerEvents="auto"
           px={{ base: 2, md: messages.length === 0 ? 4 : 4 }}
           pt={messages.length === 0 ? { base: 2, md: 4 } : { base: 2, md: 3 }}
           pb={
@@ -3798,7 +5005,7 @@ Generate a detailed quote based on the above information.`;
             borderColor="brand.500"
             borderRadius={{ base: '28px', md: 'full' }}
             position="relative"
-            zIndex={999}
+            zIndex={1}
             transition="box-shadow 0.2s ease, border-color 0.2s ease"
             _hover={{ borderColor: 'brand.600' }}
             _focusWithin={{
@@ -3809,13 +5016,15 @@ Generate a detailed quote based on the above information.`;
             <Input
               className="qb-composer__input"
               ref={inputRef}
-              value={inputValue}
+              defaultValue=""
               onChange={(e) => {
-                setInputValue(e.target.value);
                 if (historyIndex !== -1) {
                   setHistoryIndex(-1);
                   setDraftInput('');
                 }
+                // Keep the most recent assistant response visible while the
+                // user types, especially when the mobile keyboard is open.
+                scrollChatToLatest();
               }}
               onKeyPress={(e) => {
                 if (e.key === 'Enter' && !e.shiftKey) {
@@ -3825,7 +5034,7 @@ Generate a detailed quote based on the above information.`;
               }}
               onKeyDown={handleInputKeyDown}
               onFocus={(e) => {
-                e.target.select();
+                // Mobile keyboard: keep field visible — don't select-all (that hides the caret)
                 if (Capacitor.isNativePlatform() || window.innerWidth <= 768) {
                   setTimeout(() => {
                     e.target.scrollIntoView({
@@ -3838,7 +5047,7 @@ Generate a detailed quote based on the above information.`;
               }}
               placeholder="Give me a quote for…"
               aria-label="Message input"
-              disabled={isLoading}
+              // Never disable — a stuck loading flag used to leave the field dead
               variant="unstyled"
               flex={1}
               minW={0}
@@ -3850,10 +5059,6 @@ Generate a detailed quote based on the above information.`;
                 color: 'gray.500',
                 fontSize: { base: '13px', md: '15px' },
                 fontWeight: '400',
-              }}
-              _disabled={{
-                color: 'gray.400',
-                cursor: 'not-allowed',
               }}
               sx={{
                 '&::placeholder': {
@@ -3921,7 +5126,7 @@ Generate a detailed quote based on the above information.`;
                         historyIndex === -1
                           ? inputHistory.length - 1
                           : Math.max(0, historyIndex - 1);
-                      if (historyIndex === -1) setDraftInput(inputValue);
+                      if (historyIndex === -1) setDraftInput(getInputValue());
                       setHistoryIndex(newIdx);
                       setInputValue(inputHistory[newIdx].text);
                       setTimeout(() => {
@@ -3998,9 +5203,13 @@ Generate a detailed quote based on the above information.`;
               data-send-btn
               icon={isLoading ? <Spinner size="sm" color="white" thickness="3px" /> : <FiSend size={20} />}
               onClick={handleSendMessage}
-              isDisabled={!inputValue.trim() || isLoading}
-              bg={inputValue.trim() && !isLoading ? 'brand.500' : 'gray.200'}
-              color={inputValue.trim() && !isLoading ? 'white' : 'gray.500'}
+              // Draft text is intentionally uncontrolled so typing does not
+              // rerender the full chat. handleSendMessage still guards empty
+              // drafts; keep the button clickable so its state never becomes
+              // stale between parent renders.
+              isDisabled={isLoading}
+              bg={!isLoading ? 'brand.500' : 'gray.200'}
+              color={!isLoading ? 'white' : 'gray.500'}
               h={{ base: '44px', md: '40px' }}
               w={{ base: '44px', md: '40px' }}
               minW={{ base: '44px', md: '40px' }}
@@ -4008,7 +5217,7 @@ Generate a detailed quote based on the above information.`;
               flexShrink={0}
               fontSize={{ base: '16px', md: '16px' }}
               _hover={{
-                bg: inputValue.trim() && !isLoading ? 'brand.600' : 'gray.300',
+                bg: !isLoading ? 'brand.600' : 'gray.300',
               }}
               _focusVisible={{
                 outline: '2px solid',
@@ -4062,7 +5271,7 @@ Generate a detailed quote based on the above information.`;
                 justifyContent={{ base: 'flex-start', md: 'center' }}
                 boxShadow="0 1px 2px rgba(0,0,0,0.04)"
                 transition="transform 0.2s ease, box-shadow 0.2s ease, background 0.2s ease"
-                onClick={() => handleSuggestionClick(prompt)}
+                onClick={() => { void handleSuggestionClick(prompt); }}
                 _hover={{
                   bg: 'brand.50',
                   borderColor: 'brand.400',
@@ -4086,96 +5295,7 @@ Generate a detailed quote based on the above information.`;
         )}
       </VStack>
 
-      {/* Confirmation Table Modal — shown after min qty (if any) and before Gemini */}
-      {confirmationTable && (
-        <Box
-          position="fixed"
-          top="0" left="0" right="0" bottom="0"
-          bg="rgba(0,0,0,0.55)"
-          zIndex={9999}
-          display="flex"
-          alignItems="center"
-          justifyContent="center"
-          px={4}
-        >
-          <Box
-            bg="white"
-            borderRadius="16px"
-            maxW="460px"
-            w="100%"
-            boxShadow="0 8px 32px rgba(0,0,0,0.18)"
-            display="flex"
-            flexDirection="column"
-            maxH="90vh"
-            overflow="hidden"
-          >
-            {/* Sticky Header */}
-            <Box px={6} pt={6} pb={3} flexShrink={0}>
-              <Text fontSize="16px" fontWeight="700" color="gray.800">
-                Confirm Your Services
-              </Text>
-            </Box>
-
-            {/* Scrollable Table Body */}
-            <Box flex={1} overflowY="auto" px={6} pb={2}>
-              <Box borderRadius="8px" overflow="hidden" border="1px solid" borderColor="gray.200">
-                <HStack bg="gray.800" px={3} py={2} spacing={0}>
-                  <Text flex={2} fontSize="11px" fontWeight="700" color="white" textTransform="uppercase" letterSpacing="wider">Service</Text>
-                  <Text flex={0.6} fontSize="11px" fontWeight="700" color="white" textTransform="uppercase" letterSpacing="wider" textAlign="center">Qty</Text>
-                  <Text flex={1} fontSize="11px" fontWeight="700" color="white" textTransform="uppercase" letterSpacing="wider" textAlign="right">City</Text>
-                </HStack>
-                {confirmationTable.rows.map((row, idx) => (
-                  <HStack
-                    key={idx}
-                    px={3}
-                    py={2.5}
-                    spacing={0}
-                    bg={idx % 2 === 0 ? 'white' : 'gray.50'}
-                    borderTop="1px solid"
-                    borderColor="gray.100"
-                  >
-                    <Text flex={2} fontSize="13px" fontWeight="500" color="gray.800">{row.service}</Text>
-                    <Text flex={0.6} fontSize="13px" fontWeight="600" color="gray.700" textAlign="center">{row.qty}</Text>
-                    <Text flex={1} fontSize="13px" color="blue.600" fontWeight="600" textAlign="right">{row.city}</Text>
-                  </HStack>
-                ))}
-              </Box>
-            </Box>
-
-            {/* Sticky Footer */}
-            <Box px={6} pt={3} pb={6} flexShrink={0} borderTop="1px solid" borderColor="gray.100">
-              <Text fontSize="12px" color="gray.500" mb={4}>
-                {confirmationTable.rows.length} service{confirmationTable.rows.length !== 1 ? 's' : ''} selected. Confirm to generate the quote.
-              </Text>
-              <HStack spacing={3} justify="flex-end">
-                <Button
-                  size="sm"
-                  variant="outline"
-                  borderColor="gray.300"
-                  color="gray.600"
-                  borderRadius="8px"
-                  onClick={handleConfirmTableEdit}
-                >
-                  ← Edit
-                </Button>
-                <Button
-                  size="sm"
-                  bgGradient="linear(135deg, #dc2626 0%, #be123c 50%, #9f1239 100%)"
-                  color="white"
-                  fontWeight="700"
-                  borderRadius="8px"
-                  px={6}
-                  onClick={handleConfirmAndGenerate}
-                  leftIcon={<Icon as={FiCheck} boxSize="14px" />}
-                  _hover={{ bgGradient: 'linear(135deg, #b91c1c 0%, #9f1239 100%)' }}
-                >
-                  Generate Quote
-                </Button>
-              </HStack>
-            </Box>
-          </Box>
-        </Box>
-      )}
+      <ChipImageLightbox />
 
       {/* Unavailable Service Alert */}
       {unavailableServices.length > 0 && (
@@ -4528,6 +5648,28 @@ Generate a detailed quote based on the above information.`;
         </Box>
       )}
     </Box>
+  );
+};
+
+const ChatInterface: React.FC = () => {
+  const chatProfileOpen = useAppStore((state) => state.chatProfileOpen);
+
+  return chatProfileOpen ? (
+    <Box
+      className="qb-chat-root"
+      display="flex"
+      flexDirection="column"
+      h="100%"
+      w="100%"
+      borderRadius={0}
+      border="none"
+      bg="white"
+      overflow="auto"
+    >
+      <ChatProfilePanel />
+    </Box>
+  ) : (
+    <ChatInterfaceContent />
   );
 };
 

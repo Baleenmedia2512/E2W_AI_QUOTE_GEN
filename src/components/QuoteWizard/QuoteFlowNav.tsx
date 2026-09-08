@@ -9,15 +9,12 @@ import {
   Icon,
   Badge,
   Image,
-  Menu,
-  MenuButton,
-  MenuList,
-  MenuItem,
+  VStack,
 } from '@chakra-ui/react';
-import { FiArrowLeft, FiArrowRight, FiChevronDown, FiDownload, FiFileText, FiLayers } from 'react-icons/fi';
+import { FiArrowLeft, FiArrowRight, FiDownload } from 'react-icons/fi';
 import { useHistory } from 'react-router-dom';
 import { UserProfile } from '../UserProfile';
-import type { PdfExportMode } from '../Templates/CorporateMinimalPDF';
+import { useAppStore } from '../../store';
 
 export type QuoteFlowStep = 'chat' | 'client' | 'preview';
 
@@ -32,31 +29,44 @@ interface QuoteFlowNavProps {
    * Multi-service: Summary Only / Detailed Summary.
    * When set with `multiDownloadOptions`, the header shows a dropdown.
    */
-  onDownloadPdfMode?: (mode: PdfExportMode) => void;
-  /** Show Summary Only + Detailed Summary instead of a single Download button */
-  multiDownloadOptions?: boolean;
   isDownloading?: boolean;
+  isSendingMail?: boolean;
   canDownload?: boolean;
   rightExtra?: React.ReactNode;
 }
 
+/** Shared pill size — matches the chat “Preview” header button */
+const navPillProps = {
+  size: 'sm' as const,
+  borderRadius: '10px',
+  fontWeight: '600' as const,
+  fontSize: { base: 'xs', md: 'sm' } as const,
+  px: { base: 2.5, md: 3 } as const,
+  h: { base: '32px', md: '34px' } as const,
+  minW: 'auto' as const,
+  flexShrink: 0,
+};
+
 /**
- * Single top header: Logo left | Back/Next/Download centered | Profile right
+ * Single top header: Logo left | flow actions + profile right (like Preview)
  */
 const QuoteFlowNav: React.FC<QuoteFlowNavProps> = ({
   step,
   hasQuote = false,
   onNext,
   onDownloadPdf,
-  onDownloadPdfMode,
-  multiDownloadOptions = false,
   isDownloading = false,
+  isSendingMail = false,
   canDownload = true,
   rightExtra,
 }) => {
   const history = useHistory();
+  const closeChatProfile = useAppStore((state) => state.closeChatProfile);
+  const chatProfileOpen = useAppStore((state) => state.chatProfileOpen);
+  const companyInfo = useAppStore((state) => state.companyInfo);
 
   const goHome = () => {
+    closeChatProfile();
     history.push('/');
   };
 
@@ -64,7 +74,7 @@ const QuoteFlowNav: React.FC<QuoteFlowNavProps> = ({
     if (step === 'client') {
       history.push('/');
     } else if (step === 'preview') {
-      history.push('/quote');
+      history.push('/');
     }
   };
 
@@ -74,7 +84,7 @@ const QuoteFlowNav: React.FC<QuoteFlowNavProps> = ({
       return;
     }
     if (step === 'chat') {
-      history.push('/quote');
+      history.push('/preview');
     } else if (step === 'client') {
       history.push('/preview');
     }
@@ -83,7 +93,6 @@ const QuoteFlowNav: React.FC<QuoteFlowNavProps> = ({
   const showBack = step === 'client' || step === 'preview';
   const showNextClient = step === 'client';
   const showDownload = step === 'preview';
-  const showCenterActions = showBack || showNextClient || showDownload;
 
   return (
     <Box
@@ -102,9 +111,9 @@ const QuoteFlowNav: React.FC<QuoteFlowNavProps> = ({
         className="qb-flow-nav__inner"
         maxW="100%"
         px={{ base: 3, md: 5 }}
-        py={{ base: 2.5, md: 3 }}
+        py={{ base: 1.5, md: 2 }}
       >
-        <Flex align="center" gap={{ base: 2, md: 3 }} minH={{ base: '44px', md: '48px' }}>
+        <Flex align="center" gap={{ base: 2, md: 3 }} minH={{ base: '40px', md: '44px' }}>
           {/* Left — brand → Home */}
           <HStack
             as="button"
@@ -129,72 +138,59 @@ const QuoteFlowNav: React.FC<QuoteFlowNavProps> = ({
               objectFit="cover"
               flexShrink={0}
             />
-            <Text
-              className="qb-flow-nav__brand-text"
-              fontSize={{ base: 'sm', md: 'lg' }}
-              fontWeight="800"
-              color="brand.500"
-              letterSpacing="-0.02em"
-              noOfLines={1}
-            >
-              Quote Buddy
-            </Text>
-            {typeof __APP_VERSION__ !== 'undefined' && (
-              <Badge
-                colorScheme="brand"
-                fontSize="9px"
-                fontWeight="600"
-                borderRadius="4px"
-                px={1.5}
-                display={{ base: 'none', md: 'inline-flex' }}
-              >
-                v{__APP_VERSION__}
-              </Badge>
-            )}
+            <VStack spacing={0} align="flex-start" justify="center" maxW={{ base: '150px', md: '230px' }} minW={0}>
+              <HStack spacing={2} w="100%" align="center">
+                <Text
+                  className="qb-flow-nav__brand-text"
+                  fontSize={{ base: 'sm', md: 'lg' }}
+                  fontWeight="800"
+                  color="brand.500"
+                  letterSpacing="-0.02em"
+                  noOfLines={1}
+                >
+                  Quote Buddy
+                </Text>
+                {typeof __APP_VERSION__ !== 'undefined' && (
+                  <Badge
+                    colorScheme="brand"
+                    fontSize="9px"
+                    fontWeight="600"
+                    borderRadius="4px"
+                    px={1.5}
+                    display={{ base: 'none', md: 'inline-flex' }}
+                  >
+                    v{__APP_VERSION__}
+                  </Badge>
+                )}
+              </HStack>
+              {companyInfo?.name && (
+                <Text
+                  fontSize={{ base: 'xs', md: 'sm' }}
+                  lineHeight="12px"
+                  fontWeight="600"
+                  color="gray.600"
+                  textAlign="left"
+                  noOfLines={1}
+                  maxW={{ base: '150px', md: '230px' }}
+                  title={companyInfo.name}
+                >
+                  {companyInfo.name}
+                </Text>
+              )}
+            </VStack>
           </HStack>
 
-          {/* Center — flow actions */}
-          <HStack
-            spacing={2}
-            flexShrink={0}
-            justify="center"
-            display={showCenterActions ? 'flex' : 'none'}
-            maxW={{ base: '52%', sm: 'none' }}
-            flexWrap="wrap"
-          >
-            {showBack && (
-              <Button
-                leftIcon={<Icon as={FiArrowLeft} />}
-                variant="outline"
-                size="sm"
-                borderRadius="10px"
-                borderColor="brand.200"
-                color="brand.600"
-                bg="white"
-                onClick={handleBack}
-                px={{ base: 2, md: 3 }}
-                fontSize={{ base: 'xs', md: 'sm' }}
-                _hover={{ bg: 'brand.50', borderColor: 'brand.400' }}
-              >
-                <Text as="span" display={{ base: 'none', sm: 'inline' }}>
-                  {step === 'client' ? 'Back: Chat' : 'Back: Client Info'}
-                </Text>
-                <Text as="span" display={{ base: 'inline', sm: 'none' }}>
-                  Back
-                </Text>
-              </Button>
-            )}
+          {/* Right — Download (left) / Back Chat (right of download) / Preview + profile */}
+          <HStack flexShrink={0} justify="flex-end" spacing={{ base: 1.5, md: 2 }}>
+            {rightExtra}
 
             {showNextClient && (
               <Button
-                rightIcon={<Icon as={FiArrowRight} />}
+                rightIcon={<Icon as={FiArrowRight} boxSize={3.5} />}
                 bg="brand.500"
                 color="white"
-                size="sm"
-                borderRadius="10px"
                 onClick={handleNext}
-                px={{ base: 3, md: 4 }}
-                fontSize={{ base: 'xs', md: 'sm' }}
+                {...navPillProps}
                 _hover={{ bg: 'brand.600' }}
               >
                 <Text as="span" display={{ base: 'none', sm: 'inline' }}>
@@ -206,22 +202,18 @@ const QuoteFlowNav: React.FC<QuoteFlowNavProps> = ({
               </Button>
             )}
 
-            {showDownload && multiDownloadOptions && onDownloadPdfMode && (
-              <Menu placement="bottom-end" isLazy>
-                <MenuButton
-                  as={Button}
-                  leftIcon={<Icon as={FiDownload} />}
-                  rightIcon={<Icon as={FiChevronDown} boxSize={3.5} />}
+            {showDownload && (
+              <>
+                <Button
+                  leftIcon={<Icon as={FiDownload} boxSize={3.5} />}
                   bg="brand.500"
                   color="white"
-                  size="sm"
-                  borderRadius="10px"
+                  onClick={onDownloadPdf}
                   isLoading={isDownloading}
-                  isDisabled={!canDownload || isDownloading}
-                  px={{ base: 2, md: 4 }}
-                  fontSize={{ base: 'xs', md: 'sm' }}
+                  isDisabled={!canDownload || isDownloading || isSendingMail}
+                  aria-label="Download PDF"
+                  {...navPillProps}
                   _hover={{ bg: 'brand.600' }}
-                  _active={{ bg: 'brand.600' }}
                 >
                   <Text as="span" display={{ base: 'none', sm: 'inline' }}>
                     Download PDF
@@ -229,65 +221,47 @@ const QuoteFlowNav: React.FC<QuoteFlowNavProps> = ({
                   <Text as="span" display={{ base: 'inline', sm: 'none' }}>
                     PDF
                   </Text>
-                </MenuButton>
-                <MenuList
-                  minW="220px"
-                  py={1}
-                  borderRadius="10px"
-                  boxShadow="0 8px 24px rgba(0,0,0,0.12)"
-                  zIndex={1100}
-                >
-                  <MenuItem
-                    icon={<Icon as={FiFileText} boxSize={4} color="brand.500" />}
-                    fontSize="sm"
-                    fontWeight="500"
-                    py={2.5}
-                    onClick={() => onDownloadPdfMode('summary')}
-                    isDisabled={!canDownload || isDownloading}
-                  >
-                    Summary Only
-                  </MenuItem>
-                  <MenuItem
-                    icon={<Icon as={FiLayers} boxSize={4} color="brand.500" />}
-                    fontSize="sm"
-                    fontWeight="500"
-                    py={2.5}
-                    onClick={() => onDownloadPdfMode('detailed')}
-                    isDisabled={!canDownload || isDownloading}
-                  >
-                    Detailed Summary
-                  </MenuItem>
-                </MenuList>
-              </Menu>
+                </Button>
+              </>
             )}
 
-            {showDownload && !(multiDownloadOptions && onDownloadPdfMode) && (
+            {showBack && (
               <Button
-                leftIcon={<Icon as={FiDownload} />}
-                bg="brand.500"
-                color="white"
-                size="sm"
-                borderRadius="10px"
-                onClick={onDownloadPdf}
-                isLoading={isDownloading}
-                isDisabled={!canDownload || isDownloading}
-                px={{ base: 2, md: 4 }}
-                fontSize={{ base: 'xs', md: 'sm' }}
-                _hover={{ bg: 'brand.600' }}
+                leftIcon={<Icon as={FiArrowLeft} boxSize={3.5} />}
+                variant="outline"
+                borderColor="brand.200"
+                color="brand.600"
+                bg="white"
+                onClick={handleBack}
+                aria-label="Back to Chat"
+                {...navPillProps}
+                _hover={{ bg: 'brand.50', borderColor: 'brand.400', color: 'brand.700' }}
+                _active={{ bg: 'brand.100' }}
               >
                 <Text as="span" display={{ base: 'none', sm: 'inline' }}>
-                  Download PDF
+                  Back: Chat
                 </Text>
                 <Text as="span" display={{ base: 'inline', sm: 'none' }}>
-                  PDF
+                  Back
                 </Text>
               </Button>
             )}
-          </HStack>
 
-          {/* Right — profile */}
-          <HStack flex="1" minW={0} justify="flex-end" spacing={2}>
-            {rightExtra}
+            {step !== 'preview' && !chatProfileOpen && (
+              <Button
+                variant="outline"
+                borderColor="brand.200"
+                color="brand.600"
+                bg="white"
+                aria-label="Go to Quote Preview"
+                onClick={() => history.push('/preview')}
+                {...navPillProps}
+                _hover={{ bg: 'brand.50', borderColor: 'brand.400', color: 'brand.700' }}
+                _active={{ bg: 'brand.100' }}
+              >
+                Preview
+              </Button>
+            )}
             <UserProfile />
           </HStack>
         </Flex>

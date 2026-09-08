@@ -124,7 +124,7 @@ const DocumentsPage: React.FC = () => {
             <HStack
               spacing={2}
               cursor="pointer"
-              onClick={() => history.push('/quote')}
+              onClick={() => history.push('/preview')}
               px={4}
               py={2}
               borderRadius="12px"

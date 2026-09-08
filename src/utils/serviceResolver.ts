@@ -246,15 +246,19 @@ export function resolveServiceIdsForItems(
   proposalPages: Array<{ serviceId?: string; serviceName?: string; city?: string; sourceName?: string }>,
 ): Set<string> {
   const ids = new Set<string>();
-  if (!items.length || !proposalPages.length) return ids;
+  if (!items.length) return ids;
+
+  // Always keep explicit quote serviceIds (including rates with no image pages).
+  for (const item of items) {
+    if (item.serviceId) ids.add(item.serviceId);
+  }
+
+  if (!proposalPages.length) return ids;
 
   const cityHint = extractCityHint(items.map((i) => i.description).join(' '));
 
   for (const item of items) {
-    if (item.serviceId) {
-      ids.add(item.serviceId);
-      continue;
-    }
+    if (item.serviceId) continue;
     const name = extractServiceNameFromItem(item);
     if (!name) continue;
     const canonical = canonicalizeServiceName(name);
@@ -371,9 +375,14 @@ export function resolveServiceIdFromCatalog(
     const sid = normalizeServiceId(s.service_id);
     return sc.includes(canonical) || canonical.includes(sc) || sid.includes(kebab);
   });
-  const byContains = pickAmongMediumCompatible(containsMatches, mediumHint);
-  if (byContains) {
-    return { serviceId: byContains.service_id, serviceName: byContains.service_name };
+  // A partial phrase may resolve only when it identifies one catalog row.
+  // Never pick one preferred row from several matches: that would turn
+  // "bus shelter" or "apartment" into an arbitrary service.
+  if (containsMatches.length === 1) {
+    return {
+      serviceId: containsMatches[0].service_id,
+      serviceName: containsMatches[0].service_name,
+    };
   }
 
   return null;
