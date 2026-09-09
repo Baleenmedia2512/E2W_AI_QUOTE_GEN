@@ -4,6 +4,7 @@ import { CompanyInfo } from './company';
 import { ClientInfo } from './client';
 import { TemplateData, TemplateProps, TemplateType, Template, TemplateMetadata, ServiceReadyData } from './template';
 import { Lead, LeadSearchResult } from './lead';
+import { ReviewDraft } from './review';
 
 export interface ExtractedPage {
   pageNumber: number;
@@ -79,6 +80,10 @@ export interface AppState {
   setCurrentQuote: (quote: Quote | null) => void;
   updateQuote: (quote: Quote) => void;
 
+  /** Pre-PDF review draft (service / city / qty / duration corrections). */
+  reviewDraft: ReviewDraft | null;
+  setReviewDraft: (draft: ReviewDraft | null) => void;
+
   // Company state
   companyInfo: CompanyInfo | null;
   setCompanyInfo: (info: CompanyInfo, persistRemote?: boolean) => void;
@@ -120,4 +125,4 @@ export interface AppState {
   loadCloudServices: () => Promise<ExtractedPage[]>;
 }
 
-export type { Message, Quote, QuoteItem, LineItem, CompanyInfo, ClientInfo, TemplateData, TemplateProps, TemplateType, Template, TemplateMetadata, ServiceReadyData, Lead, LeadSearchResult };
+export type { Message, Quote, QuoteItem, LineItem, CompanyInfo, ClientInfo, TemplateData, TemplateProps, TemplateType, Template, TemplateMetadata, ServiceReadyData, Lead, LeadSearchResult, ReviewDraft };

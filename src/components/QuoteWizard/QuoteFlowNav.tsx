@@ -16,7 +16,7 @@ import { useHistory } from 'react-router-dom';
 import { UserProfile } from '../UserProfile';
 import { useAppStore } from '../../store';
 
-export type QuoteFlowStep = 'chat' | 'client' | 'preview';
+export type QuoteFlowStep = 'chat' | 'review' | 'client' | 'preview';
 
 interface QuoteFlowNavProps {
   step: QuoteFlowStep;
@@ -64,6 +64,8 @@ const QuoteFlowNav: React.FC<QuoteFlowNavProps> = ({
   const closeChatProfile = useAppStore((state) => state.closeChatProfile);
   const chatProfileOpen = useAppStore((state) => state.chatProfileOpen);
   const companyInfo = useAppStore((state) => state.companyInfo);
+  const reviewDraft = useAppStore((state) => state.reviewDraft);
+  const currentQuote = useAppStore((state) => state.currentQuote);
 
   const goHome = () => {
     closeChatProfile();
@@ -71,10 +73,16 @@ const QuoteFlowNav: React.FC<QuoteFlowNavProps> = ({
   };
 
   const handleBack = () => {
-    if (step === 'client') {
+    if (step === 'review') {
+      history.push('/');
+    } else if (step === 'client') {
       history.push('/');
     } else if (step === 'preview') {
-      history.push('/');
+      if (reviewDraft?.items?.length) {
+        history.push('/review');
+      } else {
+        history.push('/');
+      }
     }
   };
 
@@ -84,15 +92,22 @@ const QuoteFlowNav: React.FC<QuoteFlowNavProps> = ({
       return;
     }
     if (step === 'chat') {
+      if (reviewDraft?.items?.length) {
+        history.push('/review');
+      } else {
+        history.push('/preview');
+      }
+    } else if (step === 'review') {
       history.push('/preview');
     } else if (step === 'client') {
       history.push('/preview');
     }
   };
 
-  const showBack = step === 'client' || step === 'preview';
+  const showBack = step === 'review' || step === 'client' || step === 'preview';
   const showNextClient = step === 'client';
   const showDownload = step === 'preview';
+  const previewDisabled = step === 'review' && !currentQuote;
 
   return (
     <Box
@@ -233,13 +248,13 @@ const QuoteFlowNav: React.FC<QuoteFlowNavProps> = ({
                 color="brand.600"
                 bg="white"
                 onClick={handleBack}
-                aria-label="Back to Chat"
+                aria-label={step === 'preview' && reviewDraft?.items?.length ? 'Back to Review' : 'Back to Chat'}
                 {...navPillProps}
                 _hover={{ bg: 'brand.50', borderColor: 'brand.400', color: 'brand.700' }}
                 _active={{ bg: 'brand.100' }}
               >
                 <Text as="span" display={{ base: 'none', sm: 'inline' }}>
-                  Back: Chat
+                  {step === 'preview' && reviewDraft?.items?.length ? 'Back: Review' : 'Back: Chat'}
                 </Text>
                 <Text as="span" display={{ base: 'inline', sm: 'none' }}>
                   Back
@@ -254,6 +269,7 @@ const QuoteFlowNav: React.FC<QuoteFlowNavProps> = ({
                 color="brand.600"
                 bg="white"
                 aria-label="Go to Quote Preview"
+                isDisabled={previewDisabled}
                 onClick={() => history.push('/preview')}
                 {...navPillProps}
                 _hover={{ bg: 'brand.50', borderColor: 'brand.400', color: 'brand.700' }}
