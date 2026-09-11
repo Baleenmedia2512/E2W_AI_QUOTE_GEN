@@ -10,7 +10,7 @@
  *  4. Falls back to DOM store (ReferenceImages) if DB has no images for a service
  *  5. Render CorporateMinimalPDF to a blob — zero Gemini calls
  *  6. Mobile: save without prompting and open in the platform's download/documents location
- *  7. Web: after PDF is ready, open it in a new browser tab (fallback to download if blocked)
+ *  7. Web: trigger an automatic file download with QT_Client_Label_HHMMSS.pdf naming
  */
 
 import React from 'react';
@@ -661,7 +661,7 @@ export const exportToPDF = async (
         });
         await FileOpener.open({ filePath: result.uri, contentType: 'application/pdf' });
       } else if (shouldDownload) {
-        openPdfBlobInNewTab(blob, filename);
+        downloadPdfBlob(blob, filename);
       }
       return { pdfBlob: blob, filename };
   } finally {
@@ -669,15 +669,25 @@ export const exportToPDF = async (
   }
 };
 
-/** Open a generated PDF in a new tab after it is ready (web). Falls back to download if blocked. */
-export const openPdfBlobInNewTab = (blob: Blob, filename: string): void => {
+/**
+ * Trigger an automatic browser download with the intended filename
+ * (e.g. QT-652030_Naresh_Detailed Quote_105248.pdf).
+ * Prefer this over opening a blob tab — new tabs ignore `download` names.
+ */
+export const downloadPdfBlob = (blob: Blob, filename: string): void => {
   const url = URL.createObjectURL(blob);
-  const opened = window.open(url, '_blank');
-  if (!opened) {
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = filename;
-    a.click();
-  }
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = filename || 'quote.pdf';
+  a.rel = 'noopener';
+  a.style.display = 'none';
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
   setTimeout(() => URL.revokeObjectURL(url), 60_000);
+};
+
+/** @deprecated Use downloadPdfBlob — kept so older imports keep compiling. */
+export const openPdfBlobInNewTab = (blob: Blob, filename: string): void => {
+  downloadPdfBlob(blob, filename);
 };

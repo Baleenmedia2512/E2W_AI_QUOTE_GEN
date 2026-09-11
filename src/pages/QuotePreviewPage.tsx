@@ -4,7 +4,7 @@ import { useToast } from '@chakra-ui/react';
 import { useAppStore } from '../store';
 import { useAuthStore } from '../store/authStore';
 import { CorporateMinimal } from '../components/Templates/CorporateMinimal';
-import { exportToPDF, openPdfBlobInNewTab } from '../services/pdfExportService';
+import { exportToPDF, downloadPdfBlob } from '../services/pdfExportService';
 import { Capacitor } from '@capacitor/core';
 import { sendQuoteEmail } from '../services/quoteEmailService';
 import { ExtractedPage, ServiceReadyData } from '../types';
@@ -618,7 +618,7 @@ export const QuotePreviewPage: React.FC = () => {
     setIsSendingEmail(true);
 
     // Native: open via FileOpener as each file is saved.
-    // Web: generate first, then open each PDF in a new tab only after ready.
+    // Web: generate first, then auto-download each PDF with QT_Client_… filename.
     const openDuringExport = Capacitor.isNativePlatform();
 
     try {
@@ -638,7 +638,11 @@ export const QuotePreviewPage: React.FC = () => {
 
       if (!openDuringExport) {
         for (const attachment of pdfAttachments) {
-          openPdfBlobInNewTab(attachment.pdfBlob, attachment.filename);
+          downloadPdfBlob(attachment.pdfBlob, attachment.filename);
+          // Brief gap so the browser registers each file when multi-PDF.
+          if (pdfAttachments.length > 1) {
+            await new Promise((r) => setTimeout(r, 250));
+          }
         }
       }
 
