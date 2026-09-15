@@ -1458,13 +1458,61 @@ function startCatalogueBrowse(
     const preferred = preferResolvedCoveragePool(covered, resolved);
     pool = preferred.length ? preferred : covered;
   }
-  // Cities/areas/types can be scoped to a named service; "what services?" lists the full menu
-  if (kind !== 'services' && scopedMed) {
+  // Scope chips when the user named a family/service (e.g. "list auto services").
+  // Unscoped asks ("what services?", "list all") keep the full menu.
+  let droppedStalePlace = false;
+  if (scopedMed) {
     const by = filterForBrowseOrFamily(pool, scopedMed);
-    if (by.length) pool = by;
+    if (by.length) {
+      pool = by;
+    } else {
+      // Place filter (often stale) emptied the family — use family nationwide.
+      // Never leave pool as the full catalogue when a family was requested.
+      const familyNationwide = filterForBrowseOrFamily(services, scopedMed);
+      if (familyNationwide.length) {
+        pool = familyNationwide;
+        droppedStalePlace = !!(scopedCity || resolved);
+      } else {
+        pool = [];
+      }
+    }
   }
 
   if (!pool.length) {
+    if (scopedMed) {
+      const familyHits = filterForBrowseOrFamily(services, scopedMed);
+      const familyOpts = uniqueMediumOnlyOptions(familyHits).slice(0, 40);
+      const placeLabel = droppedStalePlace
+        ? null
+        : (scopedCity || resolved?.town || resolved?.district || null);
+      return {
+        step: familyOpts.length ? 'pick_type' : 'no_match',
+        botText: preferEngineCopy(
+          reply,
+          placeLabel
+            ? `Not providing ${titleCase(scopedMed)} in ${placeLabel}.\nPlease choose an option below.`
+            : `Not providing ${titleCase(scopedMed)} right now.\nPlease choose an option below.`,
+        ),
+        options: familyOpts.length
+          ? familyOpts
+          : uniqueMediumOnlyOptions(services).slice(0, 40),
+        allowMulti: true,
+        session: stampReplyMeta(
+          {
+            ...session,
+            medium: scopedMed,
+            browseToken: scopedMed,
+            city: undefined,
+            area: undefined,
+            placeHint: undefined,
+            resolvedLocation: undefined,
+            candidateServiceIds: familyHits.map((s) => s.service_id),
+          },
+          '',
+          `browse:${kind}:unavailable:${scopedMed}`,
+        ),
+      };
+    }
     if (scopedCity || resolved) {
       const placeLabel =
         scopedCity
@@ -1486,16 +1534,24 @@ function startCatalogueBrowse(
     if (!options.length) {
       return softClarifyNeed(services, session, reply);
     }
-    const placeLabel =
-      scopedCity
-      || resolved?.town
-      || resolved?.district
-      || null;
+    const placeLabel = droppedStalePlace
+      ? null
+      : (
+        scopedCity
+        || resolved?.town
+        || resolved?.district
+        || null
+      );
+    const familyLabel = scopedMed ? titleCase(scopedMed) : null;
     const { text, opener } = composeReply(session, {
-      avail: placeLabel
-        ? `Services available in ${placeLabel}.`
-        : 'Advertising services available.',
-      ask: 'Which service do you need?',
+      avail: placeLabel && familyLabel
+        ? `${familyLabel} options available in ${placeLabel}.`
+        : placeLabel
+          ? `Services available in ${placeLabel}.`
+          : familyLabel
+            ? `${familyLabel} advertising options available.`
+            : 'Advertising services available.',
+      ask: familyLabel ? 'Which option do you need?' : 'Which service do you need?',
     });
     return {
       step: 'pick_type',
@@ -1505,20 +1561,23 @@ function startCatalogueBrowse(
       session: stampReplyMeta(
         {
           ...session,
-          // Fresh service pick from catalogue
-          medium: undefined,
-          browseToken: undefined,
+          medium: scopedMed || undefined,
+          browseToken: scopedMed || undefined,
           mediumType: undefined,
           typesResolved: undefined,
-          // Keep geography; sole parent city when library scoped
-          city:
-            scopedCity
-            || (
-              resolved && uniqueFunnelCityLabels(pool).size === 1
-                ? [...uniqueFunnelCityLabels(pool).values()][0]
-                : session.city
-            ),
-          resolvedLocation: resolved || undefined,
+          city: placeLabel
+            ? (
+              scopedCity
+              || (
+                resolved && uniqueFunnelCityLabels(pool).size === 1
+                  ? [...uniqueFunnelCityLabels(pool).values()][0]
+                  : session.city
+              )
+            )
+            : undefined,
+          area: placeLabel ? session.area : undefined,
+          placeHint: placeLabel ? session.placeHint : undefined,
+          resolvedLocation: placeLabel ? (resolved || undefined) : undefined,
           candidateServiceIds: pool.map((s) => s.service_id),
           needsContinueConfirm: false,
         },
@@ -8116,13 +8175,35 @@ function resolveProgressiveTextInner(
     };
   }
   if (intent?.kind === 'services_browse') {
+    // Do not spread prior session: stale city / Nominatim place / medium caused
+    // "list bus services" → "Not providing Bus in Bourg-Saint-Maurice" + all 39 chips.
+    const browseMedia = detectMediaLocal(originalText, services);
+    const browseCity = detectCityInText(originalText, services) || undefined;
+    const browseArea = detectLocalityInText(originalText, services) || undefined;
+    const placeInThisMessage = !!(browseCity || browseArea
+      || isPlaceServicesBrowseQuery(originalText, services));
+    const namedFamily = browseMedia[0]
+      ? canonicalizeServiceName(browseMedia[0])
+      : (
+        intent.media?.[0]
+          ? canonicalizeServiceName(String(intent.media[0]))
+          : undefined
+      );
     return startCatalogueBrowse(
       'services',
       {
-        ...(prior || {}),
         originalText,
         qty: null,
         aiReply: intent.shortReply,
+        medium: namedFamily,
+        browseToken: namedFamily,
+        city: browseCity,
+        area: browseArea,
+        placeHint: browseArea,
+        // Only keep Nominatim when this message actually names a place
+        resolvedLocation: placeInThisMessage
+          ? (intent.resolvedLocation || undefined)
+          : undefined,
       },
       services,
       intent.shortReply,
@@ -8451,7 +8532,14 @@ function resolveProgressiveTextInner(
   }
 
   // When refining mid-funnel with city/area only, restore media from prior for downstream
-  if (preservePrior && media.length === 0) {
+  // Catalogue list asks ("list all" / "list services") must NOT inherit the prior medium —
+  // that made "list all" show the previous Bus/Auto chip set.
+  if (
+    preservePrior
+    && media.length === 0
+    && !detectCatalogueBrowseQuery(originalText)
+    && !isPlaceServicesBrowseQuery(originalText, services)
+  ) {
     const locked = baseSessionFields.browseToken || baseSessionFields.medium;
     if (locked) media = [locked];
   }
@@ -8474,26 +8562,38 @@ function resolveProgressiveTextInner(
       ? 'cities'
       : detectedBrowseKind;
   if (browseKind && earlySegmentsCheck.length < 2) {
+    // Named family in a list request ("list auto services") scopes the menu.
+    // Bare "list all" / "what services?" keeps the full catalogue (no media → no scope).
+    const namedFamily = media[0] ? canonicalizeServiceName(media[0]) : undefined;
+    const scopedMedium =
+      browseKind === 'services'
+        ? namedFamily
+        : (namedFamily || baseSessionFields.medium);
+    const scopedBrowse =
+      browseKind === 'services'
+        ? namedFamily
+        : (namedFamily || baseSessionFields.browseToken);
+    // Geography only from THIS message for catalogue browse — never a stale prior place.
+    const placeInThisMessage = !!(
+      city
+      || localityHint
+      || placeServicesBrowse
+    );
     return startCatalogueBrowse(
       browseKind,
       {
         ...baseSessionFields,
-        city: city || (placeServicesBrowse ? undefined : baseSessionFields.city),
-        area: localityHint || baseSessionFields.area,
-        placeHint: localityHint || baseSessionFields.placeHint,
-        // Scope cities/areas/types to a named service; "what services?" lists the full menu
-        medium:
-          browseKind === 'services'
-            ? undefined
-            : (media[0]
-              ? canonicalizeServiceName(media[0])
-              : baseSessionFields.medium),
-        browseToken:
-          browseKind === 'services'
-            ? undefined
-            : (media[0]
-              ? canonicalizeServiceName(media[0])
-              : baseSessionFields.browseToken),
+        city: placeInThisMessage ? (city || undefined) : undefined,
+        area: placeInThisMessage ? (localityHint || undefined) : undefined,
+        placeHint: placeInThisMessage ? (localityHint || undefined) : undefined,
+        resolvedLocation: placeInThisMessage
+          ? (baseSessionFields.resolvedLocation || resolvedLocation || undefined)
+          : undefined,
+        medium: scopedMedium,
+        browseToken: scopedBrowse,
+        // Fresh list request — drop prior candidates so chips match this query only
+        candidateServiceIds: undefined,
+        directionHint: undefined,
       },
       services,
       shortReply,
