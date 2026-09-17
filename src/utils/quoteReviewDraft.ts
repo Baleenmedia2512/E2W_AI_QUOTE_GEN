@@ -130,9 +130,13 @@ export function confirmationRowsToReviewItems(
     }
 
     const mins = minsForService(services, row.service, row.serviceId, cityParts[0]);
+    // Only show / carry duration when chat set days or DB has min_days.
+    // Never invent a 30-day default when metadata.min_days is NA / missing.
     const resolvedDays = durationDays > 0
       ? durationDays
-      : (mins.minimumDurationDays ?? 30);
+      : (mins.minimumDurationDays && mins.minimumDurationDays > 0
+        ? mins.minimumDurationDays
+        : 0);
 
     groups.set(groupKey, {
       id: newId(),
@@ -209,7 +213,8 @@ export function emptyReviewItem(partial?: Partial<ReviewDraftItem>): ReviewDraft
     service: '',
     cities: [],
     quantity: 1,
-    durationDays: 30,
+    /** 0 = no DB min_days / no user duration — badge hidden on Review. */
+    durationDays: 0,
     ...partial,
   };
 }
@@ -330,7 +335,9 @@ export function enrichReviewItemFromCatalog(
   }
   const durationDays = item.durationDays > 0
     ? item.durationDays
-    : (mins.minimumDurationDays ?? 30);
+    : (mins.minimumDurationDays && mins.minimumDurationDays > 0
+      ? mins.minimumDurationDays
+      : 0);
   const quantity = item.quantity > 0
     ? item.quantity
     : (mins.minimumQuantity ?? 1);
@@ -356,11 +363,14 @@ export function validateReviewDraft(items: ReviewDraftItem[]): string | null {
     if (item.minimumQuantity && item.quantity < item.minimumQuantity) {
       return `Service ${n}: quantity must be at least ${item.minimumQuantity}.`;
     }
-    if (!item.durationDays || item.durationDays < 1) {
+    // Duration optional when catalog has no min_days (NA / missing).
+    // When DB has a floor, require duration ≥ that floor.
+    if (item.minimumDurationDays && item.minimumDurationDays > 0) {
+      if (!item.durationDays || item.durationDays < item.minimumDurationDays) {
+        return `Service ${n}: duration must be at least ${item.minimumDurationDays} days.`;
+      }
+    } else if (item.durationDays > 0 && item.durationDays < 1) {
       return `Service ${n}: duration must be at least 1 day.`;
-    }
-    if (item.minimumDurationDays && item.durationDays < item.minimumDurationDays) {
-      return `Service ${n}: duration must be at least ${item.minimumDurationDays} days.`;
     }
   }
   return null;

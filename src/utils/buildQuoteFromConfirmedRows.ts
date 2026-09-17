@@ -137,12 +137,14 @@ function dedupeLogicalQuoteRows(
  * Pricing ONLY from vendor_rate_chunks (display_price + printing_and_mounting_price).
  * If vendor pricing is missing → error (proposal_chunks pricing disabled).
  * Qty unit AI runs on Quote Preview only (not here).
+ * Row order is preserved (Review drag order → confirmation rows → quote.items).
  */
 export function buildQuoteFromConfirmedRows(
   rows: ConfirmationRow[],
   services: DbService[],
   originalUserInput: string,
 ): BuildQuoteFromDbResult {
+  // dedupeLogicalQuoteRows keeps first-seen Map order from `rows`.
   const uniqueRows = dedupeLogicalQuoteRows(dedupeConfirmationRows(rows), services);
   const unresolved: string[] = [];
   const allItems: QuoteItem[] = [];

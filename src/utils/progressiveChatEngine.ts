@@ -96,6 +96,7 @@ export type ProgressiveStep =
   | 'no_match'
   | 'min_qty_confirm'
   | 'min_duration_confirm'
+  | 'single_location_confirm'
   | 'qty_or_duration_clarify'
   | 'quote_ready'
   | 'small_talk';
@@ -199,6 +200,12 @@ export interface ProgressiveSession {
   batchUnavailableNote?: string;
   /** True after the unavailable note was shown once in botText. */
   batchUnavailableSpoken?: boolean;
+  /** True after the multi-service “handled one by one” intro was shown. */
+  batchIntroSpoken?: boolean;
+  /** User confirmed the only available location (Continue on single_location_confirm). */
+  singleLocationConfirmed?: boolean;
+  /** Sole city waiting for Continue/Quit (cleared after lock). */
+  pendingSoleCity?: string;
   /**
    * Place-only browse (e.g. "hosur"/"madurai") — block silent quote finalize
    * until the user picks a service chip or Continue.
@@ -1794,9 +1801,39 @@ function copyBatchSkipCitiesContinue(
   return `${svc} ${verb} in ${dead}. Continuing in ${continueCity}.`;
 }
 
+/**
+ * Multi-service batch opener — tell the user services are handled one by one.
+ * Example: “We found two services… Let's check Bus first.”
+ */
+function copyBatchMultiServiceIntro(
+  count: number,
+  labels: string[],
+  firstLabel: string,
+): string {
+  const list = formatBatchServiceList(labels.length ? labels : [firstLabel]);
+  const countWord =
+    count === 2 ? 'two'
+      : count === 3 ? 'three'
+        : String(count);
+  const rest = labels.filter(
+    (l) => canonicalizeServiceName(l) !== canonicalizeServiceName(firstLabel),
+  );
+  const followed = rest.length
+    ? `, then ${formatBatchServiceList(rest)}`
+    : '';
+  return (
+    `We found ${countWord} services (${list}). `
+    + `We'll go one by one — ${firstLabel} first${followed}.`
+  );
+}
+
 function copyBatchStart(city: string, count: number, firstLabel: string, allLabels?: string[]): string {
-  void count;
-  void allLabels;
+  // Multi-service intro only — withBatchStepPrompt appends the real step ask
+  // (sole-location Continue/Quit, type chips, city, …). Do not bake in
+  // "I have the below options" here or it replaces the location check.
+  if (count >= 2 && allLabels && allLabels.length >= 2) {
+    return copyBatchMultiServiceIntro(count, allLabels, firstLabel);
+  }
   return copyAskType(firstLabel, null, city);
 }
 
@@ -1840,11 +1877,59 @@ function withBatchStepPrompt(
   if (result.step === 'min_qty_confirm' || result.step === 'quote_ready') {
     return result;
   }
-  // Type chips → full understand + options copy (with city when locked)
+  // Keep multi-service / handoff intro, but ALWAYS keep the sole-location ask
+  // (never let batch intro replace it with "I have the below options for you").
+  if (result.step === 'single_location_confirm') {
+    const cityFromOpt =
+      result.options.find((o) => o.id === 'continue_single_location' && o.city)?.city
+      || result.options.find((o) => !!o.city)?.city
+      || result.session.pendingSoleCity
+      || '';
+    const locationAsk = cityFromOpt
+      ? copySingleLocationConfirm(
+        cityFromOpt,
+        result.session.medium || result.session.browseToken,
+      )
+      : (result.botText || '').trim().replace(/\n?I have the below options for you\.?/gi, '').trim()
+        || result.botText;
+    const lines = replyLines(trimmed);
+    const multiIntro = lines.find((line) =>
+      /we found \w+ services/i.test(line)
+      || /we'?ll go one by one/i.test(line)
+      || /one by one/i.test(line),
+    );
+    const choosing = lines.find((line) => /^now choosing\b/i.test(line));
+    const prefix = multiIntro || choosing;
+    if (prefix && locationAsk && !canonicalizeServiceName(prefix).includes(
+      canonicalizeServiceName(locationAsk).slice(0, 24),
+    )) {
+      return {
+        ...result,
+        botText: compactFunnelReply(prefix, locationAsk),
+      };
+    }
+    return { ...result, botText: locationAsk || result.botText };
+  }
+  // Type chips → keep multi-service “one by one” intro so users know Auto follows Bus
   if (result.step === 'pick_type') {
     const med = result.session.browseToken || result.session.medium || '';
     const typeAsk = copyAskType(med, result.session);
-    const choosing = replyLines(trimmed).find((line) => /^now choosing\b/i.test(line));
+    const typeAskLine2 = typeAsk.split('\n').slice(-1)[0]
+      || 'I have the below options for you.';
+    const lines = replyLines(trimmed);
+    const multiIntro = lines.find((line) =>
+      /we found \w+ services/i.test(line)
+      || /we'?ll go one by one/i.test(line)
+      || /let'?s check .+ first/i.test(line)
+      || /one by one/i.test(line),
+    );
+    if (multiIntro) {
+      return {
+        ...result,
+        botText: compactFunnelReply(multiIntro, typeAskLine2),
+      };
+    }
+    const choosing = lines.find((line) => /^now choosing\b/i.test(line));
     if (choosing) {
       const city = (result.session.city || '').trim();
       const line2 = city
@@ -1957,7 +2042,9 @@ function tryAutoResolveBatchWork(
   const cities = uniqueCityOptionsFromPool(pool, medium);
   if (!city) {
     if (cities.length > 1) return null;
-    if (cities.length === 1) city = cities[0].city || cities[0].label;
+    // Sole city (incl. "Any City In Tamilnadu") must go through Continue/Quit —
+    // never silent auto-add in a multi-service batch.
+    if (cities.length === 1) return null;
   }
   if (city) {
     const scoped = pool.filter((s) => serviceMatchesCityLabel(s, city!));
@@ -2077,11 +2164,18 @@ function launchSequentialBatchWork(
   const firstLabel = titleCase(askFirst.browseToken || askFirst.medium);
   const sessionCity = opts.lockedCity || askFirst.city;
 
+  const speakIntro = !session.batchIntroSpoken && workItems.length >= 2;
+  const labelsForIntro = speakIntro ? availLabels : undefined;
   const askLine = opts.autoLabels?.length
-    ? copyBatchAutoAddedThenAsk(opts.autoLabels, firstLabel, sessionCity, availLabels)
+    ? copyBatchAutoAddedThenAsk(opts.autoLabels, firstLabel, sessionCity, labelsForIntro)
     : sessionCity
-      ? copyBatchStart(sessionCity, workItems.length, firstLabel, availLabels)
-      : copyBatchAutoAddedThenAsk([], firstLabel, undefined, availLabels);
+      ? copyBatchStart(
+        sessionCity,
+        workItems.length,
+        firstLabel,
+        labelsForIntro,
+      )
+      : copyBatchAutoAddedThenAsk([], firstLabel, undefined, labelsForIntro);
 
   // Explicit Mobile Van variants go through the normal funnel (city auto-lock →
   // "Now choosing …"). Mid-turn auto-add left bot text on Mobile Van while
@@ -2116,6 +2210,9 @@ function launchSequentialBatchWork(
       pendingMedia: [],
       pendingCityQueue: undefined,
       needsContinueConfirm: false,
+      // Fresh batch service — never inherit a prior sole-location Continue.
+      singleLocationConfirmed: false,
+      pendingSoleCity: undefined,
       area: undefined,
       placeHint: undefined,
       directionHint: undefined,
@@ -2124,9 +2221,11 @@ function launchSequentialBatchWork(
       batchUnavailableLabels: opts.batchUnavailableLabels,
       batchUnavailableNote: opts.unavailableNote,
       batchUnavailableSpoken: false,
+      batchIntroSpoken: speakIntro || session.batchIntroSpoken,
     },
     services,
-    opts.reply || intro.trim(),
+    // Prefer batch intro over AI shortReply so sole-location copy is not wiped.
+    intro.trim() || opts.reply,
   );
   const noted = withBatchUnavailableNote(result.botText, {
     ...result.session,
@@ -2179,13 +2278,19 @@ function copyBatchAutoAddedThenAsk(
   city?: string,
   allLabels?: string[],
 ): string {
-  void allLabels;
+  // Step ask is added by withBatchStepPrompt (type / city / sole-location).
   if (autoLabels.length) {
     const where = city ? ` in ${city}` : '';
+    const prefix =
+      allLabels && allLabels.length >= 2
+        ? `${copyBatchMultiServiceIntro(allLabels.length, allLabels, nextLabel)} `
+        : '';
     return compactFunnelReply(
-      `${formatBatchServiceList(autoLabels)} added${where}.`,
-      copyAskType(nextLabel, null, city).split('\n').slice(-1)[0],
+      `${prefix}${formatBatchServiceList(autoLabels)} added${where}.`,
     );
+  }
+  if (allLabels && allLabels.length >= 2) {
+    return copyBatchMultiServiceIntro(allLabels.length, allLabels, nextLabel);
   }
   return copyAskType(nextLabel, null, city);
 }
@@ -4452,8 +4557,9 @@ function startBatchMultiSelect(
 /**
  * Multi-service, no shared city: one service at a time through the full funnel
  * (Type → City → Area → Direction). Skip 0/1; ask only when 2+.
- * Services that exist in exactly one DB city label are auto-locked —
- * no OK Continue one-by-one. 2+ DB city labels → leave city unlocked.
+ * Do NOT pre-lock a sole DB city onto the work item — that silently finalizes
+ * statewide labels like "Any City In Tamilnadu" and skips Continue/Quit.
+ * Sole city is handled in advanceFunnel via single_location_confirm.
  */
 function startBatchSequentialFunnel(
   segments: BatchSegment[],
@@ -4475,24 +4581,6 @@ function startBatchSequentialFunnel(
   /** Service named with a city that has no inventory there — do not add from elsewhere */
   const cityUnavailable: Array<{ label: string; city: string }> = [];
   const seenTok = new Set<string>();
-
-  /**
-   * Auto-lock only when priced (else all) hits share exactly one funnel city.
-   * Uses DB metadata.city / area_name — never known-metro-only matching that
-   * invents Chennai/Madurai when other DB cities also exist.
-   */
-  const soleFunnelCityForHits = (hits: DbService[]): string | null => {
-    const byKey = new Map<string, string>();
-    for (const h of hits) {
-      const city = funnelCityFromDb(h);
-      if (!city) continue;
-      const key = canonicalizeServiceName(city);
-      if (!key || byKey.has(key)) continue;
-      byKey.set(key, city);
-    }
-    if (byKey.size !== 1) return null;
-    return [...byKey.values()][0]!;
-  };
 
   for (const seg of segments) {
     // Prefer the already qty/city-stripped segment token from parseServiceSegments.
@@ -4537,12 +4625,11 @@ function startBatchSequentialFunnel(
       for (const h of hits) qtyByServiceId[h.service_id] = seg.qty;
     }
 
-    // Prefer priced inventory when auto-locking a sole city so an unpriced
-    // Madurai (or other) row cannot invent a city the user never named.
+    // Prefer priced inventory for candidate ids (display), but never invent a
+    // sole-city lock here — user must Continue/Quit when only one location exists.
     const pricedHits = hits.filter(hasQuotablePricing);
-    const soleCity = seg.city
-      || soleFunnelCityForHits(pricedHits.length ? pricedHits : hits)
-      || undefined;
+    // Only lock city when the user named it on this segment (or shared-city batch).
+    const soleCity = seg.city || undefined;
 
     const exactSel = detectExactCatalogSelection(seg.raw, services);
     const exactKey = resolveExactMediumKey(token, services);
@@ -6368,9 +6455,41 @@ function lockOneCity(
     city: onlyCity,
     needsContinueConfirm: false,
     unresolvedPlaceOffer: false,
+    singleLocationConfirmed: true,
+    pendingSoleCity: undefined,
     candidateServiceIds: pool.map((s) => s.service_id),
     pendingRows: undefined,
   };
+}
+
+/** True when the user already named this city/place in their message. */
+function userNamedLocationInText(text: string | undefined, location: string): boolean {
+  const loc = canonicalizeServiceName(location);
+  const blob = canonicalizeServiceName(text || '');
+  if (!loc || !blob) return false;
+
+  // Statewide inventory ("Any City In Tamilnadu") — only count as named when the
+  // user actually said any-city / Tamil Nadu / statewide (never silent auto-lock).
+  if (isStatewideFunnelCityLabel(location)) {
+    return (
+      /\bany\s+city\b/.test(blob)
+      || /\btamil\s*nadu\b/.test(blob)
+      || /\bstatewide\b/.test(blob)
+    );
+  }
+
+  if (blob.includes(loc)) return true;
+  const locTokens = loc.split(/\s+/).filter((t) => t.length >= 3);
+  if (locTokens.length >= 2 && locTokens.every((t) => blob.includes(t))) return true;
+  return false;
+}
+
+function copySingleLocationConfirm(location: string, mediumName?: string): string {
+  const svc = mediumName ? titleCase(mediumName) : 'This service';
+  return (
+    `${svc} is available only at ${location}. `
+    + `Continue if suitable, or quit.`
+  );
 }
 
 function filterPoolBySession(services: DbService[], session: ProgressiveSession): DbService[] {
@@ -6625,6 +6744,34 @@ export function advanceFunnel(
     }
 
     // 3) City — raw DB city values (OMR/Padur/Chennai as stored). No metro invent.
+    // Statewide sole lock (e.g. "Any City In Tamilnadu") must not silently finalize —
+    // ask Continue / Quit unless the user already named it or confirmed.
+    if (
+      sess.city
+      && isStatewideFunnelCityLabel(sess.city)
+      && !sess.singleLocationConfirmed
+      && !userNamedLocationInText(sess.originalText, sess.city)
+    ) {
+      const cityPool = poolForCityOptions(services, sess, pool);
+      return {
+        step: 'single_location_confirm',
+        // Never use batch `reply` here — it overwrites with "I have the below options".
+        botText: copySingleLocationConfirm(sess.city, sess.medium || sess.browseToken),
+        options: [
+          { id: 'continue_single_location', label: 'Continue', city: sess.city },
+          { id: 'quit_single_location', label: 'Quit' },
+        ],
+        allowMulti: false,
+        session: {
+          ...sess,
+          pendingSoleCity: sess.city,
+          city: undefined,
+          candidateServiceIds: cityPool.map((s) => s.service_id),
+          needsContinueConfirm: false,
+        },
+      };
+    }
+
     if (!sess.city) {
       const cityPool = poolForCityOptions(services, sess, pool);
       const cities = uniqueCityOptionsFromPool(cityPool, sess.medium);
@@ -6687,8 +6834,31 @@ export function advanceFunnel(
           };
         }
         const onlyCity = cities[0].city || cities[0].label;
-        sess = lockOneCity(sess, cityPool, onlyCity);
-        continue;
+        // User already named this city, or already confirmed → auto-lock (no tap).
+        // Otherwise Continue / Quit (statewide "Any City In Tamilnadu" included).
+        if (
+          sess.singleLocationConfirmed
+          || userNamedLocationInText(sess.originalText, onlyCity)
+        ) {
+          sess = lockOneCity(sess, cityPool, onlyCity);
+          continue;
+        }
+        return {
+          step: 'single_location_confirm',
+          // Never use batch `reply` here — it overwrites with "I have the below options".
+          botText: copySingleLocationConfirm(onlyCity, sess.medium || sess.browseToken),
+          options: [
+            { id: 'continue_single_location', label: 'Continue', city: onlyCity },
+            { id: 'quit_single_location', label: 'Quit' },
+          ],
+          allowMulti: false,
+          session: {
+            ...sess,
+            pendingSoleCity: onlyCity,
+            candidateServiceIds: cityPool.map((s) => s.service_id),
+            needsContinueConfirm: false,
+          },
+        };
       }
       // 0 cities (all NA) — if place locked, lock place label and continue
       if ((sess.area || sess.placeHint) && cityPool.length > 0) {
@@ -7133,6 +7303,9 @@ function continuePendingWork(
         candidateServiceIds: next.candidateServiceIds,
         pendingRows: undefined,
         needsContinueConfirm: false,
+        // Each service must re-confirm its own sole location (never inherit).
+        singleLocationConfirmed: false,
+        pendingSoleCity: undefined,
         batchServiceLabels: session.batchServiceLabels,
       },
       services,
@@ -7718,18 +7891,19 @@ export function matchFreeTextToProgressiveOption(
   if (!key) return null;
 
   // Affirmative for min-qty / yes-continue style chips
-  if (/^(yes|y|ok|okay|sure)([\s,.-]*(use\s+)?minimums?)?$/i.test(raw)) {
+  if (/^(yes|y|ok|okay|sure|continue)([\s,.-]*(use\s+)?minimums?)?$/i.test(raw)) {
     const yes = options.find((o) =>
-      /^(yes_min|yes_generate|yes)$/i.test(o.id)
-      || /yes.*minimum/i.test(o.label),
+      /^(yes_min|yes_generate|yes|continue_single_location)$/i.test(o.id)
+      || /yes.*minimum|^continue$/i.test(o.label),
     );
     if (yes) return yes;
   }
-  if (/^(no|nope|adjust|i'?ll\s+adjust)$/i.test(raw)) {
-    const no = options.find((o) =>
-      /^(no_min|no)$/i.test(o.id) || /adjust/i.test(o.label),
+  if (/^(quit|cancel|stop|no|nope)$/i.test(raw)) {
+    const quit = options.find((o) =>
+      /^(quit_min|quit_single_location|no_min|no)$/i.test(o.id)
+      || /^quit$/i.test(o.label),
     );
-    if (no) return no;
+    if (quit) return quit;
   }
 
   // Exact label match
@@ -7792,6 +7966,29 @@ export function matchFreeTextToProgressiveOption(
   }
 
   return null;
+}
+
+/**
+ * User quit min-qty / single-location — full reset to free chat.
+ * No option chips: user types a new request themselves.
+ * Do NOT mine originalText for "Not providing …" (that glued "bus and auto" → "Bus Auto").
+ */
+function replyUserCancelled(_services: DbService[]): ProgressiveTurnResult {
+  void _services;
+  const cleanSession: ProgressiveSession = {
+    originalText: '',
+    qty: null,
+  };
+  return {
+    step: 'no_match',
+    botText: compactFunnelReply(
+      'Okay — cancelled.',
+      'Type a service whenever you are ready.',
+    ),
+    options: [],
+    allowMulti: false,
+    session: stampReplyMeta(cleanSession, ''),
+  };
 }
 
 function softClarifyNeed(
@@ -9736,46 +9933,31 @@ function minQtyConfirmBotText(
   details: Array<{ service: string; requested: number; minimum: number }>,
   stillBelow = false,
 ): string {
-  // The warning card already shows each service, requested quantity, and
-  // minimum quantity. Keep the chat response area empty to avoid duplicating
-  // the same warning in a separate assistant bubble.
-  return '';
-  /*
-  const tip = 'Or tap the pencil to edit the qty yourself.';
+  void stillBelow;
+  if (!details.length) return '';
   if (details.length === 1) {
     const d = details[0];
-    if (stillBelow) {
-      return (
-        `That's still below the minimum for ${d.service} `
-        + `(minimum ${d.minimum.toLocaleString()}, you entered ${d.requested.toLocaleString()}).\n\n`
-        + `Shall we use ${d.minimum.toLocaleString()}, or edit again?`
-      );
-    }
+    const x = d.minimum.toLocaleString();
     return (
-      `You asked for ${d.requested.toLocaleString()} on ${d.service}, `
-      + `but the minimum is ${d.minimum.toLocaleString()}.\n\n`
-      + `Shall we use the minimum so I can continue? ${tip}`
+      `The minimum quantity for ${d.service} is ${x}. `
+      + `Please select at least ${x} to continue, or quit if this does not work for you.`
     );
   }
-  if (stillBelow) {
-    return `Some quantities are still below minimums.\n\nShall we use the minimums, or edit again?`;
-  }
-  const names = details
+  const parts = details
     .slice(0, 3)
-    .map((d) => d.service)
-    .join(', ');
-  const extra = details.length > 3 ? ` +${details.length - 3} more` : '';
+    .map((d) => `${d.service}: ${d.minimum.toLocaleString()}`)
+    .join('; ');
+  const extra = details.length > 3 ? ` (+${details.length - 3} more)` : '';
   return (
-    `A few lines are below minimums (${names}${extra}).\n\n`
-    + `Shall we use the minimums so I can finish your quote? ${tip}`
+    `Some lines are below the configured minimum (${parts}${extra}). `
+    + `Please select at least the minimum to continue, or quit if this does not work for you.`
   );
-  */
 }
 
 function minQtyConfirmOptions(): ProgressiveOption[] {
   return [
     { id: 'yes_min', label: 'Yes, use minimums' },
-    { id: 'no_min', label: "No, I'll adjust" },
+    { id: 'quit_min', label: 'Quit' },
   ];
 }
 
@@ -10231,14 +10413,32 @@ function continueProgressiveActionInner(
     };
   }
 
-  if (actionId === 'no_min') {
-    const minQty = session.pendingRows?.[0]?.qty;
-    return {
-      step: 'min_qty_confirm',
-      botText: `Please enter a quantity of ${minQty || 'the minimum'} or more to continue.`,
-      options: [],
-      session,
-    };
+  if (actionId === 'continue_single_location') {
+    const pool = filterPoolBySession(services, session);
+    const cities = uniqueCityOptionsFromPool(pool, session.medium);
+    const onlyCity =
+      (session.pendingSoleCity || '').trim()
+      || (cities.length === 1 ? (cities[0].city || cities[0].label) : '')
+      || (session.city || cities[0]?.city || cities[0]?.label || '');
+    if (!onlyCity) {
+      return softClarifyNeed(services, session, copyWhichService());
+    }
+    const locked = lockOneCity(
+      { ...session, pendingSoleCity: undefined },
+      pool,
+      onlyCity,
+    );
+    return advanceFunnel(locked, services, undefined, { allowAutoFinalize: true });
+  }
+
+  if (actionId === 'quit_single_location') {
+    return replyUserCancelled(services);
+  }
+
+  // Quit min-qty gate — full reset to free chat (do not continue remaining batch services).
+  // Legacy id `no_min` still accepted for older chat messages in the thread.
+  if (actionId === 'quit_min' || actionId === 'no_min') {
+    return replyUserCancelled(services);
   }
 
   // Batch multi-city ask ("madurai and chennai") — city Confirm starts city-locked batch

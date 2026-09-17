@@ -994,7 +994,15 @@ const ChatInterfaceContent: React.FC = () => {
     const assistantMsg: Message = {
       id: reuseId,
       role: 'assistant',
-      content: '',
+      content: details.length === 1
+        ? (
+          `The minimum quantity for ${details[0].service} is ${details[0].minimum.toLocaleString()}. `
+          + `Please select at least ${details[0].minimum.toLocaleString()} to continue, or quit if this does not work for you.`
+        )
+        : (
+          `Some lines are below the configured minimum. `
+          + `Please select at least the minimum to continue, or quit if this does not work for you.`
+        ),
       timestamp: new Date(),
       isProgressiveChat: true,
       progressiveStep: 'min_qty_confirm',
@@ -1002,7 +1010,7 @@ const ChatInterfaceContent: React.FC = () => {
       progressiveBelowMin: details,
       progressiveOptions: [
         { id: 'yes_min', label: 'Yes, use minimums' },
-        { id: 'no_min', label: "No, I'll adjust" },
+        { id: 'quit_min', label: 'Quit' },
       ],
       progressiveSession: session,
     };
@@ -1271,10 +1279,29 @@ const ChatInterfaceContent: React.FC = () => {
       return;
     }
 
-    if (optionId === 'no_min') {
-      window.setTimeout(() => {
-        inputRef.current?.focus({ preventScroll: true });
-      }, 50);
+    if (optionId === 'quit_min' || optionId === 'no_min') {
+      setPendingConfirmGeneration(null);
+      setPendingDurationInput(null);
+      setMinQtyDrafts((drafts) => {
+        const next = { ...drafts };
+        delete next[message.id];
+        return next;
+      });
+      setMinQtyEditingKey((keys) => {
+        const next = { ...keys };
+        delete next[message.id];
+        return next;
+      });
+      setIsLoading(true);
+      try {
+        const dbServices = await getCachedDbServices();
+        const result = continueProgressiveAction('quit_min', session, dbServices);
+        await appendProgressiveResult(null, result);
+      } catch (err) {
+        console.error(err);
+      } finally {
+        setIsLoading(false);
+      }
       return;
     }
 
@@ -4018,6 +4045,9 @@ const ChatInterfaceContent: React.FC = () => {
                                         || o.id === 'no'
                                         || o.id === 'yes_min'
                                         || o.id === 'no_min'
+                                        || o.id === 'quit_min'
+                                        || o.id === 'continue_single_location'
+                                        || o.id === 'quit_single_location'
                                         || o.id === 'yes_min_duration'
                                         || o.id === 'no_min_duration',
                                     );
