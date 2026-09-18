@@ -137,16 +137,6 @@
   background: #fdf2f5;
 }
 
-.quote-review-cart-row.is-just-added {
-  border-color: #750926;
-  background: #fdf2f5;
-  box-shadow: 0 0 0 2px rgba(117, 9, 38, 0.12);
-}
-
-.quote-review-cart-row.is-dragging {
-  opacity: 0.55;
-}
-
 .quote-review-index {
   min-width: 22px;
   height: 22px;

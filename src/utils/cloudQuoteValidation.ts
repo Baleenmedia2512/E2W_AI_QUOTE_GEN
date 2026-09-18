@@ -1256,8 +1256,15 @@ export function dedupeConfirmationRows(rows: ConfirmationRow[]): ConfirmationRow
     seen.add(key);
     out.push({ ...row, qty });
   }
-  // Preserve caller order (Review drag order / chat confirm order). Do not sort A–Z.
-  return out;
+  return out.sort((a, b) => {
+    const byService = a.service.localeCompare(b.service, undefined, { sensitivity: 'base' });
+    if (byService !== 0) return byService;
+    const byCity = a.city.localeCompare(b.city, undefined, { sensitivity: 'base' });
+    if (byCity !== 0) return byCity;
+    const qtyA = typeof a.qty === 'number' ? a.qty : parseInt(String(a.qty), 10) || 0;
+    const qtyB = typeof b.qty === 'number' ? b.qty : parseInt(String(b.qty), 10) || 0;
+    return qtyA - qtyB;
+  });
 }
 
 export function validateConfirmationRowsMinQty(

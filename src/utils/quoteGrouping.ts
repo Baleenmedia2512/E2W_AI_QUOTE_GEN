@@ -133,22 +133,16 @@ export function formatServiceIdDisplay(serviceId: string): string {
 export function buildExecutiveSummaryRows(items: QuoteItem[]): ExecutiveSummaryRow[] {
   const visible = items.filter((i) => i.rate !== 0 || i.total !== 0);
   const groups = new Map<string, QuoteItem[]>();
-  /** Preserve first-seen order from quote.items (Review drag order). */
-  const orderKeys: string[] = [];
 
   for (const item of visible) {
     const key = executiveSummaryGroupKey(item);
     const list = groups.get(key);
     if (list) list.push(item);
-    else {
-      groups.set(key, [item]);
-      orderKeys.push(key);
-    }
+    else groups.set(key, [item]);
   }
 
   const rows: ExecutiveSummaryRow[] = [];
-  for (const key of orderKeys) {
-    const group = groups.get(key)!;
+  for (const group of groups.values()) {
     const primary = group.find((i) => !isOneTimeLineDescription(i.description)) || group[0];
     let requiringCharge = 0;
     let oneTimeCharge = 0;
@@ -517,30 +511,24 @@ export function extractServiceType(description: string): string {
  */
 export function groupItemsByServiceType(items: QuoteItem[]): ServiceGroup[] {
   const groups = new Map<string, QuoteItem[]>();
-  /** First-seen order matches Review / quote.items order. */
-  const orderKeys: string[] = [];
 
   items.forEach((item) => {
     const key = getQuoteItemGroupKey(item);
     if (!groups.has(key)) {
       groups.set(key, []);
-      orderKeys.push(key);
     }
     groups.get(key)!.push(item);
   });
 
-  return orderKeys.map((key) => {
-    const groupItems = groups.get(key)!;
-    return {
-      serviceType: extractServiceType(groupItems[0].description),
-      city: groupItems[0].city?.trim() && groupItems[0].city !== '—'
-        ? groupItems[0].city
-        : undefined,
-      items: groupItems,
-      subtotal: groupItems.reduce((sum, item) => sum + computeQuoteItemTotal(item), 0),
-      termsAndConditions: groupItems[0]?.termsAndConditions,
-    };
-  });
+  return Array.from(groups.values()).map((groupItems) => ({
+    serviceType: extractServiceType(groupItems[0].description),
+    city: groupItems[0].city?.trim() && groupItems[0].city !== '—'
+      ? groupItems[0].city
+      : undefined,
+    items: groupItems,
+    subtotal: groupItems.reduce((sum, item) => sum + computeQuoteItemTotal(item), 0),
+    termsAndConditions: groupItems[0]?.termsAndConditions,
+  }));
 }
 
 /**

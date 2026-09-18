@@ -8,14 +8,8 @@ export interface ReviewDraftItem {
   /** One or more DB city / place labels. */
   cities: string[];
   quantity: number;
-  /**
-   * Campaign days for this line.
-   * 0 = no user duration and no DB min_days (NA) — Review list hides the days badge.
-   * Sourced from chat duration or metadata.min_days via vendorMinDays().
-   */
   durationDays: number;
   minimumQuantity?: number;
-  /** From metadata.min_days (legacy min_duration). Undefined when NA / missing. */
   minimumDurationDays?: number;
 }
 
