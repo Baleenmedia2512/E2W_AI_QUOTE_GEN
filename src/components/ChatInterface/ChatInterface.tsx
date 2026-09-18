@@ -152,7 +152,7 @@ interface CityPickerSegment {
 
 const ChatInterfaceContent: React.FC = () => {
   const history = useHistory();
-  const { proposal, setCurrentQuote, activeProposals, loadCloudServices } = useAppStore();
+  const { proposal, setCurrentQuote, setReviewDraft, activeProposals, loadCloudServices } = useAppStore();
   const [messages, setMessages] = useState<Message[]>([]);
   const [isLoading, setIsLoading] = useState(false);
   const [_error, setError] = useState<string | null>(null);
@@ -960,7 +960,15 @@ const ChatInterfaceContent: React.FC = () => {
     const assistantMsg: Message = {
       id: reuseId,
       role: 'assistant',
-      content: '',
+      content: details.length === 1
+        ? (
+          `The minimum quantity for ${details[0].service} is ${details[0].minimum.toLocaleString()}. `
+          + `Please select at least ${details[0].minimum.toLocaleString()} to continue, or quit if this does not work for you.`
+        )
+        : (
+          `Some lines are below the configured minimum. `
+          + `Please select at least the minimum to continue, or quit if this does not work for you.`
+        ),
       timestamp: new Date(),
       isProgressiveChat: true,
       progressiveStep: 'min_qty_confirm',
@@ -968,7 +976,7 @@ const ChatInterfaceContent: React.FC = () => {
       progressiveBelowMin: details,
       progressiveOptions: [
         { id: 'yes_min', label: 'Yes, use minimums' },
-        { id: 'no_min', label: "No, I'll adjust" },
+        { id: 'quit_min', label: 'Quit' },
       ],
       progressiveSession: session,
     };
@@ -1072,70 +1080,37 @@ const ChatInterfaceContent: React.FC = () => {
     setIsLoading(true);
     setError(null);
     try {
-      const { loadAllServicesFromCloud } = await import('../../services/supabaseProposalService');
-      const { buildQuoteFromConfirmedRows } = await import('../../utils/buildQuoteFromConfirmedRows');
-      const dbServices = (await loadAllServicesFromCloud()) || [];
+      const { createReviewDraft } = await import('../../utils/quoteReviewDraft');
+      const dbServices = await getCachedDbServices();
       const uniqueRows = dedupeConfirmationRows(rows);
-      const qtyViolations = validateConfirmationRowsMinQty(uniqueRows, dbServices);
-      if (qtyViolations.length > 0) {
-        showQtyWarningInChat(uniqueRows, originalUserInput, qtyViolations);
-        setIsLoading(false);
-        return;
-      }
-      const durationViolations = validateConfirmationRowsMinDuration(
-        uniqueRows,
-        dbServices,
-        originalUserInput,
-      );
-      console.log('[DurationDebug] progressive gate', {
-        originalUserInput,
-        rows: uniqueRows,
-        violationCount: durationViolations.length,
-        durationViolations,
-      });
-      if (durationViolations.length > 0) {
-        showDurationWarningInChat(uniqueRows, originalUserInput, durationViolations);
-        setIsLoading(false);
-        return;
-      }
-      const result = buildQuoteFromConfirmedRows(
-        uniqueRows,
-        dbServices,
-        originalUserInput,
-      );
-      if (!result.success) {
+      const draft = createReviewDraft(uniqueRows, 'ai', originalUserInput, dbServices);
+      if (!draft.items.length) {
         setMessages((prev) => [
           ...prev,
           {
             id: Date.now().toString(),
             role: 'assistant',
-            content: `I couldn't build that quote: ${result.message}. Happy to try again if you'd like.`,
+            content: 'I couldn’t prepare that quote for review. Please try again.',
             timestamp: new Date(),
             isError: true,
           },
         ]);
         return;
       }
-      setCurrentQuote(result.quote);
-      loadCloudServices().catch(() => undefined);
-      const skippedNote = result.skipped?.length
-        ? `Currently no pricing for ${result.skipped.join('; ')}. We can't include ${
-          result.skipped.length === 1 ? 'this service' : 'these services'
-        } in the quote.\n`
-        : '';
+      setReviewDraft(draft);
+      setProgressiveSession(null);
       setMessages((prev) => [
         ...prev,
         {
           id: (Date.now() + 1).toString(),
           role: 'assistant',
-          content: `${skippedNote}Your quotation is ready.\nOpening quotation preview.`,
+          content: 'Your quotation is ready.\nOpening review to confirm details.',
           timestamp: new Date(),
         },
       ]);
-      setProgressiveSession(null);
       setTimeout(() => {
-        history.push('/preview');
-      }, 1000);
+        history.push('/review');
+      }, 600);
     } catch (err) {
       setMessages((prev) => [
         ...prev,
@@ -1270,10 +1245,29 @@ const ChatInterfaceContent: React.FC = () => {
       return;
     }
 
-    if (optionId === 'no_min') {
-      window.setTimeout(() => {
-        inputRef.current?.focus({ preventScroll: true });
-      }, 50);
+    if (optionId === 'quit_min' || optionId === 'no_min') {
+      setPendingConfirmGeneration(null);
+      setPendingDurationInput(null);
+      setMinQtyDrafts((drafts) => {
+        const next = { ...drafts };
+        delete next[message.id];
+        return next;
+      });
+      setMinQtyEditingKey((keys) => {
+        const next = { ...keys };
+        delete next[message.id];
+        return next;
+      });
+      setIsLoading(true);
+      try {
+        const dbServices = await getCachedDbServices();
+        const result = continueProgressiveAction('quit_min', session, dbServices);
+        await appendProgressiveResult(null, result);
+      } catch (err) {
+        console.error(err);
+      } finally {
+        setIsLoading(false);
+      }
       return;
     }
 
@@ -2489,26 +2483,26 @@ const ChatInterfaceContent: React.FC = () => {
       return;
     }
 
-    // Post-Gemini path: quote already generated by Gemini, update edited quantities then navigate
-    const updatedQuote = { ...pendingQuote! };
-    updatedQuote.items = updatedQuote.items.map(qItem => {
-      const warningItem = currentItems.find(w =>
-        qItem.description === w.description ||
-        qItem.description.toLowerCase().includes(w.description.toLowerCase().split(' - ')[0]),
+    // Post-Gemini path: quote already generated — open review for corrections
+    const { quoteToReviewDraft } = await import('../../utils/quoteReviewDraft');
+    const dbServices = await getCachedDbServices();
+    const draft = quoteToReviewDraft(
+      pendingQuote!,
+      'ai',
+      pendingValidMessage || undefined,
+      dbServices,
+    );
+    // Apply edited quantities onto draft
+    draft.items = draft.items.map((item) => {
+      const warningItem = currentItems.find((w) =>
+        item.service === w.description
+        || item.service.toLowerCase().includes(w.description.toLowerCase().split(' - ')[0]),
       );
-      if (warningItem) {
-        const next = { ...qItem, quantity: warningItem.requested };
-        return { ...next, total: computeQuoteItemTotal(next) };
-      }
-      return qItem;
+      return warningItem ? { ...item, quantity: warningItem.requested } : item;
     });
-    const newSubtotal = updatedQuote.items.reduce((sum, i) => sum + i.total, 0);
-    const newGst = newSubtotal * (updatedQuote.gstPercentage / 100);
-    updatedQuote.subtotal = newSubtotal;
-    updatedQuote.gstAmount = newGst;
-    updatedQuote.total = newSubtotal + newGst;
-    setCurrentQuote(updatedQuote);
-    setTimeout(() => { history.push('/preview'); }, 1500);
+    setReviewDraft(draft);
+    setCurrentQuote(null);
+    setTimeout(() => { history.push('/review'); }, 800);
   };
 
   // Handle min qty warning: user chooses to use minimum quantities
@@ -2573,39 +2567,39 @@ const ChatInterfaceContent: React.FC = () => {
       return;
     }
 
-    // Post-Gemini path: update quote item quantities — use edited qty or minimum
-    const updatedQuote = { ...pendingQuote };
-    updatedQuote.items = updatedQuote.items.map(qItem => {
-      const warningItem = currentItems.find(w =>
-        qItem.description === w.description ||
-        qItem.description.toLowerCase().includes(w.description.toLowerCase().split(' - ')[0]),
+    // Post-Gemini path: open review with catalogue minimums applied
+    const { quoteToReviewDraft } = await import('../../utils/quoteReviewDraft');
+    const dbServices = await getCachedDbServices();
+    const draft = quoteToReviewDraft(
+      pendingQuote,
+      'ai',
+      pending || undefined,
+      dbServices,
+    );
+    draft.items = draft.items.map((item) => {
+      const warningItem = currentItems.find((w) =>
+        item.service === w.description
+        || item.service.toLowerCase().includes(w.description.toLowerCase().split(' - ')[0]),
       );
-      if (warningItem) {
-        const useQty = warningItem.requested !== warningItem.originalRequested
-          ? warningItem.requested
-          : (warningItem.minimum);
-        const next = { ...qItem, quantity: useQty };
-        return { ...next, total: computeQuoteItemTotal(next) };
-      }
-      return qItem;
+      if (!warningItem) return item;
+      const useQty = warningItem.requested !== warningItem.originalRequested
+        ? warningItem.requested
+        : warningItem.minimum;
+      return { ...item, quantity: useQty };
     });
-    const newSubtotal = updatedQuote.items.reduce((sum, i) => sum + i.total, 0);
-    const newGst = newSubtotal * (updatedQuote.gstPercentage / 100);
-    updatedQuote.subtotal = newSubtotal;
-    updatedQuote.gstAmount = newGst;
-    updatedQuote.total = newSubtotal + newGst;
-    setCurrentQuote(updatedQuote);
+    setReviewDraft(draft);
+    setCurrentQuote(null);
     setMinQtyWarning(null);
     setEditingItemIndex(null);
     setEditedQuantity('');
     const quoteReadyMessage: Message = {
       id: (Date.now() + 2).toString(),
       role: 'assistant',
-      content: '✓ Quote ready with catalogue minimums — taking you to the preview.',
+      content: '✓ Details ready with catalogue minimums — opening review.',
       timestamp: new Date(),
     };
     setMessages(prev => [...prev, quoteReadyMessage]);
-    setTimeout(() => { history.push('/preview'); }, 1500);
+    setTimeout(() => { history.push('/review'); }, 800);
   };
 
   // Handle clicking a service suggestion button (auto-sends as new message)
@@ -2848,43 +2842,26 @@ const ChatInterfaceContent: React.FC = () => {
     try {
       if (USE_CLOUD_DATA) {
         const { loadAllServicesFromCloud } = await import('../../services/supabaseProposalService');
-        const { buildQuoteFromConfirmedRows } = await import('../../utils/buildQuoteFromConfirmedRows');
         const dbServices = (await loadAllServicesFromCloud()) || [];
 
         if (dbServices.length > 0) {
-          const result = buildQuoteFromConfirmedRows(
+          const { createReviewDraft } = await import('../../utils/quoteReviewDraft');
+          const draft = createReviewDraft(
             uniqueRows,
-            dbServices,
+            'legacy',
             originalUserInput || displayRequest,
+            dbServices,
           );
-
-          if (result.success) {
-            const minViolations = validateQuoteItemsAgainstDbMinQty(result.quote.items, dbServices);
-            if (minViolations.length > 0) {
-              console.log('⚠️ [MinQty-DB] Below minimum after DB quote build:', minViolations);
-              setMinQtyWarning({ items: minViolations, pendingQuote: result.quote });
-              setIsLoading(false);
-              return;
-            }
-
-            setCurrentQuote(result.quote);
-            loadCloudServices().catch((err) => {
-              console.warn('⚠️ Could not refresh cloud services after quote:', err);
-            });
-
-            const skippedNote = result.skipped?.length
-              ? `Currently no pricing for ${result.skipped.join('; ')}. We can't include ${
-                result.skipped.length === 1 ? 'this service' : 'these services'
-              } in the quote.\n`
-              : '';
+          if (draft.items.length > 0) {
+            setReviewDraft(draft);
             const quoteReadyMessage: Message = {
               id: (Date.now() + 1).toString(),
               role: 'assistant',
-              content: `${skippedNote}Your quotation is ready.\nOpening quotation preview.`,
+              content: 'Your quotation is ready.\nOpening review to confirm details.',
               timestamp: new Date(),
             };
             setMessages(prev => [...prev, quoteReadyMessage]);
-            setTimeout(() => { history.push('/preview'); }, 1500);
+            setTimeout(() => { history.push('/review'); }, 800);
             setIsLoading(false);
             return;
           }
@@ -2892,7 +2869,7 @@ const ChatInterfaceContent: React.FC = () => {
           const failMsg: Message = {
             id: (Date.now() + 1).toString(),
             role: 'assistant',
-            content: `I couldn't build the quote from the rate card: ${result.message}. Please check the service exists in your uploaded proposals, and I'll try again.`,
+            content: `I couldn't prepare the quote for review from the rate card. Please check the service exists in your uploaded proposals, and I'll try again.`,
             timestamp: new Date(),
           };
           setMessages(prev => [...prev, failMsg]);
@@ -3867,6 +3844,9 @@ const ChatInterfaceContent: React.FC = () => {
                                         || o.id === 'no'
                                         || o.id === 'yes_min'
                                         || o.id === 'no_min'
+                                        || o.id === 'quit_min'
+                                        || o.id === 'continue_single_location'
+                                        || o.id === 'quit_single_location'
                                         || o.id === 'yes_min_duration'
                                         || o.id === 'no_min_duration',
                                     );

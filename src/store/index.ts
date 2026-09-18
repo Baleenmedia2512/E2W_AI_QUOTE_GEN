@@ -192,6 +192,10 @@ export const useAppStore = create<AppState>((set) => ({
     }
   },
 
+  // Pre-PDF review draft (session — not persisted)
+  reviewDraft: null,
+  setReviewDraft: (draft) => set({ reviewDraft: draft }),
+
   // Company state - database is the source of truth after authentication.
   // Do not hydrate this from global localStorage: that can show a previous
   // user's company while the authenticated user's database profile is loading.
