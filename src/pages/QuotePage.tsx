@@ -4,19 +4,21 @@ import { useHistory } from 'react-router-dom';
 import { useAppStore } from '../store';
 
 /**
- * Legacy /quote client form route — redirects to Preview (client edit lives there now).
+ * Legacy /quote route — prefer Review when a draft exists, else Preview.
  */
 const QuotePage: React.FC = () => {
   const history = useHistory();
-  const { currentQuote } = useAppStore();
+  const { currentQuote, reviewDraft } = useAppStore();
 
   useEffect(() => {
-    if (currentQuote) {
+    if (reviewDraft?.items?.length) {
+      history.replace('/review');
+    } else if (currentQuote) {
       history.replace('/preview');
     } else {
       history.replace('/');
     }
-  }, [currentQuote, history]);
+  }, [currentQuote, reviewDraft, history]);
 
   return (
     <Box minH="100vh" bg="#F8FAFC">

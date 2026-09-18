@@ -15,7 +15,11 @@ export interface GeminiUsageMetadata {
 }
 
 let initialized = false;
+let initAttempted = false;
+let missingKeyWarned = false;
 const DEBUG_PREFIX = '[AI Token Monitor]';
+/** Same-origin Vite dev proxy — avoids browser CORS blocks to the monitor API. */
+const DEV_PROXY_BASE_URL = '/api/token-monitor';
 
 function isDebugEnabled(): boolean {
   return String(import.meta.env.VITE_AI_TOKEN_MONITOR_DEBUG || '')
@@ -43,7 +47,18 @@ function getSdkKey(): string {
 }
 
 function getConfiguredBaseUrl(): string {
+  if (import.meta.env.DEV) {
+    return DEV_PROXY_BASE_URL;
+  }
   return String(import.meta.env.VITE_AI_TOKEN_MONITOR_BASE_URL || '').trim();
+}
+
+function warnTelemetry(message: string, details?: unknown): void {
+  if (details === undefined) {
+    console.warn(`${DEBUG_PREFIX} ${message}`);
+  } else {
+    console.warn(`${DEBUG_PREFIX} ${message}`, details);
+  }
 }
 
 function getTelemetryEndpoint(): string {
@@ -183,6 +198,9 @@ export function initAiTokenMonitor(): void {
     debugLog('Already initialized');
     return;
   }
+  if (initAttempted) {
+    return;
+  }
 
   const sdkKey = getSdkKey();
   debugLog('Initialization started', {
@@ -209,6 +227,7 @@ export function initAiTokenMonitor(): void {
     'QuoteBuddy';
   const baseURL = getConfiguredBaseUrl();
 
+  initAttempted = true;
   try {
     AIClient.initialize({
       sdkKey,
@@ -221,7 +240,15 @@ export function initAiTokenMonitor(): void {
     initialized = true;
     debugLog('Initialization succeeded');
   } catch (error) {
-    debugError('Initialization failed', classifyTelemetryFailure(error));
+    const reason = classifyTelemetryFailure(error);
+    warnTelemetry('Initialization failed', reason);
+    debugError('Initialization failed', reason);
+  }
+}
+
+function ensureInitialized(): void {
+  if (!initialized) {
+    initAiTokenMonitor();
   }
 }
 
@@ -239,6 +266,12 @@ export function reportAiTelemetry(params: {
 }): void {
   const sdkKey = getSdkKey();
   if (!sdkKey) {
+    if (!missingKeyWarned) {
+      missingKeyWarned = true;
+      warnTelemetry(
+        'Telemetry skipped — set VITE_AI_TOKEN_MONITOR_SDK_KEY in .env and restart the dev server',
+      );
+    }
     debugLog('Telemetry skipped: SDK key is not configured', {
       exactReason: 'MISSING_SDK_KEY',
       model: params.model,
@@ -248,6 +281,8 @@ export function reportAiTelemetry(params: {
     });
     return;
   }
+
+  ensureInitialized();
 
   const user = useAuthStore.getState().user;
   const usage = params.usage || {};
@@ -280,6 +315,11 @@ export function reportAiTelemetry(params: {
       if (response === null) {
         // SDK swallows Axios/CORS errors and returns null — surface exact reason
         const reason = classifyTelemetryFailure(null);
+        warnTelemetry('Telemetry failed', {
+          module: params.module,
+          model: params.model,
+          ...reason,
+        });
         debugError('Telemetry failed — exact reason', {
           ...reason,
           note:
@@ -290,9 +330,18 @@ export function reportAiTelemetry(params: {
         return;
       }
       debugLog('Telemetry sent successfully', response);
+      if (!isDebugEnabled()) {
+        console.log(`${DEBUG_PREFIX} Telemetry saved (${params.module})`);
+      }
     })
     .catch((error: unknown) => {
-      debugError('Telemetry rejected — exact reason', classifyTelemetryFailure(error));
+      const reason = classifyTelemetryFailure(error);
+      warnTelemetry('Telemetry rejected', {
+        module: params.module,
+        model: params.model,
+        ...reason,
+      });
+      debugError('Telemetry rejected — exact reason', reason);
     });
 }
 

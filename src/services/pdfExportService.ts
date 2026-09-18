@@ -10,7 +10,7 @@
  *  4. Falls back to DOM store (ReferenceImages) if DB has no images for a service
  *  5. Render CorporateMinimalPDF to a blob — zero Gemini calls
  *  6. Mobile: save without prompting and open in the platform's download/documents location
- *  7. Web: browser download
+ *  7. Web: trigger an automatic file download with QT_Client_Label_HHMMSS.pdf naming
  */
 
 import React from 'react';
@@ -661,16 +661,33 @@ export const exportToPDF = async (
         });
         await FileOpener.open({ filePath: result.uri, contentType: 'application/pdf' });
       } else if (shouldDownload) {
-        // ── Web: browser download ───────────────────────────────────────
-        const url = URL.createObjectURL(blob);
-        const a = document.createElement('a');
-        a.href = url;
-        a.download = filename;
-        a.click();
-        setTimeout(() => URL.revokeObjectURL(url), 10000);
+        downloadPdfBlob(blob, filename);
       }
       return { pdfBlob: blob, filename };
   } finally {
     document.body.style.cursor = originalCursor;
   }
+};
+
+/**
+ * Trigger an automatic browser download with the intended filename
+ * (e.g. QT-652030_Naresh_Detailed Quote_105248.pdf).
+ * Prefer this over opening a blob tab — new tabs ignore `download` names.
+ */
+export const downloadPdfBlob = (blob: Blob, filename: string): void => {
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = filename || 'quote.pdf';
+  a.rel = 'noopener';
+  a.style.display = 'none';
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  setTimeout(() => URL.revokeObjectURL(url), 60_000);
+};
+
+/** @deprecated Use downloadPdfBlob — kept so older imports keep compiling. */
+export const openPdfBlobInNewTab = (blob: Blob, filename: string): void => {
+  downloadPdfBlob(blob, filename);
 };

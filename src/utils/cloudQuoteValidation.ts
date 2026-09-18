@@ -11,6 +11,7 @@ import {
   stripMediumTypeFromDisplayName,
 } from './serviceResolver';
 import { hasQuotablePricing, pickPreferredDbService } from './dbPricingUtils';
+import type { ResolvedLocation } from '../types/location';
 
 /** Known city keys used across the app (lowercase). DB locations may add more at runtime. */
 export const CLOUD_CITY_KEYS = [
@@ -303,14 +304,44 @@ function expandQueryWord(word: string): string[] {
 function haystackHasWord(haystacks: string[], word: string): boolean {
   return expandQueryWord(word).some((v) =>
     haystacks.some((h) => {
-      if (!v) return false;
-      if (h.includes(v)) return true;
-      if (v.length >= 4 && new RegExp(`\\b${v.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}s?\\b`, 'i').test(h)) {
-        return true;
-      }
-      return false;
+      if (!v || !h) return false;
+      return new RegExp(`\\b${escapeRegExp(v)}s?\\b`, 'i').test(h);
     }),
   );
+}
+
+function serviceNameMatchFields(svc: DbService): string[] {
+  const name = canonicalizeServiceName(
+    (svc.service_name || '').split(/[·|]/)[0] || '',
+  );
+  const display = canonicalizeServiceName(
+    stripMediumTypeFromDisplayName(formatServiceDisplayName(svc)),
+  );
+  const fullDisplay = canonicalizeServiceName(formatServiceDisplayName(svc));
+  return [...new Set([name, display, fullDisplay].filter(Boolean))];
+}
+
+/** True when the query is the catalog name or a leading prefix ("bus semi" → "bus semi branding"). */
+export function serviceIsExactQueryMatch(svc: DbService, words: string[]): boolean {
+  const queryCanonical = canonicalizeServiceName(words.join(' '));
+  if (!queryCanonical) return false;
+  return serviceNameMatchFields(svc).some(
+    (n) => n === queryCanonical || n.startsWith(`${queryCanonical} `),
+  );
+}
+
+/**
+ * Prefer exact/prefix catalog names. Only use fuzzy AND-matching when nothing
+ * in the pool is an exact service name for this query.
+ */
+export function filterServicesMatchingQuery(
+  services: DbService[],
+  words: string[],
+): DbService[] {
+  if (words.length === 0) return [];
+  const exact = services.filter((svc) => serviceIsExactQueryMatch(svc, words));
+  if (exact.length > 0) return exact;
+  return services.filter((svc) => serviceMatchesQuery(svc, words));
 }
 
 /** Pull elevated/underground (etc.) from free text for medium filtering. */
@@ -326,32 +357,20 @@ export function extractMediumHintFromQuery(text: string): string | null {
 
 export function serviceMatchesQuery(svc: DbService, words: string[]): boolean {
   if (words.length === 0) return false;
-  const name = (svc.service_name || '').toLowerCase();
-  const sid = (svc.service_id || '').toLowerCase();
-  const sidSpaced = sid.replace(/-/g, ' ');
-  const display = formatServiceDisplayName(svc).toLowerCase();
-  const canonical = canonicalizeServiceName(svc.service_name || '');
-  const displayCanon = canonicalizeServiceName(formatServiceDisplayName(svc));
-  const queryCanonical = canonicalizeServiceName(words.join(' '));
-  const haystacks = [name, sid, sidSpaced, display, canonical, displayCanon];
+  if (serviceIsExactQueryMatch(svc, words)) return true;
+
+  const nameFields = serviceNameMatchFields(svc);
+  const sid = canonicalizeServiceName(svc.service_id || '');
+  const nameHaystacks = [...nameFields, sid];
 
   if (words.length === 1) {
-    const w = words[0];
-    if (haystackHasWord(haystacks, w)) return true;
-    if (canonical && queryCanonical && (canonical.includes(queryCanonical) || queryCanonical.includes(canonical))) {
-      return true;
-    }
-    return false;
+    return haystackHasWord(nameHaystacks, words[0]);
   }
 
-  if (canonical && queryCanonical && (canonical.includes(queryCanonical) || queryCanonical.includes(canonical))) {
-    return true;
-  }
-  if (displayCanon && queryCanonical && (displayCanon.includes(queryCanonical) || queryCanonical.includes(displayCanon))) {
-    return true;
-  }
-  // Every content word must appear in name, id, or display (with spelling variants)
-  return words.every((w) => haystackHasWord(haystacks, w));
+  // Multi-word fuzzy: every word must be a whole token on the product name
+  // (not a substring somewhere in id/keywords). "bus semi" must not match
+  // Auto Semi or Bus Shelter.
+  return words.every((w) => haystackHasWord(nameFields, w));
 }
 
 function filterServicesByMediumHint(services: DbService[], mediumHint: string | null): DbService[] {
@@ -422,9 +441,7 @@ export function getCitiesForServiceQuery(query: string, services: DbService[]): 
   const words = extractQueryWords(queryBody);
   if (words.length === 0 || services.length === 0) return [];
 
-  const matched = services.filter(
-    (svc) => serviceMatchesQuery(svc, words) && hasQuotablePricing(svc),
-  );
+  const matched = filterServicesMatchingQuery(services, words).filter(hasQuotablePricing);
   if (matched.length === 0) return [];
 
   const citySet = new Set<string>();
@@ -869,12 +886,107 @@ export function runCloudPreGeminiValidation(
   return result;
 }
 
+/**
+ * Loose name compare for geo labels (Tamil Nadu ↔ tamilnadu ↔ Any City In Tamilnadu).
+ * No hardcoded place list — only string overlap after canonicalize.
+ */
+export function geoNamesLooselyMatch(a: string, b: string): boolean {
+  const ca = canonicalizeServiceName(a || '');
+  const cb = canonicalizeServiceName(b || '');
+  if (!ca || !cb) return false;
+  if (ca === cb) return true;
+  if (ca.includes(cb) || cb.includes(ca)) return true;
+  const aa = ca.replace(/\s+/g, '');
+  const bb = cb.replace(/\s+/g, '');
+  return aa === bb || aa.includes(bb) || bb.includes(aa);
+}
+
+/** Collect city/area/location strings from a DB row for hierarchy matching. */
+function serviceLocationLabels(svc: DbService): string[] {
+  const meta = (svc.metadata || {}) as Record<string, unknown>;
+  const out: string[] = [];
+  const push = (v: unknown) => {
+    if (typeof v === 'string' && v.trim() && v.trim().toUpperCase() !== 'NA') {
+      out.push(v.trim());
+    }
+  };
+  push(meta.city);
+  push(meta.area);
+  push(meta.area_name);
+  push(meta.state);
+  push(meta.district);
+  push(meta.region);
+  if (Array.isArray(meta.locations)) {
+    for (const loc of meta.locations) push(loc);
+  }
+  return out;
+}
+
+/**
+ * True when a DB row covers a place resolved by the location library
+ * (town / district / state), including statewide labels that mention the state.
+ */
+export function serviceCoversResolvedLocation(
+  svc: DbService,
+  resolvedLocation: ResolvedLocation,
+): boolean {
+  if (!resolvedLocation) return false;
+
+  const town = resolvedLocation.town?.trim() || '';
+  const district = resolvedLocation.district?.trim() || '';
+  const state = resolvedLocation.state?.trim() || '';
+
+  const meta = (svc.metadata || {}) as Record<string, unknown>;
+  if (state && typeof meta.state === 'string' && geoNamesLooselyMatch(meta.state, state)) {
+    return true;
+  }
+  if (
+    district
+    && typeof meta.district === 'string'
+    && geoNamesLooselyMatch(meta.district, district)
+  ) {
+    return true;
+  }
+
+  const labels = serviceLocationLabels(svc);
+  for (const label of labels) {
+    if (town && geoNamesLooselyMatch(label, town)) return true;
+    if (district && geoNamesLooselyMatch(label, district)) return true;
+    if (state && geoNamesLooselyMatch(label, state)) return true;
+  }
+  return false;
+}
+
+/**
+ * Check if a service matches resolved location hierarchy (state/district/city labels).
+ * Only used when location resolver returns geographic hierarchy.
+ */
+export function serviceMatchesLocationHierarchy(
+  svc: DbService,
+  resolvedLocation: ResolvedLocation,
+): boolean {
+  return serviceCoversResolvedLocation(svc, resolvedLocation);
+}
+
 /** All DB services matching query scoped to one city. */
 export function getMatchingServicesForCity(
   query: string,
   city: string,
   services: DbService[],
+  resolvedLocation?: ResolvedLocation,
 ): DbService[] {
+  // Filter console by `[locationResolver-usage]` — chat rarely hits this with hierarchy.
+  // eslint-disable-next-line no-console
+  console.log('[locationResolver-usage] getMatchingServicesForCity', {
+    query,
+    city,
+    hasResolvedLocation: !!resolvedLocation,
+    resolvedLocation: resolvedLocation || null,
+    note: resolvedLocation
+      ? 'hierarchy filter ENABLED (someone passed ResolvedLocation)'
+      : 'hierarchy filter OFF — exact city only (locationResolver NOT used here)',
+  });
+
   const allCities = collectCitiesFromDbServices(services);
   const queryBody = stripCitiesFromSegment(query, allCities.length ? allCities : [city]);
   const mediumHint = extractMediumHintFromQuery(queryBody);
@@ -888,11 +1000,18 @@ export function getMatchingServicesForCity(
 
   const matchWithWords = (words: string[]) =>
     dedupeDbServices(
-      services
+      filterServicesMatchingQuery(services, words)
         .filter((svc) => {
-          if (!serviceMatchesQuery(svc, words)) return false;
+          // Location match SECOND: Try exact city, then hierarchy
           const svcCity = extractCityFromDbService(svc);
-          return svcCity != null && citiesMatch(svcCity, city);
+          if (svcCity != null && citiesMatch(svcCity, city)) return true;
+          
+          // HIERARCHICAL MATCH: If location resolved, check state/district
+          if (resolvedLocation) {
+            return serviceMatchesLocationHierarchy(svc, resolvedLocation);
+          }
+          
+          return false;
         })
         .filter(hasQuotablePricing),
     );

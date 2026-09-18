@@ -4,6 +4,7 @@ import { Box } from '@chakra-ui/react';
 import HomePage from './pages/HomePage';
 import DocumentsPage from './pages/DocumentsPage';
 import QuotePage from './pages/QuotePage';
+import QuoteReviewPage from './pages/QuoteReviewPage';
 import { QuotePreviewPage } from './pages/QuotePreviewPage';
 import LoginPage from './pages/LoginPage';
 import UnauthorizedPage from './pages/UnauthorizedPage';
@@ -51,9 +52,11 @@ const App: React.FC = () => {
                 location.pathname === '/login' ||
                 location.pathname === '/' ||
                 location.pathname === '/quote' ||
+                location.pathname === '/review' ||
                 location.pathname === '/preview';
               const hideBottomNav =
                 location.pathname === '/login' ||
+                location.pathname === '/review' ||
                 location.pathname === '/preview';
               return (
                 <>
@@ -67,6 +70,7 @@ const App: React.FC = () => {
                     <PrivateRoute exact path="/" component={HomePage} />
                     <PrivateRoute exact path="/documents" component={DocumentsPage} />
                     <PrivateRoute exact path="/quote" component={QuotePage} />
+                    <PrivateRoute exact path="/review" component={QuoteReviewPage} />
                     <PrivateRoute exact path="/preview" component={QuotePreviewPage} />
                     
                     {/* Fallback */}

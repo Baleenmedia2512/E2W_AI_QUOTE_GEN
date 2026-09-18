@@ -134,6 +134,7 @@ export interface Message {
     originalText: string;
     medium?: string;
     mediumType?: string;
+    typesResolved?: boolean;
     browseToken?: string;
     city?: string;
     area?: string;
@@ -158,9 +159,24 @@ export interface Message {
       browseToken?: string;
       qty: number | null;
       city?: string;
+      area?: string;
+      mediumType?: string;
       candidateServiceIds?: string[];
     }>;
     batchServiceLabels?: string[];
+    batchUnavailableLabels?: string[];
+    batchUnavailableNote?: string;
+    batchUnavailableSpoken?: boolean;
+    needsContinueConfirm?: boolean;
+    unresolvedPlaceOffer?: boolean;
+    /** Nominatim hierarchy for statewide / state-labelled DB city coverage. */
+    resolvedLocation?: {
+      town: string;
+      district: string | null;
+      state: string | null;
+      country: string | null;
+      confidence: number;
+    } | null;
   };
 
   // DEPRECATED (kept for backward compatibility)
