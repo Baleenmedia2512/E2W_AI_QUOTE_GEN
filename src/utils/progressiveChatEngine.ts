@@ -6382,7 +6382,7 @@ function lockOneCity(
   };
 }
 
-function filterPoolBySession(services: DbService[], session: ProgressiveSession): DbService[] {
+export function filterPoolBySession(services: DbService[], session: ProgressiveSession): DbService[] {
   let pool = session.candidateServiceIds?.length
     ? services.filter((s) => session.candidateServiceIds!.includes(s.service_id))
     : [...services];
@@ -7734,7 +7734,7 @@ export function matchFreeTextToProgressiveOption(
   }
   if (/^(no|nope|adjust|i'?ll\s+adjust)$/i.test(raw)) {
     const no = options.find((o) =>
-      /^(no_min|no)$/i.test(o.id) || /adjust/i.test(o.label),
+      /^(quit_min|quit_min_duration|no_min|no)$/i.test(o.id) || /adjust|quit/i.test(o.label),
     );
     if (no) return no;
   }
@@ -9771,7 +9771,7 @@ function minQtyConfirmBotText(
 function minQtyConfirmOptions(): ProgressiveOption[] {
   return [
     { id: 'yes_min', label: 'Yes, use minimums' },
-    { id: 'no_min', label: "No, I'll adjust" },
+    { id: 'quit_min', label: 'Quit' },
   ];
 }
 
@@ -10224,13 +10224,20 @@ function continueProgressiveActionInner(
     };
   }
 
-  if (actionId === 'no_min') {
-    const minQty = session.pendingRows?.[0]?.qty;
+  if (actionId === 'quit_min' || actionId === 'no_min') {
+    // Quit cancels the quote path — clean chat, no "adjust qty" loop.
+    const cleanSession: ProgressiveSession = {
+      originalText: '',
+      qty: null,
+    };
     return {
-      step: 'min_qty_confirm',
-      botText: `Please enter a quantity of ${minQty || 'the minimum'} or more to continue.`,
+      step: 'no_match',
+      botText: compactFunnelReply(
+        'Okay — cancelled.',
+        'Type a service or pick one below whenever you are ready.',
+      ),
       options: [],
-      session,
+      session: stampReplyMeta(cleanSession, ''),
     };
   }
 

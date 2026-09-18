@@ -132,7 +132,9 @@ export function confirmationRowsToReviewItems(
     const mins = minsForService(services, row.service, row.serviceId, cityParts[0]);
     const resolvedDays = durationDays > 0
       ? durationDays
-      : (mins.minimumDurationDays ?? 30);
+      : (mins.minimumDurationDays && mins.minimumDurationDays > 0
+        ? mins.minimumDurationDays
+        : 0);
 
     groups.set(groupKey, {
       id: newId(),
@@ -209,7 +211,8 @@ export function emptyReviewItem(partial?: Partial<ReviewDraftItem>): ReviewDraft
     service: '',
     cities: [],
     quantity: 1,
-    durationDays: 30,
+    /** 0 = no DB min_days / no user duration — badge hidden on Review. */
+    durationDays: 0,
     ...partial,
   };
 }
@@ -328,9 +331,16 @@ export function enrichReviewItemFromCatalog(
   if (cities.length === 0 && availableCities.length === 1) {
     cities = [availableCities[0]];
   }
-  const durationDays = item.durationDays > 0
-    ? item.durationDays
-    : (mins.minimumDurationDays ?? 30);
+  const durationDays = mins.minimumDurationDays && mins.minimumDurationDays > 0
+    ? (item.durationDays > 0
+      ? Math.max(item.durationDays, mins.minimumDurationDays)
+      : mins.minimumDurationDays)
+    : (item.durationDays > 0 ? item.durationDays : 0);
+  // If DB has no min_days, drop legacy fake default of 30 so the badge stays hidden.
+  const cleanedDays =
+    mins.minimumDurationDays && mins.minimumDurationDays > 0
+      ? durationDays
+      : (durationDays === 30 ? 0 : durationDays);
   const quantity = item.quantity > 0
     ? item.quantity
     : (mins.minimumQuantity ?? 1);
@@ -339,7 +349,7 @@ export function enrichReviewItemFromCatalog(
     ...item,
     cities,
     quantity,
-    durationDays,
+    durationDays: cleanedDays,
     minimumQuantity: mins.minimumQuantity,
     minimumDurationDays: mins.minimumDurationDays,
   };
@@ -356,11 +366,13 @@ export function validateReviewDraft(items: ReviewDraftItem[]): string | null {
     if (item.minimumQuantity && item.quantity < item.minimumQuantity) {
       return `Service ${n}: quantity must be at least ${item.minimumQuantity}.`;
     }
-    if (!item.durationDays || item.durationDays < 1) {
+    // Duration optional when catalog has no min_days (NA / missing).
+    if (item.minimumDurationDays && item.minimumDurationDays > 0) {
+      if (!item.durationDays || item.durationDays < item.minimumDurationDays) {
+        return `Service ${n}: duration must be at least ${item.minimumDurationDays} days.`;
+      }
+    } else if (item.durationDays > 0 && item.durationDays < 1) {
       return `Service ${n}: duration must be at least 1 day.`;
-    }
-    if (item.minimumDurationDays && item.durationDays < item.minimumDurationDays) {
-      return `Service ${n}: duration must be at least ${item.minimumDurationDays} days.`;
     }
   }
   return null;

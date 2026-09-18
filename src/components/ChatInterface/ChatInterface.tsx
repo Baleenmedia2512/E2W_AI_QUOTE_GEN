@@ -968,7 +968,7 @@ const ChatInterfaceContent: React.FC = () => {
       progressiveBelowMin: details,
       progressiveOptions: [
         { id: 'yes_min', label: 'Yes, use minimums' },
-        { id: 'no_min', label: "No, I'll adjust" },
+        { id: 'quit_min', label: 'Quit' },
       ],
       progressiveSession: session,
     };
@@ -1017,7 +1017,7 @@ const ChatInterfaceContent: React.FC = () => {
       progressiveBelowMinDuration: details,
       progressiveOptions: [
         { id: 'yes_min_duration', label: 'Yes, use minimums' },
-        { id: 'no_min_duration', label: "No, I'll adjust" },
+        { id: 'quit_min_duration', label: 'Quit' },
       ],
       progressiveSession: session,
     };
@@ -1237,10 +1237,17 @@ const ChatInterfaceContent: React.FC = () => {
       return;
     }
 
-    if (optionId === 'no_min') {
-      window.setTimeout(() => {
-        inputRef.current?.focus({ preventScroll: true });
-      }, 50);
+    if (optionId === 'no_min' || optionId === 'quit_min') {
+      setPendingConfirmGeneration(null);
+      setPendingDurationInput(null);
+      setMinQtyDrafts({});
+      setMinQtyEditingKey({});
+      await appendProgressiveResult(null, {
+        step: 'no_match',
+        botText: 'Okay — cancelled.\nType a service or pick one below whenever you are ready.',
+        options: [],
+        session: { originalText: '', qty: null },
+      });
       return;
     }
 
@@ -1269,29 +1276,18 @@ const ChatInterfaceContent: React.FC = () => {
       return;
     }
 
-    if (optionId === 'no_min_duration') {
-      const details = message.progressiveBelowMinDuration || [];
-      const rows = (session.pendingRows || pendingConfirmGeneration?.rows || []) as Array<{
-        service: string;
-        qty: number | string;
-        city: string;
-        serviceId?: string;
-        durationDays?: number;
-      }>;
-      setPendingDurationInput({
-        rows,
-        originalUserInput: session.originalText,
-        messageId: message.id,
-        violations: details.map((item) => ({
-          description: item.service,
-          requested: item.requested,
-          minimum: item.minimum,
-          serviceId: item.serviceId,
-        })),
+    if (optionId === 'no_min_duration' || optionId === 'quit_min_duration') {
+      setPendingConfirmGeneration(null);
+      setPendingDurationInput(null);
+      setMinDurationWarning(null);
+      setMinDurationDrafts({});
+      setMinDurationEditingKey({});
+      await appendProgressiveResult(null, {
+        step: 'no_match',
+        botText: 'Okay — cancelled.\nType a service or pick one below whenever you are ready.',
+        options: [],
+        session: { originalText: '', qty: null },
       });
-      window.setTimeout(() => {
-        inputRef.current?.focus({ preventScroll: true });
-      }, 50);
       return;
     }
 
@@ -1487,7 +1483,7 @@ const ChatInterfaceContent: React.FC = () => {
                   progressiveBelowMinDuration: stillBelow,
                   progressiveOptions: [
                     { id: 'yes_min_duration', label: 'Yes, use minimums' },
-                    { id: 'no_min_duration', label: "No, I'll adjust" },
+                    { id: 'quit_min_duration', label: 'Quit' },
                   ],
                   progressiveSession: { ...session, pendingRows: updatedRows },
                   timestamp: new Date(),
@@ -2356,7 +2352,7 @@ const ChatInterfaceContent: React.FC = () => {
     setPendingConfirmGeneration(null);
   };
 
-  // "No, I'll adjust" keeps the user in chat so they can type a new duration.
+  // Quit cancels — clear pending min-qty/duration flow.
   const handleMinDurationContinue = () => {
     if (!minDurationWarning || !pendingConfirmGeneration) return;
     const pending = pendingConfirmGeneration;
@@ -3817,8 +3813,10 @@ const ChatInterfaceContent: React.FC = () => {
                                         || o.id === 'no'
                                         || o.id === 'yes_min'
                                         || o.id === 'no_min'
+                                        || o.id === 'quit_min'
                                         || o.id === 'yes_min_duration'
-                                        || o.id === 'no_min_duration',
+                                        || o.id === 'no_min_duration'
+                                        || o.id === 'quit_min_duration',
                                     );
                                     const previewUrl = isYesNo
                                       ? opts.find((o) => o.imageUrl)?.imageUrl

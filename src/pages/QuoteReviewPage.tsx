@@ -38,7 +38,7 @@ import './QuoteReviewPage.css';
 
 type ServiceOption = { label: string; serviceId: string; serviceName: string };
 
-const emptyComposer = (): ReviewDraftItem => emptyReviewItem({ quantity: 1, durationDays: 30, cities: [] });
+const emptyComposer = (): ReviewDraftItem => emptyReviewItem({ quantity: 1, durationDays: 0, cities: [] });
 
 const QuoteReviewPage: React.FC = () => {
   const history = useHistory();
@@ -161,7 +161,11 @@ const QuoteReviewPage: React.FC = () => {
       services,
     );
     const quantity = Math.max(keptQty || 1, enriched.minimumQuantity || 1);
-    const durationDays = Math.max(keptDays || 30, enriched.minimumDurationDays || 1);
+    // Only seed days from DB min_days — never invent 30 when NA/missing.
+    const durationDays =
+      (enriched.minimumDurationDays && enriched.minimumDurationDays > 0)
+        ? Math.max(keptDays || 0, enriched.minimumDurationDays)
+        : (keptDays > 0 ? keptDays : 0);
     setComposer({
       ...enriched,
       cities: [],
@@ -220,7 +224,10 @@ const QuoteReviewPage: React.FC = () => {
     }
 
     const quantity = Math.max(composer.quantity || 1, composer.minimumQuantity || 1);
-    const durationDays = Math.max(composer.durationDays || 30, composer.minimumDurationDays || 1);
+    const durationDays =
+      (composer.minimumDurationDays && composer.minimumDurationDays > 0)
+        ? Math.max(composer.durationDays || 0, composer.minimumDurationDays)
+        : (composer.durationDays > 0 ? composer.durationDays : 0);
     const nextItem: ReviewDraftItem = { ...composer, quantity, durationDays };
 
     if (editingId) {
@@ -242,7 +249,10 @@ const QuoteReviewPage: React.FC = () => {
       const folded: ReviewDraftItem = {
         ...composer,
         quantity: Math.max(composer.quantity || 1, composer.minimumQuantity || 1),
-        durationDays: Math.max(composer.durationDays || 30, composer.minimumDurationDays || 1),
+        durationDays:
+          (composer.minimumDurationDays && composer.minimumDurationDays > 0)
+            ? Math.max(composer.durationDays || 0, composer.minimumDurationDays)
+            : (composer.durationDays > 0 ? composer.durationDays : 0),
       };
       const err = validateReviewDraft([folded]);
       if (err) {
@@ -418,9 +428,14 @@ const QuoteReviewPage: React.FC = () => {
                             <Text as="span" className="quote-review-badge">
                               Qty {item.quantity}
                             </Text>
-                            <Text as="span" className="quote-review-badge is-muted">
-                              {item.durationDays} days
-                            </Text>
+                            {/* Days badge only when vendor min_days exists — never invent 30 for NA */}
+                            {(item.minimumDurationDays ?? 0) > 0 && (
+                              <Text as="span" className="quote-review-badge is-muted">
+                                {Math.max(item.durationDays || 0, item.minimumDurationDays!)}
+                                {' '}
+                                days
+                              </Text>
+                            )}
                           </HStack>
                         </Box>
                         <HStack spacing={0}>
