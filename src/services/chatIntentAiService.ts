@@ -1,4 +1,4 @@
-import { generateContent, TraceContext } from './geminiClient';
+import { generateContent } from './geminiClient';
 
 /**
  * AI chat planner — any wording → plan. Never invents prices or types.
@@ -75,12 +75,6 @@ function editDistance(a: string, b: string): number {
     }
   }
   return dp[n];
-}
-
-function getApiKey(): string | null {
-  const apiKey = import.meta.env.VITE_GEMINI_API_KEY;
-  if (!apiKey || String(apiKey).trim() === '') return null;
-  return String(apiKey).trim();
 }
 
 function normalizeMediaList(raw: unknown): string[] {
@@ -211,20 +205,20 @@ function sessionContextLines(
 
 function normalizeAiSegments(raw: unknown): ChatIntentSegment[] {
   if (!Array.isArray(raw)) return [];
-  return raw
-    .map((item) => {
-      if (!item || typeof item !== 'object') return null;
-      const seg = item as Record<string, unknown>;
-      const service = seg.service != null ? String(seg.service).trim() : null;
-      const city = seg.city != null ? String(seg.city).trim() : null;
-      const place = seg.place != null ? String(seg.place).trim() : null;
-      const qtyRaw = seg.qty;
-      const qty =
-        qtyRaw != null && Number.isFinite(Number(qtyRaw)) ? Number(qtyRaw) : null;
-      if (!service && !city && qty == null && !place) return null;
-      return { service, city, qty, place } satisfies ChatIntentSegment;
-    })
-    .filter((s): s is ChatIntentSegment => !!s);
+  const out: ChatIntentSegment[] = [];
+  for (const item of raw) {
+    if (!item || typeof item !== 'object') continue;
+    const seg = item as Record<string, unknown>;
+    const service = seg.service != null ? String(seg.service).trim() : null;
+    const city = seg.city != null ? String(seg.city).trim() : null;
+    const place = seg.place != null ? String(seg.place).trim() : null;
+    const qtyRaw = seg.qty;
+    const qty =
+      qtyRaw != null && Number.isFinite(Number(qtyRaw)) ? Number(qtyRaw) : null;
+    if (!service && !city && qty == null && !place) continue;
+    out.push({ service, city, qty, place });
+  }
+  return out;
 }
 
 export async function parseChatIntentWithAi(
@@ -238,8 +232,6 @@ export async function parseChatIntentWithAi(
   const types = Array.isArray(catalog) ? catalog : (catalog.types || []);
   const cities = Array.isArray(catalog) ? [] : (catalog.cities || []);
 
-  const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), timeoutMs);
   const startedAt = Date.now();
 
   const typeList = types.length > 0 ? types.slice(0, 100).join(' | ') : '(none)';
@@ -323,30 +315,25 @@ export async function parseChatIntentWithAi(
       `User: ${userText.trim()}`,
     ].join('\n');
 
-    const res = await fetch(url, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      signal: controller.signal,
-      body: JSON.stringify({
-        contents: [{ role: 'user', parts: [{ text: prompt }] }],
-        generationConfig: { temperature: 0.1, maxOutputTokens: 240 },
+    const result = await Promise.race([
+      generateContent(
+        prompt,
+        { module: TELEMETRY_MODULE },
+        undefined,
+        { temperature: 0.1, maxOutputTokens: 240 },
+      ),
+      new Promise<never>((_, reject) => {
+        setTimeout(() => reject(new Error(`Chat intent timed out after ${timeoutMs}ms`)), timeoutMs);
       }),
-    });
+    ]);
 
-    if (!res.ok) {
-      reportAiTelemetry({
-        model: MODEL,
-        module: TELEMETRY_MODULE,
-        latency: Date.now() - startedAt,
-        status: 'FAILED',
-        errorMessage: `HTTP ${res.status}`,
-      });
-      return null;
-    }
-    const data = await res.json();
-    const usage = usageFromGeminiResponse(data);
-    const raw = data?.candidates?.[0]?.content?.parts?.[0]?.text;
-    if (!raw || typeof raw !== 'string') {
+    const usage = usageFromGeminiResponse(
+      (result.response as { usageMetadata?: unknown }).usageMetadata
+        ? { usageMetadata: (result.response as { usageMetadata?: unknown }).usageMetadata }
+        : null,
+    );
+    const raw = (result.response.text() || '').trim();
+    if (!raw) {
       reportAiTelemetry({
         model: MODEL,
         module: TELEMETRY_MODULE,
@@ -415,7 +402,5 @@ export async function parseChatIntentWithAi(
       errorMessage: error instanceof Error ? error.message : String(error),
     });
     return null;
-  } finally {
-    clearTimeout(timer);
   }
 }

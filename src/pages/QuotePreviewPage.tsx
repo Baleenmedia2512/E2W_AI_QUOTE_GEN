@@ -337,7 +337,7 @@ export const QuotePreviewPage: React.FC = () => {
         const trace = user ? {
           userId: user.id,
           userEmail: user.email,
-          userName: user.user_metadata?.full_name || user.email?.split('@')[0]
+          userName: user.full_name || user.email?.split('@')[0]
         } : undefined;
 
         const enriched = await enrichMissingQtyUnitsWithAi(itemsSnapshot, trace);
