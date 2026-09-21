@@ -7521,7 +7521,9 @@ export function isNewServiceSwitch(
  * Stateful funnel merge (typed messages):
  * - DIFFERENT catalog SERVICE → full funnel reset; keep only entities in this message
  * - SAME service name echo → continue; keep type/city/area/direction; overlay new entities
- * - No service → refine current funnel (city / area / direction updates)
+ * - Service named again (same or different) → refresh qty:
+ *     number in this message → user qty; no number → null (DB min when rows build)
+ * - No service → refine current funnel (city / area / direction); keep prior qty
  * - AREA change → clear direction + site candidates (dependents)
  * - Same area again → keep direction
  * - DIRECTION change → update direction only
@@ -7682,10 +7684,21 @@ function mergePriorWithDetected(
 
   const lockedMedium = prior.medium || prior.browseToken || newMedia || undefined;
 
+  // Naming a service again (same family OR multi-service list) refreshes qty.
+  // City / area / type-only answers keep prior qty so mid-funnel edits stay intact.
+  const serviceNamedInMessage = !!newMedia || echoSegs.length >= 2;
+  const nextQty = serviceNamedInMessage
+    ? detected.qty
+    : (detected.qty ?? prior.qty);
+  const nextQtyByServiceId = serviceNamedInMessage
+    ? undefined
+    : prior.qtyByServiceId;
+
   return {
     ...prior,
     originalText: detected.originalText,
-    qty: detected.qty ?? prior.qty,
+    qty: nextQty,
+    qtyByServiceId: nextQtyByServiceId,
     durationText: detected.durationText ?? prior.durationText,
     city: nextCity || undefined,
     area: nextArea,
@@ -8598,6 +8611,9 @@ export function resolveProgressiveTextLegacy(
           : undefined,
         medium: scopedMedium,
         browseToken: scopedBrowse,
+        // Fresh list request — no leftover requested qty from prior turns
+        qty: null,
+        qtyByServiceId: undefined,
         // Fresh list request — drop prior candidates so chips match this query only
         candidateServiceIds: undefined,
         directionHint: undefined,
@@ -8946,7 +8962,9 @@ export function resolveProgressiveTextLegacy(
         {
           ...prior,
           originalText,
-          qty: qty ?? prior.qty ?? null,
+          // Retyped multi-service list: refresh qty (null → DB min). Don't keep leftover 5.
+          qty,
+          qtyByServiceId: undefined,
           durationText: durationText || prior.durationText,
         },
         services,
@@ -9244,7 +9262,9 @@ export function resolveProgressiveTextLegacy(
           placeHint: localityOnly || localityHint || undefined,
           directionHint: directionFromText || undefined,
           originalText,
-          qty: qty ?? baseSessionFields.qty,
+          // Exact medium upgrade still names a service → this message qty only
+          qty,
+          qtyByServiceId: undefined,
           durationText: durationText ?? baseSessionFields.durationText,
           candidateServiceIds: undefined,
           needsContinueConfirm: false,
@@ -9328,7 +9348,9 @@ export function resolveProgressiveTextLegacy(
       typesResolved: typeFromText
         ? true
         : baseSessionFields.typesResolved,
-      qty: qty ?? baseSessionFields.qty,
+      // Service named in text → refresh qty; city/area-only uses base (keeps prior)
+      qty: media[0] ? qty : (qty ?? baseSessionFields.qty),
+      qtyByServiceId: media[0] ? undefined : baseSessionFields.qtyByServiceId,
       durationText: durationText ?? baseSessionFields.durationText,
       pendingMedia: media.length > 1 ? media.slice(1) : [],
     }
@@ -9416,7 +9438,9 @@ export function resolveProgressiveTextLegacy(
           medium: baseSessionFields.medium || newMed,
           browseToken: baseSessionFields.browseToken || baseSessionFields.medium || newMed,
           originalText,
-          qty: qty ?? baseSessionFields.qty,
+          // Service retyped: this message's qty only (null → DB min). Never keep leftover 5.
+          qty,
+          qtyByServiceId: undefined,
           durationText: durationText ?? baseSessionFields.durationText,
           // Keep type/city/area; clear site lock so we re-show previous step (not auto-quote)
           directionHint: undefined,
