@@ -1,6 +1,6 @@
 import type { ConfirmationRow } from './cloudQuoteValidation';
 import { getMinQuantityFromDbService } from './cloudQuoteValidation';
-import { vendorMinDays } from './durationUtils';
+import { vendorMinDays, isOneTimeLineDescription } from './durationUtils';
 import { canonicalizeServiceName } from './serviceNameUtils';
 import {
   DbService,
@@ -95,7 +95,12 @@ function minsForService(
   }
   if (!svc) return {};
   const minQty = getMinQuantityFromDbService(svc) ?? undefined;
+  // One-time printing/fixing: never show campaign days (DB often stores lead-time in min_days).
+  if (isOneTimeLineDescription(service) || isOneTimeLineDescription(svc.service_name || '')) {
+    return { minimumQuantity: minQty, minimumDurationDays: undefined };
+  }
   const days = vendorMinDays(svc.metadata as { min_days?: number | string });
+  // Rule: min_days NA / missing / 0 → no days badge on Review list.
   return {
     minimumQuantity: minQty,
     minimumDurationDays: Number.isFinite(days) && days > 0 ? days : undefined,
@@ -130,11 +135,14 @@ export function confirmationRowsToReviewItems(
     }
 
     const mins = minsForService(services, row.service, row.serviceId, cityParts[0]);
-    const resolvedDays = durationDays > 0
-      ? durationDays
-      : (mins.minimumDurationDays && mins.minimumDurationDays > 0
+    // Days badge only from real DB min_days. NA / one-time → hide.
+    const dbMinDays =
+      mins.minimumDurationDays && mins.minimumDurationDays > 0
         ? mins.minimumDurationDays
-        : 0);
+        : 0;
+    const resolvedDays = dbMinDays > 0
+      ? (durationDays > 0 ? durationDays : dbMinDays)
+      : 0;
 
     groups.set(groupKey, {
       id: newId(),
@@ -144,7 +152,7 @@ export function confirmationRowsToReviewItems(
       quantity: qty,
       durationDays: resolvedDays,
       minimumQuantity: mins.minimumQuantity,
-      minimumDurationDays: mins.minimumDurationDays,
+      minimumDurationDays: dbMinDays > 0 ? dbMinDays : undefined,
     });
   }
 
@@ -331,16 +339,14 @@ export function enrichReviewItemFromCatalog(
   if (cities.length === 0 && availableCities.length === 1) {
     cities = [availableCities[0]];
   }
-  const durationDays = mins.minimumDurationDays && mins.minimumDurationDays > 0
-    ? (item.durationDays > 0
-      ? Math.max(item.durationDays, mins.minimumDurationDays)
-      : mins.minimumDurationDays)
-    : (item.durationDays > 0 ? item.durationDays : 0);
-  // If DB has no min_days, drop legacy fake default of 30 so the badge stays hidden.
-  const cleanedDays =
+  const dbMin =
     mins.minimumDurationDays && mins.minimumDurationDays > 0
-      ? durationDays
-      : (durationDays === 30 ? 0 : durationDays);
+      ? mins.minimumDurationDays
+      : 0;
+  // NA / one-time → clear leaked chat duration so the list never shows a days badge.
+  const durationDays = dbMin > 0
+    ? (item.durationDays > 0 ? Math.max(item.durationDays, dbMin) : dbMin)
+    : 0;
   const quantity = item.quantity > 0
     ? item.quantity
     : (mins.minimumQuantity ?? 1);
@@ -349,9 +355,9 @@ export function enrichReviewItemFromCatalog(
     ...item,
     cities,
     quantity,
-    durationDays: cleanedDays,
+    durationDays,
     minimumQuantity: mins.minimumQuantity,
-    minimumDurationDays: mins.minimumDurationDays,
+    minimumDurationDays: dbMin > 0 ? dbMin : undefined,
   };
 }
 

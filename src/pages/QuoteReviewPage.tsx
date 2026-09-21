@@ -87,10 +87,7 @@ const QuoteReviewPage: React.FC = () => {
       try {
         const { loadAllServicesFromCloud } = await import('../services/supabaseProposalService');
         const db = ((await loadAllServicesFromCloud()) || []) as DbService[];
-        if (!cancelled) {
-          setServices(db);
-          setCart((prev) => prev.map((item) => enrichReviewItemFromCatalog(item, db)));
-        }
+        if (!cancelled) setServices(db);
       } catch (err) {
         console.warn('[QuoteReview] catalog load failed', err);
       } finally {
@@ -101,6 +98,12 @@ const QuoteReviewPage: React.FC = () => {
       cancelled = true;
     };
   }, []);
+
+  // Clear days badge when DB min_days is NA (or one-time printing/fixing).
+  useEffect(() => {
+    if (!services.length) return;
+    setCart((prev) => prev.map((item) => enrichReviewItemFromCatalog(item, services)));
+  }, [services, reviewDraft]);
 
   useEffect(() => {
     const onDocClick = (e: MouseEvent) => {
@@ -428,14 +431,14 @@ const QuoteReviewPage: React.FC = () => {
                             <Text as="span" className="quote-review-badge">
                               Qty {item.quantity}
                             </Text>
-                            {/* Days badge only when vendor min_days exists — never invent 30 for NA */}
-                            {(item.minimumDurationDays ?? 0) > 0 && (
+                            {/* Show days ONLY when DB min_days is a real number (not NA). */}
+                            {(item.minimumDurationDays ?? 0) > 0 ? (
                               <Text as="span" className="quote-review-badge is-muted">
                                 {Math.max(item.durationDays || 0, item.minimumDurationDays!)}
                                 {' '}
                                 days
                               </Text>
-                            )}
+                            ) : null}
                           </HStack>
                         </Box>
                         <HStack spacing={0}>
