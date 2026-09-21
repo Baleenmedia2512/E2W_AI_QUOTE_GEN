@@ -11,7 +11,8 @@ const INTERNAL_QUOTE_EMAILS = [
   Deno.env.get('INTERNAL_QUOTE_EMAIL_2'),
   Deno.env.get('INTERNAL_QUOTE_EMAIL_3'),
 ].filter(Boolean).map((value) => normalizeEmail(value));
-const SESSION_TTL_SECONDS = 8 * 60 * 60;
+/** 30 days — internal sales app; silent refresh extends this while the user keeps opening the app. */
+const SESSION_TTL_SECONDS = 30 * 24 * 60 * 60;
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -28,6 +29,11 @@ function jsonResponse(body: Record<string, unknown>, status: number): Response {
 
 function base64UrlEncode(value: string): string {
   return btoa(value).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/g, '');
+}
+
+function base64UrlDecode(value: string): string {
+  const padded = value.replace(/-/g, '+').replace(/_/g, '/').padEnd(Math.ceil(value.length / 4) * 4, '=');
+  return atob(padded);
 }
 
 function bytesToBase64Url(bytes: Uint8Array): string {
@@ -49,6 +55,24 @@ async function sign(value: string): Promise<string> {
   return bytesToBase64Url(new Uint8Array(signature));
 }
 
+async function hmacVerify(message: string, signature: string): Promise<boolean> {
+  if (!AUTH_SESSION_SECRET) return false;
+  const key = await crypto.subtle.importKey(
+    'raw',
+    new TextEncoder().encode(AUTH_SESSION_SECRET),
+    { name: 'HMAC', hash: 'SHA-256' },
+    false,
+    ['verify'],
+  );
+  const signatureBytes = Uint8Array.from(base64UrlDecode(signature), (char) => char.charCodeAt(0));
+  return crypto.subtle.verify(
+    'HMAC',
+    key,
+    signatureBytes,
+    new TextEncoder().encode(message),
+  );
+}
+
 async function createSession(user: { id: string; email: string }): Promise<string> {
   const payload = base64UrlEncode(JSON.stringify({
     sub: user.id,
@@ -62,6 +86,67 @@ function normalizeEmail(value: unknown): string {
   return typeof value === 'string' ? value.trim().toLowerCase() : '';
 }
 
+async function readBearerSession(req: Request): Promise<{ sub: string; email: string } | null> {
+  const authorization = req.headers.get('Authorization') || '';
+  const token = authorization.replace(/^Bearer\s+/i, '').trim();
+  const [payloadPart, signature] = token.split('.');
+  if (!payloadPart || !signature) return null;
+  try {
+    if (!(await hmacVerify(payloadPart, signature))) return null;
+    const payload = JSON.parse(base64UrlDecode(payloadPart)) as {
+      sub?: unknown;
+      email?: unknown;
+      exp?: unknown;
+    };
+    const sub = typeof payload.sub === 'string' ? payload.sub : '';
+    const email = normalizeEmail(payload.email);
+    const expiresAt = Number(payload.exp);
+    if (!sub || !email || !Number.isFinite(expiresAt) || expiresAt <= Math.floor(Date.now() / 1000)) {
+      return null;
+    }
+    return { sub, email };
+  } catch {
+    return null;
+  }
+}
+
+async function buildAuthUser(
+  admin: ReturnType<typeof createClient>,
+  userId: string,
+): Promise<Record<string, unknown> | null> {
+  const { data: user, error: userError } = await admin
+    .from('User')
+    .select('*')
+    .eq('id', userId)
+    .single();
+
+  if (userError || !user || !user.isActive) return null;
+
+  const { data: role, error: roleError } = await admin
+    .from('Role')
+    .select('*')
+    .eq('id', user.roleId)
+    .single();
+  if (roleError || !role) return null;
+
+  let permissions: Record<string, boolean> = {};
+  if (role.permissions) {
+    permissions = typeof role.permissions === 'string'
+      ? JSON.parse(role.permissions)
+      : role.permissions;
+  }
+
+  return {
+    id: user.id,
+    email: user.email,
+    canSendQuoteEmail: INTERNAL_QUOTE_EMAILS.includes(normalizeEmail(user.email)),
+    full_name: user.name,
+    phone: user.phone || null,
+    profileImage: user.image || null,
+    role: { role_name: role.name || 'user', permissions },
+  };
+}
+
 Deno.serve(async (req) => {
   if (req.method === 'OPTIONS') return new Response(null, { status: 204, headers: corsHeaders });
   if (req.method !== 'POST') return jsonResponse({ error: 'Method Not Allowed' }, 405);
@@ -71,14 +156,36 @@ Deno.serve(async (req) => {
       return jsonResponse({ error: 'Authentication service is not configured.' }, 500);
     }
 
-    const body = await req.json();
+    const admin = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY, {
+      auth: { persistSession: false, autoRefreshToken: false },
+    });
+
+    const body = await req.json().catch(() => ({}));
+    const action = typeof body.action === 'string' ? body.action : 'login';
+
+    // Silent refresh: extend session without asking for password again.
+    if (action === 'refresh') {
+      const session = await readBearerSession(req);
+      if (!session) {
+        return jsonResponse({ error: 'Session expired. Please log in again.' }, 401);
+      }
+      const authUser = await buildAuthUser(admin, session.sub);
+      if (!authUser) {
+        return jsonResponse({ error: 'Session expired. Please log in again.' }, 401);
+      }
+      return jsonResponse({
+        user: authUser,
+        token: await createSession({
+          id: String(authUser.id),
+          email: String(authUser.email),
+        }),
+      }, 200);
+    }
+
     const email = normalizeEmail(body.email);
     const password = typeof body.password === 'string' ? body.password : '';
     if (!email || !password) return jsonResponse({ error: 'Invalid email or password' }, 401);
 
-    const admin = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY, {
-      auth: { persistSession: false, autoRefreshToken: false },
-    });
     const { data: user, error: userError } = await admin
       .from('User')
       .select('*')
@@ -94,31 +201,16 @@ Deno.serve(async (req) => {
       return jsonResponse({ error: 'Invalid email or password' }, 401);
     }
 
-    const { data: role, error: roleError } = await admin
-      .from('Role')
-      .select('*')
-      .eq('id', user.roleId)
-      .single();
-    if (roleError || !role) return jsonResponse({ error: 'Unable to fetch user role' }, 500);
+    const authUser = await buildAuthUser(admin, user.id);
+    if (!authUser) return jsonResponse({ error: 'Unable to fetch user role' }, 500);
 
-    let permissions: Record<string, boolean> = {};
-    if (role.permissions) {
-      permissions = typeof role.permissions === 'string'
-        ? JSON.parse(role.permissions)
-        : role.permissions;
-    }
-
-    const authUser = {
-      id: user.id,
-      email: user.email,
-      canSendQuoteEmail: INTERNAL_QUOTE_EMAILS.includes(normalizeEmail(user.email)),
-      full_name: user.name,
-      phone: user.phone || null,
-      profileImage: user.image || null,
-      role: { role_name: role.name || 'user', permissions },
-    };
-
-    return jsonResponse({ user: authUser, token: await createSession(authUser) }, 200);
+    return jsonResponse({
+      user: authUser,
+      token: await createSession({
+        id: String(authUser.id),
+        email: String(authUser.email),
+      }),
+    }, 200);
   } catch (error) {
     console.error('Auth session error:', error);
     return jsonResponse({ error: 'Invalid email or password' }, 401);

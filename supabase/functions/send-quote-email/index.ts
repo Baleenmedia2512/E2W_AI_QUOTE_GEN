@@ -1460,11 +1460,25 @@ Deno.serve(async (req) => {
     }
 
     const authenticatedEmail = await getAuthenticatedEmail(req);
-    const matchedRecipient = authenticatedEmail
-      ? getMatchedRecipient(authenticatedEmail)
-      : null;
+    if (!authenticatedEmail) {
+      return jsonResponse(
+        {
+          error:
+            'Session invalid or expired. Log in again, then retry sending the quote email.',
+        },
+        401,
+      );
+    }
+    const matchedRecipient = getMatchedRecipient(authenticatedEmail);
     if (!matchedRecipient) {
-      return jsonResponse({ error: 'Email address not available.' }, 400);
+      return jsonResponse(
+        {
+          error:
+            `Your login email (${authenticatedEmail}) is not allowed to receive quote emails. `
+            + 'Add it to INTERNAL_QUOTE_EMAIL_1, INTERNAL_QUOTE_EMAIL_2, or INTERNAL_QUOTE_EMAIL_3 in Supabase secrets.',
+        },
+        403,
+      );
     }
 
     const body = await req.json();
