@@ -1163,7 +1163,7 @@ export const CorporateMinimal: React.FC<TemplateProps> = ({
   // Single service quote (original behavior)
   if (!isMultiService) {
     const singleTotal = 3;
-    // One merged T&C: general first, then per-service extras (ordered) with bold service names
+    // One merged T&C: General first, then per-service extras in user/quote order
     const singleTerms = filterGSTDisplayTerms(
       resolveMergedDisplayTermEntries(quote.termsAndConditions, quote.items, DEFAULT_GENERAL_TERMS),
     );

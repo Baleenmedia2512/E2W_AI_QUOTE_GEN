@@ -59,7 +59,7 @@ import { canonicalizeServiceName, KNOWN_CITY_LIST } from './serviceNameUtils';
 import { hasQuotablePricing, pickPreferredDbService } from './dbPricingUtils';
 import type { DbService } from './serviceResolver';
 import { formatServiceDisplayName } from './serviceResolver';
-import { getServiceScopedUserMessage, parseDurationFromUserText, toCampaignDays } from './durationUtils';
+import { getServiceScopedUserMessage, parseDurationFromUserText, toCampaignDays, isOneTimeLineDescription } from './durationUtils';
 import { resolveMediaAgainstCatalog } from '../services/chatIntentAiService';
 import {
   directionKeys,
@@ -7437,7 +7437,12 @@ function buildRowsForServices(
     const parsedDurationDays = parsedDuration
       ? toCampaignDays(parsedDuration.value, parsedDuration.unit)
       : null;
-    const durationDays = parsedDurationDays != null ? parsedDurationDays : undefined;
+    // One-time lines (printing / fixing / mounting) never carry campaign days —
+    // otherwise "15 days" / "30 days" from another service in the batch leaks here.
+    const durationDays =
+      isOneTimeLineDescription(serviceName)
+        ? undefined
+        : (parsedDurationDays != null ? parsedDurationDays : undefined);
     const perSvcQty =
       qtyByServiceId && qtyByServiceId[svc.service_id] != null
         ? qtyByServiceId[svc.service_id]

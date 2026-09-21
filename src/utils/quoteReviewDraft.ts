@@ -1,6 +1,6 @@
 import type { ConfirmationRow } from './cloudQuoteValidation';
 import { getMinQuantityFromDbService } from './cloudQuoteValidation';
-import { vendorMinDays } from './durationUtils';
+import { vendorMinDays, isOneTimeLineDescription } from './durationUtils';
 import { canonicalizeServiceName } from './serviceNameUtils';
 import {
   DbService,
@@ -95,7 +95,12 @@ function minsForService(
   }
   if (!svc) return {};
   const minQty = getMinQuantityFromDbService(svc) ?? undefined;
+  // One-time printing/fixing: never show campaign days on Review.
+  if (isOneTimeLineDescription(service) || isOneTimeLineDescription(svc.service_name || '')) {
+    return { minimumQuantity: minQty, minimumDurationDays: undefined };
+  }
   const days = vendorMinDays(svc.metadata as { min_days?: number | string });
+  // Rule: min_days NA / missing / 0 → do not set minimumDurationDays (no badge).
   return {
     minimumQuantity: minQty,
     minimumDurationDays: Number.isFinite(days) && days > 0 ? days : undefined,
@@ -130,13 +135,14 @@ export function confirmationRowsToReviewItems(
     }
 
     const mins = minsForService(services, row.service, row.serviceId, cityParts[0]);
-    // Only show / carry duration when chat set days or DB has min_days.
-    // Never invent a 30-day default when metadata.min_days is NA / missing.
-    const resolvedDays = durationDays > 0
-      ? durationDays
-      : (mins.minimumDurationDays && mins.minimumDurationDays > 0
+    // If DB min_days is NA → durationDays 0 and no minimumDurationDays (hide badge).
+    const dbMinDays =
+      mins.minimumDurationDays && mins.minimumDurationDays > 0
         ? mins.minimumDurationDays
-        : 0);
+        : 0;
+    const resolvedDays = dbMinDays > 0
+      ? (durationDays > 0 ? durationDays : dbMinDays)
+      : 0;
 
     groups.set(groupKey, {
       id: newId(),
@@ -146,7 +152,7 @@ export function confirmationRowsToReviewItems(
       quantity: qty,
       durationDays: resolvedDays,
       minimumQuantity: mins.minimumQuantity,
-      minimumDurationDays: mins.minimumDurationDays,
+      minimumDurationDays: dbMinDays > 0 ? dbMinDays : undefined,
     });
   }
 
@@ -333,11 +339,14 @@ export function enrichReviewItemFromCatalog(
   if (cities.length === 0 && availableCities.length === 1) {
     cities = [availableCities[0]];
   }
-  const durationDays = item.durationDays > 0
-    ? item.durationDays
-    : (mins.minimumDurationDays && mins.minimumDurationDays > 0
+  const dbMin =
+    mins.minimumDurationDays && mins.minimumDurationDays > 0
       ? mins.minimumDurationDays
-      : 0);
+      : 0;
+  // NA min_days → clear any leaked duration so the list never shows a days badge.
+  const durationDays = dbMin > 0
+    ? (item.durationDays > 0 ? Math.max(item.durationDays, dbMin) : dbMin)
+    : 0;
   const quantity = item.quantity > 0
     ? item.quantity
     : (mins.minimumQuantity ?? 1);
@@ -348,7 +357,7 @@ export function enrichReviewItemFromCatalog(
     quantity,
     durationDays,
     minimumQuantity: mins.minimumQuantity,
-    minimumDurationDays: mins.minimumDurationDays,
+    minimumDurationDays: dbMin > 0 ? dbMin : undefined,
   };
 }
 

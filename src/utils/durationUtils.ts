@@ -107,9 +107,23 @@ export interface DbMetadataLike {
   };
 }
 
+/** True when value is blank / NA / non-positive (not a usable min_days). */
+function isBlankOrNaMinDays(value: unknown): boolean {
+  if (value == null || value === '') return true;
+  if (typeof value === 'string') {
+    const t = value.trim().toUpperCase();
+    if (!t || t === 'NA' || t === 'N/A' || t === '-' || t === 'NULL' || t === 'NONE') {
+      return true;
+    }
+  }
+  const n = Number(value);
+  return !Number.isFinite(n) || n <= 0;
+}
+
 /** Read vendor min campaign days (min_days, else legacy min_duration). Never from pricing.*. */
 export function vendorMinDays(metadata: DbMetadataLike | undefined | null): number {
   const raw = metadata?.min_days ?? metadata?.min_duration;
+  if (isBlankOrNaMinDays(raw)) return NaN;
   const n = Number(raw);
   return Number.isFinite(n) && n > 0 ? n : NaN;
 }

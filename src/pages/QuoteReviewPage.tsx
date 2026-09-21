@@ -118,10 +118,7 @@ const QuoteReviewPage: React.FC = () => {
       try {
         const { loadAllServicesFromCloud } = await import('../services/supabaseProposalService');
         const db = ((await loadAllServicesFromCloud()) || []) as DbService[];
-        if (!cancelled) {
-          setServices(db);
-          setCart((prev) => prev.map((item) => enrichReviewItemFromCatalog(item, db)));
-        }
+        if (!cancelled) setServices(db);
       } catch (err) {
         console.warn('[QuoteReview] catalog load failed', err);
       } finally {
@@ -132,6 +129,13 @@ const QuoteReviewPage: React.FC = () => {
       cancelled = true;
     };
   }, []);
+
+  // Apply DB mins after catalog is ready (and again when draft changes).
+  // Clears durationDays / minimumDurationDays when min_days is NA.
+  useEffect(() => {
+    if (!services.length) return;
+    setCart((prev) => prev.map((item) => enrichReviewItemFromCatalog(item, services)));
+  }, [services, reviewDraft]);
 
   useEffect(() => {
     const onDocClick = (e: MouseEvent) => {
@@ -552,14 +556,14 @@ const QuoteReviewPage: React.FC = () => {
                             <Text as="span" className="quote-review-badge">
                               Qty {item.quantity}
                             </Text>
-                            {(item.durationDays > 0 || (item.minimumDurationDays ?? 0) > 0) && (
+                            {/* Show days ONLY when DB min_days is a real number (not NA). */}
+                            {(item.minimumDurationDays ?? 0) > 0 ? (
                               <Text as="span" className="quote-review-badge is-muted">
-                                {item.durationDays > 0
-                                  ? item.durationDays
-                                  : item.minimumDurationDays}{' '}
+                                {Math.max(item.durationDays || 0, item.minimumDurationDays!)}
+                                {' '}
                                 days
                               </Text>
-                            )}
+                            ) : null}
                           </HStack>
                         </Box>
                         <VStack spacing={0}>

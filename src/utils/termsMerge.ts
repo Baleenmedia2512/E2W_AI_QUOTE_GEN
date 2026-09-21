@@ -349,37 +349,70 @@ export interface ServiceTermsEntry {
 }
 
 /**
- * Order: general → single-service extras (quote service order) → multi-service shared.
+ * Find where a term label sits in the user's quote/Review service order.
+ * Uses shortened headings so "Auto Semi · Any City" matches "Auto Semi".
+ */
+function matchServiceOrderIndex(label: string, serviceOrder: string[]): number {
+  const raw = (label || '').trim().toLowerCase();
+  if (!raw || !serviceOrder.length) return -1;
+  const short = shortenTermsHeadingLabel(label).toLowerCase();
+
+  for (let i = 0; i < serviceOrder.length; i++) {
+    const svc = serviceOrder[i];
+    const svcRaw = (svc || '').trim().toLowerCase();
+    const svcShort = shortenTermsHeadingLabel(svc).toLowerCase();
+    if (!svcRaw) continue;
+    if (
+      raw === svcRaw
+      || short === svcShort
+      || raw.startsWith(`${svcRaw} `)
+      || svcRaw.startsWith(`${raw} `)
+      || short.startsWith(`${svcShort} `)
+      || svcShort.startsWith(`${short} `)
+      || short.includes(svcShort)
+      || svcShort.includes(short)
+    ) {
+      return i;
+    }
+  }
+  return -1;
+}
+
+/** Earliest serviceOrder index among one or more labels (−1 if none match). */
+function earliestServiceOrderIndex(labels: string[], serviceOrder: string[]): number {
+  let best = -1;
+  for (const label of labels) {
+    const idx = matchServiceOrderIndex(label, serviceOrder);
+    if (idx < 0) continue;
+    if (best < 0 || idx < best) best = idx;
+  }
+  return best;
+}
+
+/**
+ * Order: General first, then service T&C in quote / Review item order
+ * (not alphabetical). Shared multi-service lines sit at the earliest
+ * matching service in that order.
  */
 export function orderDisplayTerms(
   terms: DisplayTerm[],
   serviceOrder: string[] = [],
 ): DisplayTerm[] {
-  const general = terms.filter((t) => t.labels.length === 0);
-  const singles = terms.filter((t) => t.labels.length === 1);
-  const multi = terms.filter((t) => t.labels.length > 1);
-
-  const orderedSingles: DisplayTerm[] = [];
-  const used = new Set<DisplayTerm>();
-
-  for (const svc of serviceOrder) {
-    for (const t of singles) {
-      if (used.has(t)) continue;
-      if (t.labels[0].toLowerCase() === svc.toLowerCase()) {
-        orderedSingles.push(t);
-        used.add(t);
-      }
+  const scored = terms.map((t, i) => {
+    if (t.labels.length === 0) {
+      return { t, i, score: -1 };
     }
-  }
-  for (const t of singles) {
-    if (!used.has(t)) orderedSingles.push(t);
-  }
-
-  return [...general, ...orderedSingles, ...multi];
+    const idx = earliestServiceOrderIndex(t.labels, serviceOrder);
+    return { t, i, score: idx < 0 ? 10_000 + i : idx };
+  });
+  scored.sort((a, b) => a.score - b.score || a.i - b.i);
+  return scored.map((s) => s.t);
 }
 
 /**
  * Merge general T&C with per-service terms into structured entries.
+ * Same wording on two services stays as two separate bullets (one label each) —
+ * never "No Parking & Auto Semi" combined headings.
  */
 export function mergeTermsWithServiceTagsEntries(
   generalTerms: string[],
@@ -406,19 +439,11 @@ export function mergeTermsWithServiceTagsEntries(
 
     for (const term of entry.terms) {
       const text = stripTermDecorations(term);
-      const key = normalizeTermKey(text);
-      if (!key) continue;
-
-      const existing = map.get(key);
-      if (existing) {
-        if (existing.labels.length > 0) {
-          if (!existing.labels.some((l) => l.toLowerCase() === label.toLowerCase())) {
-            existing.labels.push(label);
-          }
-        }
-        continue;
-      }
-
+      const bodyKey = normalizeTermKey(text);
+      if (!bodyKey) continue;
+      // Per-service key so identical text is not merged across media
+      const key = `${bodyKey}::${label.toLowerCase()}`;
+      if (map.has(key)) continue;
       map.set(key, { text, labels: [label] });
       order.push(key);
     }
@@ -426,6 +451,23 @@ export function mergeTermsWithServiceTagsEntries(
 
   const unsorted = order.map((key) => map.get(key)!);
   return orderDisplayTerms(unsorted, serviceOrder);
+}
+
+/**
+ * Split "A & B & C: same clause" into one DisplayTerm per service label.
+ */
+export function explodeMultiLabelTerms(terms: DisplayTerm[]): DisplayTerm[] {
+  const out: DisplayTerm[] = [];
+  for (const term of terms) {
+    if (term.labels.length <= 1) {
+      out.push(term);
+      continue;
+    }
+    for (const label of dedupeLabels(term.labels)) {
+      out.push({ text: term.text, labels: [label] });
+    }
+  }
+  return out;
 }
 
 /**
@@ -641,8 +683,12 @@ export function mergeTermBodies(texts: string[]): string {
  * - Append short continuation lines (e.g. Re Printing…) to the previous bullet
  * - Keep other service lines as separate points
  * General T&C lines are unchanged.
+ * When serviceOrder is provided, section buckets follow that order (not A–Z).
  */
-export function collapseSameLabelDisplayTerms(terms: DisplayTerm[]): DisplayTerm[] {
+export function collapseSameLabelDisplayTerms(
+  terms: DisplayTerm[],
+  serviceOrder: string[] = [],
+): DisplayTerm[] {
   const general: DisplayTerm[] = [];
   const keyed = new Map<string, { labels: string[]; texts: string[] }>();
   const keyOrder: string[] = [];
@@ -663,6 +709,17 @@ export function collapseSameLabelDisplayTerms(terms: DisplayTerm[]): DisplayTerm
       bucket.labels = dedupeLabels([...bucket.labels, ...term.labels]);
     }
     if (term.text.trim()) bucket.texts.push(term.text);
+  }
+
+  if (serviceOrder.length > 0) {
+    const origIdx = new Map(keyOrder.map((k, i) => [k, i]));
+    keyOrder.sort((a, b) => {
+      const ia = earliestServiceOrderIndex(keyed.get(a)!.labels, serviceOrder);
+      const ib = earliestServiceOrderIndex(keyed.get(b)!.labels, serviceOrder);
+      const sa = ia < 0 ? 10_000 : ia;
+      const sb = ib < 0 ? 10_000 : ib;
+      return sa - sb || (origIdx.get(a) ?? 0) - (origIdx.get(b) ?? 0);
+    });
   }
 
   const collapsed: DisplayTerm[] = [];
@@ -710,6 +767,7 @@ export function collapseSameLabelDisplayTerms(terms: DisplayTerm[]): DisplayTerm
     }
   }
 
+  // General first, then services in quote / Review order
   return [...general, ...collapsed];
 }
 
@@ -747,6 +805,7 @@ export function collapseAllServiceTermsToOne(terms: DisplayTerm[]): DisplayTerm[
     })
     .filter((t): t is DisplayTerm => Boolean(t));
 
+  // General first, then services in caller / quote order
   return [...general, ...collapsed];
 }
 
@@ -811,7 +870,10 @@ export function resolveMergedDisplayTermEntries(
       parsedFromQuote.some((l) => normalizeTermKey(l.text) === normalizeTermKey(g)),
     );
     if (generalCovered) {
-      resolved = orderDisplayTerms(expandLegacyTermLabels(parsedFromQuote, items), serviceOrder);
+      resolved = orderDisplayTerms(
+        explodeMultiLabelTerms(expandLegacyTermLabels(parsedFromQuote, items)),
+        serviceOrder,
+      );
     } else {
       const missingGeneral = generalTerms
         .filter(
@@ -820,7 +882,9 @@ export function resolveMergedDisplayTermEntries(
         )
         .map((text) => ({ text, labels: [] as string[] }));
       resolved = orderDisplayTerms(
-        expandLegacyTermLabels([...missingGeneral, ...parsedFromQuote], items),
+        explodeMultiLabelTerms(
+          expandLegacyTermLabels([...missingGeneral, ...parsedFromQuote], items),
+        ),
         serviceOrder,
       );
     }
@@ -831,7 +895,10 @@ export function resolveMergedDisplayTermEntries(
       parsedFromQuote.some((l) => normalizeTermKey(l.text) === normalizeTermKey(g)),
     );
     if (generalCovered) {
-      resolved = orderDisplayTerms(expandLegacyTermLabels(parsedFromQuote, items), serviceOrder);
+      resolved = orderDisplayTerms(
+        explodeMultiLabelTerms(expandLegacyTermLabels(parsedFromQuote, items)),
+        serviceOrder,
+      );
     } else {
       const label = items[0] ? termsLabelFromItem(items[0]) : 'Service';
       resolved = mergeTermsWithServiceTagsEntries(generalTerms, [
@@ -844,7 +911,12 @@ export function resolveMergedDisplayTermEntries(
 
   // Keep each T&C as its own bullet under the service heading.
   // Only merge Timing: lines (e.g. 3–7pm + 10am–6pm → one Timing point).
-  return collapseSameLabelDisplayTerms(resolved);
+  // Pass serviceOrder so collapsed sections follow Review / quote item order.
+  // Explode again in case any multi-label slipped through.
+  return collapseSameLabelDisplayTerms(
+    explodeMultiLabelTerms(resolved),
+    serviceOrder,
+  );
 }
 
 /**
