@@ -60,7 +60,7 @@ const quote: Quote = {
   items: [
     {
       id: '1',
-      description: 'Auto Full - Display',
+      description: 'Auto Full - Printing & Fixing',
       quantity: 50,
       quantityUnit: 'Auto',
       rate: 999,
@@ -72,6 +72,7 @@ const quote: Quote = {
       medium: 'AUTO FULL',
       adType: 'Auto Branding',
       vendorCostExclGst: 850,
+      vendorPfUnitCost: 850,
     },
   ],
   subtotal: 49950,
@@ -108,12 +109,16 @@ async function main() {
   assert(payload.mobile === '9876543210', 'mobile');
   assert(payload.lines.length === 1, 'lines');
   assert(payload.lines[0].serviceId === 'auto-full-chennai', 'serviceId');
-  assert(payload.lines[0].vendorCostExclGst === 850, 'vendorCost');
+  // P&M-only: cost 850 × 50 × 1.18 = 50150; price 999 × 50 × 1.18 = 58941
   assert(
-    payload.lines[0].priceInclGst === 1178.82,
+    payload.lines[0].vendorCostExclGst === 50150,
+    `vendorCost (incl GST) got ${payload.lines[0].vendorCostExclGst}`,
+  );
+  assert(
+    payload.lines[0].priceInclGst === 58941,
     `priceInclGst got ${payload.lines[0].priceInclGst}`,
   );
-  console.log('OK Payload builder (server-side shape)');
+  console.log('OK Payload builder (server-side shape, GST-incl line totals)');
 
   const base = (process.env.BALEEN_MEDIA_URL || '').replace(/\/$/, '');
   const key = process.env.QUOTE_BUDDY_API_KEY || '';
