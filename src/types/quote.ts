@@ -55,6 +55,14 @@ export interface QuoteItem {
   vendorPfUnitCost?: number;
   /** Vendor display unit cost per day stamped at quote build. */
   vendorDisplayUnitCostPerDay?: number;
+  /** Preferred vendor name from vendor_rate_chunks (Baleen Media; not on client PDF). */
+  vendorName?: string;
+  /** Catalog medium label (e.g. AUTO FULL). */
+  medium?: string;
+  /** Ad / medium type label (e.g. Auto Branding, Frontlit). */
+  adType?: string;
+  /** Vendor unit cost excluding GST (stamped from DB at quote build). */
+  vendorCostExclGst?: number;
 }
 
 export interface Quote {

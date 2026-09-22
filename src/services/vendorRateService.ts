@@ -739,6 +739,10 @@ export function applyVendorDetailsToService(svc: DbService, vendor: VendorRateRo
     sources.city = DB_VENDOR;
   }
 
+  if (vendor.vendor_name && !isNaLike(vendor.vendor_name)) {
+    meta.vendor_name = vendor.vendor_name;
+  }
+
   console.log(
     `📦 [DataSource] "${svc.service_name}" (${svc.service_id})`,
     {
