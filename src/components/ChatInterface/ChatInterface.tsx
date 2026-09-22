@@ -3809,6 +3809,8 @@ const ChatInterfaceContent: React.FC = () => {
                                       (o) =>
                                         o.id === 'yes_generate'
                                         || o.id === 'no_generate'
+                                        || o.id === 'continue_single_location'
+                                        || o.id === 'quit_flow'
                                         || o.id === 'yes'
                                         || o.id === 'no'
                                         || o.id === 'yes_min'

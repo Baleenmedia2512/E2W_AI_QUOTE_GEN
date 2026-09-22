@@ -139,6 +139,7 @@ export function hydrateQuoteTermsFromCatalog(
     `📋 [T&C-Hydrate] Loaded DB terms for ${termsByServiceId.size}/${uniqueServiceIds.length} service(s)`,
   );
 
+  // Hydrate walks `items` in Review/quote order so service T&C follow user drag order.
   const entries: ServiceTermsEntry[] = [];
   const seenServiceIds = new Set<string>();
 
@@ -157,6 +158,7 @@ export function hydrateQuoteTermsFromCatalog(
     });
   }
 
+  // General first, then per-service in `entries` (= quote.items / Review order).
   const merged = mergeTermsWithServiceTags([...DEFAULT_GENERAL_TERMS], entries);
 
   console.log(

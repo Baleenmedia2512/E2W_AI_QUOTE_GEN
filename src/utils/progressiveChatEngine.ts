@@ -8,7 +8,9 @@
  * 1. Order: Service → Type → City → Area → Direction → Quote
  *    (Type ALWAYS before City — never ask city first then type then city again)
  * 2. City UI: when 2+ cities/places → checkbox multi-select (allowMulti=true) + Confirm
- * 3. Exactly 1 city → auto-lock and continue (no OK Continue tap)
+ * 3. Exactly 1 city → sole-location Continue/Quit (req 2). Skip confirm only when
+ *    the user already named that city in the same message (session.city already set).
+ *    Never invent Chennai / force a metro when DB has one locality city.
  * 4. 0 / NA city → skip city step
  * 5. Multi-city / multi-area Confirm → then Direction/site checkboxes when 2+ sites
  *    under the selection (Area · direction chips); Confirm → ONE quote with those lines.
@@ -99,6 +101,7 @@ export type ProgressiveStep =
   | 'no_match'
   | 'min_qty_confirm'
   | 'min_duration_confirm'
+  | 'single_location_confirm'
   | 'qty_or_duration_clarify'
   | 'quote_ready'
   | 'small_talk';
@@ -202,6 +205,11 @@ export interface ProgressiveSession {
   batchUnavailableNote?: string;
   /** True after the unavailable note was shown once in botText. */
   batchUnavailableSpoken?: boolean;
+  /**
+   * True after the multi-service “one by one” intro was shown once
+   * (do not repeat on Now choosing… handoffs).
+   */
+  batchIntroSpoken?: boolean;
   /**
    * Place-only browse (e.g. "hosur"/"madurai") — block silent quote finalize
    * until the user picks a service chip or Continue.
@@ -1792,6 +1800,41 @@ function formatBatchServiceList(labels: string[]): string {
   return `${labels.slice(0, -1).join(', ')} and ${labels[labels.length - 1]}`;
 }
 
+function copyBatchMultiServiceIntro(labels: string[]): string {
+  if (labels.length < 2) return '';
+  const n = labels.length;
+  const countWord =
+    n === 2 ? 'two'
+      : n === 3 ? 'three'
+        : n === 4 ? 'four'
+          : String(n);
+  const first = labels[0];
+  const rest = labels.slice(1);
+  let followed: string;
+  if (rest.length === 1) {
+    followed = `the ${rest[0]} service`;
+  } else if (rest.length === 2) {
+    followed = `the ${rest[0]} service and the ${rest[1]} service`;
+  } else {
+    followed = `${rest
+      .slice(0, -1)
+      .map((l) => `the ${l} service`)
+      .join(', ')}, and the ${rest[rest.length - 1]} service`;
+  }
+  return (
+    `We found ${countWord} services for your request. `
+    + `Let's check the ${first} service first, followed by ${followed}.`
+  );
+}
+
+function copySoleLocationConfirm(location: string): string {
+  const loc = (location || '').trim() || 'this location';
+  return (
+    `This service is available only at ${loc}. `
+    + 'If this location is suitable, you can continue; otherwise, you can quit.'
+  );
+}
+
 function copyBatchSkipCitiesContinue(
   serviceLabels: string[],
   deadCities: string[],
@@ -1805,8 +1848,11 @@ function copyBatchSkipCitiesContinue(
 
 function copyBatchStart(city: string, count: number, firstLabel: string, allLabels?: string[]): string {
   void count;
-  void allLabels;
-  return copyAskType(firstLabel, null, city);
+  const intro = allLabels && allLabels.length >= 2
+    ? copyBatchMultiServiceIntro(allLabels)
+    : '';
+  const ask = copyAskType(firstLabel, null, city);
+  return intro ? compactFunnelReply(intro, ask) : ask;
 }
 
 /**
@@ -1848,6 +1894,14 @@ function withBatchStepPrompt(
   // Prefer short handoff + why (avoid stacking long paragraphs)
   if (result.step === 'min_qty_confirm' || result.step === 'quote_ready') {
     return result;
+  }
+  // Batch intro + sole-location Continue/Quit (req 1 + 2)
+  if (result.step === 'single_location_confirm') {
+    if (!trimmed) return result;
+    if (/available only at/i.test(trimmed)) {
+      return { ...result, botText: trimmed };
+    }
+    return { ...result, botText: compactFunnelReply(trimmed, result.botText) };
   }
   // Type chips → full understand + options copy (with city when locked)
   if (result.step === 'pick_type') {
@@ -2171,6 +2225,7 @@ function launchSequentialBatchWork(
     { ...result, botText: noted.botText, session: noted.session },
     intro.trim(),
   );
+  const spokenIntro = availLabels.length >= 2;
   return {
     ...prompted,
     session: {
@@ -2178,6 +2233,7 @@ function launchSequentialBatchWork(
       batchServiceLabels: availLabels,
       batchUnavailableLabels: opts.batchUnavailableLabels,
       batchUnavailableNote: opts.unavailableNote,
+      batchIntroSpoken: spokenIntro || prompted.session.batchIntroSpoken,
     },
   };
 }
@@ -2188,15 +2244,19 @@ function copyBatchAutoAddedThenAsk(
   city?: string,
   allLabels?: string[],
 ): string {
-  void allLabels;
+  const intro = !autoLabels.length && allLabels && allLabels.length >= 2
+    ? copyBatchMultiServiceIntro(allLabels)
+    : '';
   if (autoLabels.length) {
     const where = city ? ` in ${city}` : '';
-    return compactFunnelReply(
+    const body = compactFunnelReply(
       `${formatBatchServiceList(autoLabels)} added${where}.`,
       copyAskType(nextLabel, null, city).split('\n').slice(-1)[0],
     );
+    return intro ? compactFunnelReply(intro, body) : body;
   }
-  return copyAskType(nextLabel, null, city);
+  const ask = copyAskType(nextLabel, null, city);
+  return intro ? compactFunnelReply(intro, ask) : ask;
 }
 
 function matchKnownCityLabel(value: string): string | null {
@@ -4489,19 +4549,9 @@ function startBatchSequentialFunnel(
    * Auto-lock only when priced (else all) hits share exactly one funnel city.
    * Uses DB metadata.city / area_name — never known-metro-only matching that
    * invents Chennai/Madurai when other DB cities also exist.
+   * Note: inventory-only sole cities no longer pre-lock work items (req 2
+   * Continue/Quit happens in advanceFunnel). User-named seg.city still locks.
    */
-  const soleFunnelCityForHits = (hits: DbService[]): string | null => {
-    const byKey = new Map<string, string>();
-    for (const h of hits) {
-      const city = funnelCityFromDb(h);
-      if (!city) continue;
-      const key = canonicalizeServiceName(city);
-      if (!key || byKey.has(key)) continue;
-      byKey.set(key, city);
-    }
-    if (byKey.size !== 1) return null;
-    return [...byKey.values()][0]!;
-  };
 
   for (const seg of segments) {
     // Prefer the already qty/city-stripped segment token from parseServiceSegments.
@@ -4546,12 +4596,10 @@ function startBatchSequentialFunnel(
       for (const h of hits) qtyByServiceId[h.service_id] = seg.qty;
     }
 
-    // Prefer priced inventory when auto-locking a sole city so an unpriced
-    // Madurai (or other) row cannot invent a city the user never named.
+    // Prefer priced inventory when checking sole city — but only lock when the
+    // user named the city (seg.city). Inventory-only sole city uses Continue/Quit (req 2).
     const pricedHits = hits.filter(hasQuotablePricing);
-    const soleCity = seg.city
-      || soleFunnelCityForHits(pricedHits.length ? pricedHits : hits)
-      || undefined;
+    const soleCity = seg.city || undefined;
 
     const exactSel = detectExactCatalogSelection(seg.raw, services);
     const exactKey = resolveExactMediumKey(token, services);
@@ -6366,7 +6414,7 @@ function chipDisplayLabel(chip: { medium: string; mediumType?: string }): string
   return medium;
 }
 
-/** Lock the only city and continue the funnel (no OK Continue tap). */
+/** Lock the only city and continue the funnel after Continue (req 2). */
 function lockOneCity(
   sess: ProgressiveSession,
   pool: DbService[],
@@ -6380,6 +6428,18 @@ function lockOneCity(
     candidateServiceIds: pool.map((s) => s.service_id),
     pendingRows: undefined,
   };
+}
+
+/** Pool for sole-location Continue — prefer candidate ids already on session. */
+function sessPoolForSoleContinue(
+  session: ProgressiveSession,
+  services: DbService[],
+): DbService[] {
+  if (session.candidateServiceIds?.length) {
+    const fromIds = services.filter((s) => session.candidateServiceIds!.includes(s.service_id));
+    if (fromIds.length) return fromIds;
+  }
+  return filterPoolBySession(services, { ...session, city: undefined });
 }
 
 export function filterPoolBySession(services: DbService[], session: ProgressiveSession): DbService[] {
@@ -6696,8 +6756,23 @@ export function advanceFunnel(
           };
         }
         const onlyCity = cities[0].city || cities[0].label;
-        sess = lockOneCity(sess, cityPool, onlyCity);
-        continue;
+        // Req 2: sole inventory city → Continue / Quit (do not silent auto-lock).
+        // Skip when user already named this city (sess.city set) — we never enter this block then.
+        return {
+          step: 'single_location_confirm',
+          botText: preferEngineCopy(reply, copySoleLocationConfirm(onlyCity)),
+          options: [
+            { id: 'continue_single_location', label: 'Continue' },
+            { id: 'quit_flow', label: 'Quit' },
+          ],
+          session: {
+            ...sess,
+            city: onlyCity,
+            candidateServiceIds: cityPool.map((s) => s.service_id),
+            needsContinueConfirm: true,
+            unresolvedPlaceOffer: false,
+          },
+        };
       }
       // 0 cities (all NA) — if place locked, lock place label and continue
       if ((sess.area || sess.placeHint) && cityPool.length > 0) {
@@ -10253,7 +10328,7 @@ function continueProgressiveActionInner(
     };
   }
 
-  if (actionId === 'quit_min' || actionId === 'no_min') {
+  if (actionId === 'quit_min' || actionId === 'no_min' || actionId === 'quit_flow') {
     // Quit cancels the quote path — clean chat, no "adjust qty" loop.
     const cleanSession: ProgressiveSession = {
       originalText: '',
@@ -10268,6 +10343,28 @@ function continueProgressiveActionInner(
       options: [],
       session: stampReplyMeta(cleanSession, ''),
     };
+  }
+
+  // Sole-location Continue (req 2) — same as yes_generate city confirm
+  if (actionId === 'continue_single_location' || actionId === 'yes_generate') {
+    const cityPool = sessPoolForSoleContinue(session, services);
+    const city = session.city || session.bestGuessLabel || '';
+    const locked = city
+      ? lockOneCity(
+        { ...session, needsContinueConfirm: false },
+        cityPool.length ? cityPool : filterPoolBySession(services, session),
+        city,
+      )
+      : { ...session, needsContinueConfirm: false };
+    return advanceFunnel(locked, services);
+  }
+
+  if (actionId === 'no_generate') {
+    return softClarifyNeed(
+      services,
+      { ...session, city: undefined, needsContinueConfirm: false },
+      'Which city or service do you need?',
+    );
   }
 
   // Batch multi-city ask ("madurai and chennai") — city Confirm starts city-locked batch
@@ -10286,7 +10383,6 @@ function continueProgressiveActionInner(
       .filter((id) => id.startsWith('city:'))
       .map((id) => titleCase(id.slice(5)));
     if (cities.length) {
-      // Prefer first selected that has inventory; ignore empty picks
       for (const city of cities) {
         const probe = startBatchWithCityLock(
           session.segments,
@@ -10305,26 +10401,6 @@ function continueProgressiveActionInner(
         services,
       );
     }
-  }
-
-  // One-city confirm: continue Area → Direction → Quote
-  if (actionId === 'yes_generate') {
-    return advanceFunnel(
-      {
-        ...session,
-        city: session.city || session.bestGuessLabel,
-        needsContinueConfirm: false, // User confirmed — allow finalize
-      },
-      services,
-    );
-  }
-
-  if (actionId === 'no_generate') {
-    return softClarifyNeed(
-      services,
-      { ...session, city: undefined, needsContinueConfirm: false },
-      'Which city or service do you need?',
-    );
   }
 
   // Combined City · Area / locality place pick — supports multi Confirm

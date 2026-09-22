@@ -1,7 +1,6 @@
 import type { ConfirmationRow } from './cloudQuoteValidation';
 import { getMinQuantityFromDbService } from './cloudQuoteValidation';
 import { vendorMinDays, isOneTimeLineDescription } from './durationUtils';
-import { vendorMinDays, isOneTimeLineDescription } from './durationUtils';
 import { canonicalizeServiceName } from './serviceNameUtils';
 import {
   DbService,

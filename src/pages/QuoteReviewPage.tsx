@@ -18,7 +18,19 @@ import {
   WrapItem,
   useToast,
 } from '@chakra-ui/react';
-import { FiArrowRight, FiCheck, FiEdit2, FiMapPin, FiPackage, FiPlus, FiSearch, FiX } from 'react-icons/fi';
+import {
+  FiArrowDown,
+  FiArrowRight,
+  FiArrowUp,
+  FiCheck,
+  FiEdit2,
+  FiMapPin,
+  FiMenu,
+  FiPackage,
+  FiPlus,
+  FiSearch,
+  FiX,
+} from 'react-icons/fi';
 import { useHistory } from 'react-router-dom';
 import QuoteFlowNav, { getQuoteFlowNavOffset } from '../components/QuoteWizard/QuoteFlowNav';
 import { useAppStore } from '../store';
@@ -40,6 +52,17 @@ type ServiceOption = { label: string; serviceId: string; serviceName: string };
 
 const emptyComposer = (): ReviewDraftItem => emptyReviewItem({ quantity: 1, durationDays: 0, cities: [] });
 
+function buildCartItem(composer: ReviewDraftItem): ReviewDraftItem {
+  const quantity = Math.max(composer.quantity || 1, composer.minimumQuantity || 1);
+  const durationDays =
+    composer.durationDays > 0
+      ? Math.max(composer.durationDays, composer.minimumDurationDays || 0)
+      : (composer.minimumDurationDays && composer.minimumDurationDays > 0
+        ? composer.minimumDurationDays
+        : 0);
+  return { ...composer, quantity, durationDays };
+}
+
 const QuoteReviewPage: React.FC = () => {
   const history = useHistory();
   const toast = useToast();
@@ -59,8 +82,15 @@ const QuoteReviewPage: React.FC = () => {
   const [loadingCatalog, setLoadingCatalog] = useState(true);
   const [submitting, setSubmitting] = useState(false);
   const [showSuggest, setShowSuggest] = useState(false);
+  const [highlightId, setHighlightId] = useState<string | null>(null);
+  const [dragId, setDragId] = useState<string | null>(null);
+  /** Sole-location gate: Continue adds, Quit clears the composer. */
+  const [soleLocationPending, setSoleLocationPending] = useState(false);
+
   const suggestRef = useRef<HTMLDivElement | null>(null);
   const composerTopRef = useRef<HTMLDivElement | null>(null);
+  const cartScrollRef = useRef<HTMLDivElement | null>(null);
+  const lastCartRowRef = useRef<HTMLDivElement | null>(null);
 
   const navOffset = getQuoteFlowNavOffset('review');
   const isEditing = editingId != null;
@@ -78,6 +108,7 @@ const QuoteReviewPage: React.FC = () => {
     setComposer(emptyComposer());
     setServiceChosen(false);
     setEditingId(null);
+    setSoleLocationPending(false);
   }, [reviewDraft, history]);
 
   useEffect(() => {
@@ -87,7 +118,6 @@ const QuoteReviewPage: React.FC = () => {
       try {
         const { loadAllServicesFromCloud } = await import('../services/supabaseProposalService');
         const db = ((await loadAllServicesFromCloud()) || []) as DbService[];
-        if (!cancelled) setServices(db);
         if (!cancelled) setServices(db);
       } catch (err) {
         console.warn('[QuoteReview] catalog load failed', err);
@@ -100,8 +130,7 @@ const QuoteReviewPage: React.FC = () => {
     };
   }, []);
 
-  // Apply DB mins after catalog is ready (and again when draft changes).
-  // Clears durationDays / minimumDurationDays when min_days is NA.
+  // Clear days badge when DB min_days is NA (or one-time printing/fixing).
   useEffect(() => {
     if (!services.length) return;
     setCart((prev) => prev.map((item) => enrichReviewItemFromCatalog(item, services)));
@@ -138,6 +167,33 @@ const QuoteReviewPage: React.FC = () => {
     setServiceChosen(false);
     setShowSuggest(false);
     setEditingId(null);
+    setSoleLocationPending(false);
+  };
+
+  const scrollNewItemIntoView = (itemId: string) => {
+    setHighlightId(itemId);
+    requestAnimationFrame(() => {
+      lastCartRowRef.current?.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+      cartScrollRef.current?.scrollTo({
+        top: cartScrollRef.current.scrollHeight,
+        behavior: 'smooth',
+      });
+    });
+    window.setTimeout(() => setHighlightId((cur) => (cur === itemId ? null : cur)), 1800);
+  };
+
+  /** Commit composer to cart; returns the new/updated item id. */
+  const commitComposerToCart = (draft: ReviewDraftItem, editId: string | null): string => {
+    const nextItem = buildCartItem(draft);
+    if (editId) {
+      setCart((prev) => prev.map((row) => (row.id === editId ? { ...nextItem, id: editId } : row)));
+      scrollNewItemIntoView(editId);
+      return editId;
+    }
+    const id = nextItem.id;
+    setCart((prev) => [...prev, nextItem]);
+    scrollNewItemIntoView(id);
+    return id;
   };
 
   const handleServiceType = (value: string) => {
@@ -155,22 +211,38 @@ const QuoteReviewPage: React.FC = () => {
 
   const handleServicePick = (opt: ServiceOption) => {
     const keptQty = composer.quantity;
-    const keptDays = composer.durationDays;
     const enriched = enrichReviewItemFromCatalog(
       {
         ...composer,
         service: opt.label,
         serviceId: opt.serviceId,
         cities: [],
+        durationDays: 0,
       },
       services,
     );
     const quantity = Math.max(keptQty || 1, enriched.minimumQuantity || 1);
-    // Only seed days from DB min_days — never invent 30 when NA/missing.
     const durationDays =
-      (enriched.minimumDurationDays && enriched.minimumDurationDays > 0)
-        ? Math.max(keptDays || 0, enriched.minimumDurationDays)
-        : (keptDays > 0 ? keptDays : 0);
+      enriched.minimumDurationDays && enriched.minimumDurationDays > 0
+        ? enriched.minimumDurationDays
+        : 0;
+    const availableCities = citiesForService(services, opt.label, opt.serviceId);
+
+    // Exactly one location → show Continue / Quit (do not silent-add).
+    if (!editingId && availableCities.length === 1) {
+      setComposer({
+        ...enriched,
+        cities: [availableCities[0]],
+        quantity,
+        durationDays,
+      });
+      setServiceChosen(true);
+      setShowSuggest(false);
+      setSoleLocationPending(true);
+      return;
+    }
+
+    setSoleLocationPending(false);
     setComposer({
       ...enriched,
       cities: [],
@@ -178,37 +250,33 @@ const QuoteReviewPage: React.FC = () => {
       durationDays,
     });
     setServiceChosen(true);
-    // Keep chosen name in the input; close the browse list (no duplicate highlight under it).
     setShowSuggest(false);
   };
 
+  const handleSoleLocationContinue = () => {
+    if (!composer.service.trim() || !composer.cities.length) return;
+    commitComposerToCart(composer, editingId);
+    resetComposer();
+  };
+
+  const handleSoleLocationQuit = () => {
+    resetComposer();
+  };
+
   const toggleCity = (city: string) => {
-    setComposer((prev) => {
-      const has = prev.cities.some((c) => c.toLowerCase() === city.toLowerCase());
-      return {
-        ...prev,
-        cities: has
-          ? prev.cities.filter((c) => c.toLowerCase() !== city.toLowerCase())
-          : [...prev.cities, city],
-      };
-    });
+    // Sole-location gate uses Continue / Quit — city chip is display-only.
+    if (soleLocationPending) return;
+
+    const has = composer.cities.some((c) => c.toLowerCase() === city.toLowerCase());
+    const nextCities = has
+      ? composer.cities.filter((c) => c.toLowerCase() !== city.toLowerCase())
+      : [...composer.cities, city];
+
+    setComposer((prev) => ({ ...prev, cities: nextCities }));
   };
 
-  const handleEditCartItem = (item: ReviewDraftItem) => {
-    setEditingId(item.id);
-    setComposer({
-      ...item,
-      cities: item.cities.flatMap((c) => splitCityLabels(c)),
-    });
-    setServiceChosen(!!item.service.trim());
-    // Open catalog so user can change the service; it closes again after a new pick.
-    setShowSuggest(true);
-    requestAnimationFrame(() => {
-      composerTopRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' });
-    });
-  };
-
-  const handleAddToCart = () => {
+  /** Req 5: after cities are chosen, add immediately under the selection (scroll into view). */
+  const handleConfirmCitiesAndAdd = () => {
     if (!serviceChosen || !composer.service.trim()) {
       toast({
         title: 'Choose a service from the list first.',
@@ -227,20 +295,26 @@ const QuoteReviewPage: React.FC = () => {
       });
       return;
     }
-
-    const quantity = Math.max(composer.quantity || 1, composer.minimumQuantity || 1);
-    const durationDays =
-      (composer.minimumDurationDays && composer.minimumDurationDays > 0)
-        ? Math.max(composer.durationDays || 0, composer.minimumDurationDays)
-        : (composer.durationDays > 0 ? composer.durationDays : 0);
-    const nextItem: ReviewDraftItem = { ...composer, quantity, durationDays };
-
-    if (editingId) {
-      setCart((prev) => prev.map((row) => (row.id === editingId ? { ...nextItem, id: editingId } : row)));
-    } else {
-      setCart((prev) => [...prev, nextItem]);
-    }
+    commitComposerToCart(composer, editingId);
     resetComposer();
+  };
+
+  const handleEditCartItem = (item: ReviewDraftItem) => {
+    setEditingId(item.id);
+    setSoleLocationPending(false);
+    setComposer({
+      ...item,
+      cities: item.cities.flatMap((c) => splitCityLabels(c)),
+    });
+    setServiceChosen(!!item.service.trim());
+    setShowSuggest(true);
+    requestAnimationFrame(() => {
+      composerTopRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    });
+  };
+
+  const handleAddToCart = () => {
+    handleConfirmCitiesAndAdd();
   };
 
   const handleRemoveFromCart = (id: string) => {
@@ -248,17 +322,47 @@ const QuoteReviewPage: React.FC = () => {
     if (editingId === id) resetComposer();
   };
 
+  const moveCartItem = (fromIndex: number, toIndex: number) => {
+    if (toIndex < 0 || toIndex >= cart.length || fromIndex === toIndex) return;
+    setCart((prev) => {
+      const next = [...prev];
+      const [row] = next.splice(fromIndex, 1);
+      next.splice(toIndex, 0, row);
+      return next;
+    });
+  };
+
+  const onDragStart = (id: string) => (e: React.DragEvent) => {
+    setDragId(id);
+    e.dataTransfer.effectAllowed = 'move';
+    e.dataTransfer.setData('text/plain', id);
+  };
+
+  const onDragOver = (e: React.DragEvent) => {
+    e.preventDefault();
+    e.dataTransfer.dropEffect = 'move';
+  };
+
+  const onDrop = (targetId: string) => (e: React.DragEvent) => {
+    e.preventDefault();
+    const sourceId = e.dataTransfer.getData('text/plain') || dragId;
+    setDragId(null);
+    if (!sourceId || sourceId === targetId) return;
+    setCart((prev) => {
+      const from = prev.findIndex((i) => i.id === sourceId);
+      const to = prev.findIndex((i) => i.id === targetId);
+      if (from < 0 || to < 0) return prev;
+      const next = [...prev];
+      const [row] = next.splice(from, 1);
+      next.splice(to, 0, row);
+      return next;
+    });
+  };
+
   const handleFinish = async () => {
     let finalCart = cart;
     if (serviceChosen && composer.service.trim() && composer.cities.length) {
-      const folded: ReviewDraftItem = {
-        ...composer,
-        quantity: Math.max(composer.quantity || 1, composer.minimumQuantity || 1),
-        durationDays:
-          (composer.minimumDurationDays && composer.minimumDurationDays > 0)
-            ? Math.max(composer.durationDays || 0, composer.minimumDurationDays)
-            : (composer.durationDays > 0 ? composer.durationDays : 0),
-      };
+      const folded = buildCartItem(composer);
       const err = validateReviewDraft([folded]);
       if (err) {
         toast({ title: err, status: 'warning', duration: 4000, isClosable: true });
@@ -337,18 +441,18 @@ const QuoteReviewPage: React.FC = () => {
       <QuoteFlowNav step="review" />
 
       <Container maxW="1100px" pt={navOffset} pb={{ base: 32, md: 20 }} px={{ base: 4, md: 6 }}>
-        <VStack align="stretch" spacing={5} mt={3}>
+        <VStack align="stretch" spacing={3} mt={2}>
           <HStack className="quote-review-steps" spacing={2} justify="center" wrap="wrap">
             <HStack spacing={1.5} className="quote-review-step-item">
               <Text as="span" className="quote-review-step-dot is-done">1</Text>
               <Text className="quote-review-step">Chat</Text>
             </HStack>
-            <Text className="quote-review-step-sep">›</Text>
+            <Text className="quote-review-step-sep">/</Text>
             <HStack spacing={1.5} className="quote-review-step-item">
               <Text as="span" className="quote-review-step-dot is-active">2</Text>
               <Text className="quote-review-step is-active">Review</Text>
             </HStack>
-            <Text className="quote-review-step-sep">›</Text>
+            <Text className="quote-review-step-sep">/</Text>
             <HStack spacing={1.5} className="quote-review-step-item">
               <Text as="span" className="quote-review-step-dot">3</Text>
               <Text className="quote-review-step">PDF</Text>
@@ -359,15 +463,15 @@ const QuoteReviewPage: React.FC = () => {
             <Text fontSize={{ base: 'xl', md: '2xl' }} fontWeight="800" color="#1A202C" letterSpacing="-0.02em">
               Preview Quote
             </Text>
-            <Text mt={1.5} fontSize="sm" color="gray.600" lineHeight="1.5">
-              Quick check before PDF — fix the service if needed, pick cities, then continue.
+            <Text mt={1} fontSize="sm" color="gray.600" lineHeight="1.45">
+              Quick check before PDF — fix the service if needed, pick cities, drag to reorder, then continue.
             </Text>
           </Box>
 
           {loadingCatalog && (
             <HStack spacing={2} color="gray.500" fontSize="sm" justify={{ md: 'center' }}>
               <Spinner size="sm" color="brand.500" />
-              <Text>Loading your catalog…</Text>
+              <Text>Loading your catalog...</Text>
             </HStack>
           )}
 
@@ -376,12 +480,11 @@ const QuoteReviewPage: React.FC = () => {
             display={{ base: 'flex', md: 'grid' }}
             flexDirection="column"
             gridTemplateColumns={{ md: 'minmax(280px, 0.95fr) minmax(320px, 1.15fr)' }}
-            gap={{ base: 4, md: 5 }}
+            gap={{ base: 3, md: 4 }}
             alignItems="stretch"
           >
-            {/* LEFT — Added services */}
-            <Box className="quote-review-panel quote-review-cart" minH={{ md: '420px' }}>
-              <HStack justify="space-between" align="center" mb={3}>
+            <Box className="quote-review-panel quote-review-cart" minH={{ md: '280px' }}>
+              <HStack justify="space-between" align="center" mb={2}>
                 <HStack spacing={2}>
                   <Box className="quote-review-panel-icon">
                     <Icon as={FiPackage} boxSize={3.5} />
@@ -400,36 +503,60 @@ const QuoteReviewPage: React.FC = () => {
                     Nothing added yet
                   </Text>
                   <Text fontSize="xs" color="gray.500" textAlign="center" mt={1} maxW="220px">
-                    Search a service on the right, choose cities, then tap Add service.
+                    Search a service on the right, choose cities — it adds to this list.
                   </Text>
                 </Box>
               ) : (
                 <Stack
-                  spacing={2.5}
+                  ref={cartScrollRef}
+                  spacing={1.5}
                   flex="1"
                   overflowY="auto"
-                  maxH={{ base: '280px', md: '520px' }}
+                  maxH={{ base: '240px', md: '360px' }}
                   className="quote-review-service-scroll"
                   pr={1}
                 >
                   {cart.map((item, index) => (
                     <Box
                       key={item.id}
-                      className={`quote-review-cart-row${editingId === item.id ? ' is-editing' : ''}`}
+                      ref={index === cart.length - 1 ? lastCartRowRef : undefined}
+                      className={
+                        `quote-review-cart-row`
+                        + `${editingId === item.id ? ' is-editing' : ''}`
+                        + `${highlightId === item.id ? ' is-just-added' : ''}`
+                        + `${dragId === item.id ? ' is-dragging' : ''}`
+                      }
+                      draggable
+                      onDragStart={onDragStart(item.id)}
+                      onDragOver={onDragOver}
+                      onDrop={onDrop(item.id)}
+                      onDragEnd={() => setDragId(null)}
                     >
-                      <HStack align="flex-start" spacing={2.5}>
+                      <HStack align="center" spacing={1.5}>
+                        <IconButton
+                          aria-label="Drag to reorder"
+                          title="Drag to reorder"
+                          icon={<Icon as={FiMenu} />}
+                          size="xs"
+                          variant="ghost"
+                          color="gray.400"
+                          cursor="grab"
+                          minW="26px"
+                          h="26px"
+                          _active={{ cursor: 'grabbing' }}
+                        />
                         <Text className="quote-review-index">{index + 1}</Text>
                         <Box flex="1" minW={0}>
-                          <Text fontSize="sm" fontWeight="700" color="gray.800" noOfLines={2}>
+                          <Text fontSize="sm" fontWeight="700" color="gray.800" noOfLines={1} lineHeight="1.3">
                             {item.service}
                           </Text>
-                          <HStack mt={1} spacing={1} align="flex-start">
-                            <Icon as={FiMapPin} boxSize={3} color="gray.400" mt="2px" flexShrink={0} />
-                            <Text fontSize="xs" color="gray.600" noOfLines={2}>
+                          <HStack mt={0.5} spacing={1} align="center">
+                            <Icon as={FiMapPin} boxSize={3} color="gray.400" flexShrink={0} />
+                            <Text fontSize="xs" color="gray.600" noOfLines={1} lineHeight="1.3">
                               {item.cities.length ? item.cities.join(', ') : 'No city selected'}
                             </Text>
                           </HStack>
-                          <HStack mt={2} spacing={2} flexWrap="wrap">
+                          <HStack mt={1} spacing={1.5} flexWrap="wrap">
                             <Text as="span" className="quote-review-badge">
                               Qty {item.quantity}
                             </Text>
@@ -443,15 +570,41 @@ const QuoteReviewPage: React.FC = () => {
                             ) : null}
                           </HStack>
                         </Box>
+                        <VStack spacing={0}>
+                          <IconButton
+                            aria-label="Move up"
+                            title="Move up"
+                            icon={<Icon as={FiArrowUp} />}
+                            size="xs"
+                            variant="ghost"
+                            isDisabled={index === 0}
+                            minW="26px"
+                            h="22px"
+                            onClick={() => moveCartItem(index, index - 1)}
+                          />
+                          <IconButton
+                            aria-label="Move down"
+                            title="Move down"
+                            icon={<Icon as={FiArrowDown} />}
+                            size="xs"
+                            variant="ghost"
+                            isDisabled={index === cart.length - 1}
+                            minW="26px"
+                            h="22px"
+                            onClick={() => moveCartItem(index, index + 1)}
+                          />
+                        </VStack>
                         <HStack spacing={0}>
                           <IconButton
                             aria-label="Edit service"
                             title="Edit"
                             icon={<Icon as={FiEdit2} />}
-                            size="sm"
+                            size="xs"
                             variant="ghost"
                             color="brand.600"
                             borderRadius="full"
+                            minW="26px"
+                            h="26px"
                             _hover={{ bg: 'brand.50' }}
                             onClick={() => handleEditCartItem(item)}
                           />
@@ -459,10 +612,12 @@ const QuoteReviewPage: React.FC = () => {
                             aria-label="Remove service"
                             title="Remove"
                             icon={<Icon as={FiX} />}
-                            size="sm"
+                            size="xs"
                             variant="ghost"
                             color="red.500"
                             borderRadius="full"
+                            minW="26px"
+                            h="26px"
                             _hover={{ bg: 'red.50' }}
                             onClick={() => handleRemoveFromCart(item.id)}
                           />
@@ -472,15 +627,19 @@ const QuoteReviewPage: React.FC = () => {
                   ))}
                 </Stack>
               )}
+              {cart.length > 1 && (
+                <Text mt={2} fontSize="xs" color="gray.500">
+                  Drag rows or use arrows to set quotation order.
+                </Text>
+              )}
             </Box>
 
-            {/* RIGHT — Service picker + cities */}
             <Box
               ref={composerTopRef}
               className={`quote-review-panel${isEditing ? ' is-editing' : ''}`}
-              minH={{ md: '420px' }}
+              minH={{ md: '280px' }}
             >
-              <HStack spacing={2} mb={3}>
+              <HStack spacing={2} mb={2}>
                 <Box className="quote-review-panel-icon">
                   <Icon as={FiSearch} boxSize={3.5} />
                 </Box>
@@ -490,27 +649,27 @@ const QuoteReviewPage: React.FC = () => {
               </HStack>
 
               {isEditing && (
-                <Box className="quote-review-edit-banner" mb={4}>
+                <Box className="quote-review-edit-banner" mb={2}>
                   <Text fontSize="sm" fontWeight="600" color="brand.700">
-                    AI may have picked the wrong name — search and choose the right one.
+                    AI may have picked the wrong name - search and choose the right one.
                   </Text>
                 </Box>
               )}
 
-              <Stack spacing={4}>
+              <Stack spacing={3}>
                 <FormControl isRequired minW={0}>
-                  <FormLabel fontSize="sm" fontWeight="600" color="gray.700">
+                  <FormLabel fontSize="sm" fontWeight="600" color="gray.700" mb={1}>
                     Service <Text as="span" color="red.500">*</Text>
                   </FormLabel>
                   <Box ref={suggestRef}>
                     <Input
                       value={composer.service}
-                      placeholder="Start typing — Bus, Auto, Hoarding…"
+                      placeholder="Start typing - Bus, Auto, Hoarding..."
                       onChange={(e) => handleServiceType(e.target.value)}
                       onFocus={() => setShowSuggest(true)}
                       bg="white"
-                      h="46px"
-                      borderRadius="12px"
+                      h="40px"
+                      borderRadius="10px"
                       borderColor="gray.200"
                       _placeholder={{ color: 'gray.400' }}
                       _focus={{
@@ -530,7 +689,7 @@ const QuoteReviewPage: React.FC = () => {
                       >
                         {suggestions.length === 0 ? (
                           <Text px={3} py={4} fontSize="sm" color="gray.500" textAlign="center">
-                            No matches. Try a shorter name like “bus” or “hoarding”.
+                            No matches. Try a shorter name like "bus" or "hoarding".
                           </Text>
                         ) : (
                           suggestions.map((opt) => {
@@ -565,7 +724,7 @@ const QuoteReviewPage: React.FC = () => {
                   </Box>
                   {showSuggest && suggestions.length > 0 && (
                     <FormHelperText color="gray.500">
-                      {suggestions.length} match{suggestions.length === 1 ? '' : 'es'} — scroll to browse all.
+                      {suggestions.length} match{suggestions.length === 1 ? '' : 'es'} - scroll to browse all.
                     </FormHelperText>
                   )}
                   {!showSuggest && serviceChosen && composer.service && (
@@ -596,47 +755,112 @@ const QuoteReviewPage: React.FC = () => {
                       <Text fontSize="sm" color="gray.500">
                         No cities found for this service.
                       </Text>
-                    ) : (
+                    ) : soleLocationPending && cityOptions.length === 1 ? (
                       <Box
-                        className="quote-review-city-scroll"
-                        maxH={{ base: '180px', md: '200px' }}
-                        overflowY="auto"
-                        pr={1}
+                        className="quote-review-sole-location"
+                        borderWidth="1px"
+                        borderColor="brand.200"
+                        bg="brand.50"
+                        borderRadius="14px"
+                        p={3}
                       >
-                        <Wrap spacing={2}>
-                          {cityOptions.map((city) => {
-                            const selected = composer.cities.some(
-                              (c) => c.toLowerCase() === city.toLowerCase(),
-                            );
-                            return (
-                              <WrapItem key={city}>
-                                <Button
-                                  type="button"
-                                  size="sm"
-                                  className={`quote-review-city-chip${selected ? ' is-selected' : ''}`}
-                                  borderRadius="999px"
-                                  leftIcon={selected ? <Icon as={FiCheck} /> : <Icon as={FiMapPin} />}
-                                  variant={selected ? 'solid' : 'outline'}
-                                  bg={selected ? 'brand.500' : 'white'}
-                                  color={selected ? 'white' : 'gray.700'}
-                                  borderColor={selected ? 'brand.500' : 'gray.200'}
-                                  fontWeight="600"
-                                  _hover={{
-                                    bg: selected ? 'brand.600' : 'brand.50',
-                                    borderColor: 'brand.300',
-                                  }}
-                                  onClick={() => toggleCity(city)}
-                                >
-                                  {city}
-                                </Button>
-                              </WrapItem>
-                            );
-                          })}
-                        </Wrap>
+                        <Text fontSize="sm" color="gray.800" lineHeight="1.5" mb={3}>
+                          This service is available only at{' '}
+                          <Text as="span" fontWeight="700" color="brand.700">
+                            {cityOptions[0]}
+                          </Text>
+                          . If this location is suitable, continue; otherwise quit.
+                        </Text>
+                        <HStack spacing={2}>
+                          <Button
+                            flex="1"
+                            h="42px"
+                            borderRadius="12px"
+                            bg="brand.500"
+                            color="white"
+                            fontWeight="700"
+                            leftIcon={<Icon as={FiCheck} />}
+                            _hover={{ bg: 'brand.600' }}
+                            onClick={handleSoleLocationContinue}
+                          >
+                            Continue
+                          </Button>
+                          <Button
+                            flex="1"
+                            h="42px"
+                            borderRadius="12px"
+                            variant="outline"
+                            borderColor="gray.300"
+                            color="gray.700"
+                            fontWeight="600"
+                            leftIcon={<Icon as={FiX} />}
+                            onClick={handleSoleLocationQuit}
+                          >
+                            Quit
+                          </Button>
+                        </HStack>
+                      </Box>
+                    ) : (
+                      <Box>
+                        <Box
+                          className="quote-review-city-scroll"
+                          maxH={{ base: '180px', md: '200px' }}
+                          overflowY="auto"
+                          pr={1}
+                        >
+                          <Wrap spacing={2}>
+                            {cityOptions.map((city) => {
+                              const selected = composer.cities.some(
+                                (c) => c.toLowerCase() === city.toLowerCase(),
+                              );
+                              return (
+                                <WrapItem key={city}>
+                                  <Button
+                                    type="button"
+                                    size="sm"
+                                    className={`quote-review-city-chip${selected ? ' is-selected' : ''}`}
+                                    borderRadius="999px"
+                                    leftIcon={selected ? <Icon as={FiCheck} /> : <Icon as={FiMapPin} />}
+                                    variant={selected ? 'solid' : 'outline'}
+                                    bg={selected ? 'brand.500' : 'white'}
+                                    color={selected ? 'white' : 'gray.700'}
+                                    borderColor={selected ? 'brand.500' : 'gray.200'}
+                                    fontWeight="600"
+                                    _hover={{
+                                      bg: selected ? 'brand.600' : 'brand.50',
+                                      borderColor: 'brand.300',
+                                    }}
+                                    onClick={() => toggleCity(city)}
+                                  >
+                                    {city}
+                                  </Button>
+                                </WrapItem>
+                              );
+                            })}
+                          </Wrap>
+                        </Box>
+                        {composer.cities.length > 0 && !editingId && (
+                          <Button
+                            mt={3}
+                            w="100%"
+                            h="42px"
+                            borderRadius="12px"
+                            bg="brand.500"
+                            color="white"
+                            fontWeight="700"
+                            leftIcon={<Icon as={FiCheck} />}
+                            _hover={{ bg: 'brand.600' }}
+                            onClick={handleConfirmCitiesAndAdd}
+                          >
+                            Confirm · add to list
+                          </Button>
+                        )}
                       </Box>
                     )}
                     <FormHelperText color="gray.500">
-                      Tap cities to include them in this quote line.
+                      {soleLocationPending
+                        ? 'Only one location — Continue to add, or Quit to cancel.'
+                        : 'Tap cities, then Confirm to add (multi-city stays one line).'}
                     </FormHelperText>
                   </FormControl>
                 )}
@@ -657,15 +881,21 @@ const QuoteReviewPage: React.FC = () => {
               borderRadius="12px"
               h="44px"
               px={5}
-              onClick={handleAddToCart}
+              onClick={soleLocationPending ? handleSoleLocationContinue : handleAddToCart}
               flex={{ base: '1', sm: 'unset' }}
               _hover={{ bg: 'brand.50', borderColor: 'brand.400' }}
             >
-              {isEditing ? 'Save changes' : 'Add service'}
+              {isEditing ? 'Save changes' : soleLocationPending ? 'Continue' : 'Add service'}
             </Button>
-            {isEditing && (
-              <Button variant="ghost" color="gray.600" borderRadius="12px" h="44px" onClick={resetComposer}>
-                Cancel
+            {(isEditing || soleLocationPending) && (
+              <Button
+                variant="ghost"
+                color="gray.600"
+                borderRadius="12px"
+                h="44px"
+                onClick={soleLocationPending ? handleSoleLocationQuit : resetComposer}
+              >
+                {soleLocationPending ? 'Quit' : 'Cancel'}
               </Button>
             )}
             <Box flex={{ base: '1 1 100%', sm: '1' }} display={{ base: 'none', sm: 'block' }} />
