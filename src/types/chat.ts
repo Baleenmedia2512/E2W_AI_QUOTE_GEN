@@ -92,7 +92,6 @@ export interface Message {
     | 'no_match'
     | 'min_qty_confirm'
     | 'min_duration_confirm'
-    | 'single_location_confirm'
     | 'qty_or_duration_clarify'
     | 'quote_ready'
     | 'small_talk';

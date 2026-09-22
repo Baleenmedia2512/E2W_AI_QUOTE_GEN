@@ -18,19 +18,7 @@ import {
   WrapItem,
   useToast,
 } from '@chakra-ui/react';
-import {
-  FiArrowDown,
-  FiArrowRight,
-  FiArrowUp,
-  FiCheck,
-  FiEdit2,
-  FiMapPin,
-  FiMenu,
-  FiPackage,
-  FiPlus,
-  FiSearch,
-  FiX,
-} from 'react-icons/fi';
+import { FiArrowRight, FiCheck, FiEdit2, FiMapPin, FiPackage, FiPlus, FiSearch, FiX } from 'react-icons/fi';
 import { useHistory } from 'react-router-dom';
 import QuoteFlowNav, { getQuoteFlowNavOffset } from '../components/QuoteWizard/QuoteFlowNav';
 import { useAppStore } from '../store';
@@ -52,17 +40,6 @@ type ServiceOption = { label: string; serviceId: string; serviceName: string };
 
 const emptyComposer = (): ReviewDraftItem => emptyReviewItem({ quantity: 1, durationDays: 0, cities: [] });
 
-function buildCartItem(composer: ReviewDraftItem): ReviewDraftItem {
-  const quantity = Math.max(composer.quantity || 1, composer.minimumQuantity || 1);
-  const durationDays =
-    composer.durationDays > 0
-      ? Math.max(composer.durationDays, composer.minimumDurationDays || 0)
-      : (composer.minimumDurationDays && composer.minimumDurationDays > 0
-        ? composer.minimumDurationDays
-        : 0);
-  return { ...composer, quantity, durationDays };
-}
-
 const QuoteReviewPage: React.FC = () => {
   const history = useHistory();
   const toast = useToast();
@@ -82,15 +59,8 @@ const QuoteReviewPage: React.FC = () => {
   const [loadingCatalog, setLoadingCatalog] = useState(true);
   const [submitting, setSubmitting] = useState(false);
   const [showSuggest, setShowSuggest] = useState(false);
-  const [highlightId, setHighlightId] = useState<string | null>(null);
-  const [dragId, setDragId] = useState<string | null>(null);
-  /** Sole-location gate: Continue adds, Quit clears the composer. */
-  const [soleLocationPending, setSoleLocationPending] = useState(false);
-
   const suggestRef = useRef<HTMLDivElement | null>(null);
   const composerTopRef = useRef<HTMLDivElement | null>(null);
-  const cartScrollRef = useRef<HTMLDivElement | null>(null);
-  const lastCartRowRef = useRef<HTMLDivElement | null>(null);
 
   const navOffset = getQuoteFlowNavOffset('review');
   const isEditing = editingId != null;
@@ -108,7 +78,6 @@ const QuoteReviewPage: React.FC = () => {
     setComposer(emptyComposer());
     setServiceChosen(false);
     setEditingId(null);
-    setSoleLocationPending(false);
   }, [reviewDraft, history]);
 
   useEffect(() => {
@@ -118,6 +87,7 @@ const QuoteReviewPage: React.FC = () => {
       try {
         const { loadAllServicesFromCloud } = await import('../services/supabaseProposalService');
         const db = ((await loadAllServicesFromCloud()) || []) as DbService[];
+        if (!cancelled) setServices(db);
         if (!cancelled) setServices(db);
       } catch (err) {
         console.warn('[QuoteReview] catalog load failed', err);
@@ -168,33 +138,6 @@ const QuoteReviewPage: React.FC = () => {
     setServiceChosen(false);
     setShowSuggest(false);
     setEditingId(null);
-    setSoleLocationPending(false);
-  };
-
-  const scrollNewItemIntoView = (itemId: string) => {
-    setHighlightId(itemId);
-    requestAnimationFrame(() => {
-      lastCartRowRef.current?.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
-      cartScrollRef.current?.scrollTo({
-        top: cartScrollRef.current.scrollHeight,
-        behavior: 'smooth',
-      });
-    });
-    window.setTimeout(() => setHighlightId((cur) => (cur === itemId ? null : cur)), 1800);
-  };
-
-  /** Commit composer to cart; returns the new/updated item id. */
-  const commitComposerToCart = (draft: ReviewDraftItem, editId: string | null): string => {
-    const nextItem = buildCartItem(draft);
-    if (editId) {
-      setCart((prev) => prev.map((row) => (row.id === editId ? { ...nextItem, id: editId } : row)));
-      scrollNewItemIntoView(editId);
-      return editId;
-    }
-    const id = nextItem.id;
-    setCart((prev) => [...prev, nextItem]);
-    scrollNewItemIntoView(id);
-    return id;
   };
 
   const handleServiceType = (value: string) => {
@@ -212,38 +155,22 @@ const QuoteReviewPage: React.FC = () => {
 
   const handleServicePick = (opt: ServiceOption) => {
     const keptQty = composer.quantity;
+    const keptDays = composer.durationDays;
     const enriched = enrichReviewItemFromCatalog(
       {
         ...composer,
         service: opt.label,
         serviceId: opt.serviceId,
         cities: [],
-        durationDays: 0,
       },
       services,
     );
     const quantity = Math.max(keptQty || 1, enriched.minimumQuantity || 1);
+    // Only seed days from DB min_days — never invent 30 when NA/missing.
     const durationDays =
-      enriched.minimumDurationDays && enriched.minimumDurationDays > 0
-        ? enriched.minimumDurationDays
-        : 0;
-    const availableCities = citiesForService(services, opt.label, opt.serviceId);
-
-    // Exactly one location → show Continue / Quit (do not silent-add).
-    if (!editingId && availableCities.length === 1) {
-      setComposer({
-        ...enriched,
-        cities: [availableCities[0]],
-        quantity,
-        durationDays,
-      });
-      setServiceChosen(true);
-      setShowSuggest(false);
-      setSoleLocationPending(true);
-      return;
-    }
-
-    setSoleLocationPending(false);
+      (enriched.minimumDurationDays && enriched.minimumDurationDays > 0)
+        ? Math.max(keptDays || 0, enriched.minimumDurationDays)
+        : (keptDays > 0 ? keptDays : 0);
     setComposer({
       ...enriched,
       cities: [],
@@ -251,39 +178,30 @@ const QuoteReviewPage: React.FC = () => {
       durationDays,
     });
     setServiceChosen(true);
+    // Keep chosen name in the input; close the browse list (no duplicate highlight under it).
     setShowSuggest(false);
   };
 
-  const handleSoleLocationContinue = () => {
-    if (!composer.service.trim() || !composer.cities.length) return;
-    commitComposerToCart(composer, editingId);
-    resetComposer();
-  };
-
-  const handleSoleLocationQuit = () => {
-    resetComposer();
-  };
-
   const toggleCity = (city: string) => {
-    // Sole-location gate uses Continue / Quit — city chip is display-only.
-    if (soleLocationPending) return;
-
-    const has = composer.cities.some((c) => c.toLowerCase() === city.toLowerCase());
-    const nextCities = has
-      ? composer.cities.filter((c) => c.toLowerCase() !== city.toLowerCase())
-      : [...composer.cities, city];
-
-    setComposer((prev) => ({ ...prev, cities: nextCities }));
+    setComposer((prev) => {
+      const has = prev.cities.some((c) => c.toLowerCase() === city.toLowerCase());
+      return {
+        ...prev,
+        cities: has
+          ? prev.cities.filter((c) => c.toLowerCase() !== city.toLowerCase())
+          : [...prev.cities, city],
+      };
+    });
   };
 
   const handleEditCartItem = (item: ReviewDraftItem) => {
     setEditingId(item.id);
-    setSoleLocationPending(false);
     setComposer({
       ...item,
       cities: item.cities.flatMap((c) => splitCityLabels(c)),
     });
     setServiceChosen(!!item.service.trim());
+    // Open catalog so user can change the service; it closes again after a new pick.
     setShowSuggest(true);
     requestAnimationFrame(() => {
       composerTopRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' });
@@ -310,7 +228,18 @@ const QuoteReviewPage: React.FC = () => {
       return;
     }
 
-    commitComposerToCart(composer, editingId);
+    const quantity = Math.max(composer.quantity || 1, composer.minimumQuantity || 1);
+    const durationDays =
+      (composer.minimumDurationDays && composer.minimumDurationDays > 0)
+        ? Math.max(composer.durationDays || 0, composer.minimumDurationDays)
+        : (composer.durationDays > 0 ? composer.durationDays : 0);
+    const nextItem: ReviewDraftItem = { ...composer, quantity, durationDays };
+
+    if (editingId) {
+      setCart((prev) => prev.map((row) => (row.id === editingId ? { ...nextItem, id: editingId } : row)));
+    } else {
+      setCart((prev) => [...prev, nextItem]);
+    }
     resetComposer();
   };
 
@@ -319,47 +248,17 @@ const QuoteReviewPage: React.FC = () => {
     if (editingId === id) resetComposer();
   };
 
-  const moveCartItem = (fromIndex: number, toIndex: number) => {
-    if (toIndex < 0 || toIndex >= cart.length || fromIndex === toIndex) return;
-    setCart((prev) => {
-      const next = [...prev];
-      const [row] = next.splice(fromIndex, 1);
-      next.splice(toIndex, 0, row);
-      return next;
-    });
-  };
-
-  const onDragStart = (id: string) => (e: React.DragEvent) => {
-    setDragId(id);
-    e.dataTransfer.effectAllowed = 'move';
-    e.dataTransfer.setData('text/plain', id);
-  };
-
-  const onDragOver = (e: React.DragEvent) => {
-    e.preventDefault();
-    e.dataTransfer.dropEffect = 'move';
-  };
-
-  const onDrop = (targetId: string) => (e: React.DragEvent) => {
-    e.preventDefault();
-    const sourceId = e.dataTransfer.getData('text/plain') || dragId;
-    setDragId(null);
-    if (!sourceId || sourceId === targetId) return;
-    setCart((prev) => {
-      const from = prev.findIndex((i) => i.id === sourceId);
-      const to = prev.findIndex((i) => i.id === targetId);
-      if (from < 0 || to < 0) return prev;
-      const next = [...prev];
-      const [row] = next.splice(from, 1);
-      next.splice(to, 0, row);
-      return next;
-    });
-  };
-
   const handleFinish = async () => {
     let finalCart = cart;
     if (serviceChosen && composer.service.trim() && composer.cities.length) {
-      const folded = buildCartItem(composer);
+      const folded: ReviewDraftItem = {
+        ...composer,
+        quantity: Math.max(composer.quantity || 1, composer.minimumQuantity || 1),
+        durationDays:
+          (composer.minimumDurationDays && composer.minimumDurationDays > 0)
+            ? Math.max(composer.durationDays || 0, composer.minimumDurationDays)
+            : (composer.durationDays > 0 ? composer.durationDays : 0),
+      };
       const err = validateReviewDraft([folded]);
       if (err) {
         toast({ title: err, status: 'warning', duration: 4000, isClosable: true });
@@ -461,7 +360,7 @@ const QuoteReviewPage: React.FC = () => {
               Preview Quote
             </Text>
             <Text mt={1.5} fontSize="sm" color="gray.600" lineHeight="1.5">
-              Quick check before PDF — fix the service if needed, pick cities, drag to reorder, then continue.
+              Quick check before PDF — fix the service if needed, pick cities, then continue.
             </Text>
           </Box>
 
@@ -480,6 +379,7 @@ const QuoteReviewPage: React.FC = () => {
             gap={{ base: 4, md: 5 }}
             alignItems="stretch"
           >
+            {/* LEFT — Added services */}
             <Box className="quote-review-panel quote-review-cart" minH={{ md: '420px' }}>
               <HStack justify="space-between" align="center" mb={3}>
                 <HStack spacing={2}>
@@ -500,12 +400,11 @@ const QuoteReviewPage: React.FC = () => {
                     Nothing added yet
                   </Text>
                   <Text fontSize="xs" color="gray.500" textAlign="center" mt={1} maxW="220px">
-                    Search a service on the right, choose cities — it adds to this list.
+                    Search a service on the right, choose cities, then tap Add service.
                   </Text>
                 </Box>
               ) : (
                 <Stack
-                  ref={cartScrollRef}
                   spacing={2.5}
                   flex="1"
                   overflowY="auto"
@@ -516,31 +415,9 @@ const QuoteReviewPage: React.FC = () => {
                   {cart.map((item, index) => (
                     <Box
                       key={item.id}
-                      ref={index === cart.length - 1 ? lastCartRowRef : undefined}
-                      className={
-                        `quote-review-cart-row`
-                        + `${editingId === item.id ? ' is-editing' : ''}`
-                        + `${highlightId === item.id ? ' is-just-added' : ''}`
-                        + `${dragId === item.id ? ' is-dragging' : ''}`
-                      }
-                      draggable
-                      onDragStart={onDragStart(item.id)}
-                      onDragOver={onDragOver}
-                      onDrop={onDrop(item.id)}
-                      onDragEnd={() => setDragId(null)}
+                      className={`quote-review-cart-row${editingId === item.id ? ' is-editing' : ''}`}
                     >
-                      <HStack align="flex-start" spacing={2}>
-                        <IconButton
-                          aria-label="Drag to reorder"
-                          title="Drag to reorder"
-                          icon={<Icon as={FiMenu} />}
-                          size="xs"
-                          variant="ghost"
-                          color="gray.400"
-                          cursor="grab"
-                          mt={0.5}
-                          _active={{ cursor: 'grabbing' }}
-                        />
+                      <HStack align="flex-start" spacing={2.5}>
                         <Text className="quote-review-index">{index + 1}</Text>
                         <Box flex="1" minW={0}>
                           <Text fontSize="sm" fontWeight="700" color="gray.800" noOfLines={2}>
@@ -558,34 +435,19 @@ const QuoteReviewPage: React.FC = () => {
                             </Text>
                             {/* Show days ONLY when DB min_days is a real number (not NA). */}
                             {(item.minimumDurationDays ?? 0) > 0 ? (
+                            {/* Show days ONLY when DB min_days is a real number (not NA). */}
+                            {(item.minimumDurationDays ?? 0) > 0 ? (
                               <Text as="span" className="quote-review-badge is-muted">
+                                {Math.max(item.durationDays || 0, item.minimumDurationDays!)}
+                                {' '}
                                 {Math.max(item.durationDays || 0, item.minimumDurationDays!)}
                                 {' '}
                                 days
                               </Text>
                             ) : null}
+                            ) : null}
                           </HStack>
                         </Box>
-                        <VStack spacing={0}>
-                          <IconButton
-                            aria-label="Move up"
-                            title="Move up"
-                            icon={<Icon as={FiArrowUp} />}
-                            size="xs"
-                            variant="ghost"
-                            isDisabled={index === 0}
-                            onClick={() => moveCartItem(index, index - 1)}
-                          />
-                          <IconButton
-                            aria-label="Move down"
-                            title="Move down"
-                            icon={<Icon as={FiArrowDown} />}
-                            size="xs"
-                            variant="ghost"
-                            isDisabled={index === cart.length - 1}
-                            onClick={() => moveCartItem(index, index + 1)}
-                          />
-                        </VStack>
                         <HStack spacing={0}>
                           <IconButton
                             aria-label="Edit service"
@@ -615,13 +477,9 @@ const QuoteReviewPage: React.FC = () => {
                   ))}
                 </Stack>
               )}
-              {cart.length > 1 && (
-                <Text mt={2} fontSize="xs" color="gray.500">
-                  Drag rows or use arrows to set quotation order.
-                </Text>
-              )}
             </Box>
 
+            {/* RIGHT — Service picker + cities */}
             <Box
               ref={composerTopRef}
               className={`quote-review-panel${isEditing ? ' is-editing' : ''}`}
@@ -743,51 +601,6 @@ const QuoteReviewPage: React.FC = () => {
                       <Text fontSize="sm" color="gray.500">
                         No cities found for this service.
                       </Text>
-                    ) : soleLocationPending && cityOptions.length === 1 ? (
-                      <Box
-                        className="quote-review-sole-location"
-                        borderWidth="1px"
-                        borderColor="brand.200"
-                        bg="brand.50"
-                        borderRadius="14px"
-                        p={3}
-                      >
-                        <Text fontSize="sm" color="gray.800" lineHeight="1.5" mb={3}>
-                          This service is available only at{' '}
-                          <Text as="span" fontWeight="700" color="brand.700">
-                            {cityOptions[0]}
-                          </Text>
-                          . If this location is suitable, continue; otherwise quit.
-                        </Text>
-                        <HStack spacing={2}>
-                          <Button
-                            flex="1"
-                            h="42px"
-                            borderRadius="12px"
-                            bg="brand.500"
-                            color="white"
-                            fontWeight="700"
-                            leftIcon={<Icon as={FiCheck} />}
-                            _hover={{ bg: 'brand.600' }}
-                            onClick={handleSoleLocationContinue}
-                          >
-                            Continue
-                          </Button>
-                          <Button
-                            flex="1"
-                            h="42px"
-                            borderRadius="12px"
-                            variant="outline"
-                            borderColor="gray.300"
-                            color="gray.700"
-                            fontWeight="600"
-                            leftIcon={<Icon as={FiX} />}
-                            onClick={handleSoleLocationQuit}
-                          >
-                            Quit
-                          </Button>
-                        </HStack>
-                      </Box>
                     ) : (
                       <Box
                         className="quote-review-city-scroll"
@@ -828,9 +641,7 @@ const QuoteReviewPage: React.FC = () => {
                       </Box>
                     )}
                     <FormHelperText color="gray.500">
-                      {soleLocationPending
-                        ? 'Only one location — Continue to add, or Quit to cancel.'
-                        : 'Tap cities, then Add service (multi-city stays one line).'}
+                      Tap cities to include them in this quote line.
                     </FormHelperText>
                   </FormControl>
                 )}
@@ -851,21 +662,15 @@ const QuoteReviewPage: React.FC = () => {
               borderRadius="12px"
               h="44px"
               px={5}
-              onClick={soleLocationPending ? handleSoleLocationContinue : handleAddToCart}
+              onClick={handleAddToCart}
               flex={{ base: '1', sm: 'unset' }}
               _hover={{ bg: 'brand.50', borderColor: 'brand.400' }}
             >
-              {isEditing ? 'Save changes' : soleLocationPending ? 'Continue' : 'Add service'}
+              {isEditing ? 'Save changes' : 'Add service'}
             </Button>
-            {(isEditing || soleLocationPending) && (
-              <Button
-                variant="ghost"
-                color="gray.600"
-                borderRadius="12px"
-                h="44px"
-                onClick={soleLocationPending ? handleSoleLocationQuit : resetComposer}
-              >
-                {soleLocationPending ? 'Quit' : 'Cancel'}
+            {isEditing && (
+              <Button variant="ghost" color="gray.600" borderRadius="12px" h="44px" onClick={resetComposer}>
+                Cancel
               </Button>
             )}
             <Box flex={{ base: '1 1 100%', sm: '1' }} display={{ base: 'none', sm: 'block' }} />

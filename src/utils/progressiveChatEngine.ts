@@ -67,6 +67,9 @@ import {
   scoreDirectionMatch,
 } from './directionMatcher';
 import type { ResolvedLocation } from '../types/location';
+import { USE_NEW_CHAT_ENGINE } from '../chat/config';
+import { continueChatActionSync } from '../chat/continueChatAction';
+import { handleChatTurnSync } from '../chat/handleChatTurn';
 
 // Legacy vocabulary used only for typed metro aliases and service-id parsing.
 // City chips, city locks, filtering, and quote generation must use DB metadata
@@ -96,7 +99,6 @@ export type ProgressiveStep =
   | 'no_match'
   | 'min_qty_confirm'
   | 'min_duration_confirm'
-  | 'single_location_confirm'
   | 'qty_or_duration_clarify'
   | 'quote_ready'
   | 'small_talk';
@@ -200,12 +202,6 @@ export interface ProgressiveSession {
   batchUnavailableNote?: string;
   /** True after the unavailable note was shown once in botText. */
   batchUnavailableSpoken?: boolean;
-  /** True after the multi-service “handled one by one” intro was shown. */
-  batchIntroSpoken?: boolean;
-  /** User confirmed the only available location (Continue on single_location_confirm). */
-  singleLocationConfirmed?: boolean;
-  /** Sole city waiting for Continue/Quit (cleared after lock). */
-  pendingSoleCity?: string;
   /**
    * Place-only browse (e.g. "hosur"/"madurai") — block silent quote finalize
    * until the user picks a service chip or Continue.
@@ -348,13 +344,18 @@ function isCompactReply(text: string | null | undefined): boolean {
   return countReplyWords(lines.join(' ')) <= MAX_REPLY_WORDS;
 }
 
-/** Join at most two lines. Keep full catalog names — never slice mid-word. */
-function compactFunnelReply(avail?: string | null, ask?: string | null): string {
+/** Availability + ask, max two lines. User-facing copy is DB templates only. */
+function formatReply(avail?: string | null, ask?: string | null): string {
   const lines = [avail, ask]
     .map((s) => (s || '').trim().replace(/\s+/g, ' '))
     .filter(Boolean)
     .slice(0, MAX_REPLY_LINES);
   return lines.join('\n');
+}
+
+/** Join at most two lines. Keep full catalog names — never slice mid-word. */
+function compactFunnelReply(avail?: string | null, ask?: string | null): string {
+  return formatReply(avail, ask);
 }
 
 function clampReplyLines(text: string): string {
@@ -378,8 +379,9 @@ function joinNoteAndAsk(note?: string | null, ask?: string | null): string {
   return compactFunnelReply(n || undefined, a && a !== n ? a : undefined);
 }
 
-function preferEngineCopy(reply: string | null | undefined, engineText: string): string {
-  return isCompactReply(reply) ? String(reply).trim() : engineText;
+/** Phase 1: botText is always DB-driven engine copy — never AI shortReply. */
+function preferEngineCopy(_reply: string | null | undefined, engineText: string): string {
+  return engineText;
 }
 
 function composeReply(
@@ -1801,39 +1803,9 @@ function copyBatchSkipCitiesContinue(
   return `${svc} ${verb} in ${dead}. Continuing in ${continueCity}.`;
 }
 
-/**
- * Multi-service batch opener — tell the user services are handled one by one.
- * Example: “We found two services… Let's check Bus first.”
- */
-function copyBatchMultiServiceIntro(
-  count: number,
-  labels: string[],
-  firstLabel: string,
-): string {
-  const list = formatBatchServiceList(labels.length ? labels : [firstLabel]);
-  const countWord =
-    count === 2 ? 'two'
-      : count === 3 ? 'three'
-        : String(count);
-  const rest = labels.filter(
-    (l) => canonicalizeServiceName(l) !== canonicalizeServiceName(firstLabel),
-  );
-  const followed = rest.length
-    ? `, then ${formatBatchServiceList(rest)}`
-    : '';
-  return (
-    `We found ${countWord} services (${list}). `
-    + `We'll go one by one — ${firstLabel} first${followed}.`
-  );
-}
-
 function copyBatchStart(city: string, count: number, firstLabel: string, allLabels?: string[]): string {
-  // Multi-service intro only — withBatchStepPrompt appends the real step ask
-  // (sole-location Continue/Quit, type chips, city, …). Do not bake in
-  // "I have the below options" here or it replaces the location check.
-  if (count >= 2 && allLabels && allLabels.length >= 2) {
-    return copyBatchMultiServiceIntro(count, allLabels, firstLabel);
-  }
+  void count;
+  void allLabels;
   return copyAskType(firstLabel, null, city);
 }
 
@@ -1877,59 +1849,11 @@ function withBatchStepPrompt(
   if (result.step === 'min_qty_confirm' || result.step === 'quote_ready') {
     return result;
   }
-  // Keep multi-service / handoff intro, but ALWAYS keep the sole-location ask
-  // (never let batch intro replace it with "I have the below options for you").
-  if (result.step === 'single_location_confirm') {
-    const cityFromOpt =
-      result.options.find((o) => o.id === 'continue_single_location' && o.city)?.city
-      || result.options.find((o) => !!o.city)?.city
-      || result.session.pendingSoleCity
-      || '';
-    const locationAsk = cityFromOpt
-      ? copySingleLocationConfirm(
-        cityFromOpt,
-        result.session.medium || result.session.browseToken,
-      )
-      : (result.botText || '').trim().replace(/\n?I have the below options for you\.?/gi, '').trim()
-        || result.botText;
-    const lines = replyLines(trimmed);
-    const multiIntro = lines.find((line) =>
-      /we found \w+ services/i.test(line)
-      || /we'?ll go one by one/i.test(line)
-      || /one by one/i.test(line),
-    );
-    const choosing = lines.find((line) => /^now choosing\b/i.test(line));
-    const prefix = multiIntro || choosing;
-    if (prefix && locationAsk && !canonicalizeServiceName(prefix).includes(
-      canonicalizeServiceName(locationAsk).slice(0, 24),
-    )) {
-      return {
-        ...result,
-        botText: compactFunnelReply(prefix, locationAsk),
-      };
-    }
-    return { ...result, botText: locationAsk || result.botText };
-  }
-  // Type chips → keep multi-service “one by one” intro so users know Auto follows Bus
+  // Type chips → full understand + options copy (with city when locked)
   if (result.step === 'pick_type') {
     const med = result.session.browseToken || result.session.medium || '';
     const typeAsk = copyAskType(med, result.session);
-    const typeAskLine2 = typeAsk.split('\n').slice(-1)[0]
-      || 'I have the below options for you.';
-    const lines = replyLines(trimmed);
-    const multiIntro = lines.find((line) =>
-      /we found \w+ services/i.test(line)
-      || /we'?ll go one by one/i.test(line)
-      || /let'?s check .+ first/i.test(line)
-      || /one by one/i.test(line),
-    );
-    if (multiIntro) {
-      return {
-        ...result,
-        botText: compactFunnelReply(multiIntro, typeAskLine2),
-      };
-    }
-    const choosing = lines.find((line) => /^now choosing\b/i.test(line));
+    const choosing = replyLines(trimmed).find((line) => /^now choosing\b/i.test(line));
     if (choosing) {
       const city = (result.session.city || '').trim();
       const line2 = city
@@ -2042,9 +1966,7 @@ function tryAutoResolveBatchWork(
   const cities = uniqueCityOptionsFromPool(pool, medium);
   if (!city) {
     if (cities.length > 1) return null;
-    // Sole city (incl. "Any City In Tamilnadu") must go through Continue/Quit —
-    // never silent auto-add in a multi-service batch.
-    if (cities.length === 1) return null;
+    if (cities.length === 1) city = cities[0].city || cities[0].label;
   }
   if (city) {
     const scoped = pool.filter((s) => serviceMatchesCityLabel(s, city!));
@@ -2164,18 +2086,11 @@ function launchSequentialBatchWork(
   const firstLabel = titleCase(askFirst.browseToken || askFirst.medium);
   const sessionCity = opts.lockedCity || askFirst.city;
 
-  const speakIntro = !session.batchIntroSpoken && workItems.length >= 2;
-  const labelsForIntro = speakIntro ? availLabels : undefined;
   const askLine = opts.autoLabels?.length
-    ? copyBatchAutoAddedThenAsk(opts.autoLabels, firstLabel, sessionCity, labelsForIntro)
+    ? copyBatchAutoAddedThenAsk(opts.autoLabels, firstLabel, sessionCity, availLabels)
     : sessionCity
-      ? copyBatchStart(
-        sessionCity,
-        workItems.length,
-        firstLabel,
-        labelsForIntro,
-      )
-      : copyBatchAutoAddedThenAsk([], firstLabel, undefined, labelsForIntro);
+      ? copyBatchStart(sessionCity, workItems.length, firstLabel, availLabels)
+      : copyBatchAutoAddedThenAsk([], firstLabel, undefined, availLabels);
 
   // Explicit Mobile Van variants go through the normal funnel (city auto-lock →
   // "Now choosing …"). Mid-turn auto-add left bot text on Mobile Van while
@@ -2210,9 +2125,6 @@ function launchSequentialBatchWork(
       pendingMedia: [],
       pendingCityQueue: undefined,
       needsContinueConfirm: false,
-      // Fresh batch service — never inherit a prior sole-location Continue.
-      singleLocationConfirmed: false,
-      pendingSoleCity: undefined,
       area: undefined,
       placeHint: undefined,
       directionHint: undefined,
@@ -2221,11 +2133,9 @@ function launchSequentialBatchWork(
       batchUnavailableLabels: opts.batchUnavailableLabels,
       batchUnavailableNote: opts.unavailableNote,
       batchUnavailableSpoken: false,
-      batchIntroSpoken: speakIntro || session.batchIntroSpoken,
     },
     services,
-    // Prefer batch intro over AI shortReply so sole-location copy is not wiped.
-    intro.trim() || opts.reply,
+    opts.reply || intro.trim(),
   );
   const noted = withBatchUnavailableNote(result.botText, {
     ...result.session,
@@ -2278,19 +2188,13 @@ function copyBatchAutoAddedThenAsk(
   city?: string,
   allLabels?: string[],
 ): string {
-  // Step ask is added by withBatchStepPrompt (type / city / sole-location).
+  void allLabels;
   if (autoLabels.length) {
     const where = city ? ` in ${city}` : '';
-    const prefix =
-      allLabels && allLabels.length >= 2
-        ? `${copyBatchMultiServiceIntro(allLabels.length, allLabels, nextLabel)} `
-        : '';
     return compactFunnelReply(
-      `${prefix}${formatBatchServiceList(autoLabels)} added${where}.`,
+      `${formatBatchServiceList(autoLabels)} added${where}.`,
+      copyAskType(nextLabel, null, city).split('\n').slice(-1)[0],
     );
-  }
-  if (allLabels && allLabels.length >= 2) {
-    return copyBatchMultiServiceIntro(allLabels.length, allLabels, nextLabel);
   }
   return copyAskType(nextLabel, null, city);
 }
@@ -4557,9 +4461,8 @@ function startBatchMultiSelect(
 /**
  * Multi-service, no shared city: one service at a time through the full funnel
  * (Type → City → Area → Direction). Skip 0/1; ask only when 2+.
- * Do NOT pre-lock a sole DB city onto the work item — that silently finalizes
- * statewide labels like "Any City In Tamilnadu" and skips Continue/Quit.
- * Sole city is handled in advanceFunnel via single_location_confirm.
+ * Services that exist in exactly one DB city label are auto-locked —
+ * no OK Continue one-by-one. 2+ DB city labels → leave city unlocked.
  */
 function startBatchSequentialFunnel(
   segments: BatchSegment[],
@@ -4581,6 +4484,24 @@ function startBatchSequentialFunnel(
   /** Service named with a city that has no inventory there — do not add from elsewhere */
   const cityUnavailable: Array<{ label: string; city: string }> = [];
   const seenTok = new Set<string>();
+
+  /**
+   * Auto-lock only when priced (else all) hits share exactly one funnel city.
+   * Uses DB metadata.city / area_name — never known-metro-only matching that
+   * invents Chennai/Madurai when other DB cities also exist.
+   */
+  const soleFunnelCityForHits = (hits: DbService[]): string | null => {
+    const byKey = new Map<string, string>();
+    for (const h of hits) {
+      const city = funnelCityFromDb(h);
+      if (!city) continue;
+      const key = canonicalizeServiceName(city);
+      if (!key || byKey.has(key)) continue;
+      byKey.set(key, city);
+    }
+    if (byKey.size !== 1) return null;
+    return [...byKey.values()][0]!;
+  };
 
   for (const seg of segments) {
     // Prefer the already qty/city-stripped segment token from parseServiceSegments.
@@ -4625,11 +4546,12 @@ function startBatchSequentialFunnel(
       for (const h of hits) qtyByServiceId[h.service_id] = seg.qty;
     }
 
-    // Prefer priced inventory for candidate ids (display), but never invent a
-    // sole-city lock here — user must Continue/Quit when only one location exists.
+    // Prefer priced inventory when auto-locking a sole city so an unpriced
+    // Madurai (or other) row cannot invent a city the user never named.
     const pricedHits = hits.filter(hasQuotablePricing);
-    // Only lock city when the user named it on this segment (or shared-city batch).
-    const soleCity = seg.city || undefined;
+    const soleCity = seg.city
+      || soleFunnelCityForHits(pricedHits.length ? pricedHits : hits)
+      || undefined;
 
     const exactSel = detectExactCatalogSelection(seg.raw, services);
     const exactKey = resolveExactMediumKey(token, services);
@@ -6455,44 +6377,12 @@ function lockOneCity(
     city: onlyCity,
     needsContinueConfirm: false,
     unresolvedPlaceOffer: false,
-    singleLocationConfirmed: true,
-    pendingSoleCity: undefined,
     candidateServiceIds: pool.map((s) => s.service_id),
     pendingRows: undefined,
   };
 }
 
-/** True when the user already named this city/place in their message. */
-function userNamedLocationInText(text: string | undefined, location: string): boolean {
-  const loc = canonicalizeServiceName(location);
-  const blob = canonicalizeServiceName(text || '');
-  if (!loc || !blob) return false;
-
-  // Statewide inventory ("Any City In Tamilnadu") — only count as named when the
-  // user actually said any-city / Tamil Nadu / statewide (never silent auto-lock).
-  if (isStatewideFunnelCityLabel(location)) {
-    return (
-      /\bany\s+city\b/.test(blob)
-      || /\btamil\s*nadu\b/.test(blob)
-      || /\bstatewide\b/.test(blob)
-    );
-  }
-
-  if (blob.includes(loc)) return true;
-  const locTokens = loc.split(/\s+/).filter((t) => t.length >= 3);
-  if (locTokens.length >= 2 && locTokens.every((t) => blob.includes(t))) return true;
-  return false;
-}
-
-function copySingleLocationConfirm(location: string, mediumName?: string): string {
-  const svc = mediumName ? titleCase(mediumName) : 'This service';
-  return (
-    `${svc} is available only at ${location}. `
-    + `Continue if suitable, or quit.`
-  );
-}
-
-function filterPoolBySession(services: DbService[], session: ProgressiveSession): DbService[] {
+export function filterPoolBySession(services: DbService[], session: ProgressiveSession): DbService[] {
   let pool = session.candidateServiceIds?.length
     ? services.filter((s) => session.candidateServiceIds!.includes(s.service_id))
     : [...services];
@@ -6744,34 +6634,6 @@ export function advanceFunnel(
     }
 
     // 3) City — raw DB city values (OMR/Padur/Chennai as stored). No metro invent.
-    // Statewide sole lock (e.g. "Any City In Tamilnadu") must not silently finalize —
-    // ask Continue / Quit unless the user already named it or confirmed.
-    if (
-      sess.city
-      && isStatewideFunnelCityLabel(sess.city)
-      && !sess.singleLocationConfirmed
-      && !userNamedLocationInText(sess.originalText, sess.city)
-    ) {
-      const cityPool = poolForCityOptions(services, sess, pool);
-      return {
-        step: 'single_location_confirm',
-        // Never use batch `reply` here — it overwrites with "I have the below options".
-        botText: copySingleLocationConfirm(sess.city, sess.medium || sess.browseToken),
-        options: [
-          { id: 'continue_single_location', label: 'Continue', city: sess.city },
-          { id: 'quit_single_location', label: 'Quit' },
-        ],
-        allowMulti: false,
-        session: {
-          ...sess,
-          pendingSoleCity: sess.city,
-          city: undefined,
-          candidateServiceIds: cityPool.map((s) => s.service_id),
-          needsContinueConfirm: false,
-        },
-      };
-    }
-
     if (!sess.city) {
       const cityPool = poolForCityOptions(services, sess, pool);
       const cities = uniqueCityOptionsFromPool(cityPool, sess.medium);
@@ -6834,31 +6696,8 @@ export function advanceFunnel(
           };
         }
         const onlyCity = cities[0].city || cities[0].label;
-        // User already named this city, or already confirmed → auto-lock (no tap).
-        // Otherwise Continue / Quit (statewide "Any City In Tamilnadu" included).
-        if (
-          sess.singleLocationConfirmed
-          || userNamedLocationInText(sess.originalText, onlyCity)
-        ) {
-          sess = lockOneCity(sess, cityPool, onlyCity);
-          continue;
-        }
-        return {
-          step: 'single_location_confirm',
-          // Never use batch `reply` here — it overwrites with "I have the below options".
-          botText: copySingleLocationConfirm(onlyCity, sess.medium || sess.browseToken),
-          options: [
-            { id: 'continue_single_location', label: 'Continue', city: onlyCity },
-            { id: 'quit_single_location', label: 'Quit' },
-          ],
-          allowMulti: false,
-          session: {
-            ...sess,
-            pendingSoleCity: onlyCity,
-            candidateServiceIds: cityPool.map((s) => s.service_id),
-            needsContinueConfirm: false,
-          },
-        };
+        sess = lockOneCity(sess, cityPool, onlyCity);
+        continue;
       }
       // 0 cities (all NA) — if place locked, lock place label and continue
       if ((sess.area || sess.placeHint) && cityPool.length > 0) {
@@ -7303,9 +7142,6 @@ function continuePendingWork(
         candidateServiceIds: next.candidateServiceIds,
         pendingRows: undefined,
         needsContinueConfirm: false,
-        // Each service must re-confirm its own sole location (never inherit).
-        singleLocationConfirmed: false,
-        pendingSoleCity: undefined,
         batchServiceLabels: session.batchServiceLabels,
       },
       services,
@@ -7690,7 +7526,9 @@ export function isNewServiceSwitch(
  * Stateful funnel merge (typed messages):
  * - DIFFERENT catalog SERVICE → full funnel reset; keep only entities in this message
  * - SAME service name echo → continue; keep type/city/area/direction; overlay new entities
- * - No service → refine current funnel (city / area / direction updates)
+ * - Service named again (same or different) → refresh qty:
+ *     number in this message → user qty; no number → null (DB min when rows build)
+ * - No service → refine current funnel (city / area / direction); keep prior qty
  * - AREA change → clear direction + site candidates (dependents)
  * - Same area again → keep direction
  * - DIRECTION change → update direction only
@@ -7765,7 +7603,6 @@ function mergePriorWithDetected(
       originalText: detected.originalText,
       qty: detected.qty,
       durationText: detected.durationText || undefined,
-      aiReply: detected.shortReply,
       medium: newMedia,
       browseToken: newMedia,
       city: cityFromText || (familyUpgrade ? prior.city : undefined),
@@ -7852,12 +7689,22 @@ function mergePriorWithDetected(
 
   const lockedMedium = prior.medium || prior.browseToken || newMedia || undefined;
 
+  // Naming a service again (same family OR multi-service list) refreshes qty.
+  // City / area / type-only answers keep prior qty so mid-funnel edits stay intact.
+  const serviceNamedInMessage = !!newMedia || echoSegs.length >= 2;
+  const nextQty = serviceNamedInMessage
+    ? detected.qty
+    : (detected.qty ?? prior.qty);
+  const nextQtyByServiceId = serviceNamedInMessage
+    ? undefined
+    : prior.qtyByServiceId;
+
   return {
     ...prior,
     originalText: detected.originalText,
-    qty: detected.qty ?? prior.qty,
+    qty: nextQty,
+    qtyByServiceId: nextQtyByServiceId,
     durationText: detected.durationText ?? prior.durationText,
-    aiReply: detected.shortReply,
     city: nextCity || undefined,
     area: nextArea,
     placeHint: nextPlace,
@@ -7896,19 +7743,18 @@ export function matchFreeTextToProgressiveOption(
   if (!key) return null;
 
   // Affirmative for min-qty / yes-continue style chips
-  if (/^(yes|y|ok|okay|sure|continue)([\s,.-]*(use\s+)?minimums?)?$/i.test(raw)) {
+  if (/^(yes|y|ok|okay|sure)([\s,.-]*(use\s+)?minimums?)?$/i.test(raw)) {
     const yes = options.find((o) =>
-      /^(yes_min|yes_generate|yes|continue_single_location)$/i.test(o.id)
-      || /yes.*minimum|^continue$/i.test(o.label),
+      /^(yes_min|yes_generate|yes)$/i.test(o.id)
+      || /yes.*minimum/i.test(o.label),
     );
     if (yes) return yes;
   }
-  if (/^(quit|cancel|stop|no|nope)$/i.test(raw)) {
-    const quit = options.find((o) =>
-      /^(quit_min|quit_single_location|no_min|no)$/i.test(o.id)
-      || /^quit$/i.test(o.label),
+  if (/^(no|nope|adjust|i'?ll\s+adjust)$/i.test(raw)) {
+    const no = options.find((o) =>
+      /^(quit_min|quit_min_duration|no_min|no)$/i.test(o.id) || /adjust|quit/i.test(o.label),
     );
-    if (quit) return quit;
+    if (no) return no;
   }
 
   // Exact label match
@@ -7971,29 +7817,6 @@ export function matchFreeTextToProgressiveOption(
   }
 
   return null;
-}
-
-/**
- * User quit min-qty / single-location — full reset to free chat.
- * No option chips: user types a new request themselves.
- * Do NOT mine originalText for "Not providing …" (that glued "bus and auto" → "Bus Auto").
- */
-function replyUserCancelled(_services: DbService[]): ProgressiveTurnResult {
-  void _services;
-  const cleanSession: ProgressiveSession = {
-    originalText: '',
-    qty: null,
-  };
-  return {
-    step: 'no_match',
-    botText: compactFunnelReply(
-      'Okay — cancelled.',
-      'Type a service whenever you are ready.',
-    ),
-    options: [],
-    allowMulti: false,
-    session: stampReplyMeta(cleanSession, ''),
-  };
 }
 
 function softClarifyNeed(
@@ -8325,14 +8148,18 @@ export function resolveProgressiveText(
   const safeServices = (services || []).filter(
     (s): s is DbService => !!s && !!(s.service_id || s.service_name),
   );
-  const result = stampResultOpener(
-    resolveProgressiveTextInner(userText, safeServices, prior, intent),
-  );
+  const useNewEngine =
+    USE_NEW_CHAT_ENGINE
+    && parseServiceSegments(userText, safeServices).length < 2;
+  const inner = useNewEngine
+    ? handleChatTurnSync(userText, safeServices, prior, intent)
+    : resolveProgressiveTextLegacy(userText, safeServices, prior, intent);
+  const result = stampResultOpener(inner);
   logFunnelRes(result);
   return result;
 }
 
-function resolveProgressiveTextInner(
+export function resolveProgressiveTextLegacy(
   userText: string,
   services: DbService[],
   prior?: ProgressiveSession | null,
@@ -8361,19 +8188,15 @@ function resolveProgressiveTextInner(
       step: 'small_talk',
       botText: copyGreeting(originalText),
       options: [],
-      session: { originalText, qty: null, aiReply: intent.shortReply },
+      session: { originalText, qty: null },
     };
   }
   if (intent?.kind === 'help') {
     return {
       step: 'small_talk',
-      botText:
-        preferEngineCopy(
-          intent.shortReply,
-          compactFunnelReply('Tell me the service or city you need.'),
-        ),
+      botText: compactFunnelReply('Tell me the service or city you need.'),
       options: [],
-      session: { originalText, qty: null, aiReply: intent.shortReply },
+      session: { originalText, qty: null },
     };
   }
   if (intent?.kind === 'services_browse') {
@@ -8408,7 +8231,7 @@ function resolveProgressiveTextInner(
           : undefined,
       },
       services,
-      intent.shortReply,
+      null,
     );
   }
 
@@ -8573,7 +8396,8 @@ function resolveProgressiveTextInner(
     localityHintPreview: detectLocalityInText(originalText, services),
   });
 
-  const shortReply = intent?.shortReply || null;
+  // Phase 1: AI shortReply is parse-only — never surface in botText or reply args.
+  const shortReply = null;
 
   // Area only from exact locality in user text — ignore invented AI areaHint
   const localityHintRaw = detectLocalityInText(originalText, services);
@@ -8716,7 +8540,6 @@ function resolveProgressiveTextInner(
       pendingMedia: [],
       collectedRows: [],
       collectedServiceIds: [],
-      aiReply: shortReply,
       city: city || undefined,
       area: localityHint || undefined,
       placeHint: localityHint || undefined,
@@ -8793,6 +8616,9 @@ function resolveProgressiveTextInner(
           : undefined,
         medium: scopedMedium,
         browseToken: scopedBrowse,
+        // Fresh list request — no leftover requested qty from prior turns
+        qty: null,
+        qtyByServiceId: undefined,
         // Fresh list request — drop prior candidates so chips match this query only
         candidateServiceIds: undefined,
         directionHint: undefined,
@@ -8981,13 +8807,12 @@ function resolveProgressiveTextInner(
               needsContinueConfirm: true,
             },
             services,
-            shortReply
-              || (onlyMedium || media[0]
-                ? undefined
-                : compactFunnelReply(
-                  `Sites matching “${titleCase(originalText.trim())}”.`,
-                  'Which service do you need?',
-                )),
+            onlyMedium || media[0]
+              ? undefined
+              : compactFunnelReply(
+                `Sites matching “${titleCase(originalText.trim())}”.`,
+                'Which service do you need?',
+              ),
           );
         }
       } else {
@@ -9142,9 +8967,10 @@ function resolveProgressiveTextInner(
         {
           ...prior,
           originalText,
-          qty: qty ?? prior.qty ?? null,
+          // Retyped multi-service list: refresh qty (null → DB min). Don't keep leftover 5.
+          qty,
+          qtyByServiceId: undefined,
           durationText: durationText || prior.durationText,
-          aiReply: shortReply,
         },
         services,
         shortReply,
@@ -9181,11 +9007,12 @@ function resolveProgressiveTextInner(
     if (types.length > 1) {
       return {
         step: 'pick_type',
-        botText:
-          shortReply
-          || (hint === 'that'
+          botText: preferEngineCopy(
+            shortReply,
+            hint === 'that'
             ? copyAskType('this', { originalText, qty: null, city: city || undefined })
-            : copyAskType(hint, { originalText, qty: null, city: city || undefined }, city)),
+            : copyAskType(hint, { originalText, qty: null, city: city || undefined }, city),
+          ),
         options: types,
         allowMulti: true,
         session: {
@@ -9199,7 +9026,6 @@ function resolveProgressiveTextInner(
           qty,
           durationText,
           pendingMedia: [],
-          aiReply: shortReply,
           candidateServiceIds: types
             .map((t) => t.serviceId)
             .filter((id): id is string => !!id),
@@ -9224,7 +9050,6 @@ function resolveProgressiveTextInner(
             pendingMedia: [],
             collectedRows: [],
             collectedServiceIds: [],
-            aiReply: shortReply,
           },
           services,
           shortReply,
@@ -9233,11 +9058,11 @@ function resolveProgressiveTextInner(
       if (mediums.length > 1) {
         return {
           step: 'pick_type',
-          botText: shortReply || copyAskType(hint, {
+          botText: preferEngineCopy(shortReply, copyAskType(hint, {
             originalText,
             qty: null,
             city: city || undefined,
-          }, city),
+          }, city)),
           options: mediums,
           allowMulti: true,
           session: {
@@ -9247,20 +9072,20 @@ function resolveProgressiveTextInner(
             qty,
             durationText,
             pendingMedia: [],
-            aiReply: shortReply,
           },
         };
       }
     }
     return {
       step: 'pick_type',
-      botText:
-        shortReply
-        || copyAskType(
+      botText: preferEngineCopy(
+        shortReply,
+        copyAskType(
           hint === 'that' ? 'this' : hint,
           { originalText, qty: null, city: city || undefined },
           city,
         ),
+      ),
       options: types.length ? types : uniqueMediumOnlyOptions(services),
       allowMulti: true,
       session: {
@@ -9273,7 +9098,6 @@ function resolveProgressiveTextInner(
         qty,
         durationText,
         pendingMedia: [],
-        aiReply: shortReply,
       },
     };
   }
@@ -9314,7 +9138,6 @@ function resolveProgressiveTextInner(
           pendingMedia: [],
           collectedRows: [],
           collectedServiceIds: [],
-          aiReply: shortReply,
           resolvedLocation: resolvedLocation || undefined,
         },
         services,
@@ -9336,7 +9159,6 @@ function resolveProgressiveTextInner(
           pendingMedia: [],
           collectedRows: [],
           collectedServiceIds: [],
-          aiReply: shortReply,
           resolvedLocation: resolvedLocation || undefined,
         },
         services,
@@ -9370,7 +9192,6 @@ function resolveProgressiveTextInner(
           pendingMedia: [],
           collectedRows: [],
           collectedServiceIds: [],
-          aiReply: shortReply,
           resolvedLocation,
         },
         services,
@@ -9446,7 +9267,9 @@ function resolveProgressiveTextInner(
           placeHint: localityOnly || localityHint || undefined,
           directionHint: directionFromText || undefined,
           originalText,
-          qty: qty ?? baseSessionFields.qty,
+          // Exact medium upgrade still names a service → this message qty only
+          qty,
+          qtyByServiceId: undefined,
           durationText: durationText ?? baseSessionFields.durationText,
           candidateServiceIds: undefined,
           needsContinueConfirm: false,
@@ -9506,7 +9329,7 @@ function resolveProgressiveTextInner(
   if (words.length === 0 && !city && media.length === 0) {
     return {
       step: 'small_talk',
-      botText: shortReply || copyWhichService(),
+      botText: preferEngineCopy(shortReply, copyWhichService()),
       options: [],
       session: { originalText, qty: null },
     };
@@ -9530,10 +9353,11 @@ function resolveProgressiveTextInner(
       typesResolved: typeFromText
         ? true
         : baseSessionFields.typesResolved,
-      qty: qty ?? baseSessionFields.qty,
+      // Service named in text → refresh qty; city/area-only uses base (keeps prior)
+      qty: media[0] ? qty : (qty ?? baseSessionFields.qty),
+      qtyByServiceId: media[0] ? undefined : baseSessionFields.qtyByServiceId,
       durationText: durationText ?? baseSessionFields.durationText,
       pendingMedia: media.length > 1 ? media.slice(1) : [],
-      aiReply: shortReply,
     }
     : {
       originalText,
@@ -9552,7 +9376,6 @@ function resolveProgressiveTextInner(
       pendingMedia: media.length > 1 ? media.slice(1) : media.length === 1 ? [] : [],
       collectedRows: [],
       collectedServiceIds: [],
-      aiReply: shortReply,
       resolvedLocation: resolvedLocation || baseSessionFields.resolvedLocation || undefined,
     };
 
@@ -9620,9 +9443,10 @@ function resolveProgressiveTextInner(
           medium: baseSessionFields.medium || newMed,
           browseToken: baseSessionFields.browseToken || baseSessionFields.medium || newMed,
           originalText,
-          qty: qty ?? baseSessionFields.qty,
+          // Service retyped: this message's qty only (null → DB min). Never keep leftover 5.
+          qty,
+          qtyByServiceId: undefined,
           durationText: durationText ?? baseSessionFields.durationText,
-          aiReply: shortReply,
           // Keep type/city/area; clear site lock so we re-show previous step (not auto-quote)
           directionHint: undefined,
           candidateServiceIds: undefined,
@@ -9895,15 +9719,14 @@ function resolveProgressiveTextInner(
           placeHint: isKnownMetro ? sessionBase.placeHint : city,
         },
         services,
-        shortReply || copyPlaceServices(city),
+        preferEngineCopy(shortReply, copyPlaceServices(city)),
       );
     }
 
     return softClarifyNeed(
       services,
       sessionBase,
-      shortReply
-        || (city ? copyUnknownCity(city) : undefined),
+      city ? copyUnknownCity(city) : undefined,
     );
   }
 
@@ -9938,25 +9761,40 @@ function minQtyConfirmBotText(
   details: Array<{ service: string; requested: number; minimum: number }>,
   stillBelow = false,
 ): string {
-  void stillBelow;
-  if (!details.length) return '';
+  // The warning card already shows each service, requested quantity, and
+  // minimum quantity. Keep the chat response area empty to avoid duplicating
+  // the same warning in a separate assistant bubble.
+  return '';
+  /*
+  const tip = 'Or tap the pencil to edit the qty yourself.';
   if (details.length === 1) {
     const d = details[0];
-    const x = d.minimum.toLocaleString();
+    if (stillBelow) {
+      return (
+        `That's still below the minimum for ${d.service} `
+        + `(minimum ${d.minimum.toLocaleString()}, you entered ${d.requested.toLocaleString()}).\n\n`
+        + `Shall we use ${d.minimum.toLocaleString()}, or edit again?`
+      );
+    }
     return (
-      `The minimum quantity for ${d.service} is ${x}. `
-      + `Please select at least ${x} to continue, or quit if this does not work for you.`
+      `You asked for ${d.requested.toLocaleString()} on ${d.service}, `
+      + `but the minimum is ${d.minimum.toLocaleString()}.\n\n`
+      + `Shall we use the minimum so I can continue? ${tip}`
     );
   }
-  const parts = details
+  if (stillBelow) {
+    return `Some quantities are still below minimums.\n\nShall we use the minimums, or edit again?`;
+  }
+  const names = details
     .slice(0, 3)
-    .map((d) => `${d.service}: ${d.minimum.toLocaleString()}`)
-    .join('; ');
-  const extra = details.length > 3 ? ` (+${details.length - 3} more)` : '';
+    .map((d) => d.service)
+    .join(', ');
+  const extra = details.length > 3 ? ` +${details.length - 3} more` : '';
   return (
-    `Some lines are below the configured minimum (${parts}${extra}). `
-    + `Please select at least the minimum to continue, or quit if this does not work for you.`
+    `A few lines are below minimums (${names}${extra}).\n\n`
+    + `Shall we use the minimums so I can finish your quote? ${tip}`
   );
+  */
 }
 
 function minQtyConfirmOptions(): ProgressiveOption[] {
@@ -10299,16 +10137,13 @@ export function continueProgressiveAction(
     selected: selectedIds,
     session,
   });
-  const result = stampResultOpener(
-    continueProgressiveActionInner(
-      actionId,
-      session,
-      (services || []).filter(
-        (s): s is DbService => !!s && !!(s.service_id || s.service_name),
-      ),
-      selectedIds,
-    ),
+  const safeServices = (services || []).filter(
+    (s): s is DbService => !!s && !!(s.service_id || s.service_name),
   );
+  const inner = USE_NEW_CHAT_ENGINE
+    ? continueChatActionSync(actionId, session, safeServices, selectedIds)
+    : continueProgressiveActionInner(actionId, session, safeServices, selectedIds);
+  const result = stampResultOpener(inner);
   logFunnelRes(result);
   return result;
 }
@@ -10418,32 +10253,21 @@ function continueProgressiveActionInner(
     };
   }
 
-  if (actionId === 'continue_single_location') {
-    const pool = filterPoolBySession(services, session);
-    const cities = uniqueCityOptionsFromPool(pool, session.medium);
-    const onlyCity =
-      (session.pendingSoleCity || '').trim()
-      || (cities.length === 1 ? (cities[0].city || cities[0].label) : '')
-      || (session.city || cities[0]?.city || cities[0]?.label || '');
-    if (!onlyCity) {
-      return softClarifyNeed(services, session, copyWhichService());
-    }
-    const locked = lockOneCity(
-      { ...session, pendingSoleCity: undefined },
-      pool,
-      onlyCity,
-    );
-    return advanceFunnel(locked, services, undefined, { allowAutoFinalize: true });
-  }
-
-  if (actionId === 'quit_single_location') {
-    return replyUserCancelled(services);
-  }
-
-  // Quit min-qty gate — full reset to free chat (do not continue remaining batch services).
-  // Legacy id `no_min` still accepted for older chat messages in the thread.
   if (actionId === 'quit_min' || actionId === 'no_min') {
-    return replyUserCancelled(services);
+    // Quit cancels the quote path — clean chat, no "adjust qty" loop.
+    const cleanSession: ProgressiveSession = {
+      originalText: '',
+      qty: null,
+    };
+    return {
+      step: 'no_match',
+      botText: compactFunnelReply(
+        'Okay — cancelled.',
+        'Type a service or pick one below whenever you are ready.',
+      ),
+      options: [],
+      session: stampReplyMeta(cleanSession, ''),
+    };
   }
 
   // Batch multi-city ask ("madurai and chennai") — city Confirm starts city-locked batch
@@ -11639,4 +11463,34 @@ function continueProgressiveActionInner(
     options: [],
     session,
   };
+}
+
+/** Phase 4 — batch entry (shared / mixed / sequential city). */
+export function resolveBatchFromSegments(
+  segments: BatchSegment[],
+  session: ProgressiveSession,
+  services: DbService[],
+  reply?: string | null,
+): ProgressiveTurnResult {
+  return startBatchMultiSelect(segments, session, services, reply);
+}
+
+/** Phase 4 — advance workQueue / pendingCityQueue after one service completes. */
+export function continueBatchQueue(
+  session: ProgressiveSession,
+  collectedRows: ConfirmationRow[],
+  collectedServiceIds: string[],
+  services: DbService[],
+): ProgressiveTurnResult | null {
+  return continuePendingWork(session, collectedRows, collectedServiceIds, services);
+}
+
+/** Phase 5 — chip/confirm inner (exported for continueChatAction). */
+export function continueProgressiveActionLegacy(
+  actionId: string,
+  session: ProgressiveSession,
+  services: DbService[],
+  selectedIds?: string[],
+): ProgressiveTurnResult {
+  return continueProgressiveActionInner(actionId, session, services, selectedIds);
 }

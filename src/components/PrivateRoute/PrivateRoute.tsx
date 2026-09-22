@@ -1,6 +1,7 @@
-import React from 'react';
+import React, { useEffect } from 'react';
 import { Route, Redirect, RouteProps } from 'react-router-dom';
 import { useAuthStore } from '../../store/authStore';
+import { authService } from '../../services/authService';
 import { AuthUser } from '../../types/auth';
 
 interface PrivateRouteProps extends RouteProps {
@@ -13,7 +14,7 @@ interface PrivateRouteProps extends RouteProps {
 /**
  * PrivateRoute wrapper component
  * Protects routes from unauthorized access
- * 
+ *
  * Usage:
  * <PrivateRoute path="/admin" component={AdminPage} requiredRole="admin" />
  * <PrivateRoute path="/quotes" component={QuotesPage} requiredPermission="view_quotes" />
@@ -25,14 +26,21 @@ export const PrivateRoute: React.FC<PrivateRouteProps> = ({
   authorize,
   ...rest
 }) => {
-  const { isAuthenticated, hasRole, hasPermission, user } = useAuthStore();
+  const { isAuthenticated, hasRole, hasPermission, user, logout } = useAuthStore();
+  const sessionOk = authService.hasValidSessionToken();
+
+  useEffect(() => {
+    // Stale "logged in" UI without a usable email/session token → force re-login
+    if (isAuthenticated && !sessionOk) {
+      logout();
+    }
+  }, [isAuthenticated, sessionOk, logout]);
 
   return (
     <Route
       {...rest}
       render={(props) => {
-        // Check if user is authenticated
-        if (!isAuthenticated) {
+        if (!isAuthenticated || !sessionOk) {
           return (
             <Redirect
               to={{
@@ -43,12 +51,10 @@ export const PrivateRoute: React.FC<PrivateRouteProps> = ({
           );
         }
 
-        // Check role requirement
         if (requiredRole && !hasRole(requiredRole)) {
           return <Redirect to="/unauthorized" />;
         }
 
-        // Check permission requirement
         if (requiredPermission && !hasPermission(requiredPermission)) {
           return <Redirect to="/unauthorized" />;
         }
@@ -57,7 +63,6 @@ export const PrivateRoute: React.FC<PrivateRouteProps> = ({
           return <Redirect to="/unauthorized" />;
         }
 
-        // All checks passed, render component
         return <Component {...props} />;
       }}
     />

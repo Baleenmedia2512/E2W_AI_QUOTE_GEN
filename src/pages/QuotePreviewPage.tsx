@@ -332,7 +332,15 @@ export const QuotePreviewPage: React.FC = () => {
     (async () => {
       try {
         const { enrichMissingQtyUnitsWithAi } = await import('../services/qtyUnitAiService');
-        const enriched = await enrichMissingQtyUnitsWithAi(itemsSnapshot);
+        const user = useAuthStore.getState().user;
+        
+        const trace = user ? {
+          userId: user.id,
+          userEmail: user.email,
+          userName: user.full_name || user.email?.split('@')[0]
+        } : undefined;
+
+        const enriched = await enrichMissingQtyUnitsWithAi(itemsSnapshot, trace);
         const unitById = new Map(
           enriched
             .filter((i) => (i.quantityUnit || '').trim() && (i.quantityUnit || '').trim().toUpperCase() !== 'NA')

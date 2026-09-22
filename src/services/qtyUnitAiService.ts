@@ -8,18 +8,11 @@ import {
   reportAiTelemetry,
   usageFromGeminiResponse,
 } from './aiTokenMonitor';
+import { generateContent, type TraceContext } from './geminiClient';
 
 const MODEL = 'gemini-3.1-flash-lite';
 const BATCH_SIZE = 20;
 const TELEMETRY_MODULE = 'qty_unit_inference';
-
-function getApiKey(): string {
-  const apiKey = import.meta.env.VITE_GEMINI_API_KEY;
-  if (!apiKey || String(apiKey).trim() === '') {
-    throw new Error('Gemini API key not configured (VITE_GEMINI_API_KEY)');
-  }
-  return String(apiKey).trim();
-}
 
 function isNaLikeUnit(value: string | undefined | null): boolean {
   if (value == null || String(value).trim() === '') return true;
@@ -78,18 +71,16 @@ function parseIndexedUnitMap(raw: string, count: number): Record<number, string>
 }
 
 /**
- * Direct REST call so we always see HTTP status + body (SDK can hide failures).
- * Uses numbered keys so matching does not depend on long location strings.
+ * Batch-infer qty units via Gemini. Uses numbered keys so matching
+ * does not depend on long location strings.
  */
 async function inferQtyUnitsBatchRest(
   labels: string[],
+  trace?: TraceContext
 ): Promise<Record<string, string>> {
   const unique = [...new Set(labels.map((l) => l.trim()).filter(Boolean))];
   const resultMap: Record<string, string> = {};
   if (unique.length === 0) return resultMap;
-
-  const apiKey = getApiKey();
-  const url = `https://generativelanguage.googleapis.com/v1beta/models/${MODEL}:generateContent?key=${encodeURIComponent(apiKey)}`;
 
   for (let start = 0; start < unique.length; start += BATCH_SIZE) {
     const chunk = unique.slice(start, start + BATCH_SIZE);
@@ -114,36 +105,37 @@ async function inferQtyUnitsBatchRest(
       listBlock,
     ].join('\n');
 
-    const body = {
-      contents: [{ role: 'user', parts: [{ text: prompt }] }],
-      generationConfig: {
-        temperature: 0,
-        maxOutputTokens: 4096,
-        responseMimeType: 'application/json',
-      },
-    };
-
-    console.warn('🏷️ [QtyUnit-AI-EXACT] REST_REQUEST', {
+    console.warn('🏷️ [QtyUnit-AI-EXACT] REQUEST', {
       model: MODEL,
       chunkStart: start,
       chunkSize: chunk.length,
       sample: chunk.slice(0, 2),
-      apiKeyLength: apiKey.length,
     });
 
-    let httpStatus = 0;
-    let json: unknown = null;
     const startedAt = Date.now();
+    let raw = '';
     try {
-      const res = await fetch(url, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(body),
+      const res = await generateContent(
+        prompt,
+        { module: 'QTY_UNIT_EXTRACT', ...trace },
+        undefined,
+        { temperature: 0, maxOutputTokens: 4096, responseMimeType: 'application/json' },
+      );
+      raw = (res.response.text() || '').trim();
+      const usage = usageFromGeminiResponse(
+        (res.response as { usageMetadata?: unknown }).usageMetadata
+          ? { usageMetadata: (res.response as { usageMetadata?: unknown }).usageMetadata }
+          : null,
+      );
+      reportAiTelemetry({
+        model: MODEL,
+        module: TELEMETRY_MODULE,
+        latency: Date.now() - startedAt,
+        status: 'SUCCESS',
+        usage,
       });
-      httpStatus = res.status;
-      json = await res.json();
     } catch (err) {
-      console.error('🏷️ [QtyUnit-AI-EXACT] REST_FETCH_FAIL', err);
+      console.error('🏷️ [QtyUnit-AI-EXACT] GENERATE_FAIL', err);
       reportAiTelemetry({
         model: MODEL,
         module: TELEMETRY_MODULE,
@@ -154,82 +146,18 @@ async function inferQtyUnitsBatchRest(
       continue;
     }
 
-    console.warn('🏷️ [QtyUnit-AI-EXACT] REST_RESPONSE', {
-      httpStatus,
-      bodyPreview: JSON.stringify(json).slice(0, 1500),
-    });
-
-    const usage = usageFromGeminiResponse(json);
-
-    if (httpStatus < 200 || httpStatus >= 300) {
-      console.error('🏷️ [QtyUnit-AI-EXACT] REST_HTTP_ERROR', { httpStatus, json });
-      reportAiTelemetry({
-        model: MODEL,
-        module: TELEMETRY_MODULE,
-        latency: Date.now() - startedAt,
-        status: 'FAILED',
-        usage,
-        errorMessage: `HTTP ${httpStatus}`,
-      });
-      continue;
-    }
-
-    const response = json as {
-      candidates?: Array<{
-        finishReason?: string;
-        content?: { parts?: Array<{ text?: string; thought?: boolean }> };
-      }>;
-      promptFeedback?: unknown;
-      error?: unknown;
-    };
-
-    if (response.error) {
-      console.error('🏷️ [QtyUnit-AI-EXACT] REST_API_ERROR', response.error);
-      reportAiTelemetry({
-        model: MODEL,
-        module: TELEMETRY_MODULE,
-        latency: Date.now() - startedAt,
-        status: 'FAILED',
-        usage,
-        errorMessage: 'Gemini API error',
-      });
-      continue;
-    }
-
-    reportAiTelemetry({
-      model: MODEL,
-      module: TELEMETRY_MODULE,
-      latency: Date.now() - startedAt,
-      status: 'SUCCESS',
-      usage,
-    });
-
-    const texts: string[] = [];
-    for (const c of response.candidates || []) {
-      for (const p of c.content?.parts || []) {
-        if (p.thought) continue;
-        if (typeof p.text === 'string' && p.text.trim()) texts.push(p.text.trim());
-      }
-    }
-    // fallback include thought parts
-    if (texts.length === 0) {
-      for (const c of response.candidates || []) {
-        for (const p of c.content?.parts || []) {
-          if (typeof p.text === 'string' && p.text.trim()) texts.push(p.text.trim());
-        }
-      }
-    }
-
-    const raw = texts.join('\n').trim();
-    console.warn('🏷️ [QtyUnit-AI-EXACT] REST_TEXT', {
-      finishReasons: (response.candidates || []).map((c) => c.finishReason ?? null),
-      promptFeedback: response.promptFeedback ?? null,
+    console.warn('🏷️ [QtyUnit-AI-EXACT] RESPONSE', {
       rawLen: raw.length,
-      rawFull: raw.slice(0, 2000),
+      rawPreview: raw.slice(0, 1500),
     });
+
+    if (!raw) {
+      console.error('🏷️ [QtyUnit-AI-EXACT] EMPTY_RESPONSE');
+      continue;
+    }
 
     const indexed = parseIndexedUnitMap(raw, chunk.length);
-    console.warn('🏷️ [QtyUnit-AI-EXACT] REST_PARSED_INDEXED', {
+    console.warn('🏷️ [QtyUnit-AI-EXACT] PARSED_INDEXED', {
       expected: chunk.length,
       got: Object.keys(indexed).length,
       indexed,
@@ -256,6 +184,7 @@ let enrichInFlight: Promise<QuoteItem[]> | null = null;
  */
 export async function enrichMissingQtyUnitsWithAi(
   items: QuoteItem[],
+  trace?: TraceContext
 ): Promise<QuoteItem[]> {
   if (enrichInFlight) {
     console.warn('🏷️ [QtyUnit-AI-EXACT] join in-flight enrich');
@@ -276,7 +205,7 @@ export async function enrichMissingQtyUnitsWithAi(
     });
 
     const unitByLabel =
-      uniqueMissing.length > 0 ? await inferQtyUnitsBatchRest(uniqueMissing) : {};
+      uniqueMissing.length > 0 ? await inferQtyUnitsBatchRest(uniqueMissing, trace) : {};
 
     const out = items.map((item) => {
       if (!isNaLikeUnit(item.quantityUnit)) return item;
@@ -301,7 +230,8 @@ export async function enrichMissingQtyUnitsWithAi(
 
 export async function inferQtyMeasurementUnitWithAi(
   serviceName: string,
+  trace?: TraceContext
 ): Promise<string | undefined> {
-  const map = await inferQtyUnitsBatchRest([serviceName]);
+  const map = await inferQtyUnitsBatchRest([serviceName], trace);
   return map[serviceName.trim().toLowerCase()];
 }

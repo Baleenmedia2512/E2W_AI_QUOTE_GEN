@@ -3,6 +3,7 @@ import { Quote } from '../types/quote';
 import { ClientInfo } from '../types/client';
 import { CompanyInfo } from '../types/company';
 import { toCampaignDays } from '../utils/durationUtils';
+import { extractEdgeFunctionMessage } from '../utils/edgeFunctionError';
 import { authService } from './authService';
 import { buildPdfAttachmentPayload } from '../utils/quoteEmailPayload';
 
@@ -69,6 +70,15 @@ export const sendQuoteEmail = async (
       return { success: false, message: 'No PDF attachments to send.' };
     }
 
+    if (!authService.hasValidSessionToken()) {
+      return {
+        success: false,
+        message: 'Session expired. Please log in again, then retry sending the email.',
+      };
+    }
+
+    const sessionToken = authService.getSessionToken()!;
+
     const encodedAttachments = buildPdfAttachmentPayload(
       await Promise.all(
         pdfAttachments.map(async ({ pdfBlob, filename }) => ({
@@ -112,25 +122,21 @@ export const sendQuoteEmail = async (
       },
       headers: {
         'Content-Type': 'application/json',
-        ...(authService.getSessionToken()
-          ? { Authorization: `Bearer ${authService.getSessionToken()}` }
-          : {}),
+        Authorization: `Bearer ${sessionToken}`,
       },
     });
 
-    if (error) {
-      console.error('Error invoking Edge Function:', error);
-      return { success: false, message: error.message };
+    if (error || data?.error) {
+      const message = await extractEdgeFunctionMessage(
+        error,
+        data,
+        'Could not send the quote email. Check SMTP secrets and that your login email is listed in INTERNAL_QUOTE_EMAIL_1/2/3.',
+      );
+      console.error('Error invoking send-quote-email:', error || data?.error, message);
+      return { success: false, message };
     }
 
-    // Supabase Edge Functions always return a 'data' field, even for errors
-    // The actual error from the function will be in data.error
-    if (data && data.error) {
-      console.error('Edge Function returned an error:', data.error);
-      return { success: false, message: data.error };
-    }
-
-    return { success: true, message: data.message || 'Email sent successfully.' };
+    return { success: true, message: data?.message || 'Email sent successfully.' };
   } catch (error: any) {
     console.error('sendQuoteEmail service failed:', error);
     return {

@@ -1,6 +1,7 @@
 import type { ConfirmationRow } from './cloudQuoteValidation';
 import { getMinQuantityFromDbService } from './cloudQuoteValidation';
 import { vendorMinDays, isOneTimeLineDescription } from './durationUtils';
+import { vendorMinDays, isOneTimeLineDescription } from './durationUtils';
 import { canonicalizeServiceName } from './serviceNameUtils';
 import {
   DbService,
@@ -143,6 +144,10 @@ export function confirmationRowsToReviewItems(
     const resolvedDays = dbMinDays > 0
       ? (durationDays > 0 ? durationDays : dbMinDays)
       : 0;
+        : 0;
+    const resolvedDays = dbMinDays > 0
+      ? (durationDays > 0 ? durationDays : dbMinDays)
+      : 0;
 
     groups.set(groupKey, {
       id: newId(),
@@ -152,6 +157,7 @@ export function confirmationRowsToReviewItems(
       quantity: qty,
       durationDays: resolvedDays,
       minimumQuantity: mins.minimumQuantity,
+      minimumDurationDays: dbMinDays > 0 ? dbMinDays : undefined,
       minimumDurationDays: dbMinDays > 0 ? dbMinDays : undefined,
     });
   }
@@ -341,6 +347,8 @@ export function enrichReviewItemFromCatalog(
   }
   const dbMin =
     mins.minimumDurationDays && mins.minimumDurationDays > 0
+  const dbMin =
+    mins.minimumDurationDays && mins.minimumDurationDays > 0
       ? mins.minimumDurationDays
       : 0;
   // NA min_days → clear any leaked duration so the list never shows a days badge.
@@ -358,6 +366,7 @@ export function enrichReviewItemFromCatalog(
     durationDays,
     minimumQuantity: mins.minimumQuantity,
     minimumDurationDays: dbMin > 0 ? dbMin : undefined,
+    minimumDurationDays: dbMin > 0 ? dbMin : undefined,
   };
 }
 
@@ -373,7 +382,6 @@ export function validateReviewDraft(items: ReviewDraftItem[]): string | null {
       return `Service ${n}: quantity must be at least ${item.minimumQuantity}.`;
     }
     // Duration optional when catalog has no min_days (NA / missing).
-    // When DB has a floor, require duration ≥ that floor.
     if (item.minimumDurationDays && item.minimumDurationDays > 0) {
       if (!item.durationDays || item.durationDays < item.minimumDurationDays) {
         return `Service ${n}: duration must be at least ${item.minimumDurationDays} days.`;

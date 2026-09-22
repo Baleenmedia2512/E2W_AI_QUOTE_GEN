@@ -1,0 +1,11 @@
+# Edge Functions use the app HMAC session token (not a Supabase Auth JWT).
+# Gateway JWT verification must be off so Authorization reaches our handlers.
+
+[functions.auth-session]
+verify_jwt = false
+
+[functions.password-reset]
+verify_jwt = false
+
+[functions.send-quote-email]
+verify_jwt = false
