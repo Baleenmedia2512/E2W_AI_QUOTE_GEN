@@ -165,7 +165,7 @@ const QuoteFlowNav: React.FC<QuoteFlowNavProps> = ({
                 >
                   Quote Buddy
                 </Text>
-                {currentQuote?.quoteNumber ? (
+                {step === 'preview' && currentQuote?.quoteNumber ? (
                   <Badge
                     colorScheme="gray"
                     fontSize="10px"
