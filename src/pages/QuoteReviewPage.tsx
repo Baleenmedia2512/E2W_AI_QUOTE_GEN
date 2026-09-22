@@ -435,16 +435,11 @@ const QuoteReviewPage: React.FC = () => {
                             </Text>
                             {/* Show days ONLY when DB min_days is a real number (not NA). */}
                             {(item.minimumDurationDays ?? 0) > 0 ? (
-                            {/* Show days ONLY when DB min_days is a real number (not NA). */}
-                            {(item.minimumDurationDays ?? 0) > 0 ? (
                               <Text as="span" className="quote-review-badge is-muted">
-                                {Math.max(item.durationDays || 0, item.minimumDurationDays!)}
-                                {' '}
                                 {Math.max(item.durationDays || 0, item.minimumDurationDays!)}
                                 {' '}
                                 days
                               </Text>
-                            ) : null}
                             ) : null}
                           </HStack>
                         </Box>
