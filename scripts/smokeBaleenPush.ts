@@ -1,7 +1,6 @@
 /**
- * Smoke: payload shape + server-side POST to Baleen (simulates Edge Function).
+ * Smoke: payload shape for Baleen inbox (no live POST unless env set).
  * Run: npx tsx scripts/smokeBaleenPush.ts
- * Loads BALEEN_MEDIA_URL / QUOTE_BUDDY_API_KEY from .env (never prints secrets).
  */
 import { readFileSync, existsSync } from 'fs';
 import { resolve } from 'path';
@@ -11,12 +10,8 @@ import type { ClientInfo } from '../src/types/client';
 
 function loadDotEnv() {
   const path = resolve(process.cwd(), '.env');
-  if (!existsSync(path)) {
-    console.log('No .env at', path);
-    return;
-  }
+  if (!existsSync(path)) return;
   const raw = readFileSync(path, 'utf8').replace(/^\uFEFF/, '');
-  let loaded = 0;
   for (const line of raw.split(/\r?\n/)) {
     const trimmed = line.trim();
     if (!trimmed || trimmed.startsWith('#')) continue;
@@ -30,28 +25,20 @@ function loadDotEnv() {
     ) {
       val = val.slice(1, -1);
     }
-    if (
-      process.env[key] == null
-      || process.env[key] === ''
-      || key === 'BALEEN_MEDIA_URL'
-      || key === 'QUOTE_BUDDY_API_KEY'
-    ) {
+    if (process.env[key] == null || process.env[key] === '') {
       process.env[key] = val;
-      loaded += 1;
     }
   }
-  console.log(
-    'Env loaded from .env:',
-    loaded,
-    'keys; BALEEN set=',
-    !!process.env.BALEEN_MEDIA_URL,
-    'API key set=',
-    !!process.env.QUOTE_BUDDY_API_KEY,
-  );
 }
 
 loadDotEnv();
 
+/**
+ * qty 5, days 30:
+ * cost excl  = 400×5×30 + 3000×5 = 75000 → ×1.18 = 88500
+ * price excl = 500×5×30 + 2500×5 = 87500 → ×1.18 = 103250
+ * Two quote rows (Display + P&M) → one Baleen line.
+ */
 const quote: Quote = {
   id: 'q-test',
   quoteNumber: 'QT-SMOKE-001',
@@ -60,26 +47,43 @@ const quote: Quote = {
   items: [
     {
       id: '1',
-      description: 'Auto Full - Printing & Fixing',
-      quantity: 50,
-      quantityUnit: 'Auto',
-      rate: 999,
-      total: 49950,
-      serviceId: 'auto-full-chennai',
-      serviceName: 'Auto Full',
+      description: 'Hoarding Frontlit - Display Price',
+      quantity: 5,
+      quantityUnit: 'Hoarding',
+      rate: 500,
+      total: 75000,
+      duration: 30,
+      durationUnit: 'days',
+      serviceId: 'hoarding-frontlit-chennai',
+      serviceName: 'Hoarding Frontlit',
       city: 'Chennai',
       vendorName: 'TOI OOH',
-      medium: 'AUTO FULL',
-      adType: 'Auto Branding',
-      vendorCostExclGst: 850,
-      vendorPfUnitCost: 850,
+      medium: 'HOARDING',
+      adType: 'Frontlit',
+      vendorDisplayUnitCostPerDay: 400,
+    },
+    {
+      id: '2',
+      description: 'Hoarding Frontlit - Printing & Fixing',
+      quantity: 5,
+      quantityUnit: 'Hoarding',
+      rate: 2500,
+      total: 12500,
+      serviceId: 'hoarding-frontlit-chennai',
+      serviceName: 'Hoarding Frontlit',
+      city: 'Chennai',
+      vendorName: 'TOI OOH',
+      medium: 'HOARDING',
+      adType: 'Frontlit',
+      vendorPfUnitCost: 3000,
+      vendorCostExclGst: 3000,
     },
   ],
-  subtotal: 49950,
+  subtotal: 87500,
   gstEnabled: true,
   gstPercentage: 18,
-  gstAmount: 8991,
-  total: 58941,
+  gstAmount: 15750,
+  total: 103250,
   deliveryTimeline: '',
   termsAndConditions: '',
   createdAt: new Date(),
@@ -101,61 +105,29 @@ function assert(cond: boolean, msg: string) {
 
 async function main() {
   const payload = buildBaleenQuotePayload(quote, client);
-  console.log('Payload keys:', Object.keys(payload).join(', '));
   console.log('Line count:', payload.lines.length);
+  console.log('Line 0:', JSON.stringify(payload.lines[0], null, 2));
 
   assert(payload.quoteId === 'QT-SMOKE-001', 'quoteId');
-  assert(payload.clientName === 'Acme Traders', 'clientName');
-  assert(payload.mobile === '9876543210', 'mobile');
-  assert(payload.lines.length === 1, 'lines');
-  assert(payload.lines[0].serviceId === 'auto-full-chennai', 'serviceId');
-  // P&M-only: cost 850 × 50 × 1.18 = 50150; price 999 × 50 × 1.18 = 58941
+  assert(payload.lines.length === 1, `expected 1 merged line, got ${payload.lines.length}`);
+  assert(payload.lines[0].serviceId === 'hoarding-frontlit-chennai', 'serviceId');
   assert(
-    payload.lines[0].vendorCostExclGst === 50150,
-    `vendorCost (incl GST) got ${payload.lines[0].vendorCostExclGst}`,
+    !('vendorCostExclGst' in payload.lines[0]),
+    'must not send vendorCostExclGst',
   );
   assert(
-    payload.lines[0].priceInclGst === 58941,
+    payload.lines[0].costInclGst === 88500,
+    `costInclGst got ${payload.lines[0].costInclGst}`,
+  );
+  assert(
+    payload.lines[0].priceInclGst === 103250,
     `priceInclGst got ${payload.lines[0].priceInclGst}`,
   );
-  console.log('OK Payload builder (server-side shape, GST-incl line totals)');
-
-  const base = (process.env.BALEEN_MEDIA_URL || '').replace(/\/$/, '');
-  const key = process.env.QUOTE_BUDDY_API_KEY || '';
-  if (!base || !key) {
-    console.log('Skip live inbox POST — missing BALEEN_MEDIA_URL or QUOTE_BUDDY_API_KEY in .env');
-    return;
-  }
-
-  const inboxUrl = `${base}/api/integrations/quote-buddy/inbox`;
-  const headers: Record<string, string> = {
-    'Content-Type': 'application/json',
-    Authorization: `Bearer ${key}`,
-  };
-  if (/ngrok/i.test(base)) {
-    headers['ngrok-skip-browser-warning'] = 'true';
-  }
-
-  console.log('POST (Node/server only, not browser) → inbox');
-  const res = await fetch(inboxUrl, {
-    method: 'POST',
-    headers,
-    body: JSON.stringify(payload),
-  });
-  const text = await res.text();
-  console.log('Status:', res.status);
-  console.log('Body preview:', text.slice(0, 300));
-
-  if (!res.ok) {
-    throw new Error(`Inbox POST failed: ${res.status}`);
-  }
-  const parsed = JSON.parse(text) as { ok?: boolean; id?: string | number };
-  assert(parsed.id != null && String(parsed.id) !== '', 'response id');
-  console.log('OK Live inbox — id=', String(parsed.id));
-  console.log('Open path: /orders/from-quote?id=' + String(parsed.id));
+  assert(payload.lines[0].qty === 5, 'qty');
+  console.log('OK: one service → one line; costInclGst=88500 priceInclGst=103250');
 }
 
 main().catch((err) => {
-  console.error('FAIL', err instanceof Error ? err.message : err);
+  console.error(err);
   process.exit(1);
 });

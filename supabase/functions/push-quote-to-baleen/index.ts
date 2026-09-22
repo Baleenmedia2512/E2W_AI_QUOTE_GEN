@@ -70,8 +70,11 @@ interface BaleenLine {
   adType?: unknown;
   city?: unknown;
   vendorName?: unknown;
-  vendorCostExclGst?: unknown;
+  /** Preferred: cost INCLUDING 18% GST. */
+  costInclGst?: unknown;
   priceInclGst?: unknown;
+  /** @deprecated legacy alias — forwarded only if costInclGst missing. */
+  vendorCostExclGst?: unknown;
   qty?: unknown;
   qtyUnit?: unknown;
 }
@@ -95,7 +98,7 @@ function normalizePayload(body: Record<string, unknown>): {
     adType: string;
     city: string;
     vendorName: string;
-    vendorCostExclGst: number;
+    costInclGst: number;
     priceInclGst: number;
     qty: number;
     qtyUnit: string;
@@ -113,7 +116,7 @@ function normalizePayload(body: Record<string, unknown>): {
     adType: asString(line.adType),
     city: asString(line.city),
     vendorName: asString(line.vendorName),
-    vendorCostExclGst: asNumber(line.vendorCostExclGst),
+    costInclGst: asNumber(line.costInclGst ?? line.vendorCostExclGst),
     priceInclGst: asNumber(line.priceInclGst),
     qty: asNumber(line.qty),
     qtyUnit: asString(line.qtyUnit),
