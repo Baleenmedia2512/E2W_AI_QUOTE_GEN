@@ -23,6 +23,8 @@ import { buildExecutiveSummaryRows } from '../utils/quoteGrouping';
 import QuoteFlowNav from '../components/QuoteWizard/QuoteFlowNav';
 import { EMPTY_CLIENT } from '../components/ClientInfoForm/ClientEditDrawer';
 import { ClientInfo } from '../types/client';
+import { savePreparedForLead } from '../services/leadService';
+import { recordQuoteDownload } from '../services/quoteDownloadService';
 import './QuotePreviewPage.css';
 
 // ═══════════════════════════════════════════════════════════════════════
@@ -169,6 +171,28 @@ export const QuotePreviewPage: React.FC = () => {
       }
     }
   }, [currentQuote, companyInfo, history, openChatProfile]);
+
+  // Legacy Date.now numbers → draft peek only (does not consume / download-issue).
+  useEffect(() => {
+    if (!currentQuote?.quoteNumber) return;
+    let cancelled = false;
+    (async () => {
+      const { isLegacyTimestampQuoteNumber, peekNextQuoteNumber } = await import(
+        '../services/quoteNumberService'
+      );
+      if (cancelled || !isLegacyTimestampQuoteNumber(currentQuote.quoteNumber)) return;
+      const next = await peekNextQuoteNumber();
+      if (cancelled || !next) return;
+      const latest = useAppStore.getState().currentQuote;
+      if (!latest || latest.id !== currentQuote.id) return;
+      if (!isLegacyTimestampQuoteNumber(latest.quoteNumber)) return;
+      console.log('🔢 Draft remumber (peek) legacy', latest.quoteNumber, '→', next);
+      setCurrentQuote({ ...latest, quoteNumber: next });
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [currentQuote?.id, currentQuote?.quoteNumber, setCurrentQuote]);
 
   // On mount: Load data in background (non-blocking)
   useEffect(() => {
@@ -630,6 +654,28 @@ export const QuotePreviewPage: React.FC = () => {
     const openDuringExport = Capacitor.isNativePlatform();
 
     try {
+      // Issue sequential number ONLY on download (DB-backed). Create/regenerate only peeked.
+      const {
+        allocateNextQuoteNumber,
+        isQuoteNumberIssuedInDb,
+        isLegacyTimestampQuoteNumber,
+      } = await import('../services/quoteNumberService');
+      const before = useAppStore.getState().currentQuote;
+      if (!before) {
+        throw new Error('Could not generate PDF. Please try again.');
+      }
+      let issuedNumber = before.quoteNumber;
+      const alreadyIssued =
+        !!issuedNumber
+        && !isLegacyTimestampQuoteNumber(issuedNumber)
+        && (await isQuoteNumberIssuedInDb(issuedNumber));
+      if (!alreadyIssued) {
+        issuedNumber = await allocateNextQuoteNumber();
+        setCurrentQuote({ ...before, quoteNumber: issuedNumber });
+        // Let preview DOM paint the locked number before PDF capture.
+        await new Promise((r) => setTimeout(r, 120));
+      }
+
       if (!hasExecutiveSummary) {
         const result = await handleExportPDF('full', openDuringExport);
         if (result) pdfAttachments.push(result);
@@ -658,6 +704,25 @@ export const QuotePreviewPage: React.FC = () => {
       if (!liveQuote) {
         throw new Error('Could not generate PDF. Please try again.');
       }
+
+      // Persist Lead + QuoteDownload with the issued number (never blocks PDF success).
+      void (async () => {
+        try {
+          const lead = await savePreparedForLead({
+            name: effectiveClient.name,
+            phone: effectiveClient.phone,
+            email: effectiveClient.email,
+          });
+          const qn = (liveQuote.quoteNumber || issuedNumber || '').trim();
+          if (!lead?.id || !qn) return;
+          await recordQuoteDownload({
+            leadId: lead.id,
+            quoteNumber: qn,
+          });
+        } catch (err) {
+          console.error('❌ QuoteDownload link failed (PDF still OK):', err);
+        }
+      })();
 
       if (user?.canSendQuoteEmail !== true) {
         toast({
@@ -745,7 +810,10 @@ export const QuotePreviewPage: React.FC = () => {
           </button>
           <div className="toolbar-title-wrap">
             <h1 className="toolbar-title">Quote Preview</h1>
-            <span className="toolbar-service-count">Total services: {totalServices}</span>
+            <span className="toolbar-service-count">
+              {currentQuote.quoteNumber ? `${currentQuote.quoteNumber} · ` : ''}
+              Total services: {totalServices}
+            </span>
           </div>
         </div>
 

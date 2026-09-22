@@ -165,6 +165,18 @@ const QuoteFlowNav: React.FC<QuoteFlowNavProps> = ({
                 >
                   Quote Buddy
                 </Text>
+                {currentQuote?.quoteNumber ? (
+                  <Badge
+                    colorScheme="gray"
+                    fontSize="10px"
+                    fontWeight="700"
+                    borderRadius="6px"
+                    px={1.5}
+                    title="Quote number"
+                  >
+                    {currentQuote.quoteNumber}
+                  </Badge>
+                ) : null}
                 {typeof __APP_VERSION__ !== 'undefined' && (
                   <Badge
                     colorScheme="brand"

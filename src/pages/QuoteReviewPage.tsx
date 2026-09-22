@@ -291,7 +291,12 @@ const QuoteReviewPage: React.FC = () => {
         reviewDraft?.originalUserText
         || finalCart.map((i) => `${i.quantity} ${i.service} ${i.cities.join(', ')}`).join(' and ');
 
-      const result = buildQuoteFromConfirmedRows(rows, dbServices, original);
+      // Always peek last QuoteDownload + 1 (draft). Never reuse an already-stored number.
+      // Counter is consumed only on PDF download.
+      const { peekNextQuoteNumber } = await import('../services/quoteNumberService');
+      const quoteNumber = await peekNextQuoteNumber();
+
+      const result = buildQuoteFromConfirmedRows(rows, dbServices, original, quoteNumber);
       if (!result.success) {
         toast({
           title: 'Could not build quote',
