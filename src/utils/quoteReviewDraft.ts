@@ -144,10 +144,6 @@ export function confirmationRowsToReviewItems(
     const resolvedDays = dbMinDays > 0
       ? (durationDays > 0 ? durationDays : dbMinDays)
       : 0;
-        : 0;
-    const resolvedDays = dbMinDays > 0
-      ? (durationDays > 0 ? durationDays : dbMinDays)
-      : 0;
 
     groups.set(groupKey, {
       id: newId(),
@@ -157,7 +153,6 @@ export function confirmationRowsToReviewItems(
       quantity: qty,
       durationDays: resolvedDays,
       minimumQuantity: mins.minimumQuantity,
-      minimumDurationDays: dbMinDays > 0 ? dbMinDays : undefined,
       minimumDurationDays: dbMinDays > 0 ? dbMinDays : undefined,
     });
   }
@@ -347,8 +342,6 @@ export function enrichReviewItemFromCatalog(
   }
   const dbMin =
     mins.minimumDurationDays && mins.minimumDurationDays > 0
-  const dbMin =
-    mins.minimumDurationDays && mins.minimumDurationDays > 0
       ? mins.minimumDurationDays
       : 0;
   // NA min_days → clear any leaked duration so the list never shows a days badge.
@@ -365,7 +358,6 @@ export function enrichReviewItemFromCatalog(
     quantity,
     durationDays,
     minimumQuantity: mins.minimumQuantity,
-    minimumDurationDays: dbMin > 0 ? dbMin : undefined,
     minimumDurationDays: dbMin > 0 ? dbMin : undefined,
   };
 }
