@@ -70,11 +70,14 @@ interface BaleenLine {
   adType?: unknown;
   city?: unknown;
   vendorName?: unknown;
-  /** Preferred: cost INCLUDING 18% GST. */
-  costInclGst?: unknown;
-  priceInclGst?: unknown;
-  /** @deprecated legacy alias — forwarded only if costInclGst missing. */
+  /**
+   * Cost INCLUDING 18% GST — field name Baleen Media inbox reads.
+   * (Legacy misnomer; value must be incl GST.)
+   */
   vendorCostExclGst?: unknown;
+  priceInclGst?: unknown;
+  /** @deprecated Quote Buddy briefly sent this; map into vendorCostExclGst. */
+  costInclGst?: unknown;
   qty?: unknown;
   qtyUnit?: unknown;
 }
@@ -98,7 +101,7 @@ function normalizePayload(body: Record<string, unknown>): {
     adType: string;
     city: string;
     vendorName: string;
-    costInclGst: number;
+    vendorCostExclGst: number;
     priceInclGst: number;
     qty: number;
     qtyUnit: string;
@@ -116,7 +119,8 @@ function normalizePayload(body: Record<string, unknown>): {
     adType: asString(line.adType),
     city: asString(line.city),
     vendorName: asString(line.vendorName),
-    costInclGst: asNumber(line.costInclGst ?? line.vendorCostExclGst),
+    // Baleen inbox reads vendorCostExclGst only (value = cost INCL GST).
+    vendorCostExclGst: asNumber(line.vendorCostExclGst ?? line.costInclGst),
     priceInclGst: asNumber(line.priceInclGst),
     qty: asNumber(line.qty),
     qtyUnit: asString(line.qtyUnit),

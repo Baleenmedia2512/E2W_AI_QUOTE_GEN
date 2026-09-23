@@ -1,9 +1,41 @@
 import { supabase } from './supabaseClient';
 import type { Quote } from '../types/quote';
 import type { ClientInfo } from '../types/client';
+import type { VendorRateRow } from '../types/vendorRate';
 import { buildBaleenQuotePayload } from '../utils/baleenQuotePayload';
 import { extractEdgeFunctionMessage } from '../utils/edgeFunctionError';
 import { authService } from './authService';
+import { getVendorRatesCache } from './vendorRateService';
+
+/** Catalog meta for Baleen money fields only (exact named keys). */
+function vendorRowToBaleenMeta(row: VendorRateRow): Record<string, unknown> {
+  const pricing =
+    row.pricing && typeof row.pricing === 'object'
+      ? (row.pricing as Record<string, unknown>)
+      : {};
+  return {
+    display_unit_price_per_day: row.display_unit_price_per_day,
+    display_unit_cost_per_day: row.display_unit_cost_per_day,
+    printing_and_mounting_cost: row.printing_and_mounting_cost,
+    min_qty: row.min_qty,
+    min_days: row.min_days,
+    pricing: {
+      display_unit_price_per_day: pricing.display_unit_price_per_day,
+      printing_and_mounting_price: pricing.printing_and_mounting_price,
+      display_unit_cost_per_day: pricing.display_unit_cost_per_day,
+      printing_and_mounting_cost: pricing.printing_and_mounting_cost,
+    },
+  };
+}
+
+function lookupBaleenMeta(serviceId: string): Record<string, unknown> | null {
+  const lower = serviceId.trim().toLowerCase();
+  if (!lower) return null;
+  const row = getVendorRatesCache().find(
+    (r) => (r.service_id || '').trim().toLowerCase() === lower,
+  );
+  return row ? vendorRowToBaleenMeta(row) : null;
+}
 
 export interface PushQuoteToBaleenResult {
   success: boolean;
@@ -29,7 +61,11 @@ export async function pushQuoteToBaleenMedia(params: {
       };
     }
 
-    const payload = buildBaleenQuotePayload(params.quote, params.client);
+    const payload = buildBaleenQuotePayload(
+      params.quote,
+      params.client,
+      lookupBaleenMeta,
+    );
     if (!payload.quoteId) {
       return { success: false, message: 'Quote number is missing.' };
     }
