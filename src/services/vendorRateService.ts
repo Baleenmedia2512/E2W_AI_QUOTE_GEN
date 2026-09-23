@@ -356,6 +356,10 @@ export function normalizeVendorRateRow(row: Record<string, unknown>): VendorRate
       'unit_cost',
       'total_unit_cost',
     ),
+    official_and_incidental_cost: pickCost('official_and_incidental_cost'),
+    freight_cost: pickCost('freight_cost'),
+    extra_km_cost: pickCost('extra_km_cost'),
+    recce_cost: pickCost('recce_cost'),
     display_unit_price_per_day: pickCost('display_unit_price_per_day'),
   };
 }
@@ -1214,6 +1218,10 @@ export function vendorRatesToDbServices(
         printing_cost: cleaned.printing_cost,
         mounting_cost: cleaned.mounting_cost,
         printing_and_mounting_cost: cleaned.printing_and_mounting_cost,
+        official_and_incidental_cost: cleaned.official_and_incidental_cost,
+        freight_cost: cleaned.freight_cost,
+        extra_km_cost: cleaned.extra_km_cost,
+        recce_cost: cleaned.recce_cost,
         display_unit_price_per_day: cleaned.display_unit_price_per_day,
       } as DbService['metadata'],
     };

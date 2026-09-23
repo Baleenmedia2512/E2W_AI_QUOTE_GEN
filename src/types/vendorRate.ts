@@ -93,4 +93,8 @@ export interface VendorRateRow {
   mounting_cost?: number | string;
   printing_and_mounting_cost?: number | string;
   display_unit_price_per_day?: number | string;
+  official_and_incidental_cost?: number | string;
+  freight_cost?: number | string;
+  extra_km_cost?: number | string;
+  recce_cost?: number | string;
 }

@@ -36,11 +36,29 @@ export type QuoteItemWithMeta = QuoteItem & { metadata?: Record<string, unknown>
 
 const BALEEN_GST_MULT = 1.18;
 
-/** Money fields allowed for Baleen inbox amounts — nowhere else. */
+/** Recurring unit (× qty × days when days present). */
 const PRICE_UNIT_FIELD = 'display_unit_price_per_day';
-const PRICE_PM_FIELD = 'printing_and_mounting_price';
 const COST_UNIT_FIELD = 'display_unit_cost_per_day';
-const COST_PM_FIELD = 'printing_and_mounting_cost';
+
+/** P&F: combined, else printing + mounting/fixing (do not double-count). */
+const PRICE_PM_COMBINED = 'printing_and_mounting_price';
+const COST_PM_COMBINED = 'printing_and_mounting_cost';
+const PRICE_PRINTING = 'printing_price';
+const COST_PRINTING = 'printing_cost';
+const PRICE_MOUNTING = 'mounting_price';
+const PRICE_FIXING = 'fixing_price';
+const COST_MOUNTING = 'mounting_cost';
+const COST_FIXING = 'fixing_cost';
+
+/** Other one-time add-ons (× qty). */
+const PRICE_OFFICIAL = 'official_and_incidental_price';
+const COST_OFFICIAL = 'official_and_incidental_cost';
+const PRICE_FREIGHT = 'freight_price';
+const PRICE_EXTRA_KM = 'extra_km_price';
+const COST_FREIGHT = 'freight_cost';
+const COST_EXTRA_KM = 'extra_km_cost';
+const PRICE_RECCE = 'recce_price';
+const COST_RECCE = 'recce_cost';
 
 function digitsOnlyPhone(phone: string | undefined): string {
   return String(phone || '').replace(/\D/g, '');
@@ -74,7 +92,6 @@ function usableAmount(value: unknown): number | null {
 /**
  * Read exactly one named amount:
  * metadata.<field> → metadata.pricing.<field> → absent.
- * Does not consult any other keys.
  */
 export function readBaleenNamedMetaAmount(
   meta: Record<string, unknown>,
@@ -88,6 +105,66 @@ export function readBaleenNamedMetaAmount(
       : null;
   if (!pricing) return null;
   return usableAmount(pricing[field]);
+}
+
+/** First present among named fields (meta → pricing). */
+function readFirstNamed(
+  meta: Record<string, unknown>,
+  ...fields: string[]
+): number | null {
+  for (const field of fields) {
+    const v = readBaleenNamedMetaAmount(meta, field);
+    if (v != null) return v;
+  }
+  return null;
+}
+
+/**
+ * P&F unit: combined if present; else printing + mounting/fixing.
+ * Never sum combined with split parts.
+ */
+export function resolveBaleenPfUnit(
+  meta: Record<string, unknown>,
+  side: 'price' | 'cost',
+): number | null {
+  if (side === 'price') {
+    const combined = readBaleenNamedMetaAmount(meta, PRICE_PM_COMBINED);
+    if (combined != null) return combined;
+    const printing = readBaleenNamedMetaAmount(meta, PRICE_PRINTING) ?? 0;
+    const mounting =
+      readBaleenNamedMetaAmount(meta, PRICE_MOUNTING)
+      ?? readBaleenNamedMetaAmount(meta, PRICE_FIXING)
+      ?? 0;
+    const split = printing + mounting;
+    return split > 0 ? split : null;
+  }
+  const combined = readBaleenNamedMetaAmount(meta, COST_PM_COMBINED);
+  if (combined != null) return combined;
+  const printing = readBaleenNamedMetaAmount(meta, COST_PRINTING) ?? 0;
+  const mounting =
+    readBaleenNamedMetaAmount(meta, COST_MOUNTING)
+    ?? readBaleenNamedMetaAmount(meta, COST_FIXING)
+    ?? 0;
+  const split = printing + mounting;
+  return split > 0 ? split : null;
+}
+
+/** Sum of one-time units (P&F + official + freight/extra_km + recce). */
+export function resolveBaleenOneTimeUnit(
+  meta: Record<string, unknown>,
+  side: 'price' | 'cost',
+): number {
+  const pf = resolveBaleenPfUnit(meta, side) ?? 0;
+  if (side === 'price') {
+    const official = readBaleenNamedMetaAmount(meta, PRICE_OFFICIAL) ?? 0;
+    const freight = readFirstNamed(meta, PRICE_FREIGHT, PRICE_EXTRA_KM) ?? 0;
+    const recce = readBaleenNamedMetaAmount(meta, PRICE_RECCE) ?? 0;
+    return pf + official + freight + recce;
+  }
+  const official = readBaleenNamedMetaAmount(meta, COST_OFFICIAL) ?? 0;
+  const freight = readFirstNamed(meta, COST_FREIGHT, COST_EXTRA_KM) ?? 0;
+  const recce = readBaleenNamedMetaAmount(meta, COST_RECCE) ?? 0;
+  return pf + official + freight + recce;
 }
 
 function resolveServiceMetadata(
@@ -137,8 +214,9 @@ function serviceGroupKey(item: QuoteItem): string {
 interface MergedUnits {
   displayPricePerDay: number | null;
   displayCostPerDay: number | null;
-  pmPrice: number | null;
-  pmCost: number | null;
+  /** One-time unit total (P&F + official + freight + recce). */
+  oneTimePrice: number;
+  oneTimeCost: number;
   qty: number;
   /** null when days are missing/NA after line + min_days fallbacks. */
   days: number | null;
@@ -152,8 +230,7 @@ interface MergedUnits {
 
 /**
  * One service → one Baleen line.
- * Money sources: only the four named metadata fields (meta → meta.pricing).
- * Quote Display + P&M rows share a serviceId and collapse here.
+ * Money from named metadata fields only (meta → meta.pricing).
  */
 function mergeServiceGroup(
   items: QuoteItem[],
@@ -199,8 +276,8 @@ function mergeServiceGroup(
   return {
     displayPricePerDay: readBaleenNamedMetaAmount(meta, PRICE_UNIT_FIELD),
     displayCostPerDay: readBaleenNamedMetaAmount(meta, COST_UNIT_FIELD),
-    pmPrice: readBaleenNamedMetaAmount(meta, PRICE_PM_FIELD),
-    pmCost: readBaleenNamedMetaAmount(meta, COST_PM_FIELD),
+    oneTimePrice: resolveBaleenOneTimeUnit(meta, 'price'),
+    oneTimeCost: resolveBaleenOneTimeUnit(meta, 'cost'),
     qty,
     days,
     qtyUnit,
@@ -214,16 +291,15 @@ function mergeServiceGroup(
 
 /**
  * unitPart = unit_per_day × qty × days  when unit_per_day AND days both present
- * pmPart   = pm × qty                   when pm present
- * excl     = unitPart + pmPart
+ * oneTime  = (pf + official + freight/extra_km + recce) × qty
+ * excl     = unitPart + oneTime
  * incl     = excl × 1.18  → vendorCostExclGst / priceInclGst
- * (vendorCostExclGst name is what Baleen reads; value is INCL GST.)
  */
 export function computeBaleenInclGstTotals(units: {
   displayPricePerDay: number | null;
   displayCostPerDay: number | null;
-  pmPrice: number | null;
-  pmCost: number | null;
+  oneTimePrice: number;
+  oneTimeCost: number;
   qty: number;
   days: number | null;
 }): { vendorCostExclGst: number; priceInclGst: number } {
@@ -240,11 +316,11 @@ export function computeBaleenInclGstTotals(units: {
       ? units.displayCostPerDay * qty * days
       : 0;
 
-  const pricePmPart = units.pmPrice != null ? units.pmPrice * qty : 0;
-  const costPmPart = units.pmCost != null ? units.pmCost * qty : 0;
+  const priceOneTime = (units.oneTimePrice > 0 ? units.oneTimePrice : 0) * qty;
+  const costOneTime = (units.oneTimeCost > 0 ? units.oneTimeCost : 0) * qty;
 
-  const priceExcl = priceUnitPart + pricePmPart;
-  const costExcl = costUnitPart + costPmPart;
+  const priceExcl = priceUnitPart + priceOneTime;
+  const costExcl = costUnitPart + costOneTime;
 
   return {
     vendorCostExclGst: roundMoney(costExcl * BALEEN_GST_MULT),
@@ -264,11 +340,7 @@ export type BaleenMetaLookup = (serviceId: string) => Record<string, unknown> | 
 
 /**
  * Build Baleen Media inbox JSON from the live quote + client.
- * One line per service (Display + P&M merged). Amounts are Baleen POST only.
- *
- * Money fields come ONLY from metadata / metadata.pricing named keys
- * (see PRICE_* / COST_* above). Optional lookup supplies vendor catalog meta
- * when items are not already stamped.
+ * One line per service. Amounts are Baleen POST only.
  */
 export function buildBaleenQuotePayload(
   quote: Quote,
