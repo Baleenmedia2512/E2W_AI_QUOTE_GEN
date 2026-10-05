@@ -263,19 +263,44 @@ const QuoteReviewPage: React.FC = () => {
     resetComposer();
   };
 
-  const toggleCity = (city: string) => {
-    // Sole-location gate uses Continue / Quit — city chip is display-only.
+  /**
+   * Tap a city → immediately add/update the service on the quote list.
+   * No separate Confirm step.
+   */
+  const pickCityAndAdd = (city: string) => {
     if (soleLocationPending) return;
+    if (!serviceChosen || !composer.service.trim()) {
+      toast({
+        title: 'Choose a service from the list first.',
+        status: 'warning',
+        duration: 3000,
+        isClosable: true,
+      });
+      return;
+    }
 
-    const has = composer.cities.some((c) => c.toLowerCase() === city.toLowerCase());
-    const nextCities = has
-      ? composer.cities.filter((c) => c.toLowerCase() !== city.toLowerCase())
-      : [...composer.cities, city];
+    const already = composer.cities.some((c) => c.toLowerCase() === city.toLowerCase());
 
-    setComposer((prev) => ({ ...prev, cities: nextCities }));
+    if (editingId) {
+      // Edit: toggle this city, then save if at least one city remains.
+      const nextCities = already
+        ? composer.cities.filter((c) => c.toLowerCase() !== city.toLowerCase())
+        : [...composer.cities, city];
+      if (!nextCities.length) {
+        setComposer((prev) => ({ ...prev, cities: [] }));
+        return;
+      }
+      commitComposerToCart({ ...composer, cities: nextCities }, editingId);
+      resetComposer();
+      return;
+    }
+
+    // New row: this location is enough — add to list right away.
+    commitComposerToCart({ ...composer, cities: [city] }, null);
+    resetComposer();
   };
 
-  /** Req 5: after cities are chosen, add immediately under the selection (scroll into view). */
+  /** Kept for footer "Add service" / sole-location Continue paths. */
   const handleConfirmCitiesAndAdd = () => {
     if (!serviceChosen || !composer.service.trim()) {
       toast({
@@ -830,7 +855,7 @@ const QuoteReviewPage: React.FC = () => {
                                       bg: selected ? 'brand.600' : 'brand.50',
                                       borderColor: 'brand.300',
                                     }}
-                                    onClick={() => toggleCity(city)}
+                                    onClick={() => pickCityAndAdd(city)}
                                   >
                                     {city}
                                   </Button>
@@ -839,28 +864,12 @@ const QuoteReviewPage: React.FC = () => {
                             })}
                           </Wrap>
                         </Box>
-                        {composer.cities.length > 0 && !editingId && (
-                          <Button
-                            mt={3}
-                            w="100%"
-                            h="42px"
-                            borderRadius="12px"
-                            bg="brand.500"
-                            color="white"
-                            fontWeight="700"
-                            leftIcon={<Icon as={FiCheck} />}
-                            _hover={{ bg: 'brand.600' }}
-                            onClick={handleConfirmCitiesAndAdd}
-                          >
-                            Confirm · add to list
-                          </Button>
-                        )}
                       </Box>
                     )}
                     <FormHelperText color="gray.500">
                       {soleLocationPending
                         ? 'Only one location — Continue to add, or Quit to cancel.'
-                        : 'Tap cities, then Confirm to add (multi-city stays one line).'}
+                        : 'Tap a city to add it to your quote list.'}
                     </FormHelperText>
                   </FormControl>
                 )}
