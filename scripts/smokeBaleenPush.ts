@@ -105,7 +105,8 @@ async function main() {
   assert(!('costInclGst' in payload.lines[0]), 'must not send costInclGst');
   assert(payload.lines[0].vendorCostExclGst === 88500, `combined cost ${payload.lines[0].vendorCostExclGst}`);
   assert(payload.lines[0].priceInclGst === 103250, `combined price ${payload.lines[0].priceInclGst}`);
-  console.log('OK A: combined P&M → vendorCostExclGst=88500 priceInclGst=103250');
+  assert(payload.lines[0].vendorGstPercent === 18, `vendorGstPercent ${payload.lines[0].vendorGstPercent}`);
+  console.log('OK A: combined P&M → vendorCostExclGst=88500 vendorGstPercent=18 priceInclGst=103250');
 
   // Case B: split printing + mounting + official + freight + recce
   // oneTime price = 1000+500 + 200 + 100 + 50 = 1850 ×5 = 9250

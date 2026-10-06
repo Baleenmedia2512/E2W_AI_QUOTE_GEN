@@ -75,6 +75,8 @@ interface BaleenLine {
    * (Legacy misnomer; value must be incl GST.)
    */
   vendorCostExclGst?: unknown;
+  /** Vendor GST % (Quote Buddy currently hardcodes 18). */
+  vendorGstPercent?: unknown;
   priceInclGst?: unknown;
   /** @deprecated Quote Buddy briefly sent this; map into vendorCostExclGst. */
   costInclGst?: unknown;
@@ -102,6 +104,7 @@ function normalizePayload(body: Record<string, unknown>): {
     city: string;
     vendorName: string;
     vendorCostExclGst: number;
+    vendorGstPercent: number;
     priceInclGst: number;
     qty: number;
     qtyUnit: string;
@@ -113,18 +116,23 @@ function normalizePayload(body: Record<string, unknown>): {
   const rawLines = Array.isArray(body.lines) ? body.lines as BaleenLine[] : [];
   if (!quoteId || !rawLines.length) return null;
 
-  const lines = rawLines.map((line) => ({
-    serviceId: asString(line.serviceId),
-    medium: asString(line.medium),
-    adType: asString(line.adType),
-    city: asString(line.city),
-    vendorName: asString(line.vendorName),
-    // Baleen inbox reads vendorCostExclGst only (value = cost INCL GST).
-    vendorCostExclGst: asNumber(line.vendorCostExclGst ?? line.costInclGst),
-    priceInclGst: asNumber(line.priceInclGst),
-    qty: asNumber(line.qty),
-    qtyUnit: asString(line.qtyUnit),
-  }));
+  const lines = rawLines.map((line) => {
+    const gstRaw = asNumber(line.vendorGstPercent);
+    return {
+      serviceId: asString(line.serviceId),
+      medium: asString(line.medium),
+      adType: asString(line.adType),
+      city: asString(line.city),
+      vendorName: asString(line.vendorName),
+      // Baleen inbox reads vendorCostExclGst only (value = cost INCL GST).
+      vendorCostExclGst: asNumber(line.vendorCostExclGst ?? line.costInclGst),
+      // Default 18 matches Quote Buddy / Baleen ×1.18 until per-vendor GST exists.
+      vendorGstPercent: gstRaw > 0 ? gstRaw : 18,
+      priceInclGst: asNumber(line.priceInclGst),
+      qty: asNumber(line.qty),
+      qtyUnit: asString(line.qtyUnit),
+    };
+  });
 
   return { quoteId, clientName, mobile, lines };
 }

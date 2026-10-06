@@ -14,6 +14,8 @@ export interface BaleenQuoteLine {
    * Field name is what Baleen Media inbox reads (legacy misnomer).
    */
   vendorCostExclGst: number;
+  /** Vendor GST % used to build vendorCostExclGst (hardcoded 18 today). */
+  vendorGstPercent: number;
   /** Selling price INCLUDING 18% GST (line total). */
   priceInclGst: number;
   qty: number;
@@ -34,7 +36,9 @@ export interface BaleenQuotePayload {
  */
 export type QuoteItemWithMeta = QuoteItem & { metadata?: Record<string, unknown> };
 
-const BALEEN_GST_MULT = 1.18;
+/** Matches Quote Buddy quote GST default and Baleen cost/price ×1.18. */
+const BALEEN_VENDOR_GST_PERCENT = 18;
+const BALEEN_GST_MULT = 1 + BALEEN_VENDOR_GST_PERCENT / 100;
 
 /** Recurring unit (× qty × days when days present). */
 const PRICE_UNIT_FIELD = 'display_unit_price_per_day';
@@ -369,6 +373,7 @@ export function buildBaleenQuotePayload(
       city: merged.city,
       vendorName: merged.vendorName,
       vendorCostExclGst: amounts.vendorCostExclGst,
+      vendorGstPercent: BALEEN_VENDOR_GST_PERCENT,
       priceInclGst: amounts.priceInclGst,
       qty: merged.qty,
       qtyUnit: merged.qtyUnit,
