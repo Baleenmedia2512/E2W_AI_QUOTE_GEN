@@ -70,12 +70,9 @@ interface BaleenLine {
   adType?: unknown;
   city?: unknown;
   vendorName?: unknown;
-  /**
-   * Cost INCLUDING 18% GST — field name Baleen Media inbox reads.
-   * (Legacy misnomer; value must be incl GST.)
-   */
+  /** Vendor cost EXCLUDING GST. */
   vendorCostExclGst?: unknown;
-  /** Vendor GST % (Quote Buddy currently hardcodes 18). */
+  /** Vendor GST % to apply on vendorCostExclGst (Quote Buddy hardcodes 18). */
   vendorGstPercent?: unknown;
   priceInclGst?: unknown;
   /** @deprecated Quote Buddy briefly sent this; map into vendorCostExclGst. */
@@ -124,9 +121,9 @@ function normalizePayload(body: Record<string, unknown>): {
       adType: asString(line.adType),
       city: asString(line.city),
       vendorName: asString(line.vendorName),
-      // Baleen inbox reads vendorCostExclGst only (value = cost INCL GST).
-      vendorCostExclGst: asNumber(line.vendorCostExclGst ?? line.costInclGst),
-      // Default 18 matches Quote Buddy / Baleen ×1.18 until per-vendor GST exists.
+      // Cost EXCLUDING GST. Legacy costInclGst (incl) is not remapped into this field.
+      vendorCostExclGst: asNumber(line.vendorCostExclGst),
+      // Default 18 matches Quote Buddy until per-vendor GST exists.
       vendorGstPercent: gstRaw > 0 ? gstRaw : 18,
       priceInclGst: asNumber(line.priceInclGst),
       qty: asNumber(line.qty),

@@ -89,7 +89,7 @@ function line(partial: ItemWithMeta): ItemWithMeta {
 
 async function main() {
   // Case A: combined P&M
-  // cost excl  = 400×5×30 + 3000×5 = 75000 → ×1.18 = 88500
+  // cost excl  = 400×5×30 + 3000×5 = 75000  (sent as vendorCostExclGst)
   // price excl = 500×5×30 + 2500×5 = 87500 → ×1.18 = 103250
   const combinedMeta = {
     display_unit_price_per_day: 500,
@@ -103,16 +103,16 @@ async function main() {
   );
   assert(payload.lines.length === 1, 'combined: one line');
   assert(!('costInclGst' in payload.lines[0]), 'must not send costInclGst');
-  assert(payload.lines[0].vendorCostExclGst === 88500, `combined cost ${payload.lines[0].vendorCostExclGst}`);
+  assert(payload.lines[0].vendorCostExclGst === 75000, `combined cost ${payload.lines[0].vendorCostExclGst}`);
   assert(payload.lines[0].priceInclGst === 103250, `combined price ${payload.lines[0].priceInclGst}`);
   assert(payload.lines[0].vendorGstPercent === 18, `vendorGstPercent ${payload.lines[0].vendorGstPercent}`);
-  console.log('OK A: combined P&M → vendorCostExclGst=88500 vendorGstPercent=18 priceInclGst=103250');
+  console.log('OK A: combined P&M → vendorCostExclGst=75000 vendorGstPercent=18 priceInclGst=103250');
 
   // Case B: split printing + mounting + official + freight + recce
   // oneTime price = 1000+500 + 200 + 100 + 50 = 1850 ×5 = 9250
   // oneTime cost  = 800+400  + 150 + 80  + 40 = 1470 ×5 = 7350
   // unit price    = 500×5×30 = 75000 → price excl = 84250 → ×1.18 = 99415
-  // unit cost     = 400×5×30 = 60000 → cost excl  = 67350 → ×1.18 = 79473
+  // unit cost     = 400×5×30 = 60000 → cost excl  = 67350
   const splitMeta = {
     display_unit_price_per_day: 500,
     display_unit_cost_per_day: 400,
@@ -133,9 +133,9 @@ async function main() {
     baseQuote([line({ metadata: splitMeta })]),
     client,
   );
-  assert(payload.lines[0].vendorCostExclGst === 79473, `split cost ${payload.lines[0].vendorCostExclGst}`);
+  assert(payload.lines[0].vendorCostExclGst === 67350, `split cost ${payload.lines[0].vendorCostExclGst}`);
   assert(payload.lines[0].priceInclGst === 99415, `split price ${payload.lines[0].priceInclGst}`);
-  console.log('OK B: split P+F + official/freight/recce → cost=79473 price=99415');
+  console.log('OK B: split P+F + official/freight/recce → cost=67350 price=99415');
 
   // Case C: combined present → ignore split parts (no double-count)
   const noDoubleMeta = {
@@ -162,9 +162,9 @@ async function main() {
     client,
   );
   // price excl = 100×1×1 + 2000 = 2100 → ×1.18 = 2478
-  // cost excl  = 50×1×1 + 1000 = 1050 → ×1.18 = 1239
+  // cost excl  = 50×1×1 + 1000 = 1050
   assert(payload.lines[0].priceInclGst === 2478, `no-double price ${payload.lines[0].priceInclGst}`);
-  assert(payload.lines[0].vendorCostExclGst === 1239, `no-double cost ${payload.lines[0].vendorCostExclGst}`);
+  assert(payload.lines[0].vendorCostExclGst === 1050, `no-double cost ${payload.lines[0].vendorCostExclGst}`);
   console.log('OK C: combined wins over split (no double-count)');
 }
 

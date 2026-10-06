@@ -9,14 +9,11 @@ export interface BaleenQuoteLine {
   adType: string;
   city: string;
   vendorName: string;
-  /**
-   * Vendor cost INCLUDING 18% GST (line total).
-   * Field name is what Baleen Media inbox reads (legacy misnomer).
-   */
+  /** Vendor cost EXCLUDING GST (line total). */
   vendorCostExclGst: number;
-  /** Vendor GST % used to build vendorCostExclGst (hardcoded 18 today). */
+  /** Vendor GST % to apply on vendorCostExclGst (hardcoded 18 today). */
   vendorGstPercent: number;
-  /** Selling price INCLUDING 18% GST (line total). */
+  /** Selling price INCLUDING GST (line total). */
   priceInclGst: number;
   qty: number;
   qtyUnit: string;
@@ -297,7 +294,8 @@ function mergeServiceGroup(
  * unitPart = unit_per_day × qty × days  when unit_per_day AND days both present
  * oneTime  = (pf + official + freight/extra_km + recce) × qty
  * excl     = unitPart + oneTime
- * incl     = excl × 1.18  → vendorCostExclGst / priceInclGst
+ * vendorCostExclGst = cost excl GST
+ * priceInclGst      = price excl × (1 + vendorGst%/100)
  */
 export function computeBaleenInclGstTotals(units: {
   displayPricePerDay: number | null;
@@ -327,7 +325,7 @@ export function computeBaleenInclGstTotals(units: {
   const costExcl = costUnitPart + costOneTime;
 
   return {
-    vendorCostExclGst: roundMoney(costExcl * BALEEN_GST_MULT),
+    vendorCostExclGst: roundMoney(costExcl),
     priceInclGst: roundMoney(priceExcl * BALEEN_GST_MULT),
   };
 }
