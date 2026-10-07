@@ -70,11 +70,15 @@ interface BaleenLine {
   adType?: unknown;
   city?: unknown;
   vendorName?: unknown;
-  /** Preferred: cost INCLUDING 18% GST. */
-  costInclGst?: unknown;
-  priceInclGst?: unknown;
-  /** @deprecated legacy alias — forwarded only if costInclGst missing. */
+  /** Preferred: vendor cost EXCLUDING GST. */
   vendorCostExclGst?: unknown;
+  vendorGstPercent?: unknown;
+  priceInclGst?: unknown;
+  /**
+   * Older clients sent cost INCLUDING GST as costInclGst.
+   * Convert back to excl when vendorCostExclGst is missing.
+   */
+  costInclGst?: unknown;
   qty?: unknown;
   qtyUnit?: unknown;
 }
@@ -88,6 +92,14 @@ function asNumber(value: unknown): number {
   return Number.isFinite(n) ? n : 0;
 }
 
+function resolveVendorCostExclGst(line: BaleenLine): number {
+  const excl = asNumber(line.vendorCostExclGst);
+  if (excl > 0) return excl;
+  const incl = asNumber(line.costInclGst);
+  if (incl > 0) return Math.round((incl / 1.18) * 100) / 100;
+  return 0;
+}
+
 function normalizePayload(body: Record<string, unknown>): {
   quoteId: string;
   clientName: string;
@@ -98,7 +110,8 @@ function normalizePayload(body: Record<string, unknown>): {
     adType: string;
     city: string;
     vendorName: string;
-    costInclGst: number;
+    vendorCostExclGst: number;
+    vendorGstPercent: number;
     priceInclGst: number;
     qty: number;
     qtyUnit: string;
@@ -110,17 +123,21 @@ function normalizePayload(body: Record<string, unknown>): {
   const rawLines = Array.isArray(body.lines) ? body.lines as BaleenLine[] : [];
   if (!quoteId || !rawLines.length) return null;
 
-  const lines = rawLines.map((line) => ({
-    serviceId: asString(line.serviceId),
-    medium: asString(line.medium),
-    adType: asString(line.adType),
-    city: asString(line.city),
-    vendorName: asString(line.vendorName),
-    costInclGst: asNumber(line.costInclGst ?? line.vendorCostExclGst),
-    priceInclGst: asNumber(line.priceInclGst),
-    qty: asNumber(line.qty),
-    qtyUnit: asString(line.qtyUnit),
-  }));
+  const lines = rawLines.map((line) => {
+    const gstPct = asNumber(line.vendorGstPercent);
+    return {
+      serviceId: asString(line.serviceId),
+      medium: asString(line.medium),
+      adType: asString(line.adType),
+      city: asString(line.city),
+      vendorName: asString(line.vendorName),
+      vendorCostExclGst: resolveVendorCostExclGst(line),
+      vendorGstPercent: gstPct > 0 ? gstPct : 18,
+      priceInclGst: asNumber(line.priceInclGst),
+      qty: asNumber(line.qty),
+      qtyUnit: asString(line.qtyUnit),
+    };
+  });
 
   return { quoteId, clientName, mobile, lines };
 }

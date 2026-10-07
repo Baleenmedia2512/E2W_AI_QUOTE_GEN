@@ -35,8 +35,8 @@ loadDotEnv();
 
 /**
  * qty 5, days 30:
- * cost excl  = 400×5×30 + 3000×5 = 75000 → ×1.18 = 88500
- * price excl = 500×5×30 + 2500×5 = 87500 → ×1.18 = 103250
+ * cost excl  = 400×5×30 + 3000×5 = 75000  → vendorCostExclGst
+ * price excl = 500×5×30 + 2500×5 = 87500 → ×1.18 = 103250 → priceInclGst
  * Two quote rows (Display + P&M) → one Baleen line.
  */
 const quote: Quote = {
@@ -112,19 +112,23 @@ async function main() {
   assert(payload.lines.length === 1, `expected 1 merged line, got ${payload.lines.length}`);
   assert(payload.lines[0].serviceId === 'hoarding-frontlit-chennai', 'serviceId');
   assert(
-    !('vendorCostExclGst' in payload.lines[0]),
-    'must not send vendorCostExclGst',
+    !('costInclGst' in payload.lines[0]),
+    'must not send costInclGst',
   );
   assert(
-    payload.lines[0].costInclGst === 88500,
-    `costInclGst got ${payload.lines[0].costInclGst}`,
+    payload.lines[0].vendorCostExclGst === 75000,
+    `vendorCostExclGst got ${payload.lines[0].vendorCostExclGst}`,
+  );
+  assert(
+    payload.lines[0].vendorGstPercent === 18,
+    `vendorGstPercent got ${payload.lines[0].vendorGstPercent}`,
   );
   assert(
     payload.lines[0].priceInclGst === 103250,
     `priceInclGst got ${payload.lines[0].priceInclGst}`,
   );
   assert(payload.lines[0].qty === 5, 'qty');
-  console.log('OK: one service → one line; costInclGst=88500 priceInclGst=103250');
+  console.log('OK: one service → one line; vendorCostExclGst=75000 vendorGstPercent=18 priceInclGst=103250');
 }
 
 main().catch((err) => {

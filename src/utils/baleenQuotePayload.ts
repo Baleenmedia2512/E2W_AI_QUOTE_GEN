@@ -9,8 +9,10 @@ export interface BaleenQuoteLine {
   adType: string;
   city: string;
   vendorName: string;
-  /** Vendor cost INCLUDING 18% GST (line total). */
-  costInclGst: number;
+  /** Vendor cost EXCLUDING GST (line total). */
+  vendorCostExclGst: number;
+  /** GST % applied on vendor cost (Baleen contract). */
+  vendorGstPercent: number;
   /** Selling price INCLUDING 18% GST (line total). */
   priceInclGst: number;
   qty: number;
@@ -26,6 +28,7 @@ export interface BaleenQuotePayload {
 }
 
 const BALEEN_GST_MULT = 1.18;
+const BALEEN_VENDOR_GST_PERCENT = 18;
 
 function digitsOnlyPhone(phone: string | undefined): string {
   return String(phone || '').replace(/\D/g, '');
@@ -186,16 +189,17 @@ function mergeServiceGroup(items: QuoteItem[]): MergedUnits {
  * display = unit_per_day × qty × days
  * pm      = pm_unit × qty
  * excl    = display + pm  (or only pm if no display unit)
- * incl    = excl × 1.18  → costInclGst / priceInclGst
+ * vendorCostExclGst = cost excl (no GST)
+ * priceInclGst      = price excl × 1.18
  */
-export function computeBaleenInclGstTotals(units: {
+export function computeBaleenLineTotals(units: {
   displayPricePerDay: number | null;
   displayCostPerDay: number | null;
   pmPrice: number | null;
   pmCost: number | null;
   qty: number;
   days: number;
-}): { costInclGst: number; priceInclGst: number } {
+}): { vendorCostExclGst: number; priceInclGst: number } {
   const qty = units.qty > 0 ? units.qty : 1;
   const days = units.days > 0 ? units.days : 0;
   const hasDisplay =
@@ -217,17 +221,33 @@ export function computeBaleenInclGstTotals(units: {
   }
 
   return {
-    costInclGst: roundMoney(costExcl * BALEEN_GST_MULT),
+    vendorCostExclGst: roundMoney(costExcl),
     priceInclGst: roundMoney(priceExcl * BALEEN_GST_MULT),
   };
 }
 
-/** @deprecated Use computeBaleenInclGstTotals after merge — kept for tests. */
+/** @deprecated Use computeBaleenLineTotals after merge — kept for tests. */
 export function computeBaleenInboxLineAmounts(item: QuoteItem): {
-  costInclGst: number;
+  vendorCostExclGst: number;
   priceInclGst: number;
 } {
-  return computeBaleenInclGstTotals(mergeServiceGroup([item]));
+  return computeBaleenLineTotals(mergeServiceGroup([item]));
+}
+
+/** @deprecated Alias — prefer computeBaleenLineTotals. */
+export function computeBaleenInclGstTotals(units: {
+  displayPricePerDay: number | null;
+  displayCostPerDay: number | null;
+  pmPrice: number | null;
+  pmCost: number | null;
+  qty: number;
+  days: number;
+}): { costInclGst: number; priceInclGst: number } {
+  const t = computeBaleenLineTotals(units);
+  return {
+    costInclGst: roundMoney(t.vendorCostExclGst * BALEEN_GST_MULT),
+    priceInclGst: t.priceInclGst,
+  };
 }
 
 /**
@@ -252,14 +272,15 @@ export function buildBaleenQuotePayload(
 
   const lines: BaleenQuoteLine[] = order.map((key) => {
     const merged = mergeServiceGroup(groups.get(key)!);
-    const amounts = computeBaleenInclGstTotals(merged);
+    const amounts = computeBaleenLineTotals(merged);
     return {
       serviceId: merged.serviceId,
       medium: merged.medium,
       adType: merged.adType,
       city: merged.city,
       vendorName: merged.vendorName,
-      costInclGst: amounts.costInclGst,
+      vendorCostExclGst: amounts.vendorCostExclGst,
+      vendorGstPercent: BALEEN_VENDOR_GST_PERCENT,
       priceInclGst: amounts.priceInclGst,
       qty: merged.qty,
       qtyUnit: merged.qtyUnit,
