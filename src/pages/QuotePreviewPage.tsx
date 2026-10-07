@@ -7,6 +7,7 @@ import { CorporateMinimal } from '../components/Templates/CorporateMinimal';
 import { exportToPDF, downloadPdfBlob } from '../services/pdfExportService';
 import { Capacitor } from '@capacitor/core';
 import { sendQuoteEmail } from '../services/quoteEmailService';
+import { pushQuoteToBaleenMedia } from '../services/baleenMediaService';
 import { ExtractedPage, ServiceReadyData } from '../types';
 import {
   extractCityHint,
@@ -657,6 +658,37 @@ export const QuotePreviewPage: React.FC = () => {
       const liveQuote = useAppStore.getState().currentQuote ?? currentQuote;
       if (!liveQuote) {
         throw new Error('Could not generate PDF. Please try again.');
+      }
+
+      // Always try Baleen Media after a successful PDF download (API key stays on Edge).
+      const baleenResult = await pushQuoteToBaleenMedia({
+        quote: liveQuote,
+        client: effectiveClient,
+      });
+
+      if (baleenResult.success && baleenResult.id) {
+        const openUrl = baleenResult.openUrl;
+        toast({
+          title: 'Baleen Media: Yes',
+          description: openUrl
+            ? `Sent (id ${baleenResult.id}). Use Open Baleen Media for work orders.`
+            : `Sent to Baleen Media (id ${baleenResult.id}).`,
+          status: 'success',
+          duration: 12000,
+          isClosable: true,
+        });
+        // Navigate to Baleen *page* only (not inbox API) — no CORS for page open.
+        if (openUrl && typeof openUrl === 'string' && !/\/api\//i.test(openUrl)) {
+          window.open(openUrl, '_blank', 'noopener,noreferrer');
+        }
+      } else {
+        toast({
+          title: 'Baleen Media: No',
+          description: baleenResult.message || 'Could not send quote. Retry download after Edge secrets are set.',
+          status: 'warning',
+          duration: 9000,
+          isClosable: true,
+        });
       }
 
       if (user?.canSendQuoteEmail !== true) {

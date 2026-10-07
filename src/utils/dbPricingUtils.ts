@@ -305,6 +305,24 @@ export function buildLineItemsFromDbPricing(
       meta,
       serviceName,
     );
+    const vendorCost = isRecurring
+      ? (hasDisplayPrice ? displayUnitCostPerDay ?? undefined : pfUnitCost ?? undefined)
+      : (pfUnitCost ?? undefined);
+    const mediumLabel = String(
+      (m as { medium?: string }).medium || serviceName || '',
+    ).trim() || undefined;
+    const adTypeLabel = String(
+      (m as { medium_type?: string }).medium_type
+      || (m as { category?: string }).category
+      || serviceName
+      || '',
+    ).trim() || undefined;
+    const vendorLabel = String(
+      (m as { vendor_name?: string }).vendor_name
+      || svc.document_name
+      || '',
+    ).trim() || undefined;
+
     const line: QuoteItem = {
       id: mkId(),
       title: serviceName,
@@ -323,6 +341,11 @@ export function buildLineItemsFromDbPricing(
       vendorDisplayUnitCostPerDay: hasDisplayPrice
         ? displayUnitCostPerDay ?? undefined
         : undefined,
+      vendorName: vendorLabel,
+      medium: mediumLabel,
+      adType: adTypeLabel,
+      vendorCostExclGst:
+        vendorCost != null && vendorCost > 0 ? vendorCost : undefined,
     };
     line.total = computeQuoteItemTotal(line);
     items.push(line);
