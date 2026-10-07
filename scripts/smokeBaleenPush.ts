@@ -166,6 +166,47 @@ async function main() {
   assert(payload.lines[0].priceInclGst === 2478, `no-double price ${payload.lines[0].priceInclGst}`);
   assert(payload.lines[0].vendorCostExclGst === 1050, `no-double cost ${payload.lines[0].vendorCostExclGst}`);
   console.log('OK C: combined wins over split (no double-count)');
+
+  // Case D: Preview rate edit wins for priceInclGst; cost stays catalog
+  // Catalog would yield old price; quote totals = 750000 + 250000 = 1000000 → ×1.18 = 1180000
+  // Catalog cost: 500/day × 50 × 30 + 3000×50 = 750000 + 150000 = 900000
+  const editedMeta = {
+    display_unit_price_per_day: 499.1,
+    display_unit_cost_per_day: 500,
+    printing_and_mounting_cost: 3000,
+    pricing: { printing_and_mounting_price: 5000 },
+  };
+  payload = buildBaleenQuotePayload(
+    baseQuote([
+      line({
+        id: 'd1',
+        description: 'Bus Semi - Display Price',
+        quantity: 50,
+        duration: 1,
+        durationUnit: 'months',
+        rate: 15000,
+        total: 750000,
+        serviceId: 'bus-semi',
+        metadata: editedMeta,
+      }),
+      line({
+        id: 'd2',
+        description: 'Bus Semi - Printing & Mounting',
+        quantity: 50,
+        duration: undefined,
+        durationUnit: undefined,
+        rate: 5000,
+        total: 250000,
+        serviceId: 'bus-semi',
+        metadata: editedMeta,
+      }),
+    ]),
+    client,
+  );
+  assert(payload.lines[0].priceInclGst === 1180000, `edited price ${payload.lines[0].priceInclGst}`);
+  assert(payload.lines[0].vendorCostExclGst === 900000, `edited cost ${payload.lines[0].vendorCostExclGst}`);
+  assert(payload.lines[0].qty === 50, 'edited qty');
+  console.log('OK D: Preview edit → priceInclGst=1180000 (not catalog); cost from catalog');
 }
 
 main().catch((err) => {

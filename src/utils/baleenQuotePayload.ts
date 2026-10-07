@@ -213,9 +213,11 @@ function serviceGroupKey(item: QuoteItem): string {
 }
 
 interface MergedUnits {
+  /** Live quote sell total excl GST (edited rates). Null → fall back to catalog. */
+  quotePriceExcl: number | null;
   displayPricePerDay: number | null;
   displayCostPerDay: number | null;
-  /** One-time unit total (P&F + official + freight + recce). */
+  /** One-time unit total (P&F + official + freight + recce) from catalog. */
   oneTimePrice: number;
   oneTimeCost: number;
   qty: number;
@@ -230,8 +232,25 @@ interface MergedUnits {
 }
 
 /**
+ * Sell price from live quote rows (includes user edits in Preview).
+ * Uses stored line totals only — Preview always recalculates `total` on rate/qty edit.
+ */
+function quoteGroupPriceExcl(items: QuoteItem[]): number | null {
+  let sum = 0;
+  let any = false;
+  for (const item of items) {
+    const t = Number(item.total);
+    if (Number.isFinite(t) && t > 0) {
+      sum += t;
+      any = true;
+    }
+  }
+  return any ? sum : null;
+}
+
+/**
  * One service → one Baleen line.
- * Money from named metadata fields only (meta → meta.pricing).
+ * Price: live quote totals (Preview edits). Cost: catalog metadata only.
  */
 function mergeServiceGroup(
   items: QuoteItem[],
@@ -275,6 +294,7 @@ function mergeServiceGroup(
   }
 
   return {
+    quotePriceExcl: quoteGroupPriceExcl(items),
     displayPricePerDay: readBaleenNamedMetaAmount(meta, PRICE_UNIT_FIELD),
     displayCostPerDay: readBaleenNamedMetaAmount(meta, COST_UNIT_FIELD),
     oneTimePrice: resolveBaleenOneTimeUnit(meta, 'price'),
@@ -291,13 +311,12 @@ function mergeServiceGroup(
 }
 
 /**
- * unitPart = unit_per_day × qty × days  when unit_per_day AND days both present
- * oneTime  = (pf + official + freight/extra_km + recce) × qty
- * excl     = unitPart + oneTime
- * vendorCostExclGst = cost excl GST
- * priceInclGst      = price excl × (1 + vendorGst%/100)
+ * vendorCostExclGst = catalog cost excl GST
+ * priceInclGst      = live quote price excl × (1 + vendorGst%/100)
+ *                   (falls back to catalog price formula if quote totals empty)
  */
 export function computeBaleenInclGstTotals(units: {
+  quotePriceExcl?: number | null;
   displayPricePerDay: number | null;
   displayCostPerDay: number | null;
   oneTimePrice: number;
@@ -309,7 +328,7 @@ export function computeBaleenInclGstTotals(units: {
   const daysOk = units.days != null && units.days > 0;
   const days = daysOk ? units.days! : 0;
 
-  const priceUnitPart =
+  const catalogPriceUnitPart =
     units.displayPricePerDay != null && daysOk
       ? units.displayPricePerDay * qty * days
       : 0;
@@ -318,11 +337,16 @@ export function computeBaleenInclGstTotals(units: {
       ? units.displayCostPerDay * qty * days
       : 0;
 
-  const priceOneTime = (units.oneTimePrice > 0 ? units.oneTimePrice : 0) * qty;
+  const catalogPriceOneTime = (units.oneTimePrice > 0 ? units.oneTimePrice : 0) * qty;
   const costOneTime = (units.oneTimeCost > 0 ? units.oneTimeCost : 0) * qty;
 
-  const priceExcl = priceUnitPart + priceOneTime;
+  const catalogPriceExcl = catalogPriceUnitPart + catalogPriceOneTime;
   const costExcl = costUnitPart + costOneTime;
+
+  const priceExcl =
+    units.quotePriceExcl != null && units.quotePriceExcl > 0
+      ? units.quotePriceExcl
+      : catalogPriceExcl;
 
   return {
     vendorCostExclGst: roundMoney(costExcl),
