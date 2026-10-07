@@ -667,20 +667,13 @@ export const QuotePreviewPage: React.FC = () => {
       });
 
       if (baleenResult.success && baleenResult.id) {
-        const openUrl = baleenResult.openUrl;
         toast({
           title: 'Baleen Media: Yes',
-          description: openUrl
-            ? `Sent (id ${baleenResult.id}). Use Open Baleen Media for work orders.`
-            : `Sent to Baleen Media (id ${baleenResult.id}).`,
+          description: `Sent to Baleen Media (id ${baleenResult.id}).`,
           status: 'success',
-          duration: 12000,
+          duration: 6000,
           isClosable: true,
         });
-        // Navigate to Baleen *page* only (not inbox API) — no CORS for page open.
-        if (openUrl && typeof openUrl === 'string' && !/\/api\//i.test(openUrl)) {
-          window.open(openUrl, '_blank', 'noopener,noreferrer');
-        }
       } else {
         toast({
           title: 'Baleen Media: No',
