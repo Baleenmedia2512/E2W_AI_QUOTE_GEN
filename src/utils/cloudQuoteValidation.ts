@@ -133,23 +133,68 @@ export function normalizeCityLabel(raw: string): string | null {
     .join(' ');
 }
 
+/**
+ * Match a known metro in a label WITHOUT bare substring.
+ * "Chennai North" → chennai; "PAN India (except Mumbai)" → null (not Mumbai).
+ */
+export function matchCloudCityKeyInLabel(value: string): string | null {
+  const lower = String(value || '').toLowerCase().trim();
+  if (!lower) return null;
+  const exact = CLOUD_CITY_KEYS.find((c) => lower === c);
+  if (exact) return exact;
+  // Prefix only — never includes() (avoids except-Mumbai / pan-india false hits)
+  const prefixed = CLOUD_CITY_KEYS.find(
+    (c) =>
+      lower.startsWith(`${c} `)
+      || lower.startsWith(`${c},`)
+      || lower.startsWith(`${c}-`)
+      || lower.startsWith(`${c}/`),
+  );
+  return prefixed || null;
+}
+
+/** Title-case a raw DB city / coverage label (keeps parentheses / words). */
+function titleCaseCityLabel(raw: string): string {
+  return raw
+    .trim()
+    .split(/\s+/)
+    .filter(Boolean)
+    .map((w) => w.charAt(0).toUpperCase() + w.slice(1).toLowerCase())
+    .join(' ');
+}
+
+/** service_id city suffix — ignore "...-except-mumbai". */
+function serviceIdHasCityToken(sid: string, city: string): boolean {
+  if (sid.endsWith(`-except-${city}`) || sid.includes(`-except-${city}-`) || sid.includes(`-except-${city}`)) {
+    return false;
+  }
+  return sid.endsWith(`-${city}`) || sid.includes(`-${city}-`);
+}
+
 /** Extract a city slug from a DB service row (locations, service_id, or document_name). */
 export function extractCityFromDbService(svc: DbService): string | null {
   const locs: string[] = svc.metadata?.locations || [];
   for (const loc of locs) {
-    const lower = loc.toLowerCase();
-    const key = CLOUD_CITY_KEYS.find((c) => lower.includes(c));
+    const key = matchCloudCityKeyInLabel(loc);
     if (key) return titleCaseCity(key);
     const direct = normalizeCityLabel(loc);
     if (direct) return direct;
+    // Coverage labels (PAN India…) — keep as-is when not a known metro
+    const cleaned = String(loc || '').trim();
+    if (cleaned && cleaned.toUpperCase() !== 'NA' && cleaned.length >= 3) {
+      return titleCaseCityLabel(cleaned);
+    }
   }
 
-  // metadata.city (vendor_rate_chunks)
+  // metadata.city (vendor_rate_chunks) — prefer exact/prefix metro, else full DB label
   const metaCity = (svc.metadata as { city?: string } | undefined)?.city;
   if (metaCity) {
-    const lower = String(metaCity).toLowerCase();
-    const key = CLOUD_CITY_KEYS.find((c) => lower.includes(c));
+    const key = matchCloudCityKeyInLabel(String(metaCity));
     if (key) return titleCaseCity(key);
+    const cleaned = String(metaCity).trim();
+    if (cleaned && cleaned.toUpperCase() !== 'NA') {
+      return titleCaseCityLabel(cleaned);
+    }
   }
 
   // Trailing city on service_id / medium id: bus-shelter-single-panel-non-lit-chennai
@@ -157,16 +202,15 @@ export function extractCityFromDbService(svc: DbService): string | null {
   if (sid) {
     const cities = [...CLOUD_CITY_KEYS].sort((a, b) => b.length - a.length);
     for (const city of cities) {
-      if (sid.endsWith(`-${city}`) || sid.includes(`-${city}-`)) {
+      if (serviceIdHasCityToken(sid, city)) {
         return titleCaseCity(city);
       }
     }
   }
 
   const docName = (svc.document_name || '').toLowerCase();
-  for (const key of CLOUD_CITY_KEYS) {
-    if (docName.includes(key)) return titleCaseCity(key);
-  }
+  const docKey = matchCloudCityKeyInLabel(docName);
+  if (docKey) return titleCaseCity(docKey);
   const docBase = (svc.document_name || '').replace(/\.(pdf|xlsx?|jpeg|jpg|png)$/i, '');
   for (const part of docBase.split(/[_\-\s]+/)) {
     if (part.length < 3 || DOC_NAME_SKIP.has(part.toLowerCase())) continue;

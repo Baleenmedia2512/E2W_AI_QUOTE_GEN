@@ -2096,6 +2096,7 @@ function partitionBatchWork(
           resolved.reps.map((r) => [r.service_id, w.qty ?? qtyByServiceId[r.service_id]]),
         ),
       },
+      w.city || session.city,
     );
     seedRows = [...seedRows, ...built.rows];
     seedIds = [...seedIds, ...resolved.reps.map((r) => r.service_id)];
@@ -2390,6 +2391,18 @@ function getLocalityFromMetaCity(svc: DbService): string | null {
   return titleCase(raw);
 }
 
+/** service_id city token — ignore "...-except-mumbai" false hits. */
+function serviceIdHasRealCityToken(sid: string, city: string): boolean {
+  if (
+    sid.endsWith(`-except-${city}`)
+    || sid.includes(`-except-${city}-`)
+    || sid.includes(`-except-${city}`)
+  ) {
+    return false;
+  }
+  return sid.endsWith(`-${city}`) || sid.includes(`-${city}-`);
+}
+
 /** Real city only (Chennai/Madurai…) — never area names like Anna Nagar / Padur. */
 export function extractRealCityFromDbService(svc: DbService): string | null {
   const metaCity = getMetaCityRaw(svc);
@@ -2406,15 +2419,15 @@ export function extractRealCityFromDbService(svc: DbService): string | null {
 
   const sid = (svc.service_id || '').toLowerCase();
   for (const city of REAL_CITY_KEYS) {
-    if (sid.endsWith(`-${city}`) || sid.includes(`-${city}-`)) {
+    if (serviceIdHasRealCityToken(sid, city)) {
       return city.charAt(0).toUpperCase() + city.slice(1);
     }
   }
 
+  // Doc name: exact/prefix only — never includes() ("…except Mumbai" ≠ Mumbai)
   const docName = (svc.document_name || '').toLowerCase();
-  for (const key of REAL_CITY_KEYS) {
-    if (docName.includes(key)) return key.charAt(0).toUpperCase() + key.slice(1);
-  }
+  const docKnown = matchKnownCityLabel(docName);
+  if (docKnown) return docKnown;
 
   // Fall back to shared extractor, then drop if not a known city key
   const loose = extractCityFromDbService(svc);
@@ -4778,6 +4791,7 @@ function beginMultiCityMediumFlow(
       session.durationText,
       session.originalText,
       session.qtyByServiceId,
+      session.city,
     );
     seedRows = [...seedRows, ...built.rows];
     seedIds = [...seedIds, ...readyReps.map((s) => s.service_id)];
@@ -7328,20 +7342,28 @@ function buildRowsForServices(
   durationText: string | null | undefined,
   originalText: string,
   qtyByServiceId?: Record<string, number>,
+  /** Funnel-locked city (e.g. Pan India) when DB label must be kept on Review. */
+  sessionCity?: string | null,
 ): { rows: ConfirmationRow[]; belowMin: Array<{ svc: DbService; requested: number; minimum: number }> } {
   const belowMin: Array<{ svc: DbService; requested: number; minimum: number }> = [];
   const rows: ConfirmationRow[] = [];
+  const lockedCity =
+    sessionCity && String(sessionCity).trim() && String(sessionCity).trim() !== '—'
+      ? String(sessionCity).trim()
+      : null;
 
   for (const svc of selected) {
     if (!svc?.service_id && !svc?.service_name) continue;
     const minQty = getMinQuantityFromDbService(svc);
-    const metro =
-      extractRealCityFromDbService(svc)
+    // Prefer raw DB city (incl. coverage labels like "PAN India (except Mumbai)"),
+    // then funnel lock, then known-metro extractors. Never invent Chennai.
+    const city =
+      getDbCityLabel(svc)
+      || lockedCity
+      || extractRealCityFromDbService(svc)
       || getLocalityFromMetaCity(svc)
       || extractCityFromDbService(svc)
       || '—';
-    // City field = metro only (area · direction belong in PDF service heading, not city)
-    const city = metro;
     const serviceName = (svc.service_name || '').split('·')[0].trim() || friendlyServiceLabel(svc);
     const scopedDurationText = getServiceScopedUserMessage(originalText, serviceName);
     const parsedDuration = parseDurationFromUserText(scopedDurationText);
@@ -9969,6 +9991,7 @@ function finalizeSelection(
     session.durationText,
     session.originalText,
     session.qtyByServiceId,
+    session.city,
   );
 
   const collectedRows = [...(session.collectedRows || []), ...rows];
@@ -10693,6 +10716,7 @@ function continueProgressiveActionInner(
           session.durationText,
           session.originalText,
           session.qtyByServiceId,
+          session.city,
         );
 
         return buildMultiAreaSitePicker(needPick, {
@@ -11086,6 +11110,7 @@ function continueProgressiveActionInner(
           session.durationText,
           session.originalText,
           session.qtyByServiceId,
+          session.city,
         );
         const collectedRows = [...(session.collectedRows || []), ...built.rows];
         const collectedServiceIds = [
@@ -11127,6 +11152,7 @@ function continueProgressiveActionInner(
           session.durationText,
           session.originalText,
           session.qtyByServiceId,
+          session.city,
         );
         seedRows = [...seedRows, ...built.rows];
         seedIds = [...seedIds, ...readyReps.map((s) => s.service_id)];
