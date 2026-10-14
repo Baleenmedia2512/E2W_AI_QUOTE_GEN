@@ -5,7 +5,12 @@
 
 import { supabase } from './supabaseClient';
 import { StoredProposal } from '../types';
-import { formatMaterialSpecLines, formatDisplayDimensionSpecLines, pickMaterialFromMeta } from '../utils/specMaterial';
+import {
+  formatMaterialSpecLines,
+  formatDisplayDimensionSpecLines,
+  formatDesignSpecificationDetailLines,
+  pickMaterialFromMeta,
+} from '../utils/specMaterial';
 
 export interface CloudProposal {
   id: string;
@@ -688,8 +693,11 @@ export function transformServicesToPages(services: any[]): any[] {
               ? formatMaterialSpecLines(materialVal, splitSpecString)
               : '';
             const dimensionLines = formatDisplayDimensionSpecLines(m2 as Record<string, unknown>);
-            // Flat specifications fallback when size+material+dimensions are all absent
-            const flatSpecLines = (!sizeLines && !materialLines && !dimensionLines &&
+            const designDetailLines = formatDesignSpecificationDetailLines(
+              m2 as Record<string, unknown>,
+            );
+            // Flat specifications fallback when size+material+dimensions+design details are all absent
+            const flatSpecLines = (!sizeLines && !materialLines && !dimensionLines && !designDetailLines &&
               m2.specifications && typeof m2.specifications === 'object' &&
               !Array.isArray(m2.specifications))
               ? Object.entries(m2.specifications as Record<string, unknown>)
@@ -704,7 +712,14 @@ export function transformServicesToPages(services: any[]): any[] {
               : '';
             // Do NOT include service.service_name in the spec body — short word-only
             // lines are orphan-merged into the first dimension label by the parser.
-            pageText = [headingPrefix, dimensionLines, sizeLines, materialLines, flatSpecLines]
+            pageText = [
+              headingPrefix,
+              dimensionLines,
+              designDetailLines,
+              sizeLines,
+              materialLines,
+              flatSpecLines,
+            ]
               .filter(Boolean).join('\n');
           }
         } else {
@@ -814,13 +829,15 @@ export function transformServicesToPages(services: any[]): any[] {
             ? formatMaterialSpecLines(materialVal, splitSpecString)
             : '';
           const dimensionLines = formatDisplayDimensionSpecLines(m as Record<string, unknown>);
+          const designDetailLines = formatDesignSpecificationDetailLines(
+            m as Record<string, unknown>,
+          );
 
           // ── Flat specifications object fallback (e.g. LED Hoardings) ─────────
-          // When size AND material AND dimensions are all absent, convert metadata.specifications
-          // (a plain key→value map) into "Label: value" lines so the spec section
-          // still renders for services like LED Hoardings that store operational
-          // data (creative_duration, operations_timing, etc.) only in specifications.
-          const flatSpecLines = (!sizeLines && !materialLines && !dimensionLines &&
+          // When size AND material AND dimensions AND design details are all absent,
+          // convert metadata.specifications (a plain key→value map) into "Label: value"
+          // lines so the spec section still renders for services like LED Hoardings.
+          const flatSpecLines = (!sizeLines && !materialLines && !dimensionLines && !designDetailLines &&
             m.specifications && typeof m.specifications === 'object' &&
             !Array.isArray(m.specifications))
             ? Object.entries(m.specifications as Record<string, unknown>)
@@ -834,7 +851,13 @@ export function transformServicesToPages(services: any[]): any[] {
                 .join('\n')
             : '';
 
-          const specBody = [dimensionLines, sizeLines, materialLines, flatSpecLines].filter(Boolean).join('\n');
+          const specBody = [
+            dimensionLines,
+            designDetailLines,
+            sizeLines,
+            materialLines,
+            flatSpecLines,
+          ].filter(Boolean).join('\n');
           if (specBody.trim()) {
             const syntheticText = ['DESIGN SPECIFICATION', specBody].join('\n');
             pages.push({
@@ -851,7 +874,7 @@ export function transformServicesToPages(services: any[]): any[] {
               city,
               metadata: service.metadata,
             });
-            console.log(`📐 [SPEC-FALLBACK] Created synthetic spec page for "${service.service_name}" (size/material from metadata)`);
+            console.log(`📐 [SPEC-FALLBACK] Created synthetic spec page for "${service.service_name}" (size/material/design details from metadata)`);
           }
         }
       }

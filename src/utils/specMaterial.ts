@@ -100,6 +100,42 @@ export function formatDisplayDimensionSpecLines(
     .join('\n');
 }
 
+/**
+ * DB design_specification_details: [{ label, value }, ...] → Specification rows.
+ * Skips blank / NA. Does not replace Width/Height or metadata.specifications.
+ */
+export function pickDesignSpecificationDetailFields(
+  meta: Record<string, unknown> | null | undefined,
+): Array<{ label: string; value: string }> {
+  if (!meta) return [];
+  const raw = meta.design_specification_details;
+  if (!Array.isArray(raw) || raw.length === 0) return [];
+
+  const out: Array<{ label: string; value: string }> = [];
+  for (const entry of raw) {
+    if (!entry || typeof entry !== 'object' || Array.isArray(entry)) continue;
+    const row = entry as Record<string, unknown>;
+    const labelRaw = row.label ?? row.key ?? row.name;
+    const valueRaw = row.value ?? row.val ?? row.text;
+    if (!hasMeaningfulScalar(labelRaw) || !hasMeaningfulScalar(valueRaw)) continue;
+    if (typeof labelRaw === 'object' || typeof valueRaw === 'object') continue;
+    out.push({
+      label: String(labelRaw).trim(),
+      value: String(valueRaw).trim(),
+    });
+  }
+  return out;
+}
+
+/** "PACKAGE NAME: …\\nTYPE OF DISPLAY: …" for synthetic DESIGN SPECIFICATION page text. */
+export function formatDesignSpecificationDetailLines(
+  meta: Record<string, unknown> | null | undefined,
+): string {
+  return pickDesignSpecificationDetailFields(meta)
+    .map((f) => `${f.label}: ${f.value}`)
+    .join('\n');
+}
+
 /** Collect unique non-empty remarks from quote items / line items for a service. */
 export function collectServiceRemarks(
   items?: Array<{ remark?: string; lineItems?: Array<{ remark?: string }> }>,

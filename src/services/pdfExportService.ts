@@ -24,7 +24,11 @@ import CorporateMinimalPDF, { ServicePdfData, PdfExportMode } from '../component
 import { loadAllServicesFromCloud, buildMetroSpecText } from './supabaseProposalService';
 import type { DbService } from '../utils/serviceResolver';
 import { extractMetroMultiTableSpec, type PdfSpecGroup } from '../utils/metroSpecParser';
-import { pickMaterialFromMeta, pickDisplayDimensionFields } from '../utils/specMaterial';
+import {
+  pickMaterialFromMeta,
+  pickDisplayDimensionFields,
+  pickDesignSpecificationDetailFields,
+} from '../utils/specMaterial';
 import { useAppStore } from '../store';
 
 const isMobile = () => Capacitor.isNativePlatform();
@@ -368,10 +372,17 @@ const fetchPdfDataFromDB = async (_documentIds: string[]): Promise<ServicePdfDat
       let specFields: Array<{ label: string; value: string }> = [];
       if (!specGroups?.length) {
         // DB display dimensions first (Width / Height / Length), then other specs
-        const dimFields = pickDisplayDimensionFields(
-          (row.metadata || {}) as Record<string, unknown>,
-        );
+        const metaRec = (row.metadata || {}) as Record<string, unknown>;
+        const dimFields = pickDisplayDimensionFields(metaRec);
         specFields = [...dimFields];
+
+        // Admin design_specification_details (PACKAGE NAME, TYPE OF DISPLAY, …)
+        const designDetailFields = pickDesignSpecificationDetailFields(metaRec);
+        for (const f of designDetailFields) {
+          if (!specFields.some((x) => x.label.toLowerCase() === f.label.toLowerCase())) {
+            specFields.push(f);
+          }
+        }
 
         const flat = flattenSpecificationsToFields(specsObj);
         for (const f of flat) {

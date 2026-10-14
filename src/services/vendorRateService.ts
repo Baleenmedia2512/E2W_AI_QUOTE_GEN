@@ -255,6 +255,25 @@ export function normalizeVendorRateRow(row: Record<string, unknown>): VendorRate
     meta.specifications && typeof meta.specifications === 'object' && !Array.isArray(meta.specifications)
       ? (meta.specifications as Record<string, unknown>)
       : undefined;
+  const parseDesignSpecDetails = (raw: unknown): Array<Record<string, unknown>> | undefined => {
+    if (Array.isArray(raw) && raw.length > 0) {
+      return raw as Array<Record<string, unknown>>;
+    }
+    if (typeof raw === 'string' && raw.trim()) {
+      try {
+        const parsed = JSON.parse(raw) as unknown;
+        if (Array.isArray(parsed) && parsed.length > 0) {
+          return parsed as Array<Record<string, unknown>>;
+        }
+      } catch {
+        /* ignore invalid JSON */
+      }
+    }
+    return undefined;
+  };
+  const designSpecificationDetails =
+    parseDesignSpecDetails(meta.design_specification_details)
+    ?? parseDesignSpecDetails(row.design_specification_details);
   const size =
     meta.size != null && String(meta.size).trim() !== '' && String(meta.size).toUpperCase() !== 'NA'
       ? (meta.size as string | Record<string, unknown>)
@@ -334,6 +353,7 @@ export function normalizeVendorRateRow(row: Record<string, unknown>): VendorRate
     latitude,
     longitude,
     specifications,
+    design_specification_details: designSpecificationDetails,
     size,
     material,
     display_width: displayWidth,
@@ -1200,6 +1220,7 @@ export function vendorRatesToDbServices(
         longitude: cleaned.longitude,
         // PDF / Display Specification — from vendor_rate_chunks.metadata
         specifications: cleaned.specifications,
+        design_specification_details: cleaned.design_specification_details,
         size: cleaned.size,
         material: cleaned.material,
         display_width: cleaned.display_width,

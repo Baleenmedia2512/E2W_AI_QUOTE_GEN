@@ -3,6 +3,8 @@ import {
   collectServiceRemarks,
   hasMeaningfulMaterial,
   hasMeaningfulScalar,
+  formatDesignSpecificationDetailLines,
+  pickDesignSpecificationDetailFields,
   pickDisplayDimensionFields,
   pickMaterialFromMeta,
 } from './specMaterial';
@@ -65,6 +67,41 @@ describe('pickDisplayDimensionFields', () => {
       { label: 'Width', value: '10' },
       { label: 'Length', value: '30' },
     ]);
+  });
+});
+
+describe('pickDesignSpecificationDetailFields', () => {
+  it('maps design_specification_details label/value rows', () => {
+    expect(
+      pickDesignSpecificationDetailFields({
+        display_width: 2,
+        design_specification_details: [
+          { label: 'PACKAGE NAME', value: 'HIGH STREET DOMESTIC' },
+          { label: 'TYPE OF DISPLAY', value: '65" Digital screen' },
+          { label: 'UNITS', value: 'NA' },
+          { label: '', value: 'x' },
+        ],
+      }),
+    ).toEqual([
+      { label: 'PACKAGE NAME', value: 'HIGH STREET DOMESTIC' },
+      { label: 'TYPE OF DISPLAY', value: '65" Digital screen' },
+    ]);
+  });
+
+  it('returns empty when missing', () => {
+    expect(pickDesignSpecificationDetailFields({})).toEqual([]);
+    expect(pickDesignSpecificationDetailFields({ design_specification_details: [] })).toEqual([]);
+  });
+
+  it('formats colon lines for synthetic spec page text', () => {
+    expect(
+      formatDesignSpecificationDetailLines({
+        design_specification_details: [
+          { label: 'PACKAGE NAME', value: 'HIGH STREET DOMESTIC' },
+          { label: 'UNITS', value: '42Nos' },
+        ],
+      }),
+    ).toBe('PACKAGE NAME: HIGH STREET DOMESTIC\nUNITS: 42Nos');
   });
 });
 

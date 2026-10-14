@@ -76,6 +76,11 @@ export interface VendorRateRow {
   longitude?: string | number;
   /** Design / coach specs for PDF Specification section */
   specifications?: Record<string, unknown>;
+  /**
+   * Admin design-spec rows for PDF Specification
+   * (e.g. PACKAGE NAME / TYPE OF DISPLAY / UNITS / SPOTS).
+   */
+  design_specification_details?: Array<{ label?: string; value?: string; [key: string]: unknown }>;
   size?: string | Record<string, unknown>;
   /** Optional — omit / empty / NA → Material section hidden on PDF */
   material?: string | Record<string, unknown>;
