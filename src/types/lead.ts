@@ -11,8 +11,17 @@ export interface Lead {
   pincode?: string;
   campaign?: string;
   source?: string;
+  /** CRM pipeline status; new leads from Quote Prepared For use "new". */
+  status?: string;
   created_at?: string;
   updated_at?: string;
+}
+
+/** Payload from Quote Prepared For (Name / Phone / Email). */
+export interface PreparedForLeadInput {
+  name: string;
+  phone: string;
+  email?: string;
 }
 
 export interface LeadSearchResult {

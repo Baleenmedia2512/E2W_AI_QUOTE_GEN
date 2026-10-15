@@ -14,6 +14,8 @@ import type { DbService } from './serviceResolver';
 import { resolveServiceIdFromCatalog } from './serviceResolver';
 import { hydrateQuoteTermsFromCatalog } from './termsHydration';
 import { applyVendorPricingForQuoteRow, getVendorRatesCache } from '../services/vendorRateService';
+import { allocateLocalQuoteNumberSync } from '../services/quoteNumberService';
+// allocateLocalQuoteNumberSync is a non-consuming peek (draft display only).
 
 export type BuildQuoteFromDbResult =
   | { success: true; quote: Quote; skipped?: string[] }
@@ -137,12 +139,13 @@ function dedupeLogicalQuoteRows(
  * Pricing ONLY from vendor_rate_chunks (display_price + printing_and_mounting_price).
  * If vendor pricing is missing → error (proposal_chunks pricing disabled).
  * Qty unit AI runs on Quote Preview only (not here).
- * Row order is preserved (Review drag order → confirmation rows → quote.items).
+ * @param quoteNumber Optional pre-allocated number (e.g. QT-10001).
  */
 export function buildQuoteFromConfirmedRows(
   rows: ConfirmationRow[],
   services: DbService[],
   originalUserInput: string,
+  quoteNumber?: string,
 ): BuildQuoteFromDbResult {
   // dedupeLogicalQuoteRows keeps first-seen Map order from `rows`.
   const uniqueRows = dedupeLogicalQuoteRows(dedupeConfirmationRows(rows), services);
@@ -252,7 +255,7 @@ export function buildQuoteFromConfirmedRows(
 
   const quote: Quote = {
     id: Date.now().toString(),
-    quoteNumber: `QT-${Date.now().toString().slice(-6)}`,
+    quoteNumber: (quoteNumber && quoteNumber.trim()) || allocateLocalQuoteNumberSync(),
     date: new Date().toISOString(),
     validUntil: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString(),
     items: quoteItems,
