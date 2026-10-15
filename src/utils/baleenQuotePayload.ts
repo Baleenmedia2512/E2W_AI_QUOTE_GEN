@@ -1,6 +1,10 @@
 import type { Quote, QuoteItem } from '../types/quote';
 import type { ClientInfo } from '../types/client';
-import { isOneTimeLineDescription, toCampaignDays } from './durationUtils';
+import {
+  computeRecurringLineTotal,
+  isOneTimeLineDescription,
+  toCampaignDays,
+} from './durationUtils';
 
 /** One line in the Baleen Media inbox payload — one object per service. */
 export interface BaleenQuoteLine {
@@ -34,9 +38,10 @@ function digitsOnlyPhone(phone: string | undefined): string {
   return String(phone || '').replace(/\D/g, '');
 }
 
+/** Whole rupees — same as Quote Preview totals, not 2dp. */
 function roundMoney(n: number): number {
   if (!Number.isFinite(n) || n <= 0) return 0;
-  return Math.round(n * 100) / 100;
+  return Math.round(n);
 }
 
 /** Positive finite amount; treats NA / blank / 0 as missing. */
@@ -186,11 +191,12 @@ function mergeServiceGroup(items: QuoteItem[]): MergedUnits {
 }
 
 /**
- * display = unit_per_day × qty × days
- * pm      = pm_unit × qty
- * excl    = display + pm  (or only pm if no display unit)
- * vendorCostExclGst = cost excl (no GST)
- * priceInclGst      = price excl × 1.18
+ * Recurring display uses Quote Preview math (`computeRecurringLineTotal`):
+ * - days multiple of 30 → monthlyRate = Math.round(daily × 30), then qty × monthly × months
+ * - else → qty × daily × days
+ * P&F / one-time: unit × qty (no duration).
+ * vendorCostExclGst = displayCost + pmCost (excl GST), whole ₹
+ * priceInclGst      = (displayPrice + pmPrice) × 1.18, whole ₹
  */
 export function computeBaleenLineTotals(units: {
   displayPricePerDay: number | null;
@@ -209,8 +215,16 @@ export function computeBaleenLineTotals(units: {
   let priceExcl: number;
 
   if (hasDisplay) {
-    const displayCost = (units.displayCostPerDay ?? 0) * qty * days;
-    const displayPrice = (units.displayPricePerDay ?? 0) * qty * days;
+    const displayCost = computeRecurringLineTotal(
+      qty,
+      units.displayCostPerDay ?? 0,
+      days > 0 ? days : null,
+    );
+    const displayPrice = computeRecurringLineTotal(
+      qty,
+      units.displayPricePerDay ?? 0,
+      days > 0 ? days : null,
+    );
     const pmCostAmt = (units.pmCost ?? 0) * qty;
     const pmPriceAmt = (units.pmPrice ?? 0) * qty;
     costExcl = displayCost + pmCostAmt;
