@@ -725,6 +725,33 @@ export const QuotePreviewPage: React.FC = () => {
         }
       })();
 
+      // Always try Baleen Media after a successful PDF download (API key stays on Edge).
+      // Failure must not undo PDF download — toast Yes/No only.
+      const baleenResult = await pushQuoteToBaleenMedia({
+        quote: liveQuote,
+        client: effectiveClient,
+      });
+
+      if (baleenResult.success && baleenResult.id) {
+        toast({
+          title: 'Baleen Media: Yes',
+          description: `Sent to Baleen Media (id ${baleenResult.id}).`,
+          status: 'success',
+          duration: 6000,
+          isClosable: true,
+        });
+      } else {
+        toast({
+          title: 'Baleen Media: No',
+          description:
+            baleenResult.message
+            || 'Could not send quote. Retry download after Edge secrets are set.',
+          status: 'warning',
+          duration: 9000,
+          isClosable: true,
+        });
+      }
+
       if (user?.canSendQuoteEmail !== true) {
         toast({
           title: 'PDF Downloaded',
