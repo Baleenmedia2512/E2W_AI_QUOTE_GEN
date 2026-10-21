@@ -5,6 +5,10 @@ import {
   isOneTimeLineDescription,
   toCampaignDays,
 } from './durationUtils';
+import {
+  resolveMergedDisplayTermEntries,
+  termsLabelFromItem,
+} from './termsMerge';
 
 /** One line in the Baleen Media inbox payload — one object per service. */
 export interface BaleenQuoteLine {
@@ -21,6 +25,8 @@ export interface BaleenQuoteLine {
   priceInclGst: number;
   qty: number;
   qtyUnit: string;
+  /** This service's terms (Bus Semi line gets Bus Semi terms, and so on). */
+  termsAndConditions: string;
 }
 
 /** Body POSTed to Baleen Media (via Edge Function). */
@@ -86,6 +92,83 @@ function serviceGroupKey(item: QuoteItem): string {
     .trim()
     .toLowerCase();
   return `${name}|${city}`;
+}
+
+function normTermKey(value: string): string {
+  return value.toLowerCase().replace(/[^a-z0-9]+/g, ' ').replace(/\s+/g, ' ').trim();
+}
+
+/** Word-boundary match so "Bus Semi" hits "Bus Semi Branding" without matching every "Bus". */
+function looseServiceMatch(a: string, b: string): boolean {
+  if (!a || !b) return false;
+  if (a === b) return true;
+  const [short, long] = a.length <= b.length ? [a, b] : [b, a];
+  if (short.length < 4) return false;
+  const escaped = short.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  return new RegExp(`(?:^| )${escaped}(?: |$)`).test(long);
+}
+
+function serviceNeedles(items: QuoteItem[]): string[] {
+  const out: string[] = [];
+  for (const item of items) {
+    out.push(
+      termsLabelFromItem(item),
+      item.serviceName || '',
+      item.medium || '',
+      item.adType || '',
+      item.title || '',
+    );
+  }
+  return [...new Set(out.map((s) => s.trim()).filter(Boolean))];
+}
+
+function formatTermBullets(lines: string[]): string {
+  const seen = new Set<string>();
+  const out: string[] = [];
+  for (const raw of lines) {
+    const text = raw.replace(/^•\s*/, '').trim();
+    if (!text) continue;
+    const key = normTermKey(text);
+    if (!key || seen.has(key)) continue;
+    seen.add(key);
+    out.push(`• ${text}`);
+  }
+  return out.join('\n');
+}
+
+/**
+ * Terms for one Baleen line.
+ * Per-item text wins. Otherwise split quote.termsAndConditions by service label
+ * so Bus Semi and Auto Semi each send their own terms.
+ */
+function termsForServiceGroup(quote: Quote, items: QuoteItem[]): string {
+  const fromItem = items.map((item) => (item.termsAndConditions || '').trim()).find(Boolean);
+  if (fromItem) return fromItem;
+
+  const resolved = resolveMergedDisplayTermEntries(
+    quote.termsAndConditions,
+    quote.items || [],
+  );
+  const needles = serviceNeedles(items).map(normTermKey).filter((k) => k.length >= 3);
+  const matched = resolved.filter(
+    (term) =>
+      term.text.trim()
+      && term.labels.some((label) => {
+        const key = normTermKey(label);
+        return needles.some((needle) => looseServiceMatch(key, needle));
+      }),
+  );
+  if (matched.length) return formatTermBullets(matched.map((term) => term.text));
+
+  const serviceGroups = new Set((quote.items || []).map(serviceGroupKey));
+  if (serviceGroups.size <= 1) {
+    const labeled = resolved.filter((term) => term.labels.length > 0 && term.text.trim());
+    const pool = labeled.length ? labeled : resolved.filter((term) => term.text.trim());
+    if (pool.length) return formatTermBullets(pool.map((term) => term.text));
+    return (quote.termsAndConditions || '').trim();
+  }
+
+  return '';
 }
 
 interface MergedUnits {
@@ -298,6 +381,7 @@ export function buildBaleenQuotePayload(
       priceInclGst: amounts.priceInclGst,
       qty: merged.qty,
       qtyUnit: merged.qtyUnit,
+      termsAndConditions: termsForServiceGroup(quote, groups.get(key)!),
     };
   });
 

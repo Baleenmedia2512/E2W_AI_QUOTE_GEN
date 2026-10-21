@@ -81,6 +81,7 @@ interface BaleenLine {
   costInclGst?: unknown;
   qty?: unknown;
   qtyUnit?: unknown;
+  termsAndConditions?: unknown;
 }
 
 function asString(value: unknown): string {
@@ -115,6 +116,7 @@ function normalizePayload(body: Record<string, unknown>): {
     priceInclGst: number;
     qty: number;
     qtyUnit: string;
+    termsAndConditions: string;
   }>;
 } | null {
   const quoteId = asString(body.quoteId);
@@ -136,6 +138,7 @@ function normalizePayload(body: Record<string, unknown>): {
       priceInclGst: asNumber(line.priceInclGst),
       qty: asNumber(line.qty),
       qtyUnit: asString(line.qtyUnit),
+      termsAndConditions: asString(line.termsAndConditions),
     };
   });
 
