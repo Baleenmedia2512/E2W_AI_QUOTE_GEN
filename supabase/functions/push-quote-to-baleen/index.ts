@@ -70,6 +70,8 @@ interface BaleenLine {
   adType?: unknown;
   city?: unknown;
   vendorName?: unknown;
+  /** From public.vendors.vendor_gst. */
+  vendorGstNumber?: unknown;
   /** Preferred: vendor cost EXCLUDING GST. */
   vendorCostExclGst?: unknown;
   vendorGstPercent?: unknown;
@@ -81,6 +83,8 @@ interface BaleenLine {
   costInclGst?: unknown;
   qty?: unknown;
   qtyUnit?: unknown;
+  duration?: unknown;
+  durationUnit?: unknown;
   termsAndConditions?: unknown;
 }
 
@@ -101,6 +105,16 @@ function resolveVendorCostExclGst(line: BaleenLine): number {
   return 0;
 }
 
+function normalizeVendorGstNumber(value: unknown): string {
+  const raw = asString(value);
+  if (!raw) return '';
+  const upper = raw.toUpperCase();
+  if (upper === 'NA' || upper === 'N/A' || upper === '-' || upper === 'NULL' || upper === 'NONE') {
+    return '';
+  }
+  return raw;
+}
+
 function normalizePayload(body: Record<string, unknown>): {
   quoteId: string;
   clientName: string;
@@ -111,11 +125,14 @@ function normalizePayload(body: Record<string, unknown>): {
     adType: string;
     city: string;
     vendorName: string;
+    vendorGstNumber: string;
     vendorCostExclGst: number;
     vendorGstPercent: number;
     priceInclGst: number;
     qty: number;
     qtyUnit: string;
+    duration: number;
+    durationUnit: string;
     termsAndConditions: string;
   }>;
 } | null {
@@ -127,17 +144,22 @@ function normalizePayload(body: Record<string, unknown>): {
 
   const lines = rawLines.map((line) => {
     const gstPct = asNumber(line.vendorGstPercent);
+    const duration = Math.max(0, asNumber(line.duration));
+    const durationUnit = asString(line.durationUnit).toLowerCase() || 'days';
     return {
       serviceId: asString(line.serviceId),
       medium: asString(line.medium),
       adType: asString(line.adType),
       city: asString(line.city),
       vendorName: asString(line.vendorName),
+      vendorGstNumber: normalizeVendorGstNumber(line.vendorGstNumber),
       vendorCostExclGst: resolveVendorCostExclGst(line),
       vendorGstPercent: gstPct > 0 ? gstPct : 18,
       priceInclGst: asNumber(line.priceInclGst),
       qty: asNumber(line.qty),
       qtyUnit: asString(line.qtyUnit),
+      duration,
+      durationUnit: durationUnit === 'months' ? 'months' : 'days',
       termsAndConditions: asString(line.termsAndConditions),
     };
   });

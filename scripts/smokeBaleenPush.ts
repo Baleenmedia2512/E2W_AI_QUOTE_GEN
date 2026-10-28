@@ -104,7 +104,9 @@ function assert(cond: boolean, msg: string) {
 }
 
 async function main() {
-  const payload = buildBaleenQuotePayload(quote, client);
+  const payload = buildBaleenQuotePayload(quote, client, {
+    vendorGstByName: { 'TOI OOH': '33AAACB4373Q1ZF' },
+  });
   console.log('Line count:', payload.lines.length);
   console.log('Line 0:', JSON.stringify(payload.lines[0], null, 2));
 
@@ -128,7 +130,15 @@ async function main() {
     `priceInclGst got ${payload.lines[0].priceInclGst}`,
   );
   assert(payload.lines[0].qty === 5, 'qty');
-  console.log('OK: one service → one line; vendorCostExclGst=75000 vendorGstPercent=18 priceInclGst=103250');
+  assert(payload.lines[0].duration === 30, `duration got ${payload.lines[0].duration}`);
+  assert(payload.lines[0].durationUnit === 'days', 'durationUnit');
+  assert(
+    payload.lines[0].vendorGstNumber === '33AAACB4373Q1ZF',
+    `vendorGstNumber got ${payload.lines[0].vendorGstNumber}`,
+  );
+  console.log(
+    'OK: one service → one line; vendorCostExclGst=75000 vendorGstPercent=18 priceInclGst=103250 duration=30 vendorGstNumber set',
+  );
 }
 
 main().catch((err) => {

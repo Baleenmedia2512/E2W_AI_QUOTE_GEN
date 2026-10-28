@@ -1,7 +1,11 @@
 import { supabase } from './supabaseClient';
 import type { Quote } from '../types/quote';
 import type { ClientInfo } from '../types/client';
-import { buildBaleenQuotePayload } from '../utils/baleenQuotePayload';
+import {
+  applyVendorGstNumbers,
+  buildBaleenQuotePayload,
+  usableVendorGst,
+} from '../utils/baleenQuotePayload';
 import { extractEdgeFunctionMessage } from '../utils/edgeFunctionError';
 import { authService } from './authService';
 
@@ -11,6 +15,55 @@ export interface PushQuoteToBaleenResult {
   id?: string;
   /** Page URL only (from Edge). Never an API fetch from the browser. */
   openUrl?: string;
+}
+
+function normalizeVendorKey(name: string): string {
+  return name.trim().toLowerCase().replace(/\s+/g, ' ');
+}
+
+/**
+ * Load vendor_gst from public.vendors for the given display names.
+ * Case-insensitive match on name (and name_code as fallback).
+ */
+export async function fetchVendorGstByNames(
+  vendorNames: string[],
+): Promise<Map<string, string>> {
+  const unique = [
+    ...new Set(
+      vendorNames
+        .map((n) => n.trim())
+        .filter(Boolean),
+    ),
+  ];
+  const out = new Map<string, string>();
+  if (!unique.length) return out;
+
+  const { data, error } = await supabase
+    .from('vendors')
+    .select('name, name_code, vendor_gst');
+
+  if (error) {
+    console.warn('[Baleen] vendors GST lookup failed:', error.message);
+    return out;
+  }
+
+  const byKey = new Map<string, string>();
+  for (const row of data || []) {
+    const gst = usableVendorGst(row.vendor_gst);
+    if (!gst) continue;
+    const nameKey = normalizeVendorKey(String(row.name || ''));
+    const codeKey = normalizeVendorKey(String(row.name_code || '').replace(/-/g, ' '));
+    if (nameKey) byKey.set(nameKey, gst);
+    if (codeKey) byKey.set(codeKey, gst);
+  }
+
+  for (const name of unique) {
+    const key = normalizeVendorKey(name);
+    const gst = byKey.get(key);
+    if (gst) out.set(key, gst);
+  }
+
+  return out;
 }
 
 /**
@@ -29,12 +82,21 @@ export async function pushQuoteToBaleenMedia(params: {
       };
     }
 
-    const payload = buildBaleenQuotePayload(params.quote, params.client);
+    let payload = buildBaleenQuotePayload(params.quote, params.client);
     if (!payload.quoteId) {
       return { success: false, message: 'Quote number is missing.' };
     }
     if (!payload.lines.length) {
       return { success: false, message: 'Quote has no line items to send.' };
+    }
+
+    try {
+      const gstMap = await fetchVendorGstByNames(
+        payload.lines.map((line) => line.vendorName),
+      );
+      payload = applyVendorGstNumbers(payload, gstMap);
+    } catch (gstErr) {
+      console.warn('[Baleen] vendor GST enrich skipped:', gstErr);
     }
 
     // ONLY call our Edge Function — never fetch(BALEEN_MEDIA_URL/...) from the browser.

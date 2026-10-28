@@ -17,6 +17,8 @@ export interface BaleenQuoteLine {
   adType: string;
   city: string;
   vendorName: string;
+  /** From public.vendors.vendor_gst (matched by vendorName). Empty when unknown/NA. */
+  vendorGstNumber: string;
   /** Vendor cost EXCLUDING GST (line total). */
   vendorCostExclGst: number;
   /** GST % applied on vendor cost (Baleen contract). */
@@ -25,6 +27,9 @@ export interface BaleenQuoteLine {
   priceInclGst: number;
   qty: number;
   qtyUnit: string;
+  /** Campaign length in days (same basis as line pricing). */
+  duration: number;
+  durationUnit: 'days';
   /** This service's terms (Bus Semi line gets Bus Semi terms, and so on). */
   termsAndConditions: string;
 }
@@ -347,13 +352,65 @@ export function computeBaleenInclGstTotals(units: {
   };
 }
 
+function normalizeVendorKey(name: string): string {
+  return name.trim().toLowerCase().replace(/\s+/g, ' ');
+}
+
+/** Reject NA / blank GST values from vendors.vendor_gst. */
+export function usableVendorGst(value: unknown): string {
+  if (value == null) return '';
+  const raw = String(value).trim();
+  if (!raw) return '';
+  const upper = raw.toUpperCase();
+  if (upper === 'NA' || upper === 'N/A' || upper === '-' || upper === 'NULL' || upper === 'NONE') {
+    return '';
+  }
+  return raw;
+}
+
+/**
+ * Attach vendor GST numbers from a name → gst map (case-insensitive).
+ * Lookup source: public.vendors.vendor_gst (not vendor_rate_chunks metadata).
+ */
+export function applyVendorGstNumbers(
+  payload: BaleenQuotePayload,
+  gstByVendorName: Map<string, string> | Record<string, string>,
+): BaleenQuotePayload {
+  const map =
+    gstByVendorName instanceof Map
+      ? gstByVendorName
+      : new Map(
+          Object.entries(gstByVendorName).map(([k, v]) => [normalizeVendorKey(k), usableVendorGst(v)]),
+        );
+
+  const lookup = (vendorName: string): string => {
+    const key = normalizeVendorKey(vendorName);
+    if (!key) return '';
+    if (map.has(key)) return usableVendorGst(map.get(key));
+    for (const [k, v] of map.entries()) {
+      if (normalizeVendorKey(k) === key) return usableVendorGst(v);
+    }
+    return '';
+  };
+
+  return {
+    ...payload,
+    lines: payload.lines.map((line) => ({
+      ...line,
+      vendorGstNumber: lookup(line.vendorName),
+    })),
+  };
+}
+
 /**
  * Build Baleen Media inbox JSON from the live quote + client.
  * One line per service (Display + P&M merged). Amounts are Baleen POST only.
+ * vendorGstNumber starts empty — call applyVendorGstNumbers after vendors lookup.
  */
 export function buildBaleenQuotePayload(
   quote: Quote,
   client: ClientInfo,
+  options?: { vendorGstByName?: Map<string, string> | Record<string, string> },
 ): BaleenQuotePayload {
   const groups = new Map<string, QuoteItem[]>();
   const order: string[] = [];
@@ -376,19 +433,27 @@ export function buildBaleenQuotePayload(
       adType: merged.adType,
       city: merged.city,
       vendorName: merged.vendorName,
+      vendorGstNumber: '',
       vendorCostExclGst: amounts.vendorCostExclGst,
       vendorGstPercent: BALEEN_VENDOR_GST_PERCENT,
       priceInclGst: amounts.priceInclGst,
       qty: merged.qty,
       qtyUnit: merged.qtyUnit,
+      duration: merged.days > 0 ? merged.days : 0,
+      durationUnit: 'days',
       termsAndConditions: termsForServiceGroup(quote, groups.get(key)!),
     };
   });
 
-  return {
+  const payload: BaleenQuotePayload = {
     quoteId: String(quote.quoteNumber || quote.id || '').trim(),
     clientName: String(client.name || client.company || '').trim(),
     mobile: digitsOnlyPhone(client.phone),
     lines,
   };
+
+  if (options?.vendorGstByName) {
+    return applyVendorGstNumbers(payload, options.vendorGstByName);
+  }
+  return payload;
 }
