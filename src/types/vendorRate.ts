@@ -98,4 +98,6 @@ export interface VendorRateRow {
   mounting_cost?: number | string;
   printing_and_mounting_cost?: number | string;
   display_unit_price_per_day?: number | string;
+  /** GST % on vendor cost (from vendor_rate_chunks.metadata.gst_percent). */
+  gst_percent?: number | string;
 }

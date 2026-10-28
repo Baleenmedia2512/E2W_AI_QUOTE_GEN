@@ -61,6 +61,7 @@ const quote: Quote = {
       medium: 'HOARDING',
       adType: 'Frontlit',
       vendorDisplayUnitCostPerDay: 400,
+      vendorGstPercent: 18,
     },
     {
       id: '2',
@@ -77,6 +78,7 @@ const quote: Quote = {
       adType: 'Frontlit',
       vendorPfUnitCost: 3000,
       vendorCostExclGst: 3000,
+      vendorGstPercent: 18,
     },
   ],
   subtotal: 87500,

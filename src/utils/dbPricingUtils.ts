@@ -322,6 +322,16 @@ export function buildLineItemsFromDbPricing(
       || svc.document_name
       || '',
     ).trim() || undefined;
+    const gstPercentRaw = (m as { gst_percent?: unknown }).gst_percent;
+    const gstPercentNum = Number(gstPercentRaw);
+    const vendorGstPercent =
+      gstPercentRaw != null
+      && String(gstPercentRaw).trim() !== ''
+      && String(gstPercentRaw).trim().toUpperCase() !== 'NA'
+      && Number.isFinite(gstPercentNum)
+      && gstPercentNum > 0
+        ? gstPercentNum
+        : undefined;
 
     const line: QuoteItem = {
       id: mkId(),
@@ -346,6 +356,7 @@ export function buildLineItemsFromDbPricing(
       adType: adTypeLabel,
       vendorCostExclGst:
         vendorCost != null && vendorCost > 0 ? vendorCost : undefined,
+      vendorGstPercent,
     };
     line.total = computeQuoteItemTotal(line);
     items.push(line);

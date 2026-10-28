@@ -327,10 +327,17 @@ export function normalizeVendorRateRow(row: Record<string, unknown>): VendorRate
   const serviceName = pickString(row.service_name, meta.service_name);
   if (!medium && !serviceId && !serviceName) return null;
 
+  const gstPercentRaw = meta.gst_percent ?? row.gst_percent;
+  const gstPercent =
+    !isNaLike(gstPercentRaw) && Number.isFinite(Number(gstPercentRaw)) && Number(gstPercentRaw) > 0
+      ? (gstPercentRaw as number | string)
+      : undefined;
+
   return {
     medium,
     city: pickString(meta.city, row.city).toLowerCase(),
     vendor_name: pickString(meta.vendor_name, row.vendor_name) || undefined,
+    gst_percent: gstPercent,
     service_id: serviceId,
     // MEDIUM ID from admin UI may be rate_key or medium_id (never row UUID)
     rate_key:
@@ -761,6 +768,13 @@ export function applyVendorDetailsToService(svc: DbService, vendor: VendorRateRo
 
   if (vendor.vendor_name && !isNaLike(vendor.vendor_name)) {
     meta.vendor_name = vendor.vendor_name;
+  }
+
+  if (vendor.gst_percent != null && !isNaLike(vendor.gst_percent)) {
+    const gstN = Number(vendor.gst_percent);
+    if (Number.isFinite(gstN) && gstN > 0) {
+      meta.gst_percent = gstN;
+    }
   }
 
   console.log(
@@ -1202,6 +1216,7 @@ export function vendorRatesToDbServices(
         medium_type: cleaned.medium_type,
         city: cleaned.city || city,
         vendor_name: cleaned.vendor_name,
+        gst_percent: cleaned.gst_percent,
         preferred_vendor_rank: cleaned.preferred_vendor_rank ?? 1,
         min_quantity: minQtyNum,
         min_qty: cleaned.min_qty,

@@ -63,6 +63,8 @@ export interface QuoteItem {
   adType?: string;
   /** Vendor unit cost excluding GST (stamped from DB at quote build). */
   vendorCostExclGst?: number;
+  /** Vendor GST % from vendor_rate_chunks.metadata.gst_percent (Baleen line). */
+  vendorGstPercent?: number;
 }
 
 export interface Quote {

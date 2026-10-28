@@ -189,6 +189,20 @@ interface MergedUnits {
   adType: string;
   city: string;
   vendorName: string;
+  vendorGstPercent: number | null;
+}
+
+/** Positive GST % from quote item / DB; rejects NA / blank / ≤0. */
+function usableGstPercent(value: unknown): number | null {
+  if (value == null || value === '') return null;
+  if (typeof value === 'string') {
+    const t = value.trim().toUpperCase();
+    if (!t || t === 'NA' || t === 'N/A' || t === '-' || t === 'NULL' || t === 'NONE') {
+      return null;
+    }
+  }
+  const n = Number(value);
+  return Number.isFinite(n) && n > 0 ? n : null;
 }
 
 /**
@@ -208,6 +222,7 @@ function mergeServiceGroup(items: QuoteItem[]): MergedUnits {
   let adType = '';
   let city = '';
   let vendorName = '';
+  let vendorGstPercent: number | null = null;
 
   const preferMeta = (item: QuoteItem) => {
     if (!serviceId) serviceId = (item.serviceId || item.id || '').trim();
@@ -220,6 +235,9 @@ function mergeServiceGroup(items: QuoteItem[]): MergedUnits {
     if (!city) city = (item.city || '').trim();
     if (!vendorName) vendorName = (item.vendorName || '').trim();
     if (!qtyUnit) qtyUnit = (item.quantityUnit || '').trim();
+    if (vendorGstPercent == null) {
+      vendorGstPercent = usableGstPercent(item.vendorGstPercent);
+    }
   };
 
   for (const item of items) {
@@ -275,6 +293,7 @@ function mergeServiceGroup(items: QuoteItem[]): MergedUnits {
     adType,
     city,
     vendorName,
+    vendorGstPercent,
   };
 }
 
@@ -435,7 +454,7 @@ export function buildBaleenQuotePayload(
       vendorName: merged.vendorName,
       vendorGstNumber: '',
       vendorCostExclGst: amounts.vendorCostExclGst,
-      vendorGstPercent: BALEEN_VENDOR_GST_PERCENT,
+      vendorGstPercent: merged.vendorGstPercent ?? BALEEN_VENDOR_GST_PERCENT,
       priceInclGst: amounts.priceInclGst,
       qty: merged.qty,
       qtyUnit: merged.qtyUnit,
