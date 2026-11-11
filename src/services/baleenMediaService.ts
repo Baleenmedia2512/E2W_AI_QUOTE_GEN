@@ -94,7 +94,7 @@ export async function pushQuoteToBaleenMedia(params: {
     });
 
     const id = data?.id != null && data.id !== '' ? String(data.id) : '';
-    if (error || data?.error || !id) {
+    if (error || !data || data.error || !id) {
       const message = data?.error || data?.message || error || 'Could not send quote to Baleen Media.';
       console.error('[Baleen] API push failed:', message);
       return { success: false, message };

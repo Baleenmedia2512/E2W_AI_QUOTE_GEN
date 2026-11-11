@@ -530,24 +530,11 @@ export async function storeServiceChunk(
     user_id: dataToInsert.user_id
   });
   
-  console.log(`   [STORE-CHUNK] Calling Supabase upsert on 'proposal_chunks' table...`);
-  
+  console.log(`   [STORE-CHUNK] Upserting proposal_chunks via API...`);
+
   await upsertProposalChunk(dataToInsert as Record<string, unknown>);
-  const data = null;
-  const error = null;
-  
-  if (error) {
-    console.error(`❌ [STORE-CHUNK] Database error for ${chunk.serviceName}:`);
-    console.error(`   [STORE-CHUNK] Error message: ${error.message}`);
-    console.error(`   [STORE-CHUNK] Error code: ${error.code}`);
-    console.error(`   [STORE-CHUNK] Error details:`, error.details);
-    console.error(`   [STORE-CHUNK] Error hint:`, error.hint);
-    console.error(`   [STORE-CHUNK] Full error object:`, error);
-    throw error;
-  }
-  
+
   console.log(`✅ [STORE-CHUNK] Successfully stored: ${chunk.serviceName}`);
-  console.log(`   [STORE-CHUNK] Response data:`, data);
 }
 
 /**
@@ -877,8 +864,8 @@ export async function processProposalForRAG(params: {
                   pageNumber: pageNum
                 });
                 console.log(`       ✅ Uploaded: ${fileName}`);
-              } else if (error) {
-                console.error(`       ❌ Upload failed for ${fileName}:`, error.message);
+              } else {
+                console.error(`       ❌ Upload failed for ${fileName}`);
               }
             } catch (err) {
               console.error(`       ❌ Error processing crop ${cropIndex}:`, err);
@@ -921,8 +908,8 @@ export async function processProposalForRAG(params: {
                   pageNumber: pageNum
                 });
                 console.log(`       ✅ Uploaded: ${fileName}`);
-              } else if (error) {
-                console.error(`       ❌ Upload failed for ${fileName}:`, error.message);
+              } else {
+                console.error(`       ❌ Upload failed for ${fileName}`);
               }
             } catch (err) {
               console.error(`       ❌ Error processing crop ${cropIndex}:`, err);
