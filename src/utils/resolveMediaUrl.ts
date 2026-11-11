@@ -1,18 +1,20 @@
 /**
- * Shared Cost Manager MilesWeb public storage:
+ * Shared MilesWeb public storage:
  *   NEXT_PUBLIC_UPLOADS_BASE_URL / VITE_UPLOADS_BASE_URL
- *   → https://wellnessvalley.in/costmanager/proposal-images/...
+ *   → https://baleenmedia.in/costmanager/proposal-images/...
  *
- * Leftover supabase.co / relative /uploads paths rewrite to that base.
+ * Leftover wellnessvalley / supabase / relative /uploads paths rewrite to that base.
  */
 
 const UPLOADS_BASE = (
   import.meta.env.NEXT_PUBLIC_UPLOADS_BASE_URL
   || import.meta.env.VITE_UPLOADS_BASE_URL
-  || 'https://wellnessvalley.in/costmanager'
+  || 'https://baleenmedia.in/costmanager'
 ).replace(/\/$/, '');
 
 const REMOTE_IMAGE_MARKERS = [
+  '://baleenmedia.in/costmanager/proposal-images/',
+  '://www.baleenmedia.in/costmanager/proposal-images/',
   '://wellnessvalley.in/costmanager/proposal-images/',
   '://www.wellnessvalley.in/costmanager/proposal-images/',
   '://wkwrrdcjknvupwsfdjtd.supabase.co/storage/v1/object/public/proposal-images/',
@@ -53,7 +55,6 @@ export function resolveMediaUrl(raw: string | null | undefined): string | undefi
   }
 
   if (/^https?:\/\//i.test(trimmed)) {
-    // Already on shared base (or another absolute host)
     return trimmed;
   }
 

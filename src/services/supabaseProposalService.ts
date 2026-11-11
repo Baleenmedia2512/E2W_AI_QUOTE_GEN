@@ -148,7 +148,7 @@ export async function downloadProposalFile(storagePath: string): Promise<Blob | 
     const uploadsBase = (
       import.meta.env.NEXT_PUBLIC_UPLOADS_BASE_URL
       || import.meta.env.VITE_UPLOADS_BASE_URL
-      || 'https://wellnessvalley.in/costmanager'
+      || 'https://baleenmedia.in/costmanager'
     ).replace(/\/$/, '');
     const raw = storagePath.startsWith('http') || storagePath.startsWith('/')
       ? storagePath

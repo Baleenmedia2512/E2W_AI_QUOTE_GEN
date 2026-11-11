@@ -3,7 +3,7 @@ import path from 'path';
 
 export const LOCAL_UPLOAD_URL_PREFIX = '/uploads/';
 
-/** Shared Cost Manager public base, e.g. https://wellnessvalley.in/costmanager */
+/** Shared MilesWeb public base, e.g. https://baleenmedia.in/costmanager */
 export function uploadsPublicBaseUrl(): string {
   return (
     process.env.NEXT_PUBLIC_UPLOADS_BASE_URL

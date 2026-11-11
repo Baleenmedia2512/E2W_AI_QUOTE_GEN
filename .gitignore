@@ -45,7 +45,7 @@ package-lock.json
 *.pem
 secrets.json
 
-# Local MilesWeb upload fallback disk (real files live on wellnessvalley costmanager)
+# Local MilesWeb upload fallback disk (real files live on baleenmedia.in/costmanager)
 public_html/
 
 # One-off local diagnostic / patch scripts
