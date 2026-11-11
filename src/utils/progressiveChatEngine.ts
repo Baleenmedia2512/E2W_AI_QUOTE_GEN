@@ -63,6 +63,7 @@ import type { DbService } from './serviceResolver';
 import { formatServiceDisplayName } from './serviceResolver';
 import { getServiceScopedUserMessage, parseDurationFromUserText, toCampaignDays, isOneTimeLineDescription } from './durationUtils';
 import { resolveMediaAgainstCatalog } from '../services/chatIntentAiService';
+import { resolveMediaUrl } from './resolveMediaUrl';
 import {
   directionKeys,
   isStrongDirectionMatch,
@@ -3227,11 +3228,11 @@ export function getChipImageUrl(svc: DbService | null | undefined): string | und
       const t = (i.type || '').toLowerCase();
       return t === 'reference' || t === 'reference_image' || t.includes('ref');
     });
-    const url = (ref?.url || images[0]?.url || '').trim();
+    const url = resolveMediaUrl(ref?.url || images[0]?.url);
     if (url) return url;
   }
   const single = meta.reference_image;
-  if (typeof single === 'string' && single.trim()) return single.trim();
+  if (typeof single === 'string') return resolveMediaUrl(single);
   return undefined;
 }
 

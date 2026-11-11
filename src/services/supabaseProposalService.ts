@@ -1,9 +1,7 @@
 /**
- * Supabase Proposal Service - Cloud Storage for Shared Proposals
- * Enables team-wide visibility of uploaded proposals
+ * Proposal Service — Prisma/MySQL via local /api (MilesWeb uploads).
  */
 
-import { supabase } from './supabaseClient';
 import { StoredProposal } from '../types';
 import {
   formatMaterialSpecLines,
@@ -11,6 +9,8 @@ import {
   formatDesignSpecificationDetailLines,
   pickMaterialFromMeta,
 } from '../utils/specMaterial';
+import { apiFetch } from './apiClient';
+import { authService } from './authService';
 
 export interface CloudProposal {
   id: string;
@@ -37,79 +37,28 @@ export async function uploadProposalToCloud(
   userName?: string
 ): Promise<{ success: boolean; proposal?: CloudProposal; error?: string }> {
   try {
-    // Get current user if not provided (optional - works without auth)
-    let currentUserId = userId || 'anonymous';
-    let currentUserName = userName || 'App User';
+    const currentUser = authService.getCurrentUser();
+    const currentUserId = userId || currentUser?.id || 'anonymous';
+    const currentUserName = userName || currentUser?.full_name || currentUser?.email || 'App User';
 
-    // Try to get authenticated user, but don't fail if not authenticated
-    try {
-      const { data: { user } } = await supabase.auth.getUser();
-      
-      if (user) {
-        currentUserId = user.id;
-        currentUserName = user.email || 'Authenticated User';
-        console.log('✅ Authenticated user:', currentUserId, currentUserName);
-      } else {
-        console.log('ℹ️ No auth session, using anonymous upload');
-      }
-    } catch (authError) {
-      // Auth failed - continue with anonymous upload
-      console.log('ℹ️ Auth check failed, continuing with anonymous upload');
+    const form = new FormData();
+    form.append('file', file);
+    form.append('textContent', textContent);
+    form.append('pageCount', String(pageCount));
+    form.append('userId', currentUserId);
+    form.append('userName', currentUserName);
+
+    const { data, error } = await apiFetch<{ success?: boolean; proposal?: CloudProposal; error?: string }>(
+      '/api/proposals',
+      { method: 'POST', body: form },
+    );
+
+    if (error || !data?.success || !data.proposal) {
+      return { success: false, error: data?.error || error || 'Upload failed' };
     }
 
-    // Create storage path: user_id/timestamp_filename
-    const timestamp = Date.now();
-    const sanitizedFileName = file.name.replace(/[^a-zA-Z0-9._-]/g, '_');
-    const storagePath = `${currentUserId}/${timestamp}_${sanitizedFileName}`;
-
-    // Upload file to Supabase Storage
-    console.log('📤 Uploading file to Supabase Storage:', storagePath);
-    const { error: uploadError } = await supabase.storage
-      .from('proposals')
-      .upload(storagePath, file, {
-        cacheControl: '3600',
-        upsert: false,
-      });
-
-    if (uploadError) {
-      console.error('❌ Storage upload error:', uploadError);
-      return { success: false, error: uploadError.message };
-    }
-
-    // Get public URL for the file
-    const { data: urlData } = supabase.storage
-      .from('proposals')
-      .getPublicUrl(storagePath);
-
-    const fileUrl = urlData.publicUrl;
-
-    // Save metadata to database
-    console.log('💾 Saving proposal metadata to database, user_id:', currentUserId);
-    const { data: proposalData, error: dbError } = await supabase
-      .from('proposals')
-      .insert({
-        file_name: file.name,
-        file_type: file.type || 'application/pdf',
-        file_size: file.size,
-        file_url: fileUrl,
-        storage_path: storagePath,
-        text_content: textContent,
-        page_count: pageCount,
-        uploaded_by_user_id: currentUserId,  // TEXT column accepts any string
-        uploaded_by_name: currentUserName,
-      })
-      .select()
-      .single();
-
-    if (dbError) {
-      console.error('❌ Database insert error:', dbError);
-      // Cleanup: delete uploaded file
-      await supabase.storage.from('proposals').remove([storagePath]);
-      return { success: false, error: dbError.message };
-    }
-
-    console.log('✅ Proposal uploaded to cloud successfully');
-    return { success: true, proposal: proposalData };
+    console.log('✅ Proposal uploaded to MilesWeb successfully');
+    return { success: true, proposal: data.proposal };
   } catch (error: any) {
     console.error('❌ Upload to cloud failed:', error);
     return { success: false, error: error.message || 'Unknown error' };
@@ -123,20 +72,16 @@ export async function loadAllProposalsFromCloud(
   limit: number = 20
 ): Promise<CloudProposal[]> {
   try {
-    console.log('📂 Loading proposals from cloud...');
-    const { data, error } = await supabase
-      .from('proposals')
-      .select('*')
-      .order('uploaded_at', { ascending: false })
-      .limit(limit);
-
+    console.log('📂 Loading proposals from API...');
+    const { data, error } = await apiFetch<{ data?: CloudProposal[] }>(
+      `/api/proposals?limit=${limit}`,
+    );
     if (error) {
       console.error('❌ Error loading proposals from cloud:', error);
       return [];
     }
-
-    console.log(`✅ Loaded ${data?.length || 0} proposals from cloud`);
-    return data || [];
+    console.log(`✅ Loaded ${data?.data?.length || 0} proposals from cloud`);
+    return data?.data || [];
   } catch (error) {
     console.error('❌ Exception loading proposals:', error);
     return [];
@@ -148,18 +93,8 @@ export async function loadAllProposalsFromCloud(
  */
 export async function loadProposalFromCloud(id: string): Promise<CloudProposal | null> {
   try {
-    const { data, error } = await supabase
-      .from('proposals')
-      .select('*')
-      .eq('id', id)
-      .single();
-
-    if (error) {
-      console.error('❌ Error loading proposal:', error);
-      return null;
-    }
-
-    return data;
+    const all = await loadAllProposalsFromCloud(200);
+    return all.find((p) => p.id === id) || null;
   } catch (error) {
     console.error('❌ Exception loading proposal:', error);
     return null;
@@ -171,39 +106,13 @@ export async function loadProposalFromCloud(id: string): Promise<CloudProposal |
  */
 export async function deleteProposalFromCloud(id: string): Promise<boolean> {
   try {
-    // Get proposal to find storage path
-    const { data: proposal } = await supabase
-      .from('proposals')
-      .select('storage_path')
-      .eq('id', id)
-      .single();
-
-    if (!proposal) {
-      console.error('❌ Proposal not found');
+    const { error } = await apiFetch(`/api/proposals/${encodeURIComponent(id)}`, {
+      method: 'DELETE',
+    });
+    if (error) {
+      console.error('❌ Database delete error:', error);
       return false;
     }
-
-    // Delete from storage
-    const { error: storageError } = await supabase.storage
-      .from('proposals')
-      .remove([proposal.storage_path]);
-
-    if (storageError) {
-      console.warn('⚠️ Storage delete error:', storageError);
-      // Continue anyway to delete database record
-    }
-
-    // Delete from database
-    const { error: dbError } = await supabase
-      .from('proposals')
-      .delete()
-      .eq('id', id);
-
-    if (dbError) {
-      console.error('❌ Database delete error:', dbError);
-      return false;
-    }
-
     console.log('✅ Proposal deleted from cloud');
     return true;
   } catch (error) {
@@ -220,24 +129,9 @@ export async function findCloudDuplicate(
   fileSize: number
 ): Promise<CloudProposal | null> {
   try {
-    const { data, error } = await supabase
-      .from('proposals')
-      .select('*')
-      .eq('file_name', fileName)
-      .eq('file_size', fileSize)
-      .order('uploaded_at', { ascending: false })
-      .limit(1)
-      .maybeSingle();
-
-    if (error) {
-      console.error('❌ Error checking for duplicates:', error);
-      return null;
-    }
-
-    if (data) {
-      console.log('🔍 Found duplicate in cloud:', data.file_name);
-    }
-
+    const all = await loadAllProposalsFromCloud(100);
+    const data = all.find((p) => p.file_name === fileName && p.file_size === fileSize) || null;
+    if (data) console.log('🔍 Found duplicate in cloud:', data.file_name);
     return data;
   } catch (error) {
     console.error('❌ Exception checking duplicates:', error);
@@ -250,16 +144,19 @@ export async function findCloudDuplicate(
  */
 export async function downloadProposalFile(storagePath: string): Promise<Blob | null> {
   try {
-    const { data, error } = await supabase.storage
-      .from('proposals')
-      .download(storagePath);
-
-    if (error) {
-      console.error('❌ Error downloading file:', error);
-      return null;
-    }
-
-    return data;
+    const { resolveMediaUrl } = await import('../utils/resolveMediaUrl');
+    const uploadsBase = (
+      import.meta.env.NEXT_PUBLIC_UPLOADS_BASE_URL
+      || import.meta.env.VITE_UPLOADS_BASE_URL
+      || 'https://wellnessvalley.in/costmanager'
+    ).replace(/\/$/, '');
+    const raw = storagePath.startsWith('http') || storagePath.startsWith('/')
+      ? storagePath
+      : `${uploadsBase}/proposals/${storagePath.replace(/^\/+/, '')}`;
+    const url = resolveMediaUrl(raw) || raw;
+    const res = await fetch(url);
+    if (!res.ok) return null;
+    return await res.blob();
   } catch (error) {
     console.error('❌ Exception downloading file:', error);
     return null;
@@ -273,17 +170,12 @@ export async function downloadProposalFile(storagePath: string): Promise<Blob | 
  */
 export async function checkCloudStorageAvailability(): Promise<boolean> {
   try {
-    const { error } = await supabase
-      .from('proposals')
-      .select('id')
-      .limit(1);
-
+    const { error } = await apiFetch('/api/health');
     if (error) {
-      console.warn('⚠️ Cloud storage unavailable:', error.message);
+      console.warn('⚠️ Cloud storage unavailable:', error);
       return false;
     }
-
-    console.log('☁️ Cloud storage available');
+    console.log('☁️ Local API / MilesWeb storage available');
     return true;
   } catch (error) {
     console.warn('⚠️ Cloud storage check failed:', error);

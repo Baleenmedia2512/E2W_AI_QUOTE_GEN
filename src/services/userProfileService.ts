@@ -1,5 +1,5 @@
-import { supabase } from './supabaseClient';
 import { authService } from './authService';
+import { apiFetch } from './apiClient';
 
 export interface SelfProfile {
   name: string;
@@ -18,99 +18,40 @@ export interface ProfileMutationResult {
   profileImage?: string | null;
 }
 
-const PROFILE_IMAGE_BUCKET = 'profile-images';
 const MAX_PROFILE_IMAGE_BYTES = 5 * 1024 * 1024;
 
-function asProfileResult(data: unknown, fallback: string): ProfileMutationResult {
-  let parsed: unknown = data;
-
-  if (typeof data === 'string') {
-    try {
-      parsed = JSON.parse(data);
-    } catch {
-      return { success: false, message: fallback };
-    }
+export async function uploadProfileImage(file: File): Promise<string> {
+  if (!authService.getCurrentUser()?.id) {
+    throw new Error('You must be signed in to upload a profile image.');
   }
-
-  if (!parsed || typeof parsed !== 'object') {
-    return { success: false, message: fallback };
-  }
-
-  const body = parsed as ProfileMutationResult;
-  const isDirectProfileResponse =
-    body.success === undefined
-    && (typeof body.name === 'string' || typeof body.email === 'string' || body.image !== undefined);
-
-  return {
-    success: body.success === true || isDirectProfileResponse,
-    message: body.message || (body.success === true ? 'Success' : fallback),
-    name: body.name,
-    email: body.email,
-    phone: body.phone,
-    // The database column is `image`; profileImage remains the UI alias.
-    profileImage: body.profileImage ?? body.image ?? null,
-  };
-}
-
-async function uploadToProfileBucket(file: File, userId: string): Promise<string> {
   if (!file.type.startsWith('image/')) {
     throw new Error('Please choose an image file.');
   }
-
   if (file.size > MAX_PROFILE_IMAGE_BYTES) {
     throw new Error('Profile image must be 5MB or smaller.');
   }
 
-  const path = `${userId}/profile.jpg`;
-  const { error } = await supabase.storage.from(PROFILE_IMAGE_BUCKET).upload(path, file, {
-    cacheControl: '3600',
-    upsert: true,
-    contentType: file.type || 'image/jpeg',
-  });
-
-  if (error) {
-    throw new Error(error.message || 'Unable to upload profile image.');
+  const form = new FormData();
+  form.append('file', file);
+  const { data, error } = await apiFetch<{ url?: string; profileImage?: string; error?: string }>(
+    '/api/profile/me/image',
+    { method: 'POST', body: form },
+  );
+  if (error || !data?.url) {
+    throw new Error(data?.error || error || 'Unable to upload profile image.');
   }
-
-  const { data } = supabase.storage.from(PROFILE_IMAGE_BUCKET).getPublicUrl(path);
-  if (!data?.publicUrl) {
-    throw new Error('Unable to resolve the uploaded profile image.');
-  }
-
-  const separator = data.publicUrl.includes('?') ? '&' : '?';
-  return `${data.publicUrl}${separator}v=${Date.now()}`;
-}
-
-export async function uploadProfileImage(file: File): Promise<string> {
-  const currentUserId = authService.getCurrentUser()?.id;
-  if (!currentUserId) {
-    throw new Error('You must be signed in to upload a profile image.');
-  }
-
-  return uploadToProfileBucket(file, currentUserId);
+  return data.url;
 }
 
 export async function getSelfProfile(): Promise<SelfProfile | null> {
-  const currentUserId = authService.getCurrentUser()?.id;
-  if (!currentUserId) return null;
-
-  const { data, error } = await supabase.rpc('get_self_profile', {
-    p_user_id: currentUserId,
-  });
-
-  if (error) {
-    console.warn('get_self_profile RPC failed:', error.message);
-    return null;
-  }
-
-  const result = asProfileResult(data, 'Unable to load profile.');
-  if (!result.success) return null;
-
+  if (!authService.getCurrentUser()?.id) return null;
+  const { data, error } = await apiFetch<ProfileMutationResult>('/api/profile/me');
+  if (error || !data?.success) return null;
   return {
-    name: result.name || '',
-    email: result.email || '',
-    phone: result.phone || '',
-    profileImage: result.profileImage || null,
+    name: data.name || '',
+    email: data.email || '',
+    phone: data.phone || '',
+    profileImage: data.profileImage ?? data.image ?? null,
   };
 }
 
@@ -119,25 +60,17 @@ export async function updateSelfProfile(
   phone: string,
   profileImage?: string | null,
 ): Promise<ProfileMutationResult> {
-  const currentUserId = authService.getCurrentUser()?.id;
-  if (!currentUserId) {
+  if (!authService.getCurrentUser()?.id) {
     return { success: false, message: 'You must be signed in to update your profile.' };
   }
 
-  const { data, error } = await supabase.rpc('update_self_profile', {
-    p_user_id: currentUserId,
-    p_name: name,
-    p_phone: phone,
-    p_image: profileImage || null,
+  const { data, error } = await apiFetch<ProfileMutationResult>('/api/profile/me', {
+    method: 'PUT',
+    body: JSON.stringify({ name, phone, profileImage }),
   });
 
-  if (error) {
-    return {
-      success: false,
-      message: error.message || 'Unable to update profile.',
-    };
+  if (error || !data) {
+    return { success: false, message: error || 'Unable to update profile.' };
   }
-
-  return asProfileResult(data, 'Unable to update profile.');
+  return data;
 }
-

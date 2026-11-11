@@ -1,21 +1,10 @@
-import { createClient } from '@supabase/supabase-js';
 import { Quote } from '../types/quote';
 import { ClientInfo } from '../types/client';
 import { CompanyInfo } from '../types/company';
 import { toCampaignDays } from '../utils/durationUtils';
-import { extractEdgeFunctionMessage } from '../utils/edgeFunctionError';
 import { authService } from './authService';
 import { buildPdfAttachmentPayload } from '../utils/quoteEmailPayload';
-
-// Initialize Supabase client
-const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
-const supabaseAnonKey = import.meta.env.VITE_SUPABASE_ANON_KEY;
-
-if (!supabaseUrl || !supabaseAnonKey) {
-  console.error('Supabase URL or Anon Key is not defined in environment variables.');
-}
-
-const supabase = createClient(supabaseUrl!, supabaseAnonKey!); // Added non-null assertion operators
+import { apiFetch } from './apiClient';
 
 interface PdfAttachmentInput {
   pdfBlob: Blob;
@@ -33,24 +22,6 @@ interface SendQuoteEmailParams {
 interface SendQuoteEmailResult {
   success: boolean;
   message: string;
-}
-
-interface QuoteItemForEmailAttachment {
-  serviceId?: string;
-  serviceName?: string;
-  description: string;
-  quantity: number;
-  duration?: number;
-  durationUnit?: 'months' | 'days';
-  minimumQuantity?: number;
-  quantityUnit?: string;
-  rate?: number;
-  oneTimeQuantity?: number;
-  oneTimeComponents?: { label: string; amount: number }[];
-  vendorPfUnitCost?: number;
-  vendorDisplayUnitCostPerDay?: number;
-  total: number;
-  city?: string;
 }
 
 const blobToBase64 = async (pdfBlob: Blob): Promise<string> => {
@@ -77,8 +48,6 @@ export const sendQuoteEmail = async (
       };
     }
 
-    const sessionToken = authService.getSessionToken()!;
-
     const encodedAttachments = buildPdfAttachmentPayload(
       await Promise.all(
         pdfAttachments.map(async ({ pdfBlob, filename }) => ({
@@ -88,60 +57,56 @@ export const sendQuoteEmail = async (
       ),
     );
 
-    const { data, error } = await supabase.functions.invoke('send-quote-email', {
-      body: {
-        pdfAttachments: encodedAttachments,
-        quoteNumber: quote.quoteNumber,
-        quoteItems: quote.items.map<QuoteItemForEmailAttachment>((item) => ({
-          serviceId: item.serviceId,
-          serviceName: item.serviceName,
-          description: item.description,
-          quantity: Number(item.quantity) || 0,
-          duration: toCampaignDays(item.duration, item.durationUnit) ?? item.duration,
-          durationUnit: 'days',
-          minimumQuantity: item.minimumQuantity,
-          quantityUnit: item.quantityUnit,
-          rate: Number(item.rate) || 0,
-          oneTimeQuantity: Number(item.oneTimeQuantity) || undefined,
-          oneTimeComponents: item.oneTimeComponents,
-          vendorPfUnitCost: item.vendorPfUnitCost,
-          vendorDisplayUnitCostPerDay: item.vendorDisplayUnitCostPerDay,
-          total: Number(item.total) || 0,
-          city: item.city,
-        })),
-        clientName: client.name,
-        clientPhoneNumber: client.phone,
-        downloadedBy,
-        companyName: company.name,
-        companyLogo: company.logo,
-        date: new Date().toLocaleDateString('en-GB', {
-          year: 'numeric',
-          month: 'short',
-          day: '2-digit',
+    const { data, error } = await apiFetch<{ success?: boolean; message?: string; error?: string }>(
+      '/api/quotes/email',
+      {
+        method: 'POST',
+        body: JSON.stringify({
+          pdfAttachments: encodedAttachments,
+          quoteNumber: quote.quoteNumber,
+          quoteItems: quote.items.map((item) => ({
+            serviceId: item.serviceId,
+            serviceName: item.serviceName,
+            description: item.description,
+            quantity: Number(item.quantity) || 0,
+            duration: toCampaignDays(item.duration, item.durationUnit) ?? item.duration,
+            durationUnit: 'days',
+            minimumQuantity: item.minimumQuantity,
+            quantityUnit: item.quantityUnit,
+            rate: Number(item.rate) || 0,
+            oneTimeQuantity: Number(item.oneTimeQuantity) || undefined,
+            oneTimeComponents: item.oneTimeComponents,
+            vendorPfUnitCost: item.vendorPfUnitCost,
+            vendorDisplayUnitCostPerDay: item.vendorDisplayUnitCostPerDay,
+            total: Number(item.total) || 0,
+            city: item.city,
+          })),
+          clientName: client.name,
+          clientPhoneNumber: client.phone,
+          downloadedBy,
+          companyName: company.name,
+          companyLogo: company.logo,
+          date: new Date().toLocaleDateString('en-GB', {
+            year: 'numeric',
+            month: 'short',
+            day: '2-digit',
+          }),
         }),
       },
-      headers: {
-        'Content-Type': 'application/json',
-        Authorization: `Bearer ${sessionToken}`,
-      },
-    });
+    );
 
-    if (error || data?.error) {
-      const message = await extractEdgeFunctionMessage(
-        error,
-        data,
-        'Could not send the quote email. Check SMTP secrets and that your login email is listed in INTERNAL_QUOTE_EMAIL_1/2/3.',
-      );
-      console.error('Error invoking send-quote-email:', error || data?.error, message);
-      return { success: false, message };
+    if (error || !data?.success) {
+      return {
+        success: false,
+        message: data?.message || data?.error || error || 'Failed to send quote email.',
+      };
     }
 
-    return { success: true, message: data?.message || 'Email sent successfully.' };
-  } catch (error: any) {
-    console.error('sendQuoteEmail service failed:', error);
+    return { success: true, message: data.message || 'Quote emailed successfully.' };
+  } catch (error) {
     return {
       success: false,
-      message: `Failed to send email: ${error.message || 'Unknown error'}`,
+      message: error instanceof Error ? error.message : 'Failed to send quote email.',
     };
   }
 };

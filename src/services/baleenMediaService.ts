@@ -1,4 +1,3 @@
-import { supabase } from './supabaseClient';
 import type { Quote } from '../types/quote';
 import type { ClientInfo } from '../types/client';
 import {
@@ -6,14 +5,13 @@ import {
   buildBaleenQuotePayload,
   usableVendorGst,
 } from '../utils/baleenQuotePayload';
-import { extractEdgeFunctionMessage } from '../utils/edgeFunctionError';
 import { authService } from './authService';
+import { apiFetch } from './apiClient';
 
 export interface PushQuoteToBaleenResult {
   success: boolean;
   message: string;
   id?: string;
-  /** Page URL only (from Edge). Never an API fetch from the browser. */
   openUrl?: string;
 }
 
@@ -21,34 +19,24 @@ function normalizeVendorKey(name: string): string {
   return name.trim().toLowerCase().replace(/\s+/g, ' ');
 }
 
-/**
- * Load vendor_gst from public.vendors for the given display names.
- * Case-insensitive match on name (and name_code as fallback).
- */
 export async function fetchVendorGstByNames(
   vendorNames: string[],
 ): Promise<Map<string, string>> {
-  const unique = [
-    ...new Set(
-      vendorNames
-        .map((n) => n.trim())
-        .filter(Boolean),
-    ),
-  ];
+  const unique = [...new Set(vendorNames.map((n) => n.trim()).filter(Boolean))];
   const out = new Map<string, string>();
   if (!unique.length) return out;
 
-  const { data, error } = await supabase
-    .from('vendors')
-    .select('name, name_code, vendor_gst');
+  const { data, error } = await apiFetch<{ data?: Array<{ name?: string; name_code?: string; vendor_gst?: string }> }>(
+    '/api/vendors',
+  );
 
   if (error) {
-    console.warn('[Baleen] vendors GST lookup failed:', error.message);
+    console.warn('[Baleen] vendors GST lookup failed:', error);
     return out;
   }
 
   const byKey = new Map<string, string>();
-  for (const row of data || []) {
+  for (const row of data?.data || []) {
     const gst = usableVendorGst(row.vendor_gst);
     if (!gst) continue;
     const nameKey = normalizeVendorKey(String(row.name || ''));
@@ -66,10 +54,6 @@ export async function fetchVendorGstByNames(
   return out;
 }
 
-/**
- * After PDF download: invoke Edge Function only.
- * Browser never calls Baleen Media /inbox (avoids CORS + keeps API key server-side).
- */
 export async function pushQuoteToBaleenMedia(params: {
   quote: Quote;
   client: ClientInfo;
@@ -99,24 +83,20 @@ export async function pushQuoteToBaleenMedia(params: {
       console.warn('[Baleen] vendor GST enrich skipped:', gstErr);
     }
 
-    // ONLY call our Edge Function — never fetch(BALEEN_MEDIA_URL/...) from the browser.
-    const sessionToken = authService.getSessionToken()!;
-    const { data, error } = await supabase.functions.invoke('push-quote-to-baleen', {
-      body: payload,
-      headers: {
-        'Content-Type': 'application/json',
-        Authorization: `Bearer ${sessionToken}`,
-      },
+    const { data, error } = await apiFetch<{
+      id?: string | number;
+      error?: string;
+      message?: string;
+      openUrl?: string;
+    }>('/api/quotes/push-baleen', {
+      method: 'POST',
+      body: JSON.stringify(payload),
     });
 
     const id = data?.id != null && data.id !== '' ? String(data.id) : '';
     if (error || data?.error || !id) {
-      const message = await extractEdgeFunctionMessage(
-        error,
-        data,
-        'Could not send quote to Baleen Media.',
-      );
-      console.error('[Baleen] Edge invoke failed (not a browser→Baleen call):', message);
+      const message = data?.error || data?.message || error || 'Could not send quote to Baleen Media.';
+      console.error('[Baleen] API push failed:', message);
       return { success: false, message };
     }
 

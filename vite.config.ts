@@ -5,11 +5,25 @@ import path from 'path';
 export default defineConfig({
   base: './',
   plugins: [react()],
+  // Share Cost Manager NEXT_PUBLIC_* upload base with the Vite client
+  envPrefix: ['VITE_', 'NEXT_PUBLIC_'],
   resolve: {
     alias: {
       '@': path.resolve(__dirname, './src'),
     },
     dedupe: ['react', 'react-dom'],
+  },
+  server: {
+    proxy: {
+      '/api': {
+        target: 'http://localhost:8787',
+        changeOrigin: true,
+      },
+      '/uploads': {
+        target: 'http://localhost:8787',
+        changeOrigin: true,
+      },
+    },
   },
   optimizeDeps: {
     include: ['pdfjs-dist'],

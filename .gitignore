@@ -45,6 +45,14 @@ package-lock.json
 *.pem
 secrets.json
 
+# Local MilesWeb upload fallback disk (real files live on wellnessvalley costmanager)
+public_html/
+
+# One-off local diagnostic / patch scripts
+scripts/_*.ts
+scripts/_*.py
+scripts/_*.js
+
 # API keys and configuration
 config/secrets/
 *.config.json

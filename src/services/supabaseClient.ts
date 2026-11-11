@@ -1,32 +1,14 @@
-import { createClient } from '@supabase/supabase-js';
+/**
+ * Legacy stub — Supabase runtime is removed.
+ * All data access goes through /api (Express + Prisma → MilesWeb MySQL).
+ */
+export const supabase = null as never;
 
-// Read from environment variables
-const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL || '';
-const SUPABASE_ANON_KEY = import.meta.env.VITE_SUPABASE_ANON_KEY || '';
-
-if (!SUPABASE_URL || !SUPABASE_ANON_KEY) {
-  console.warn('⚠️ Supabase credentials missing in .env file');
-}
-
-export const supabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY, {
-  auth: {
-    persistSession: true,
-    autoRefreshToken: true,
-  },
-  db: {
-    schema: 'public',
-  },
-});
-
-// Helper to test connection
-export const testConnection = async () => {
+export async function testConnection(): Promise<boolean> {
   try {
-    const { error } = await supabase.from('User').select('count');
-    if (error) throw error;
-    console.log('✅ Supabase connection successful');
-    return true;
-  } catch (error) {
-    console.error('❌ Supabase connection failed:', error);
+    const res = await fetch('/api/health');
+    return res.ok;
+  } catch {
     return false;
   }
-};
+}

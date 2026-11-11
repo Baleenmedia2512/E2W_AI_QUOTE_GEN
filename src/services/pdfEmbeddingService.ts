@@ -1,6 +1,30 @@
-import { supabase } from './supabaseClient';
+import { apiFetch } from './apiClient';
 // Import PDF.js worker locally (Vite will bundle it)
 import pdfjsWorker from 'pdfjs-dist/build/pdf.worker.min.mjs?url';
+
+async function uploadProposalImageBlob(fileName: string, blob: Blob): Promise<string | null> {
+  const form = new FormData();
+  form.append('file', blob, fileName);
+  form.append('fileName', fileName);
+  const { data, error } = await apiFetch<{ url?: string }>('/api/proposals/images', {
+    method: 'POST',
+    body: form,
+  });
+  if (error || !data?.url) {
+    console.error('  ❌ Upload failed:', error);
+    return null;
+  }
+  return data.url;
+}
+
+async function upsertProposalChunk(row: Record<string, unknown>): Promise<void> {
+  const { error } = await apiFetch('/api/proposals/chunks', {
+    method: 'POST',
+    body: JSON.stringify({ chunks: [row] }),
+  });
+  if (error) throw new Error(error);
+}
+
 
 // Types
 interface ServiceChunk {
@@ -283,23 +307,12 @@ export async function extractImagesFromPDF(file: File): Promise<Array<{ pageNum:
       const fileName = `rate-card-images/service-page-${pageNum}-${Date.now()}.jpg`;
       console.log(`  ☁️ Uploading ${fileName}...`);
       
-      const { data, error } = await supabase.storage
-        .from('proposal-images')
-        .upload(fileName, blob, {
-          contentType: 'image/jpeg',
-          upsert: false
-        });
-      
-      if (error) {
-        console.error(`  ❌ Upload failed:`, error.message);
+      const __imgUrl = await uploadProposalImageBlob(String(fileName), blob);
+      if (!__imgUrl) {
         continue;
       }
-      
-      if (data) {
-        console.log(`  ✅ Uploaded: ${data.path}`);
-        const { data: urlData } = supabase.storage
-          .from('proposal-images')
-          .getPublicUrl(fileName);
+      {
+        const urlData = { publicUrl: __imgUrl };
         
         imageResults.push({
           pageNum,
@@ -519,11 +532,9 @@ export async function storeServiceChunk(
   
   console.log(`   [STORE-CHUNK] Calling Supabase upsert on 'proposal_chunks' table...`);
   
-  const { data, error } = await supabase
-    .from('proposal_chunks')
-    .upsert(dataToInsert, {
-      onConflict: 'service_id'
-    });
+  await upsertProposalChunk(dataToInsert as Record<string, unknown>);
+  const data = null;
+  const error = null;
   
   if (error) {
     console.error(`❌ [STORE-CHUNK] Database error for ${chunk.serviceName}:`);
@@ -856,17 +867,9 @@ export async function processProposalForRAG(params: {
                 : `${basePath}/${imageType}/page-${pageNum}.jpg`;
               
               // Upload to Supabase Storage (upsert creates folder automatically)
-              const { data, error } = await supabase.storage
-                .from('proposal-images')
-                .upload(fileName, blob, {
-                  contentType: 'image/jpeg',
-                  upsert: true
-                });
-              
-              if (!error && data) {
-                const { data: urlData } = supabase.storage
-                  .from('proposal-images')
-                  .getPublicUrl(fileName);
+              const __imgUrl = await uploadProposalImageBlob(String(fileName), blob);
+              if (__imgUrl) {
+                const urlData = { publicUrl: __imgUrl };
                 
                 serviceImages.push({
                   url: urlData.publicUrl,
@@ -908,17 +911,9 @@ export async function processProposalForRAG(params: {
                 : `${basePath}/${imageType}/page-${pageNum}.jpg`;
               
               // Upload to Supabase Storage
-              const { data, error } = await supabase.storage
-                .from('proposal-images')
-                .upload(fileName, blob, {
-                  contentType: 'image/jpeg',
-                  upsert: true
-                });
-              
-              if (!error && data) {
-                const { data: urlData } = supabase.storage
-                  .from('proposal-images')
-                  .getPublicUrl(fileName);
+              const __imgUrl = await uploadProposalImageBlob(String(fileName), blob);
+              if (__imgUrl) {
+                const urlData = { publicUrl: __imgUrl };
                 
                 serviceImages.push({
                   url: urlData.publicUrl,
@@ -976,17 +971,11 @@ export async function processProposalForRAG(params: {
                 ? `${unassignedBase}/${imageType}/page-${pageNum}-crop-${cropIndex}.jpg`
                 : `${unassignedBase}/${imageType}/page-${pageNum}.jpg`;
               
-              const { data, error } = await supabase.storage
-                .from('proposal-images')
-                .upload(fileName, blob, {
-                  contentType: 'image/jpeg',
-                  upsert: true
-                });
-              
-              if (!error && data) {
+              const __imgUrl = await uploadProposalImageBlob(String(fileName), blob);
+              if (__imgUrl) {
                 console.log(`     ✅ Uploaded: ${fileName}`);
-              } else if (error) {
-                console.error(`     ❌ Upload failed for ${fileName}:`, error.message);
+              } else {
+                console.error(`     ❌ Upload failed for ${fileName}`);
               }
             } catch (err) {
               console.error(`     ❌ Error uploading unmatched page ${pageNum}:`, err);
@@ -1013,17 +1002,11 @@ export async function processProposalForRAG(params: {
                 ? `${unassignedBase}/${imageType}/page-${pageNum}-crop-${cropIndex}.jpg`
                 : `${unassignedBase}/${imageType}/page-${pageNum}.jpg`;
               
-              const { data, error } = await supabase.storage
-                .from('proposal-images')
-                .upload(fileName, blob, {
-                  contentType: 'image/jpeg',
-                  upsert: true
-                });
-              
-              if (!error && data) {
+              const __imgUrl = await uploadProposalImageBlob(String(fileName), blob);
+              if (__imgUrl) {
                 console.log(`     ✅ Uploaded: ${fileName}`);
-              } else if (error) {
-                console.error(`     ❌ Upload failed for ${fileName}:`, error.message);
+              } else {
+                console.error(`     ❌ Upload failed for ${fileName}`);
               }
             } catch (err) {
               console.error(`     ❌ Error uploading unmatched page ${pageNum}:`, err);
@@ -1203,37 +1186,8 @@ export async function processAndStorePDF(
  * DISABLED: proposal_chunks / search_proposals — use vendor_rate_chunks only.
  */
 export async function searchServices(_query: string, _limit = 10, _filters?: any) {
-  console.log('🔍 [SEARCH] DISABLED — proposal_chunks search commented out');
+  console.log('🔍 [SEARCH] DISABLED — proposal_chunks search removed; use vendor_rate_chunks');
   return [];
-  /*
-  try {
-    console.log(`🔍 [SEARCH] Query: "${query}", Limit: ${limit}`);
-    
-    // Generate query embedding
-    const queryEmbedding = await generateEmbedding(query);
-    console.log(`   [SEARCH] Query embedding: ${queryEmbedding.length} dimensions`);
-    
-    // Search in database
-    const { data, error } = await supabase.rpc('search_proposals', {
-      query_embedding: queryEmbedding,
-      match_threshold: 0.5,
-      match_count: limit,
-      filter_metadata: filters || null
-    });
-    
-    if (error) {
-      console.error('❌ [SEARCH] Database error:', error);
-      throw error;
-    }
-    
-    console.log(`✅ [SEARCH] Found ${data?.length || 0} results`);
-    return data || [];
-    
-  } catch (error) {
-    console.error('❌ [SEARCH] Search failed:', error);
-    throw error;
-  }
-  */
 }
 
 /**
@@ -1301,26 +1255,8 @@ export function parsePricingFromMetadata(metadata: any): {
  * DISABLED: proposal_chunks writes commented out.
  */
 export async function updateServiceEmbedding(_serviceId: string, _content: string) {
-  console.log('⚠️ [updateServiceEmbedding] DISABLED — proposal_chunks commented out');
+  console.log('⚠️ [updateServiceEmbedding] DISABLED — proposal_chunks writes removed');
   return;
-  /*
-  try {
-    const embedding = await generateEmbedding(content);
-    
-    const { error } = await supabase
-      .from('proposal_chunks')
-      .update({ embedding, content })
-      .eq('service_id', serviceId);
-    
-    if (error) throw error;
-    
-    console.log(`✅ Updated embedding for ${serviceId}`);
-    
-  } catch (error) {
-    console.error('Update error:', error);
-    throw error;
-  }
-  */
 }
 
 /**

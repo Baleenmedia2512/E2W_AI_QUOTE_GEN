@@ -11,6 +11,7 @@ import {
   stripMediumTypeFromDisplayName,
 } from './serviceResolver';
 import { hasQuotablePricing, pickPreferredDbService } from './dbPricingUtils';
+import { resolveMediaUrl } from './resolveMediaUrl';
 import type { ResolvedLocation } from '../types/location';
 
 /** Known city keys used across the app (lowercase). DB locations may add more at runtime. */
@@ -1110,11 +1111,11 @@ export function getServiceListImageUrl(svc: DbService | null | undefined): strin
       const t = (i.type || '').toLowerCase();
       return t === 'reference' || t === 'reference_image' || t.includes('ref');
     });
-    const url = String(ref?.url || images[0]?.url || '').trim();
+    const url = resolveMediaUrl(ref?.url || images[0]?.url);
     if (url) return url;
   }
   const single = (svc.metadata as { reference_image?: unknown }).reference_image;
-  if (typeof single === 'string' && single.trim()) return single.trim();
+  if (typeof single === 'string') return resolveMediaUrl(single);
   return undefined;
 }
 

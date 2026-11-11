@@ -6,7 +6,7 @@
  */
 
 import { canonicalizeServiceName } from '../utils/serviceNameUtils';
-import { supabase } from './supabaseClient';
+import { apiFetch } from './apiClient';
 import type {
   VendorImageRef,
   VendorPricingBlock,
@@ -20,6 +20,7 @@ import {
   stripMediumTypeFromDisplayName,
 } from '../utils/serviceResolver';
 import { pickMaterialFromMeta, hasMeaningfulScalar } from '../utils/specMaterial';
+import { resolveMediaUrl } from '../utils/resolveMediaUrl';
 
 const FILLER_TOKENS = new Set([
   'branding',
@@ -138,7 +139,7 @@ function parseImages(meta: Record<string, unknown>): VendorImageRef[] | undefine
     for (const item of raw) {
       if (!item || typeof item !== 'object') continue;
       const img = item as Record<string, unknown>;
-      const url = pickString(img.url);
+      const url = resolveMediaUrl(pickString(img.url));
       if (!url) continue;
       out.push({
         url,
@@ -151,9 +152,9 @@ function parseImages(meta: Record<string, unknown>): VendorImageRef[] | undefine
 
   // Fallback single URL fields on vendor metadata
   const built: VendorImageRef[] = [];
-  const ref = pickString(meta.reference_image);
+  const ref = resolveMediaUrl(pickString(meta.reference_image));
   if (ref) built.push({ url: ref, type: 'reference', pageNumber: 1 });
-  const rev = pickString(meta.customer_review);
+  const rev = resolveMediaUrl(pickString(meta.customer_review));
   if (rev) built.push({ url: rev, type: 'review', pageNumber: 1 });
   return built.length > 0 ? built : undefined;
 }
@@ -294,8 +295,8 @@ export function normalizeVendorRateRow(row: Record<string, unknown>): VendorRate
   const displayLength = pickDim('display_length', 'length');
   const latitude = pickDim('latitude', 'lat');
   const longitude = pickDim('longitude', 'lng', 'long', 'lon');
-  const referenceImage = pickString(meta.reference_image) || undefined;
-  const customerReview = pickString(meta.customer_review) || undefined;
+  const referenceImage = resolveMediaUrl(pickString(meta.reference_image));
+  const customerReview = resolveMediaUrl(pickString(meta.customer_review));
   // Unique site id from DB column / metadata (keeps each hoarding area separate)
   const serviceId =
     pickString(row.service_id, meta.service_id) || undefined;
@@ -399,34 +400,27 @@ export async function loadVendorRatesFromCloud(): Promise<VendorRateRow[]> {
 
   vendorRatesInflight = (async () => {
     try {
-      let data: Record<string, unknown>[] | null = null;
-      let error: { message: string } | null = null;
+      const ranked = await apiFetch<{ data?: Record<string, unknown>[]; error?: string }>(
+        '/api/vendors/rates?preferred=1',
+      );
 
-      const ranked = await supabase
-        .from('vendor_rate_chunks')
-        .select('*')
-        .eq('preferred_vendor_rank', 1);
-
+      let data: Record<string, unknown>[] = ranked.data?.data || [];
       if (ranked.error) {
         console.warn(
-          '⚠️ [vendor_rate_chunks] Rank filter failed, loading all then filtering client-side:',
-          ranked.error.message,
+          '⚠️ [vendor_rate_chunks] Preferred load failed, loading all:',
+          ranked.error,
         );
-        const all = await supabase.from('vendor_rate_chunks').select('*');
-        data = (all.data || []) as Record<string, unknown>[];
-        error = all.error;
-      } else {
-        data = (ranked.data || []) as Record<string, unknown>[];
-      }
-
-      if (error) {
-        console.warn(
-          '⚠️ [vendor_rate_chunks] Unavailable — full fallback to proposal_chunks:',
-          error.message,
-        );
-        vendorRatesCache = [];
-        vendorRatesCacheAt = 0;
-        return [];
+        const all = await apiFetch<{ data?: Record<string, unknown>[] }>('/api/vendors/rates?preferred=0');
+        data = all.data?.data || [];
+        if (all.error) {
+          console.warn(
+            '⚠️ [vendor_rate_chunks] Unavailable — full fallback to proposal_chunks:',
+            all.error,
+          );
+          vendorRatesCache = [];
+          vendorRatesCacheAt = 0;
+          return [];
+        }
       }
 
       const rank1Rows = (data || []).filter((row) => {

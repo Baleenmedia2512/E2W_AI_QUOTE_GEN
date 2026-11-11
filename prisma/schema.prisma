@@ -1,0 +1,385 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "mysql"
+  url      = env("DATABASE_URL")
+}
+
+model activityhistory {
+  id          String   @id
+  leadId      String   @db.LongText
+  userId      String   @db.LongText
+  action      String   @db.LongText
+  fieldName   String?  @db.LongText
+  oldValue    String?  @db.LongText
+  newValue    String?  @db.LongText
+  description String   @db.LongText
+  metadata    String?  @db.LongText
+  createdAt   DateTime
+}
+
+model admin_users {
+  id            String   @id @db.Char(36)
+  email         String   @db.VarChar(200)
+  name          String   @db.VarChar(120)
+  role          String   @db.VarChar(40)
+  password_hash String   @db.LongText
+  is_active     Boolean
+  created_at    DateTime
+  updated_at    DateTime
+  phone         String?  @db.LongText
+  company_name  String?  @db.LongText
+}
+
+model auditlog {
+  id         String   @id
+  userId     String   @db.LongText
+  action     String   @db.LongText
+  targetType String   @db.LongText
+  targetId   String   @db.LongText
+  changes    String?  @db.LongText
+  metadata   String?  @db.LongText
+  ipAddress  String?  @db.LongText
+  userAgent  String?  @db.LongText
+  createdAt  DateTime
+}
+
+model booking_request_items {
+  id                         String    @id @db.Char(36)
+  booking_request_id         String    @db.Char(36)
+  vendor_rate_id             String    @db.LongText
+  booking_days               Int
+  price_per_day              Decimal   @db.Decimal(14, 2)
+  line_total                 Decimal   @db.Decimal(14, 2)
+  area_name                  String?   @db.VarChar(255)
+  city                       String?   @db.VarChar(255)
+  medium_type                String?   @db.VarChar(120)
+  image                      String?   @db.LongText
+  created_at                 DateTime
+  medium                     String?   @db.LongText
+  location                   String?   @db.LongText
+  direction_remarks          String?   @db.LongText
+  start_date                 DateTime? @db.Date
+  end_date                   DateTime? @db.Date
+  printing_price             Decimal?  @db.Decimal(18, 6)
+  mounting_price             Decimal?  @db.Decimal(18, 6)
+  display_price              Decimal?  @db.Decimal(18, 6)
+  display_unit_price_per_day Decimal?  @db.Decimal(18, 6)
+  total_price                Decimal?  @db.Decimal(18, 6)
+  minimum_days               Int?
+  display_size               String?   @db.LongText
+  availability               String?   @db.LongText
+  innovation                 String?   @db.LongText
+  admin_action               String?   @db.LongText
+  rate_excel_url             String?   @db.LongText
+  rate_excel_name            String?   @db.LongText
+  rate_pdf_url               String?   @db.LongText
+  rate_pdf_name              String?   @db.LongText
+  xls_url                    String?   @db.LongText
+  reference_pdf_url          String?   @db.LongText
+}
+
+model booking_requests {
+  id               String   @id @db.Char(36)
+  customer_name    String   @db.VarChar(120)
+  customer_email   String   @db.VarChar(200)
+  customer_phone   String   @db.VarChar(20)
+  customer_company String?  @db.VarChar(160)
+  notes            String?  @db.LongText
+  status           String   @db.VarChar(40)
+  total_amount     Decimal  @db.Decimal(14, 2)
+  created_at       DateTime
+  updated_at       DateTime
+  reference_code   String?  @db.LongText
+}
+
+model calllog {
+  id                  String    @id
+  leadId              String    @db.LongText
+  callerId            String    @db.LongText
+  startedAt           DateTime
+  endedAt             DateTime?
+  duration            Int?
+  remarks             String?   @db.LongText
+  callStatus          String?   @db.LongText
+  attemptNumber       Int
+  recordingUrl        String?   @db.LongText
+  customerRequirement String?   @db.LongText
+  metadata            String?   @db.LongText
+  createdAt           DateTime
+  phoneDialed         String?   @db.LongText
+  recordingAppCallId  String?   @db.LongText
+  recordingStatus     String?   @db.LongText
+}
+
+model company_settings {
+  id          String    @id @db.Char(36)
+  name        String?   @db.VarChar(255)
+  address     String?   @db.LongText
+  gst         String?   @db.VarChar(100)
+  abn         String?   @db.VarChar(100)
+  phone       String?   @db.VarChar(50)
+  email       String?   @db.VarChar(255)
+  logo        String?   @db.LongText
+  website     String?   @db.VarChar(255)
+  signature   String?   @db.LongText
+  designation String?   @db.VarChar(255)
+  is_active   Boolean?
+  created_at  DateTime?
+  updated_at  DateTime?
+}
+
+model custom_metadata_fields {
+  id                   String   @id @db.Char(36)
+  key                  String   @db.LongText
+  label                String   @db.LongText
+  created_at           DateTime
+  updated_at           DateTime
+  source_key           String?  @db.LongText
+  show_in_ui           Boolean
+  show_in_cost_manager Boolean
+}
+
+model excel_column_mappings {
+  id                 String   @id @db.Char(36)
+  name               String   @db.LongText
+  sheet_name         String?  @db.LongText
+  header_fingerprint String   @db.LongText
+  mappings           Json
+  excel_headers      Json
+  created_at         DateTime
+  updated_at         DateTime
+  import_confirmed   Boolean
+}
+
+model followup {
+  id                  String    @id
+  leadId              String    @db.LongText
+  scheduledAt         DateTime
+  completedAt         DateTime?
+  notes               String?   @db.LongText
+  status              String    @db.LongText
+  priority            String    @db.LongText
+  createdById         String    @db.LongText
+  metadata            String?   @db.LongText
+  createdAt           DateTime
+  updatedAt           DateTime
+  customerRequirement String?   @db.LongText
+}
+
+model lead {
+  id                  String   @id
+  name                String   @db.LongText
+  phone               String   @db.LongText
+  email               String?  @db.LongText
+  alternatePhone      String?  @db.LongText
+  address             String?  @db.LongText
+  city                String?  @db.LongText
+  state               String?  @db.LongText
+  pincode             String?  @db.LongText
+  source              String   @db.LongText
+  campaign            String?  @db.LongText
+  customerRequirement String?  @db.LongText
+  status              String   @db.LongText
+  priority            String   @db.LongText
+  notes               String?  @db.LongText
+  metadata            String?  @db.LongText
+  assignedToId        String?  @db.LongText
+  createdById         String?  @db.LongText
+  createdAt           DateTime
+  updatedAt           DateTime
+  callAttempts        Int
+  is_existing         Boolean
+  lead_category       String?  @db.LongText
+}
+
+model loginactivity {
+  id            String   @id
+  userId        String?  @db.LongText
+  email         String   @db.LongText
+  action        String   @db.LongText
+  status        String   @db.LongText
+  success       Boolean
+  failureReason String?  @db.LongText
+  ipAddress     String?  @db.LongText
+  userAgent     String?  @db.LongText
+  metadata      String?  @db.LongText
+  createdAt     DateTime
+}
+
+model medium_mandatory_fields {
+  id         String   @id @db.Char(36)
+  medium     String   @db.LongText
+  field_keys Json
+  created_at DateTime
+  updated_at DateTime
+}
+
+model medium_type_aliases {
+  id              String   @id @db.Char(36)
+  excel_label     String   @db.LongText
+  excel_label_key String   @db.LongText
+  canonical_type  String   @db.LongText
+  created_at      DateTime
+  updated_at      DateTime
+}
+
+model notification {
+  id            String    @id
+  userId        String    @db.LongText
+  type          String    @db.LongText
+  title         String    @db.LongText
+  message       String    @db.LongText
+  isRead        Boolean
+  readAt        DateTime?
+  metadata      String?   @db.LongText
+  createdAt     DateTime
+  relatedLeadId String?   @db.LongText
+}
+
+model otprequest {
+  id        String   @id
+  email     String   @db.LongText
+  hashedOtp String   @db.LongText
+  expiresAt DateTime
+  attempts  Int
+  used      Boolean
+  createdAt DateTime
+  ipAddress String?  @db.LongText
+  userAgent String?  @db.LongText
+}
+
+model proposal_chunks {
+  id              String    @id @db.Char(36)
+  service_name    String    @db.LongText
+  service_id      String    @db.LongText
+  content         String    @db.LongText
+  embedding       Json?
+  metadata        Json?
+  document_id     String    @db.LongText
+  document_name   String    @db.LongText
+  user_id         String?   @db.LongText
+  created_at      DateTime?
+  updated_at      DateTime?
+  Prefered_vendor String?   @map("Prefered vendor") @db.LongText
+}
+
+model proposals {
+  id                  String    @id @db.Char(36)
+  file_name           String    @db.VarChar(255)
+  file_type           String    @db.VarChar(100)
+  file_size           Int
+  file_url            String    @db.LongText
+  storage_path        String    @db.VarChar(500)
+  text_content        String?   @db.LongText
+  page_count          Int?
+  uploaded_by_user_id String?   @db.LongText
+  uploaded_by_name    String?   @db.VarChar(255)
+  uploaded_at         DateTime?
+  created_at          DateTime?
+  updated_at          DateTime?
+}
+
+model quotedownload {
+  id          String   @id
+  leadId      String   @db.LongText
+  quoteNumber String   @db.LongText
+  createdAt   DateTime
+}
+
+model role {
+  id          String   @id
+  name        String   @db.LongText
+  description String?  @db.LongText
+  permissions String?  @db.LongText
+  createdAt   DateTime
+  updatedAt   DateTime
+}
+
+model sales_notifications {
+  id                 String   @id @db.Char(36)
+  booking_request_id String   @db.Char(36)
+  channel            String   @db.VarChar(40)
+  status             String   @db.VarChar(40)
+  payload            Json
+  created_at         DateTime
+}
+
+model service_id_mappings {
+  id          String   @id @db.Char(36)
+  medium      String   @db.LongText
+  medium_code String   @db.LongText
+  pattern     String   @db.LongText
+  created_at  DateTime
+  updated_at  DateTime
+}
+
+model service_name_aliases {
+  id            String   @id @db.Char(36)
+  proposal_name String   @db.VarChar(512)
+  vendor_medium String   @db.VarChar(512)
+  city          String?  @db.VarChar(255)
+  created_at    DateTime @default(now())
+  updated_at    DateTime @default(now())
+
+  @@index([proposal_name], map: "idx_service_name_aliases_proposal")
+  @@index([vendor_medium], map: "idx_service_name_aliases_vendor_medium")
+}
+
+model session {
+  id             String   @id
+  userId         String   @db.LongText
+  token          String   @db.LongText
+  refreshToken   String?  @db.LongText
+  deviceInfo     String?  @db.LongText
+  ipAddress      String?  @db.LongText
+  userAgent      String?  @db.LongText
+  lastActivityAt DateTime
+  expiresAt      DateTime
+  createdAt      DateTime
+}
+
+model user {
+  id            String    @id
+  name          String?   @db.LongText
+  email         String    @db.LongText
+  emailVerified DateTime?
+  image         String?   @db.LongText
+  googleId      String?   @db.LongText
+  password      String?   @db.LongText
+  roleId        String    @db.LongText
+  isActive      Boolean
+  createdAt     DateTime
+  updatedAt     DateTime
+  settings      String?   @db.LongText
+}
+
+model vendor_rate_chunks {
+  id                               String    @id @db.Char(36)
+  service_name                     String    @db.LongText
+  service_id                       String    @db.LongText
+  content                          String    @db.LongText
+  embedding                        Json?
+  metadata                         Json
+  document_id                      String    @db.LongText
+  document_name                    String    @db.LongText
+  user_id                          String?   @db.LongText
+  created_at                       DateTime
+  updated_at                       DateTime
+  preferred_vendor_rank            Int?
+  preferred_vendor_ranks_synced_at DateTime?
+}
+
+model vendors {
+  id           String   @id @db.Char(36)
+  name         String   @db.LongText
+  name_code    String   @db.LongText
+  created_at   DateTime
+  updated_at   DateTime
+  vendor_gst   String?  @db.LongText
+  vendor_pan   String?  @db.LongText
+  tds_percent  Decimal? @db.Decimal(18, 6)
+  vendor_phone String?  @db.LongText
+}

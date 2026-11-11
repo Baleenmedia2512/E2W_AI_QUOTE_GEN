@@ -1,23 +1,13 @@
-import { supabase } from './supabaseClient';
+import { apiFetch } from './apiClient';
 
-/** First issued number when QuoteDownload has no sequential QT-* rows yet. */
 const START_NUMBER = 10001;
-/**
- * Last number that was actually issued on download (not a draft peek).
- * Used only as a same-browser guard between allocate and QuoteDownload insert.
- */
 const LOCAL_ISSUED_KEY = 'qb_quote_seq_issued';
-/**
- * Old generator used Date.now().slice(-6) → large 6-digit tails (e.g. 942044).
- * Those must not drive the sequential counter.
- */
 const LEGACY_TIMESTAMP_FLOOR = 900000;
 
 function formatQuoteNumber(n: number): string {
   return `QT-${n}`;
 }
 
-/** Parse QT-10001 → 10001; ignore non-matching values. */
 export function parseQuoteSeq(quoteNumber: string | null | undefined): number | null {
   const m = String(quoteNumber || '')
     .trim()
@@ -28,7 +18,6 @@ export function parseQuoteSeq(quoteNumber: string | null | undefined): number | 
   return Number.isFinite(n) ? n : null;
 }
 
-/** True for old Date.now()-style numbers (not QT-10001 sequence). */
 export function isLegacyTimestampQuoteNumber(
   quoteNumber: string | null | undefined,
 ): boolean {
@@ -62,92 +51,51 @@ function rememberIssuedLocal(n: number): void {
   }
 }
 
-/** Max sequential QT-* already stored in QuoteDownload (issued on download). */
 async function maxIssuedFromQuoteDownload(): Promise<number> {
-  let dbMax = START_NUMBER - 1;
   try {
-    // Prefer newest rows; fall back to a plain select if createdAt is unavailable.
-    let rows: { quoteNumber?: string }[] | null = null;
-    const primary = await supabase
-      .from('QuoteDownload')
-      .select('quoteNumber')
-      .order('createdAt', { ascending: false })
-      .limit(500);
-
-    if (primary.error) {
-      const fallback = await supabase
-        .from('QuoteDownload')
-        .select('quoteNumber')
-        .limit(1000);
-      if (fallback.error) {
-        console.warn('⚠️ QuoteDownload lookup failed:', fallback.error.message);
-        return dbMax;
-      }
-      rows = fallback.data;
-    } else {
-      rows = primary.data;
+    const { data, error } = await apiFetch<{ max?: number }>('/api/quotes/numbers/max');
+    if (error) {
+      console.warn('⚠️ QuoteDownload lookup failed:', error);
+      return START_NUMBER - 1;
     }
-
-    for (const row of rows || []) {
-      const n = parseQuoteSeq(row.quoteNumber);
-      if (n != null && isSequentialCandidate(n) && n > dbMax) dbMax = n;
-    }
-    console.log('📊 QuoteDownload max sequential:', dbMax);
+    const dbMax = Number(data?.max);
+    return Number.isFinite(dbMax) ? dbMax : START_NUMBER - 1;
   } catch (err) {
     console.warn('⚠️ maxIssuedFromQuoteDownload exception:', err);
+    return START_NUMBER - 1;
   }
-  return dbMax;
 }
 
-export async function isQuoteNumberIssuedInDb(
-  quoteNumber: string,
-): Promise<boolean> {
+export async function isQuoteNumberIssuedInDb(quoteNumber: string): Promise<boolean> {
   const qn = (quoteNumber || '').trim();
   if (!qn || isLegacyTimestampQuoteNumber(qn)) return false;
   try {
-    const { data, error } = await supabase
-      .from('QuoteDownload')
-      .select('id')
-      .eq('quoteNumber', qn)
-      .limit(1);
+    const { data, error } = await apiFetch<{ issued?: boolean }>(
+      `/api/quotes/numbers/issued?quoteNumber=${encodeURIComponent(qn)}`,
+    );
     if (error) return false;
-    return !!(data && data.length > 0);
+    return !!data?.issued;
   } catch {
     return false;
   }
 }
 
-/**
- * Preview / create / regenerate: next number = last in DB (+ local issued) + 1.
- * Does not consume. If DB has QT-10001 → returns QT-10002.
- */
 export async function peekNextQuoteNumber(): Promise<string> {
   const dbMax = await maxIssuedFromQuoteDownload();
   const localIssued = readIssuedLocal();
   const next = Math.max(dbMax, localIssued, START_NUMBER - 1) + 1;
-  console.log(
-    '👀 Quote number peek (not issued):',
-    formatQuoteNumber(next),
-    `(dbMax=${dbMax}, localIssued=${localIssued})`,
-  );
   return formatQuoteNumber(next);
 }
 
-/** Sync peek for buildQuote fallback — does not consume a number. */
 export function peekNextQuoteNumberSync(): string {
   const next = Math.max(readIssuedLocal(), START_NUMBER - 1) + 1;
   return formatQuoteNumber(next);
 }
 
-/** @deprecated Use peekNextQuoteNumberSync — kept name for older imports. */
 export function allocateLocalQuoteNumberSync(): string {
   return peekNextQuoteNumberSync();
 }
 
-/**
- * DOWNLOAD ONLY: consume next sequential number and remember it locally.
- * Source of truth remains QuoteDownload rows after recordQuoteDownload.
- */
 export async function allocateNextQuoteNumber(): Promise<string> {
   const dbMax = await maxIssuedFromQuoteDownload();
   const localIssued = readIssuedLocal();
