@@ -100,4 +100,8 @@ export interface VendorRateRow {
   display_unit_price_per_day?: number | string;
   /** GST % on vendor cost (from vendor_rate_chunks.metadata.gst_percent). */
   gst_percent?: number | string;
+  /** Theatre multi-rate packages (slab_1 …). */
+  slabs?: Record<string, unknown>;
+  pricing_mode?: string;
+  margin_percent?: number | string;
 }

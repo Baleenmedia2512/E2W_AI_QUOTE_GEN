@@ -36,6 +36,7 @@ import {
 import type { DbService } from './serviceResolver';
 import { resolveServiceIdFromCatalog } from './serviceResolver';
 import type { QuoteItem } from '../types/quote';
+import { parseSlabServiceId } from './slabPricingUtils';
 
 export {
   MIN_MARGIN_PERCENT,
@@ -280,6 +281,13 @@ export function resolveDbServiceForQuoteItem(
         serviceName: byId.service_name,
       });
       return byId;
+    }
+    const slabParsed = parseSlabServiceId(item.serviceId);
+    if (slabParsed) {
+      const base = catalog.find(
+        (s) => s.service_id.toLowerCase() === slabParsed.baseId.toLowerCase(),
+      );
+      if (base) return base;
     }
   }
 

@@ -21,6 +21,7 @@ import {
   Path,
 } from '@react-pdf/renderer';
 import { TemplateData } from '../../types/template';
+import type { TheatreRateCardRow } from '../../types/quote';
 import { formatRecurringRateUnitLabel, formatUnitRateInr } from '../../utils/rateDisplay';
 import { hyphenateLongWords } from '../../utils/hyphenateLongWords';
 import { getSharedReviewIfAllSame } from '../../utils/reviewGrouping';
@@ -277,6 +278,187 @@ const Header: React.FC<{
 };
 
 /** Client details — Name + Phone + Email only (no address / GST here). */
+const fmtTheatreInr = (n: number | null | undefined): string => {
+  if (n == null || !Number.isFinite(n) || n <= 0) return '—';
+  return new Intl.NumberFormat('en-IN', {
+    style: 'currency',
+    currency: 'INR',
+    maximumFractionDigits: 0,
+  }).format(n);
+};
+
+/**
+ * Theatre-only cinema cards for PDF (readable client UX — Option A).
+ * Does not affect bus / auto / hoarding layouts.
+ */
+const TheatreRateCardPdf: React.FC<{ rows: TheatreRateCardRow[] }> = ({ rows }) => {
+  if (!rows?.length) return null;
+
+  const rateCell = (
+    label: string,
+    value: number | null | undefined,
+    kind: 'money' | 'count' = 'money',
+    alt = false,
+  ) => {
+    const display =
+      kind === 'count'
+        ? (value != null && value > 0 ? String(value) : '—')
+        : fmtTheatreInr(value);
+    return (
+      <View
+        style={{
+          width: '33.33%',
+          paddingVertical: 7,
+          paddingHorizontal: 8,
+          borderRightWidth: 0.5,
+          borderBottomWidth: 0.5,
+          borderColor: C.tableBorder,
+          backgroundColor: alt ? C.clientBg : C.white,
+        }}
+      >
+        <Text
+          style={{
+            fontSize: 8,
+            fontFamily: 'Calibri',
+            color: C.mutedText,
+            marginBottom: 3,
+          }}
+        >
+          {label}
+        </Text>
+        <Text
+          style={{
+            fontSize: 11,
+            fontFamily: 'Calibri',
+            fontWeight: 700,
+            color: C.navy,
+          }}
+        >
+          {display}
+        </Text>
+      </View>
+    );
+  };
+
+  return (
+    <View style={{ marginTop: 4, marginBottom: 12 }}>
+      <Text
+        style={{
+          fontSize: 13,
+          fontFamily: 'Calibri',
+          fontWeight: 700,
+          color: C.navy,
+          textAlign: 'center',
+          textTransform: 'uppercase',
+          letterSpacing: 1.2,
+          marginBottom: 10,
+          paddingBottom: 6,
+          borderBottomWidth: 1.5,
+          borderBottomColor: C.blue,
+        }}
+      >
+        Theatre Screen Ad — Rate Card
+      </Text>
+
+      {rows.map((row, i) => {
+        const place =
+          row.state && row.state !== '—'
+            ? `${row.city} · ${row.state}`
+            : (row.city || '—');
+        return (
+          <View
+            key={row.serviceId || i}
+            wrap={false}
+            style={{
+              marginBottom: 10,
+              borderWidth: 0.75,
+              borderColor: C.tableBorder,
+              borderRadius: 4,
+              overflow: 'hidden',
+            }}
+          >
+            <View
+              style={{
+                backgroundColor: C.navy,
+                paddingVertical: 8,
+                paddingHorizontal: 10,
+                flexDirection: 'row',
+                alignItems: 'flex-start',
+              }}
+            >
+              <Text
+                style={{
+                  width: 22,
+                  fontSize: 11,
+                  fontFamily: 'Calibri',
+                  fontWeight: 700,
+                  color: C.white,
+                }}
+              >
+                {i + 1}.
+              </Text>
+              <View style={{ flex: 1 }}>
+                <Text
+                  style={{
+                    fontSize: 11,
+                    fontFamily: 'Calibri',
+                    fontWeight: 700,
+                    color: C.white,
+                    marginBottom: 2,
+                  }}
+                >
+                  {row.cinema}
+                </Text>
+                <Text style={{ fontSize: 9, fontFamily: 'Calibri', color: '#c8d9e8' }}>
+                  {place}
+                </Text>
+              </View>
+            </View>
+
+            <View
+              style={{
+                backgroundColor: C.lightBg,
+                paddingVertical: 4,
+                paddingHorizontal: 10,
+                borderBottomWidth: 0.5,
+                borderBottomColor: C.tableBorder,
+              }}
+            >
+              <Text
+                style={{
+                  fontSize: 7.5,
+                  fontFamily: 'Calibri',
+                  fontWeight: 700,
+                  color: C.blue,
+                  letterSpacing: 0.6,
+                }}
+              >
+                RATES (INR)
+              </Text>
+            </View>
+
+            <View style={{ flexDirection: 'row' }}>
+              {rateCell('10s / week', row.rate10sWeek)}
+              {rateCell('20s / week', row.rate20sWeek)}
+              {rateCell('20s / 3 weeks', row.rate20s3Weeks)}
+            </View>
+            <View style={{ flexDirection: 'row' }}>
+              {rateCell('Arch / month', row.archMonth, 'money', true)}
+              {rateCell('Kiosk / month', row.kioskMonth, 'money', true)}
+              {rateCell('Standee / month', row.standeeMonth, 'money', true)}
+            </View>
+            <View style={{ flexDirection: 'row' }}>
+              {rateCell('Plasma screens', row.plasmaCount, 'count')}
+              {rateCell('Plasma 10s / week', row.plasma10sWeek)}
+              <View style={{ width: '33.33%', borderBottomWidth: 0.5, borderColor: C.tableBorder }} />
+            </View>
+          </View>
+        );
+      })}
+    </View>
+  );
+};
+
 const ClientDetails: React.FC<{ client: TemplateData['client'] }> = ({ client }) => {
   const sep = { color: '#95a5a6' } as const;
   const fields: React.ReactNode[] = [];
@@ -1164,6 +1346,8 @@ const BankDetails: React.FC = () => {
 // ---------------------------------------------------------------------------
 const CorporateMinimalPDF: React.FC<CorporateMinimalPDFProps> = ({ data, pdfData, exportMode = 'full' }) => {
   const { company, client, quote } = data;
+  /** Theatre slab: rate card only — skip Executive Summary / Pricing Breakdown. */
+  const isTheatreSlabQuote = !!(quote.theatreRateCards && quote.theatreRateCards.length > 0);
 
   const isMultiService = quote.items.length > 0 && isMultiServiceQuote(quote.items);
   const serviceGroups = isMultiService ? groupItemsByServiceType(quote.items) : [];
@@ -1245,7 +1429,12 @@ const CorporateMinimalPDF: React.FC<CorporateMinimalPDFProps> = ({ data, pdfData
           />
           <ClientDetails client={client} />
 
-          {/* Service name + Pricing Breakdown (no orphan heading) */}
+          {isTheatreSlabQuote ? (
+            <TheatreRateCardPdf rows={quote.theatreRateCards!} />
+          ) : null}
+
+          {/* Service name + Pricing Breakdown (no orphan heading) — not for theatre slabs */}
+          {!isTheatreSlabQuote ? (
           <PricingBreakdownTable
             items={quote.items}
             gstPercentage={quote.gstPercentage}
@@ -1256,30 +1445,42 @@ const CorporateMinimalPDF: React.FC<CorporateMinimalPDFProps> = ({ data, pdfData
               </View>
             }
           />
+          ) : null}
 
-          {/* Reference images + display spec share one flow so tables fill space below images */}
-          {(singlePdf || singleRemark) && (
-            <View wrap={true}>
-              {normalizeImageSrcs(singlePdf?.refImages || []).length > 0 && (
-                <RefImages
-                  images={singlePdf?.refImages || []}
-                  heading="2. Reference Image(s)"
-                />
-              )}
-              <DisplaySpecificationBlock
-                heading="3. Specification"
-                fields={singlePdf?.specFields || []}
-                specGroups={singlePdf?.specGroups}
-                images={singlePdf?.specImages || []}
-                remark={singleRemark}
+          {/* Theatre: refs + review only (no spec). Other media: refs + spec. */}
+          {isTheatreSlabQuote ? (
+            normalizeImageSrcs(singlePdf?.refImages || []).length > 0 ? (
+              <RefImages
+                images={singlePdf?.refImages || []}
+                heading="1. Reference Image(s)"
               />
-            </View>
+            ) : null
+          ) : (
+            (singlePdf || singleRemark) && (
+              <View wrap={true}>
+                {normalizeImageSrcs(singlePdf?.refImages || []).length > 0 && (
+                  <RefImages
+                    images={singlePdf?.refImages || []}
+                    heading="2. Reference Image(s)"
+                  />
+                )}
+                <DisplaySpecificationBlock
+                  heading="3. Specification"
+                  fields={singlePdf?.specFields || []}
+                  specGroups={singlePdf?.specGroups}
+                  images={singlePdf?.specImages || []}
+                  remark={singleRemark}
+                />
+              </View>
+            )
           )}
 
-          {/* Customer review */}
+          {/* One customer review */}
           {singlePdf?.review && (
             <View wrap={false}>
-              <SubHeading>4. Customer Review</SubHeading>
+              <SubHeading>
+                {isTheatreSlabQuote ? 'Customer Review' : '4. Customer Review'}
+              </SubHeading>
               <ReviewBox review={singlePdf.review} />
             </View>
           )}
@@ -1347,6 +1548,7 @@ const CorporateMinimalPDF: React.FC<CorporateMinimalPDFProps> = ({ data, pdfData
 
           return (
             <View key={idx} style={{ width: '100%' }} wrap={true}>
+              {!isTheatreSlabQuote ? (
               <PricingBreakdownTable
                 items={group.items}
                 gstPercentage={quote.gstPercentage}
@@ -1357,6 +1559,7 @@ const CorporateMinimalPDF: React.FC<CorporateMinimalPDFProps> = ({ data, pdfData
                   </View>
                 }
               />
+              ) : null}
 
               {(spd || groupRemark) && (
                 normalizeImageSrcs(spd?.refImages || []).length > 0 ||
@@ -1431,6 +1634,62 @@ const CorporateMinimalPDF: React.FC<CorporateMinimalPDFProps> = ({ data, pdfData
       </View>
     </View>
   );
+
+  // Theatre slab: rate card + one review + one T&C — no exec summary / breakdown / specs
+  if (isTheatreSlabQuote) {
+    const theatreReview =
+      sharedReview
+      || multiServiceReviews.find((r) => !!r)
+      || null;
+    // Prefer a single ref set from first group with images (no per-cinema duplicates)
+    let theatreRefs: string[] = [];
+    for (const group of serviceGroups) {
+      const city = group.city?.trim().toLowerCase();
+      const serviceKey =
+        city && city !== '\u2014'
+          ? `${city}|${group.serviceType.toLowerCase()}`
+          : group.serviceType.toLowerCase();
+      const spd = getPdfData(serviceKey, {
+        serviceId: group.items[0]?.serviceId,
+        serviceName: group.serviceType,
+        city,
+      });
+      const imgs = normalizeImageSrcs(spd?.refImages || []);
+      if (imgs.length) {
+        theatreRefs = imgs;
+        break;
+      }
+    }
+    return (
+      <Document
+        title={`Quote ${quote.quoteNumber}`}
+        author="Baleen Media"
+        creator="Quote Buddy"
+      >
+        <Page size="A4" style={s.page} wrap>
+          <View style={s.accentBar} fixed />
+          <PageFooter company={company} />
+          <Header
+            data={data}
+            title={exportMode === 'summary' ? 'Summarized quotation' : 'Detailed quotation'}
+          />
+          <ClientDetails client={client} />
+          <TheatreRateCardPdf rows={quote.theatreRateCards!} />
+          {exportMode !== 'summary' && theatreRefs.length > 0 ? (
+            <RefImages images={theatreRefs} heading="Reference Image(s)" />
+          ) : null}
+          {exportMode !== 'summary' && theatreReview ? (
+            <View wrap={false}>
+              <SubHeading>Customer Review</SubHeading>
+              <ReviewBox review={theatreReview} />
+            </View>
+          ) : null}
+          {exportMode === 'summary' ? generalTermsBlock : termsBlock}
+          {bankAndNotice}
+        </Page>
+      </Document>
+    );
+  }
 
   return (
     <Document

@@ -15,6 +15,12 @@ import { resolveServiceIdFromCatalog } from './serviceResolver';
 import { hydrateQuoteTermsFromCatalog } from './termsHydration';
 import { applyVendorPricingForQuoteRow, getVendorRatesCache } from '../services/vendorRateService';
 import { allocateLocalQuoteNumberSync } from '../services/quoteNumberService';
+import {
+  buildTheatreRateCardRow,
+  isSlabPricingService,
+  parseSlabServiceId,
+} from './slabPricingUtils';
+import type { TheatreRateCardRow } from '../types/quote';
 // allocateLocalQuoteNumberSync is a non-consuming peek (draft display only).
 
 export type BuildQuoteFromDbResult =
@@ -151,6 +157,8 @@ export function buildQuoteFromConfirmedRows(
   const uniqueRows = dedupeLogicalQuoteRows(dedupeConfirmationRows(rows), services);
   const unresolved: string[] = [];
   const allItems: QuoteItem[] = [];
+  const theatreRateCards: TheatreRateCardRow[] = [];
+  const theatreCardIds = new Set<string>();
   const vendorRates = getVendorRatesCache();
 
   for (let i = 0; i < uniqueRows.length; i++) {
@@ -160,7 +168,9 @@ export function buildQuoteFromConfirmedRows(
     const cityHint = row.city && row.city !== '—' ? row.city : null;
     let baseSvc: DbService | undefined;
     if (row.serviceId) {
-      baseSvc = services.find((s) => s.service_id === row.serviceId);
+      const parsedSlab = parseSlabServiceId(row.serviceId);
+      const lookupId = parsedSlab?.baseId || row.serviceId;
+      baseSvc = services.find((s) => s.service_id === lookupId);
     }
     if (!baseSvc) {
       const resolved = resolveServiceIdFromCatalog(row.service, services, cityHint);
@@ -205,10 +215,19 @@ export function buildQuoteFromConfirmedRows(
     });
     const lineItems = buildLineItemsFromDbPricing(
       svc,
-      qty,
+      isSlabPricingService(svc) ? 1 : qty,
       scopedUserInput,
       i,
+      row.slabKeys,
     );
+
+    if (isSlabPricingService(svc) && !theatreCardIds.has(svc.service_id)) {
+      const card = buildTheatreRateCardRow(svc);
+      if (card) {
+        theatreCardIds.add(svc.service_id);
+        theatreRateCards.push(card);
+      }
+    }
 
     const hasPricing = lineItems.some((item) => item.rate > 0);
     if (!hasPricing) {
@@ -268,6 +287,7 @@ export function buildQuoteFromConfirmedRows(
     termsAndConditions: finalTerms,
     createdAt: new Date(),
     updatedAt: new Date(),
+    theatreRateCards: theatreRateCards.length ? theatreRateCards : undefined,
   };
 
   return {

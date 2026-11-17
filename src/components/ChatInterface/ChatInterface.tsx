@@ -1066,7 +1066,14 @@ const ChatInterfaceContent: React.FC = () => {
   };
 
   const generateQuoteFromProgressiveRows = async (
-    rows: Array<{ service: string; qty: number | string; city: string; serviceId?: string; durationDays?: number }>,
+    rows: Array<{
+      service: string;
+      qty: number | string;
+      city: string;
+      serviceId?: string;
+      durationDays?: number;
+      slabKeys?: string[];
+    }>,
     originalUserInput: string,
   ) => {
     setIsLoading(true);

@@ -59,6 +59,14 @@ import {
 } from './cloudQuoteValidation';
 import { canonicalizeServiceName, KNOWN_CITY_LIST } from './serviceNameUtils';
 import { hasQuotablePricing, pickPreferredDbService } from './dbPricingUtils';
+import {
+  formatCinemaAreaChipLabel,
+  formatSlabChipLabel,
+  formatSlabPackageChipLabel,
+  isNonTypeMediumType,
+  isSlabPricingService,
+  listRateSlabs,
+} from './slabPricingUtils';
 import type { DbService } from './serviceResolver';
 import { formatServiceDisplayName } from './serviceResolver';
 import { getServiceScopedUserMessage, parseDurationFromUserText, toCampaignDays, isOneTimeLineDescription } from './durationUtils';
@@ -104,6 +112,7 @@ export type ProgressiveStep =
   | 'min_duration_confirm'
   | 'single_location_confirm'
   | 'qty_or_duration_clarify'
+  | 'pick_slab'
   | 'quote_ready'
   | 'small_talk';
 
@@ -223,6 +232,8 @@ export interface ProgressiveSession {
   unresolvedPlaceOffer?: boolean;
   /** Nominatim hierarchy for statewide / state-labelled DB city coverage. */
   resolvedLocation?: import('../types/location').ResolvedLocation | null;
+  /** Selected rate-slab keys per catalog service_id (Theatre). */
+  slabKeysByServiceId?: Record<string, string[]>;
 }
 
 export interface ProgressiveTurnResult {
@@ -2040,7 +2051,8 @@ function tryAutoResolveBatchWork(
     if (narrowed.length) pool = narrowed;
   }
 
-  const withDir = pool.filter((s) => !!getDirectionLabel(s));
+  const withDir = pool.filter(hasRealSiteDirection);
+  const packageRows = pool.filter(isCityPackageRow);
   const dirKeys = [
     ...new Set(
       withDir
@@ -2048,9 +2060,14 @@ function tryAutoResolveBatchWork(
         .filter(Boolean),
     ),
   ];
-  if (dirKeys.length > 1) return null;
+  // Sites + city package still need a picker — not a silent single-rep collapse
+  if (dirKeys.length > 1 || (dirKeys.length >= 1 && packageRows.length >= 1)) {
+    return null;
+  }
 
-  const rep = (dirKeys.length === 1 ? withDir[0] : undefined) || pool[0];
+  const rep = (dirKeys.length === 1 ? withDir[0] : undefined)
+    || (packageRows.length ? pickPreferredDbService(packageRows) || packageRows[0] : undefined)
+    || pool[0];
   if (!rep) return null;
 
   const label = mediumType
@@ -2345,6 +2362,74 @@ function isNumericOnlyLabel(value: string): boolean {
 export function getDirectionLabel(svc: DbService): string | null {
   const meta = svc.metadata as { direction_remarks?: string } | undefined;
   return metaFieldClean(meta?.direction_remarks);
+}
+
+/**
+ * True when direction_remarks is a real site line — not blank/NA and not a
+ * city-name echo (`direction_remarks: "chennai"` while city is Chennai).
+ * City-level package rows fail this check and are offered separately.
+ */
+export function hasRealSiteDirection(svc: DbService): boolean {
+  const dir = getDirectionLabel(svc);
+  if (!dir) return false;
+  const d = canonicalizeServiceName(dir);
+  if (!d) return false;
+  const city = canonicalizeServiceName(
+    getMetaCityRaw(svc) || funnelCityFromDb(svc) || '',
+  );
+  if (city && d === city) return false;
+  const area = canonicalizeServiceName(getMetaAreaRaw(svc) || '');
+  // area + direction both echo the metro city → still not a site
+  if (city && area === city && d === city) return false;
+  return true;
+}
+
+/** Quotable row with no real site direction — city / statewide package. */
+function isCityPackageRow(svc: DbService): boolean {
+  return hasQuotablePricing(svc) && !hasRealSiteDirection(svc);
+}
+
+/**
+ * candidateServiceIds often lists only street sites. Pull matching city-package
+ * rows back from the full catalog for the locked medium + city.
+ */
+function mergeSessionCityPackages(
+  pool: DbService[],
+  services: DbService[],
+  session: ProgressiveSession,
+): DbService[] {
+  const med = session.medium || session.browseToken;
+  if (!med || !session.city) return pool;
+
+  const seen = new Set(pool.map((s) => s.service_id));
+  const extras: DbService[] = [];
+  const exact = isExactCatalogMedium(med, services);
+
+  for (const s of services) {
+    if (seen.has(s.service_id)) continue;
+    if (!isCityPackageRow(s)) continue;
+    if (!serviceMatchesSessionCity(s, session.city, session)) continue;
+    if (exact) {
+      if (!filterByExactMedium([s], med).length) continue;
+    } else if (!filterForBrowseOrFamily([s], med).length) {
+      continue;
+    }
+    extras.push(s);
+    seen.add(s.service_id);
+  }
+  return extras.length ? [...pool, ...extras] : pool;
+}
+
+/** Chip label for a city-package row — DB medium + city only. */
+function cityPackageChipLabel(svc: DbService): string {
+  const medium = titleCase(
+    getMediumKey(svc) || formatServiceDisplayName(svc) || svc.service_name || 'Service',
+  );
+  const city = funnelCityFromDb(svc) || extractRealCityFromDbService(svc);
+  if (city && canonicalizeServiceName(city) !== canonicalizeServiceName(medium)) {
+    return `${medium} · ${titleCase(city)}`;
+  }
+  return medium;
 }
 
 /** Stable key for duplicate DB chips; does not merge different words or labels. */
@@ -3294,6 +3379,8 @@ export function getMediumTypeFromDb(svc: DbService | null | undefined): string |
     meta?.medium_type || meta?.mediumType || meta?.type_of_medium || '',
   ).trim();
   if (!raw || raw.toUpperCase() === 'NA') return null;
+  // Pricing-mode flags are not funnel Type chips
+  if (isNonTypeMediumType(raw)) return null;
   const cleaned = raw.replace(/[_-]+/g, ' ').replace(/\s+/g, ' ').trim();
   // Direction text wrongly stored as medium_type — not a Type chip
   if (isDirectionLikeLabel(cleaned) || cleaned.split(/\s+/).length > 6) return null;
@@ -4706,6 +4793,173 @@ function startBatchSequentialFunnel(
 }
 
 /**
+ * Theatre / multi_rate_slabs only — separate from beginMultiCityMediumFlow.
+ * Cinemas differ by area_name (not direction_remarks). Multi-city Confirm must
+ * list ALL cinemas across the selected cities, never one hits[0] per city.
+ */
+function mediumPoolHasSlabPricing(
+  mediumToken: string,
+  services: DbService[],
+  cities?: string[],
+): boolean {
+  const token = canonicalizeServiceName(mediumToken);
+  if (!token) return false;
+  let hits = isExactCatalogMedium(token, services)
+    ? filterByExactMedium(services, token)
+    : filterForBrowseOrFamily(services, token);
+  if (cities?.length) {
+    hits = hits.filter((s) =>
+      cities.some((c) => serviceMatchesCityLabel(s, c)),
+    );
+  }
+  return hits.some((s) => isSlabPricingService(s) && hasQuotablePricing(s));
+}
+
+function beginMultiCityTheatreFlow(
+  mediumToken: string,
+  cities: string[],
+  session: ProgressiveSession,
+  services: DbService[],
+  reply?: string | null,
+): ProgressiveTurnResult {
+  const token = canonicalizeServiceName(mediumToken);
+  let hits = isExactCatalogMedium(token, services)
+    ? filterByExactMedium(services, token)
+    : filterForBrowseOrFamily(services, token);
+  if (session.mediumType) {
+    const mt = canonicalizeServiceName(session.mediumType);
+    const typed = hits.filter((s) => {
+      const got = getMediumTypeFromDb(s);
+      return !!got && canonicalizeServiceName(got) === mt;
+    });
+    if (typed.length) hits = typed;
+  }
+  hits = hits.filter(
+    (s) =>
+      cities.some((c) => serviceMatchesCityLabel(s, c))
+      && isSlabPricingService(s)
+      && hasQuotablePricing(s),
+  );
+  if (!hits.length) {
+    return {
+      step: 'no_match',
+      botText: reply || copyUnknownCity('those cities'),
+      options: [],
+      session,
+    };
+  }
+
+  // Distinct cinemas by area_name (one chip per cinema)
+  const groups = new Map<string, { opt: ProgressiveOption; svc: DbService }>();
+  for (const s of hits) {
+    const area = getFunnelAreaLabel(s) || getAreaLabel(s);
+    if (!area) continue;
+    const key = areaDisplayKey(area);
+    if (groups.has(key)) continue;
+    const priced = formatCinemaAreaChipLabel(s);
+    groups.set(key, {
+      svc: s,
+      opt: {
+        id: `area:${key}`,
+        label: priced || area,
+        city: getDbCityLabel(s) || undefined,
+        medium: token,
+        serviceId: s.service_id,
+      },
+    });
+  }
+  const options = [...groups.values()]
+    .map((g) => g.opt)
+    .sort((a, b) => a.label.localeCompare(b.label, undefined, { sensitivity: 'base' }));
+
+  if (!options.length) {
+    // No area_name — fall through to finalize all hits (rare)
+    return finalizeSelection(hits, {
+      ...session,
+      medium: token,
+      browseToken: token,
+      city: undefined,
+      area: undefined,
+      placeHint: undefined,
+      needsContinueConfirm: false,
+      pendingCityQueue: undefined,
+      candidateServiceIds: hits.map((s) => s.service_id),
+    }, services);
+  }
+
+  if (options.length === 1) {
+    const only = groups.values().next().value as { svc: DbService };
+    return finalizeSelection([only.svc], {
+      ...session,
+      medium: token,
+      browseToken: token,
+      city: getDbCityLabel(only.svc) || undefined,
+      area: getFunnelAreaLabel(only.svc) || undefined,
+      placeHint: undefined,
+      needsContinueConfirm: false,
+      pendingCityQueue: undefined,
+      candidateServiceIds: [only.svc.service_id],
+    }, services);
+  }
+
+  const cityList =
+    cities.length <= 3
+      ? cities.map((c) => titleCase(c)).join(' and ')
+      : `${cities.slice(0, 2).map((c) => titleCase(c)).join(', ')} +${cities.length - 2} more`;
+  const mediumName = titleCase(token || session.medium || 'Theatre');
+
+  return {
+    step: 'pick_area',
+    botText: compactFunnelReply(
+      reply || `${mediumName} in ${cityList}.`,
+      'Which cinemas do you need?',
+    ),
+    options,
+    allowMulti: true,
+    session: {
+      ...session,
+      medium: token,
+      browseToken: token,
+      // Leave city unlocked so multi-area Confirm can match across selected cities
+      city: undefined,
+      area: undefined,
+      placeHint: undefined,
+      directionHint: undefined,
+      needsContinueConfirm: false,
+      pendingCityQueue: undefined,
+      candidateServiceIds: hits.map((s) => s.service_id),
+      workQueue: session.workQueue,
+    },
+  };
+}
+
+/** Route slab/theatre multi-city to its own path; all other media unchanged. */
+function beginMultiCityMediumFlowOrTheatre(
+  mediumToken: string,
+  cities: string[],
+  session: ProgressiveSession,
+  services: DbService[],
+  reply?: string | null,
+): ProgressiveTurnResult {
+  if (mediumPoolHasSlabPricing(mediumToken, services, cities)) {
+    return beginMultiCityTheatreFlow(
+      mediumToken,
+      cities,
+      session,
+      services,
+      reply,
+    );
+  }
+  return beginMultiCityMediumFlow(
+    mediumToken,
+    cities,
+    session,
+    services,
+    reply,
+  );
+}
+
+/**
  * User already named cities in text ("police booth in chennai and madurai").
  * Do NOT re-ask city chips — start Type/Area/Direction per city (DB-driven, no hardcoding).
  * Single-site cities seed into the quote; multi-site cities go on workQueue.
@@ -4973,7 +5227,7 @@ function startBatchWithCityCandidates(
 
   // Single service × many cities
   if (tokens.length === 1) {
-    const result = beginMultiCityMediumFlow(
+    const result = beginMultiCityMediumFlowOrTheatre(
       primaryToken,
       usable,
       baseSession,
@@ -5743,11 +5997,13 @@ function uniqueAreaOptions(services: DbService[], token: string, city: string): 
       existing.rows.push(s);
       continue;
     }
+    // Theatre slabs: show cinema + primary selling rate on the chip
+    const pricedLabel = formatCinemaAreaChipLabel(s);
     groups.set(key, {
       rows: [s],
       opt: {
         id: `area:${key}`,
-        label: area,
+        label: pricedLabel || area,
         city,
         medium: token,
         serviceId: undefined,
@@ -5830,9 +6086,13 @@ function buildDirectionPicker(
   session: ProgressiveSession,
   locationLabel: string,
 ): ProgressiveTurnResult {
+  const priced = hits.filter(hasQuotablePricing);
+  const siteHits = priced.filter(hasRealSiteDirection);
+  const packageHits = priced.filter(isCityPackageRow);
+
   const typeKeys = [
     ...new Set(
-      hits
+      siteHits
         .map((s) => {
           const t = getMediumTypeFromDb(s);
           return t ? canonicalizeServiceName(t) : '';
@@ -5843,7 +6103,7 @@ function buildDirectionPicker(
   const annotateType = typeKeys.length > 1;
 
   const groups = new Map<string, { opt: ProgressiveOption; rows: DbService[] }>();
-  for (const s of hits) {
+  for (const s of siteHits) {
     const dir = getDirectionLabel(s);
     if (!dir) continue;
     const mType = getMediumTypeFromDb(s);
@@ -5873,7 +6133,7 @@ function buildDirectionPicker(
       },
     });
   }
-  const options = [...groups.values()]
+  const siteOptions = [...groups.values()]
     .map(({ opt, rows }) => ({
       ...opt,
       id: `direction:${rows.map((row) => row.service_id).join(',')}`,
@@ -5882,12 +6142,80 @@ function buildDirectionPicker(
       serviceId: rows.length === 1 ? rows[0].service_id : opt.serviceId,
     }))
     .sort((a, b) => a.label.localeCompare(b.label));
-  const mediumName = titleCase(getMediumKey(hits[0]) || session.medium || 'service');
+
+  // City-level package (no real site direction) alongside site inventory —
+  // e.g. LED HOARDINGS · Chennai common rate + 29 street sites.
+  const options: ProgressiveOption[] = [...siteOptions];
+  let packageChipAdded: string | null = null;
+  let packageChipSkipped: string | null = null;
+  if (packageHits.length > 0 && siteOptions.length > 0) {
+    const preferred = pickPreferredDbService(packageHits) || packageHits[0]!;
+    const pkgLabel = cityPackageChipLabel(preferred);
+    const already = options.some(
+      (o) => canonicalizeServiceName(o.label) === canonicalizeServiceName(pkgLabel),
+    );
+    if (!already) {
+      options.unshift({
+        id: `direction:${preferred.service_id}`,
+        label: pkgLabel,
+        serviceId: preferred.service_id,
+        city: extractRealCityFromDbService(preferred) || undefined,
+        medium: getMediumKey(preferred) || undefined,
+        imageUrl: getChipImageUrl(preferred),
+      });
+      packageChipAdded = pkgLabel;
+    } else {
+      packageChipSkipped = `label already exists: ${pkgLabel}`;
+    }
+  } else if (packageHits.length > 0 && siteOptions.length === 0) {
+    // Only packages (should usually finalize earlier) — one chip per preferred row
+    const preferred = pickPreferredDbService(packageHits) || packageHits[0]!;
+    const pkgLabel = cityPackageChipLabel(preferred);
+    options.push({
+      id: `direction:${preferred.service_id}`,
+      label: pkgLabel,
+      serviceId: preferred.service_id,
+      city: extractRealCityFromDbService(preferred) || undefined,
+      medium: getMediumKey(preferred) || undefined,
+      imageUrl: getChipImageUrl(preferred),
+    });
+    packageChipAdded = pkgLabel;
+  } else if (packageHits.length === 0) {
+    packageChipSkipped = 'no packageHits in picker pool';
+  }
+
+  // TEMP debug — city package chip in direction picker
+  console.log('[LED package debug] buildDirectionPicker', {
+    hits: hits.length,
+    priced: priced.length,
+    siteHits: siteHits.length,
+    packageHits: packageHits.length,
+    siteOptions: siteOptions.length,
+    pickerOptions: options.length,
+    packageChipAdded,
+    packageChipSkipped,
+    firstLabels: options.slice(0, 5).map((o) => o.label),
+    packageIds: packageHits.map((s) => s.service_id),
+    packageDirs: packageHits.map((s) => {
+      const m = (s.metadata || {}) as Record<string, unknown>;
+      return {
+        id: s.service_id,
+        city: m.city,
+        area: m.area,
+        area_name: m.area_name,
+        direction: m.direction_remarks,
+      };
+    }),
+  });
+
+  const mediumName = titleCase(
+    getMediumKey(siteHits[0] || packageHits[0] || hits[0]) || session.medium || 'service',
+  );
   const ask = copyAskDirection(locationLabel || 'that area', mediumName, session);
   const noted = withBatchUnavailableNote(ask, {
     ...session,
-    medium: getMediumKey(hits[0]) || session.medium,
-    candidateServiceIds: hits.map((s) => s.service_id),
+    medium: getMediumKey(siteHits[0] || packageHits[0] || hits[0]) || session.medium,
+    candidateServiceIds: priced.map((s) => s.service_id),
   });
   const keepQueue = workQueueMustContinue(session);
   // Keep remaining batch services (Hoarding → No Parking, same city) and
@@ -6105,6 +6433,12 @@ function uniqueCityOptionsFromPool(services: DbService[], medium?: string): Prog
 function getFunnelAreaLabel(svc: DbService): string | null {
   const raw = getMetaAreaRaw(svc);
   if (!raw || isNumericOnlyLabel(raw)) return null;
+  // `area: "chennai"` while city is Chennai is not a neighbourhood — skip
+  // so we never show “Chennai · Chennai” or a fake area step.
+  const city = getMetaCityRaw(svc);
+  if (city && canonicalizeServiceName(raw) === canonicalizeServiceName(city)) {
+    return null;
+  }
   return raw;
 }
 
@@ -6131,11 +6465,12 @@ function uniqueAreaOptionsFromPool(
       existing.rows.push(s);
       continue;
     }
+    const pricedLabel = formatCinemaAreaChipLabel(s);
     groups.set(key, {
       rows: [s],
       opt: {
         id: `area:${key}`,
-        label: area,
+        label: pricedLabel || area,
         city,
         medium,
       },
@@ -6824,7 +7159,11 @@ export function advanceFunnel(
       }
     }
 
-    const finalPool = filterPoolBySession(services, sess);
+    let finalPool = filterPoolBySession(services, sess);
+    // candidateServiceIds is often built from site rows only (e.g. 58 LED
+    // directions). Re-attach same medium+city package rows from the full
+    // catalog so “LED Hoarding · Chennai” is not dropped before the picker.
+    finalPool = mergeSessionCityPackages(finalPool, services, sess);
     if (!finalPool.length) {
       return {
         step: 'no_match',
@@ -6837,8 +7176,11 @@ export function advanceFunnel(
       };
     }
 
-    // 5) Direction — ask when 2+ before any finalize
-    const withDir = finalPool.filter((s) => !!getDirectionLabel(s));
+    // 5) Direction — ask when 2+ real sites before any finalize.
+    // City-package rows (no real direction / city-name echo) stay in the pool
+    // so they appear as a chip beside street sites (LED common + sites).
+    const withDir = finalPool.filter(hasRealSiteDirection);
+    const packageRows = finalPool.filter(isCityPackageRow);
     const dirKeys = [
       ...new Set(
         withDir
@@ -6847,6 +7189,76 @@ export function advanceFunnel(
       ),
     ];
     const where = [sess.city, sess.area].filter(Boolean).join(' · ') || sess.directionHint || '';
+    const pickerPool = finalPool.filter(hasQuotablePricing);
+    // TEMP debug — why city-package chip missing (e.g. LED Hoarding · Chennai)
+    const medTok = canonicalizeServiceName(sess.medium || sess.browseToken || '');
+    const catalogLed = services.filter((s) => {
+      const m = canonicalizeServiceName(getMediumKey(s) || s.service_name || '');
+      return m.includes('led') && m.includes('hoarding');
+    });
+    const catalogLedChennai = catalogLed.filter((s) =>
+      serviceMatchesCityLabel(s, sess.city || 'Chennai', sess.resolvedLocation),
+    );
+    const catalogPackages = catalogLedChennai.filter(isCityPackageRow);
+    const catalogNoRealDir = catalogLedChennai.filter((s) => !hasRealSiteDirection(s));
+    const candIds = new Set(sess.candidateServiceIds || []);
+    console.log('[LED package debug] advanceFunnel direction step', {
+      medium: sess.medium || sess.browseToken,
+      city: sess.city,
+      area: sess.area,
+      candidateIdsCount: sess.candidateServiceIds?.length ?? 0,
+      finalPool: finalPool.length,
+      withDir: withDir.length,
+      packageRows: packageRows.length,
+      dirKeys: dirKeys.length,
+      pickerPool: pickerPool.length,
+      packageIds: packageRows.map((s) => s.service_id),
+      packageDirs: packageRows.map((s) => {
+        const m = (s.metadata || {}) as Record<string, unknown>;
+        return {
+          id: s.service_id,
+          city: m.city,
+          area: m.area,
+          area_name: m.area_name,
+          direction: m.direction_remarks,
+          hasRealSite: hasRealSiteDirection(s),
+          quotable: hasQuotablePricing(s),
+        };
+      }),
+      noRealDirSample: finalPool
+        .filter((s) => !hasRealSiteDirection(s))
+        .slice(0, 8)
+        .map((s) => {
+          const m = (s.metadata || {}) as Record<string, unknown>;
+          return {
+            id: s.service_id,
+            city: m.city,
+            area: m.area,
+            area_name: m.area_name,
+            direction: m.direction_remarks,
+            quotable: hasQuotablePricing(s),
+          };
+        }),
+      // Full catalog scan (before filterPoolBySession)
+      catalogLed: catalogLed.length,
+      catalogLedChennai: catalogLedChennai.length,
+      catalogPackages: catalogPackages.length,
+      catalogNoRealDir: catalogNoRealDir.length,
+      catalogPackageSample: catalogNoRealDir.slice(0, 5).map((s) => {
+        const m = (s.metadata || {}) as Record<string, unknown>;
+        return {
+          id: s.service_id,
+          city: m.city,
+          area: m.area,
+          area_name: m.area_name,
+          direction: m.direction_remarks,
+          quotable: hasQuotablePricing(s),
+          inCandidates: candIds.size ? candIds.has(s.service_id) : 'no-cand-filter',
+          inFinalPool: finalPool.some((f) => f.service_id === s.service_id),
+        };
+      }),
+      medTok,
+    });
 
     // Place/area path with no city in metadata — auto-lock place and continue
     if (sess.needsContinueConfirm && !sess.city) {
@@ -6858,8 +7270,9 @@ export function advanceFunnel(
       continue;
     }
 
-    if (dirKeys.length > 1) {
-      return buildDirectionPicker(withDir, {
+    // 2+ sites, OR 1+ sites plus a city package → show picker (include package)
+    if (dirKeys.length > 1 || (dirKeys.length >= 1 && packageRows.length >= 1)) {
+      return buildDirectionPicker(pickerPool, {
         ...sess,
         needsContinueConfirm: false,
         candidateServiceIds: finalPool.map((s) => s.service_id),
@@ -6887,7 +7300,7 @@ export function advanceFunnel(
     if (dirKeys.length === 1 && withDir.length >= 1) {
       // Same-service echo must not auto-quote — show the site for confirm
       if (!allowAutoFinalize) {
-        return buildDirectionPicker(withDir, {
+        return buildDirectionPicker(pickerPool.length ? pickerPool : withDir, {
           ...sess,
           directionHint: undefined,
           needsContinueConfirm: false,
@@ -6955,8 +7368,8 @@ export function advanceFunnel(
     // same split as "Metro Station — Elevated" product chips. One rep per medium_type.
     if (sess.typesResolved && dirKeys.length <= 1) {
       if (!allowAutoFinalize) {
-        if (withDir.length >= 1) {
-          return buildDirectionPicker(withDir, {
+        if (withDir.length >= 1 || packageRows.length >= 1) {
+          return buildDirectionPicker(pickerPool.length ? pickerPool : withDir, {
             ...sess,
             directionHint: undefined,
             needsContinueConfirm: false,
@@ -7365,7 +7778,19 @@ function buildRowsForServices(
       || getLocalityFromMetaCity(svc)
       || extractCityFromDbService(svc)
       || '—';
-    const serviceName = (svc.service_name || '').split('·')[0].trim() || friendlyServiceLabel(svc);
+    const cinemaName = isSlabPricingService(svc)
+      ? String(
+          (svc.metadata as { area_name?: string; area?: string } | undefined)?.area_name
+          || (svc.metadata as { area?: string } | undefined)?.area
+          || '',
+        ).trim()
+      : '';
+    const baseServiceName =
+      (svc.service_name || '').split('·')[0].trim() || friendlyServiceLabel(svc);
+    // Review list: one card per cinema (not generic "Multi Rate Slabs")
+    const serviceName = cinemaName
+      ? `${baseServiceName} · ${cinemaName}`
+      : baseServiceName;
     const scopedDurationText = getServiceScopedUserMessage(originalText, serviceName);
     const parsedDuration = parseDurationFromUserText(scopedDurationText);
     const parsedDurationDays = parsedDuration
@@ -9970,6 +10395,223 @@ export function resolveMinQtyEdits(
   };
 }
 
+/** Attach selected / single auto slab keys; qty=1 for package billing. */
+function attachSlabKeysToRows(
+  rows: ConfirmationRow[],
+  services: DbService[],
+  session: ProgressiveSession,
+): ConfirmationRow[] {
+  return rows.map((row) => {
+    if (!row.serviceId) return row;
+    const svc = services.find((s) => s.service_id === row.serviceId);
+    if (!svc || !isSlabPricingService(svc)) return row;
+    const fromRow = row.slabKeys?.filter(Boolean);
+    const fromSession = session.slabKeysByServiceId?.[row.serviceId];
+    const slabs = listRateSlabs(svc);
+    let keys = fromRow?.length
+      ? fromRow
+      : fromSession?.length
+        ? fromSession
+        : undefined;
+    if (!keys?.length && slabs.length === 1) keys = [slabs[0].key];
+    if (!keys?.length) return row;
+    return { ...row, qty: 1, slabKeys: keys.map((k) => k.toLowerCase()) };
+  });
+}
+
+function rowsFromSlabKeysByServiceId(
+  keysByService: Record<string, string[]>,
+  services: DbService[],
+  session: ProgressiveSession,
+): ConfirmationRow[] {
+  const rows: ConfirmationRow[] = [];
+  for (const [serviceId, keys] of Object.entries(keysByService)) {
+    const cleanKeys = [...new Set((keys || []).map((k) => k.trim().toLowerCase()).filter(Boolean))];
+    if (!cleanKeys.length) continue;
+    const svc = services.find((s) => s.service_id === serviceId);
+    if (!svc || !isSlabPricingService(svc)) continue;
+    const city =
+      getDbCityLabel(svc)
+      || session.city
+      || extractCityFromDbService(svc)
+      || '—';
+    const cinemaName = String(
+      (svc.metadata as { area_name?: string; area?: string } | undefined)?.area_name
+      || (svc.metadata as { area?: string } | undefined)?.area
+      || '',
+    ).trim();
+    const baseName =
+      (svc.service_name || '').split('·')[0].trim() || friendlyServiceLabel(svc);
+    const serviceName = cinemaName ? `${baseName} · ${cinemaName}` : baseName;
+    rows.push({
+      service: serviceName,
+      qty: 1,
+      city,
+      serviceId: svc.service_id,
+      slabKeys: cleanKeys,
+    });
+  }
+  return rows;
+}
+
+function mergeRowsWithSlabPicks(
+  baseRows: ConfirmationRow[],
+  keysByService: Record<string, string[]>,
+  services: DbService[],
+  session: ProgressiveSession,
+): ConfirmationRow[] {
+  const nextSession: ProgressiveSession = {
+    ...session,
+    slabKeysByServiceId: keysByService,
+  };
+  const attached = attachSlabKeysToRows(baseRows, services, nextSession);
+  const fromPicks = rowsFromSlabKeysByServiceId(keysByService, services, nextSession);
+  if (!fromPicks.length) return attached;
+
+  const byId = new Map<string, ConfirmationRow>();
+  for (const row of attached) {
+    if (row.serviceId) byId.set(row.serviceId, row);
+  }
+  for (const row of fromPicks) {
+    if (!row.serviceId) continue;
+    const prev = byId.get(row.serviceId);
+    byId.set(row.serviceId, {
+      ...(prev || row),
+      ...row,
+      qty: 1,
+      slabKeys: row.slabKeys,
+    });
+  }
+  const pickedIds = new Set(Object.keys(keysByService).filter((id) => keysByService[id]?.length));
+  const ordered = fromPicks.map((r) => byId.get(r.serviceId!)!).filter(Boolean);
+  const extras = [...byId.values()].filter(
+    (r) => !r.serviceId || !pickedIds.has(r.serviceId),
+  ).filter((r) => {
+    if (!r.serviceId) return true;
+    const svc = services.find((s) => s.service_id === r.serviceId);
+    if (svc && isSlabPricingService(svc) && !r.slabKeys?.length && pickedIds.size > 0) {
+      return false;
+    }
+    return true;
+  });
+  return [...ordered, ...extras.filter((e) => !ordered.some((o) => o.serviceId === e.serviceId))];
+}
+
+function buildSlabAskResult(
+  rows: ConfirmationRow[],
+  services: DbService[],
+  session: ProgressiveSession,
+  collectedServiceIds: string[],
+): ProgressiveTurnResult | null {
+  const attached = attachSlabKeysToRows(rows, services, session);
+  const needing: DbService[] = [];
+  for (const row of attached) {
+    if (!row.serviceId || row.slabKeys?.length) continue;
+    const svc = services.find((s) => s.service_id === row.serviceId);
+    if (!svc || !isSlabPricingService(svc)) continue;
+    if (listRateSlabs(svc).length < 2) continue;
+    needing.push(svc);
+  }
+  if (!needing.length) return null;
+
+  const options: ProgressiveOption[] = [];
+
+  // 2+ cinemas → one shared package list (apply to ALL). Avoids 17×N chip grid
+  // that left only the cinemas the user happened to tap.
+  if (needing.length > 1) {
+    const byKey = new Map<string, { slab: ReturnType<typeof listRateSlabs>[0]; count: number }>();
+    for (const svc of needing) {
+      for (const slab of listRateSlabs(svc)) {
+        const prev = byKey.get(slab.key);
+        if (prev) {
+          prev.count += 1;
+          continue;
+        }
+        byKey.set(slab.key, { slab, count: 1 });
+      }
+    }
+    const sorted = [...byKey.entries()].sort((a, b) => {
+      const na = Number(a[0].replace(/\D/g, '')) || 0;
+      const nb = Number(b[0].replace(/\D/g, '')) || 0;
+      return na - nb;
+    });
+    for (const [key, { slab, count }] of sorted) {
+      const label = formatSlabPackageChipLabel(slab, false);
+      options.push({
+        id: `slab_pkg:${key}`,
+        label: count < needing.length ? `${label} (${count} cinemas)` : label,
+      });
+    }
+  } else {
+    const svc = needing[0];
+    for (const slab of listRateSlabs(svc)) {
+      options.push({
+        id: `slab:${svc.service_id}|${slab.key}`,
+        label: formatSlabChipLabel(slab),
+        serviceId: svc.service_id,
+      });
+    }
+  }
+  if (!options.length) return null;
+
+  const place =
+    String(
+      (needing[0].metadata as { area_name?: string } | undefined)?.area_name || '',
+    ).trim() || 'this location';
+
+  return {
+    step: 'pick_slab',
+    botText: compactFunnelReply(
+      needing.length === 1
+        ? `Rate options available for ${place}.`
+        : `Rate packages for ${needing.length} cinemas.`,
+      'Which rates do you need?',
+    ),
+    options,
+    allowMulti: true,
+    session: {
+      ...session,
+      pendingRows: attached,
+      collectedRows: attached,
+      collectedServiceIds,
+      candidateServiceIds: needing.map((s) => s.service_id),
+    },
+  };
+}
+
+function finalizeQuoteReady(
+  rows: ConfirmationRow[],
+  session: ProgressiveSession,
+  services: DbService[] | undefined,
+  collectedServiceIds: string[],
+): ProgressiveTurnResult {
+  let finalRows = rows;
+  if (services?.length) {
+    const ask = buildSlabAskResult(rows, services, session, collectedServiceIds);
+    if (ask) return ask;
+    finalRows = attachSlabKeysToRows(rows, services, session);
+  }
+  const raw = {
+    step: 'quote_ready' as const,
+    botText: copyQuoteReady(
+      { ...session, pendingRows: finalRows, collectedRows: finalRows },
+      finalRows,
+    ),
+    options: [] as ProgressiveOption[],
+    session: {
+      ...session,
+      pendingRows: finalRows,
+      collectedRows: finalRows,
+      collectedServiceIds,
+      pendingMedia: [],
+      segments: undefined,
+    },
+    quoteRows: finalRows,
+  };
+  const noted = withBatchUnavailableNote(raw.botText, raw.session);
+  return { ...raw, botText: noted.botText, session: noted.session };
+}
+
 function finalizeSelection(
   selected: DbService[],
   session: ProgressiveSession,
@@ -10139,27 +10781,7 @@ function finalizeSelection(
       return { ...raw, botText: noted.botText, session: noted.session };
     }
 
-    {
-      const raw = {
-        step: 'quote_ready' as const,
-        botText: copyQuoteReady(
-          { ...session, pendingRows: allRows, collectedRows: allRows },
-          allRows,
-        ),
-        options: [] as ProgressiveOption[],
-        session: {
-          ...session,
-          pendingRows: allRows,
-          collectedRows: allRows,
-          collectedServiceIds,
-          pendingMedia: [],
-          segments: undefined,
-        },
-        quoteRows: allRows,
-      };
-      const noted = withBatchUnavailableNote(raw.botText, raw.session);
-      return { ...raw, botText: noted.botText, session: noted.session };
-    }
+    return finalizeQuoteReady(allRows, session, services, collectedServiceIds);
   }
 
   if (anyExplicitQty && belowMin.length > 0 && restMedia.length === 0) {
@@ -10199,27 +10821,7 @@ function finalizeSelection(
     };
   }
 
-  {
-    const raw = {
-      step: 'quote_ready' as const,
-      botText: copyQuoteReady(
-        { ...session, pendingRows: collectedRows, collectedRows },
-        collectedRows,
-      ),
-      options: [] as ProgressiveOption[],
-      session: {
-        ...session,
-        pendingRows: collectedRows,
-        collectedRows,
-        collectedServiceIds,
-        pendingMedia: [],
-        segments: undefined,
-      },
-      quoteRows: collectedRows,
-    };
-    const noted = withBatchUnavailableNote(raw.botText, raw.session);
-    return { ...raw, botText: noted.botText, session: noted.session };
-  }
+  return finalizeQuoteReady(collectedRows, session, services, collectedServiceIds);
 }
 
 /**
@@ -10343,13 +10945,110 @@ function continueProgressiveActionInner(
   }
 
   if (actionId === 'yes_min' && session.pendingRows?.length) {
-    return {
-      step: 'quote_ready',
-      botText: copyQuoteReady(session, session.pendingRows),
-      options: [],
+    return finalizeQuoteReady(
+      session.pendingRows,
       session,
-      quoteRows: session.pendingRows,
+      services,
+      session.collectedServiceIds
+        || session.pendingRows.map((r) => r.serviceId).filter((id): id is string => !!id),
+    );
+  }
+
+  // Theatre / multi-rate slab package Confirm
+  // slab:serviceId|slab_N (single cinema) OR slab_pkg:slab_N (apply to all pending)
+  if (
+    actionId.startsWith('slab:')
+    || actionId.startsWith('slab_pkg:')
+    || (selectedIds?.length
+      && selectedIds.every((id) => id.startsWith('slab:') || id.startsWith('slab_pkg:')))
+  ) {
+    const ids = (selectedIds?.length ? selectedIds : [actionId]).filter(
+      (id) => id.startsWith('slab:') || id.startsWith('slab_pkg:'),
+    );
+    const keysByService: Record<string, string[]> = {
+      ...(session.slabKeysByServiceId || {}),
     };
+    const globalKeys: string[] = [];
+    for (const id of ids) {
+      if (id.startsWith('slab_pkg:')) {
+        const slabKey = id.slice('slab_pkg:'.length).trim().toLowerCase();
+        if (slabKey && !globalKeys.includes(slabKey)) globalKeys.push(slabKey);
+        continue;
+      }
+      const rest = id.slice(5);
+      const pipe = rest.lastIndexOf('|');
+      if (pipe < 0) continue;
+      const serviceId = rest.slice(0, pipe).trim();
+      const slabKey = rest.slice(pipe + 1).trim().toLowerCase();
+      if (!serviceId || !slabKey) continue;
+      const list = keysByService[serviceId] || [];
+      if (!list.includes(slabKey)) list.push(slabKey);
+      keysByService[serviceId] = list;
+    }
+    // Apply shared packages to every pending / candidate slab cinema that has them
+    if (globalKeys.length) {
+      const targetIds = new Set<string>([
+        ...(session.candidateServiceIds || []),
+        ...(session.pendingRows || [])
+          .map((r) => r.serviceId)
+          .filter((id): id is string => !!id),
+        ...(session.collectedRows || [])
+          .map((r) => r.serviceId)
+          .filter((id): id is string => !!id),
+      ]);
+      for (const serviceId of targetIds) {
+        const svc = services.find((s) => s.service_id === serviceId);
+        if (!svc || !isSlabPricingService(svc)) continue;
+        const available = new Set(listRateSlabs(svc).map((s) => s.key));
+        const apply = globalKeys.filter((k) => available.has(k));
+        if (!apply.length) continue;
+        const list = keysByService[serviceId] || [];
+        for (const k of apply) {
+          if (!list.includes(k)) list.push(k);
+        }
+        keysByService[serviceId] = list;
+      }
+    }
+    if (!Object.values(keysByService).some((ks) => ks.length > 0)) {
+      const reask = buildSlabAskResult(
+        session.pendingRows || session.collectedRows || [],
+        services,
+        session,
+        session.collectedServiceIds || [],
+      );
+      if (reask) {
+        return {
+          ...reask,
+          botText: compactFunnelReply(
+            'Please select at least one rate package.',
+            'Which rates do you need?',
+          ),
+        };
+      }
+    }
+    const nextSession: ProgressiveSession = {
+      ...session,
+      slabKeysByServiceId: keysByService,
+    };
+    const baseRows = session.pendingRows?.length
+      ? session.pendingRows
+      : (session.collectedRows || []);
+    const rows = mergeRowsWithSlabPicks(baseRows, keysByService, services, nextSession);
+    const ask = buildSlabAskResult(
+      rows,
+      services,
+      nextSession,
+      session.collectedServiceIds
+        || rows.map((r) => r.serviceId).filter((id): id is string => !!id),
+    );
+    if (ask) return ask;
+    return finalizeQuoteReady(
+      rows,
+      nextSession,
+      services,
+      session.collectedServiceIds
+        || rows.map((r) => r.serviceId).filter((id): id is string => !!id),
+    );
   }
 
   if (actionId === 'quit_min' || actionId === 'no_min' || actionId === 'quit_flow') {
@@ -10747,7 +11446,7 @@ function continueProgressiveActionInner(
           ? canonicalizeServiceName(session.batchServiceLabels[0])
           : '')
         || '';
-      return beginMultiCityMediumFlow(
+      return beginMultiCityMediumFlowOrTheatre(
         mediumToken,
         uniqueCities,
         {
@@ -11357,9 +12056,17 @@ function continueProgressiveActionInner(
         session: { ...session, medium: getMediumKey(use[0]), candidateServiceIds: withAreas.map((s) => s.service_id) },
       };
     }
-    const withDir = use.filter((s) => !!getDirectionLabel(s));
-    if (withDir.length > 1 && withAreas.length <= 1) {
-      return buildDirectionPicker(withDir, session, city || session.area || '');
+    const withDir = use.filter(hasRealSiteDirection);
+    const packageRows = use.filter(isCityPackageRow);
+    if (
+      (withDir.length > 1 || (withDir.length >= 1 && packageRows.length >= 1))
+      && withAreas.length <= 1
+    ) {
+      return buildDirectionPicker(
+        use.filter(hasQuotablePricing),
+        session,
+        city || session.area || '',
+      );
     }
     if (use.length > 1) {
       return {

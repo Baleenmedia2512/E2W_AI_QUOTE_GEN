@@ -144,6 +144,10 @@ export function confirmationRowsToReviewItems(
       ? (durationDays > 0 ? durationDays : dbMinDays)
       : 0;
 
+    const slabKeys = row.slabKeys?.length
+      ? [...new Set(row.slabKeys.map((k) => String(k).trim().toLowerCase()).filter(Boolean))]
+      : undefined;
+
     groups.set(groupKey, {
       id: newId(),
       service: row.service,
@@ -153,6 +157,7 @@ export function confirmationRowsToReviewItems(
       durationDays: resolvedDays,
       minimumQuantity: mins.minimumQuantity,
       minimumDurationDays: dbMinDays > 0 ? dbMinDays : undefined,
+      slabKeys,
     });
   }
 
@@ -185,6 +190,7 @@ export function reviewItemsToConfirmationRows(items: ReviewDraftItem[]): Confirm
         qty: item.quantity,
         city,
         durationDays: item.durationDays > 0 ? item.durationDays : undefined,
+        slabKeys: item.slabKeys?.length ? [...item.slabKeys] : undefined,
       });
     }
   }

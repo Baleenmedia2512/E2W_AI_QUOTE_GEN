@@ -174,11 +174,39 @@ function parseReview(meta: Record<string, unknown>): VendorReview | undefined {
   };
 }
 
+/** Parse metadata.slabs (object or JSON string). */
+function parseSlabsFromMeta(meta: Record<string, unknown>): Record<string, unknown> | undefined {
+  const raw = meta.slabs;
+  if (!raw) return undefined;
+  if (typeof raw === 'object' && !Array.isArray(raw)) {
+    return raw as Record<string, unknown>;
+  }
+  if (typeof raw === 'string' && raw.trim()) {
+    try {
+      const parsed = JSON.parse(raw) as unknown;
+      if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
+        return parsed as Record<string, unknown>;
+      }
+    } catch {
+      /* ignore */
+    }
+  }
+  return undefined;
+}
+
 /** Normalize Supabase row — quote fields only; cost fields ignored. */
 export function normalizeVendorRateRow(row: Record<string, unknown>): VendorRateRow | null {
+  let metaSource: unknown = row.metadata ?? row;
+  if (typeof metaSource === 'string' && metaSource.trim()) {
+    try {
+      metaSource = JSON.parse(metaSource);
+    } catch {
+      metaSource = row;
+    }
+  }
   const meta =
-    row.metadata && typeof row.metadata === 'object' && !Array.isArray(row.metadata)
-      ? (row.metadata as Record<string, unknown>)
+    metaSource && typeof metaSource === 'object' && !Array.isArray(metaSource)
+      ? (metaSource as Record<string, unknown>)
       : row;
 
   const pricingRaw = meta.pricing ?? row.pricing;
@@ -385,6 +413,12 @@ export function normalizeVendorRateRow(row: Record<string, unknown>): VendorRate
       'total_unit_cost',
     ),
     display_unit_price_per_day: pickCost('display_unit_price_per_day'),
+    slabs: parseSlabsFromMeta(meta),
+    pricing_mode: pickString(meta.pricing_mode, row.pricing_mode) || undefined,
+    margin_percent:
+      !isNaLike(meta.margin_percent) && Number.isFinite(Number(meta.margin_percent))
+        ? (meta.margin_percent as number | string)
+        : undefined,
   };
 }
 
@@ -423,7 +457,7 @@ export async function loadVendorRatesFromCloud(): Promise<VendorRateRow[]> {
         }
       }
 
-      const rank1Rows = (data || []).filter((row) => {
+      const rank1Rows = data.filter((row) => {
         const rank = Number(
           row.preferred_vendor_rank ??
             (row.metadata as Record<string, unknown> | undefined)?.preferred_vendor_rank,
@@ -668,20 +702,34 @@ function pricingRatesOnly(pricing: VendorPricingBlock): VendorPricingBlock {
  */
 export function applyVendorDetailsToService(svc: DbService, vendor: VendorRateRow): DbService {
   const pricing = vendor.pricing;
-  if (!pricing) return stripProposalPricing(svc);
+  const hasSlabs = !!(
+    vendor.slabs
+    && typeof vendor.slabs === 'object'
+    && Object.keys(vendor.slabs).some((k) => /^slab_\d+$/i.test(k))
+  );
+  if (!pricing && !hasSlabs) return stripProposalPricing(svc);
 
   const meta = { ...(svc.metadata || {}) } as Record<string, unknown>;
   const sources: Record<string, string> = {};
 
   // Rates only — strip pricing.min_qty / pricing.min_days
-  meta.pricing = pricingRatesOnly(pricing);
+  if (pricing) {
+    meta.pricing = pricingRatesOnly(pricing);
+  }
   if (vendor.medium) {
     meta.medium = vendor.medium;
   }
-  sources.pricing = DB_VENDOR;
-  sources.display_price = `${DB_VENDOR} (${pricing.display_price ?? 'NA'})`;
-  sources.printing_and_mounting_price = `${DB_VENDOR} (${pricing.printing_and_mounting_price ?? 'NA'})`;
-  sources.official_and_incidental_price = `${DB_VENDOR} (${pricing.official_and_incidental_price ?? 'NA'})`;
+  sources.pricing = pricing ? DB_VENDOR : (hasSlabs ? `${DB_VENDOR} (slabs)` : 'none');
+  sources.display_price = `${DB_VENDOR} (${pricing?.display_price ?? 'NA'})`;
+  sources.printing_and_mounting_price = `${DB_VENDOR} (${pricing?.printing_and_mounting_price ?? 'NA'})`;
+  sources.official_and_incidental_price = `${DB_VENDOR} (${pricing?.official_and_incidental_price ?? 'NA'})`;
+  if (hasSlabs) {
+    meta.slabs = vendor.slabs;
+    sources.slabs = `${DB_VENDOR} (${Object.keys(vendor.slabs!).length})`;
+  }
+  if (vendor.pricing_mode && !isNaLike(vendor.pricing_mode)) {
+    meta.pricing_mode = vendor.pricing_mode;
+  }
 
   // Qty: vendor top-level only — no pricing fallback
   if (vendor.min_qty != null && !isNaLike(vendor.min_qty)) {
@@ -1031,6 +1079,12 @@ export function applyVendorPricingForQuoteRow(
       hasUsableAmount(p.total_price);
     if (has) return svc;
   }
+  // Theatre multi-rate slabs — keep metadata.slabs (display_price is NA)
+  const slabs = (svc.metadata as { slabs?: unknown } | undefined)?.slabs;
+  if (slabs && typeof slabs === 'object' && !Array.isArray(slabs)) {
+    const hasSlab = Object.keys(slabs as object).some((k) => /^slab_\d+$/i.test(k));
+    if (hasSlab) return svc;
+  }
 
   const vendor = resolveVendorRateRow(
     serviceName,
@@ -1245,6 +1299,9 @@ export function vendorRatesToDbServices(
         mounting_cost: cleaned.mounting_cost,
         printing_and_mounting_cost: cleaned.printing_and_mounting_cost,
         display_unit_price_per_day: cleaned.display_unit_price_per_day,
+        slabs: cleaned.slabs,
+        pricing_mode: cleaned.pricing_mode,
+        margin_percent: cleaned.margin_percent,
       } as DbService['metadata'],
     };
 
