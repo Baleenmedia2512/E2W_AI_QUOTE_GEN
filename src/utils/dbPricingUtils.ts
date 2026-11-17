@@ -8,6 +8,11 @@ import { resolveDisplayUnitPricePerDay, resolveDisplayUnitCostPerDay, resolvePfC
 import type { DbService } from './serviceResolver';
 import { formatServiceDisplayName } from './serviceResolver';
 import { buildStructuredServiceHeading } from './serviceHeading';
+import {
+  buildLineItemsFromSlabs,
+  isSlabPricingService,
+  listRateSlabs,
+} from './slabPricingUtils';
 
 function isNaLike(value: unknown): boolean {
   if (value == null || value === '') return true;
@@ -238,12 +243,14 @@ function hasQuotablePricingFromFields(f: DbPricingFields): boolean {
   return f.displayPrice > 0 || f.productionPrice > 0;
 }
 
-/** True when display and/or P&F rate can be read from metadata.pricing. */
+/** True when display and/or P&F rate can be read — or usable rate slabs exist. */
 export function hasQuotablePricing(svc: DbService): boolean {
+  if (isSlabPricingService(svc)) return true;
   return hasQuotablePricingFromFields(extractDbPricingFields(svc));
 }
 
 function pricingCompletenessScore(svc: DbService): number {
+  if (isSlabPricingService(svc)) return 8 + listRateSlabs(svc).length;
   const f = extractDbPricingFields(svc);
   let score = 0;
   if (f.displayPrice > 0) score += 3;
@@ -266,13 +273,27 @@ export function pickPreferredDbService(candidates: DbService[]): DbService | nul
  * Build quote line items from vendor pricing:
  * - Display: raw display_price × qty × days (days from min_days / user)
  * - Printing & Fixing: one-time add-ons, no duration
+ * - Rate slabs (Theatre): one package line per selected slab key
  */
 export function buildLineItemsFromDbPricing(
   svc: DbService,
   quantity: number,
   userMessage: string,
   sectionIndex: number,
+  slabKeys?: string[],
 ): QuoteItem[] {
+  if (isSlabPricingService(svc)) {
+    const all = listRateSlabs(svc);
+    const keys =
+      slabKeys && slabKeys.length > 0
+        ? slabKeys
+        : all.length === 1
+          ? [all[0].key]
+          : [];
+    if (!keys.length) return [];
+    return buildLineItemsFromSlabs(svc, keys, sectionIndex);
+  }
+
   const f = extractDbPricingFields(svc);
   const m = svc.metadata || {};
   const meta = m as DbMetadataLike;

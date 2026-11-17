@@ -67,6 +67,22 @@ export interface QuoteItem {
   vendorGstPercent?: number;
 }
 
+/** Excel-style theatre rate card (optional — only on slab quotes). */
+export interface TheatreRateCardRow {
+  serviceId: string;
+  state: string;
+  city: string;
+  cinema: string;
+  rate10sWeek: number | null;
+  rate20sWeek: number | null;
+  rate20s3Weeks: number | null;
+  archMonth: number | null;
+  kioskMonth: number | null;
+  standeeMonth: number | null;
+  plasmaCount: number | null;
+  plasma10sWeek: number | null;
+}
+
 export interface Quote {
   id: string;
   quoteNumber: string;
@@ -83,6 +99,11 @@ export interface Quote {
   termsAndConditions: string;
   createdAt: Date;
   updatedAt: Date;
+  /**
+   * Theatre / multi-rate slab rate card appendix.
+   * Absent on standard Display+P&F quotes — do not use for bus/auto/hoarding.
+   */
+  theatreRateCards?: TheatreRateCardRow[];
 }
 
 export interface QuoteState {

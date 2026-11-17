@@ -14,6 +14,7 @@ When changing quote chat matching, intent, or Chip UI — especially `src/utils/
 - Ask **Type before City**. Never ask City, then Type, then City again.
 - 2+ options → ask; 0/NA → skip; exactly 1 city → **auto-lock** and continue (no OK Continue tap).
 - Chip/ask lists use **only** DB field values: `medium` · `medium_type` · `city` · `area_name` · `direction_remarks` (skip blank/NA; no medium_type whitelist).
+- **City package + sites:** Same medium/city may have a quotable row with **no real** `direction_remarks` (blank/NA, or direction that only echoes the city name) **and** many site rows with real directions. Direction step must show **both**: one package chip (`medium · city` from DB) **plus** site direction chips — never hide the package when sites exist. Do not treat `direction_remarks: "chennai"` / `area: "chennai"` as a real site or area.
 - **Exact catalog medium locked** → ask only that medium’s `medium_type` values. Never remount the family medium list (no special-case product names).
 - Bare family token (not an exact medium) → ask distinct `medium` values from matching DB rows.
 - Batch multi-service: after type/site Confirm, **keep `workQueue`** and continue next pending service — never clear the queue and jump to a final quote while services remain. Handoff copy = **“Now choosing …”** (not “Next — …”, which sounds like “next Auto”).

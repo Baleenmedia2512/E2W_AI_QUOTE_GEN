@@ -98,6 +98,8 @@ function mediumTypeFromSvc(svc: DbService): string | null {
   const raw = metaString(svc, 'medium_type', 'mediumType', 'type_of_medium');
   if (!raw) return null;
   const lower = raw.toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim();
+  // Pricing mode — not a Type chip / heading part
+  if (lower === 'multi rate slabs' || lower === 'multirateslabs') return null;
   if (lower === 'fl' || lower === 'front lit') return 'Frontlit';
   if (lower === 'nl' || lower === 'non lit' || lower === 'not lit') return 'Nonlit';
   return raw;

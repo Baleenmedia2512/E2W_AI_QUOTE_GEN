@@ -11,6 +11,7 @@ import {
   stripMediumTypeFromDisplayName,
 } from './serviceResolver';
 import { hasQuotablePricing, pickPreferredDbService } from './dbPricingUtils';
+import { isSlabPricingService } from './slabPricingUtils';
 import type { ResolvedLocation } from '../types/location';
 
 /** Known city keys used across the app (lowercase). DB locations may add more at runtime. */
@@ -1257,6 +1258,8 @@ export function mergeGroupedServicesByCategory<
 /** Read minimum order quantity from vendor top-level metadata only (never pricing.min_qty). */
 export function getMinQuantityFromDbService(svc: DbService | null | undefined): number | null {
   if (!svc) return null;
+  // Slab packages bill as qty=1 — catalog min_qty is screen inventory, not quote min.
+  if (isSlabPricingService(svc)) return null;
   const m = svc.metadata || {};
   const raw =
     (m as { min_qty?: number | string }).min_qty ??
@@ -1283,6 +1286,8 @@ export interface ConfirmationRow {
   serviceId?: string;
   /** Optional duration override selected by the minimum-duration warning. */
   durationDays?: number;
+  /** Selected rate-slab keys (slab_1 …) for multi_rate_slabs catalogs. */
+  slabKeys?: string[];
 }
 
 /** Min-qty check for confirm-table rows BEFORE sending to Gemini. */

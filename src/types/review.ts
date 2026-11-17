@@ -17,6 +17,8 @@ export interface ReviewDraftItem {
   minimumQuantity?: number;
   /** From metadata.min_days (legacy min_duration). Undefined when NA / missing. */
   minimumDurationDays?: number;
+  /** Selected slab keys for theatre multi-rate catalogs. */
+  slabKeys?: string[];
 }
 
 export type ReviewDraftSource = 'ai' | 'manual' | 'legacy';

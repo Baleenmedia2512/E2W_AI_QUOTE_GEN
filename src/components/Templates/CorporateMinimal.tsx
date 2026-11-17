@@ -5,6 +5,7 @@ import { TemplateProps } from '../../types';
 import { QuoteItem } from '../../types/quote';
 import { ReferenceImages } from './ReferenceImages';
 import { isMultiServiceQuote, groupItemsByServiceType, DEFAULT_GENERAL_TERMS, getServiceGroupHeading, extractServiceType, buildExecutiveSummaryRows, buildPricingBreakdownLines, ExecutiveSummaryRow, PricingBreakdownLine } from '../../utils/quoteGrouping';
+import { TheatreRateCard } from './TheatreRateCard';
 import { formatServiceHeadingDisplay } from '../../utils/serviceHeading';
 import { resolveMergedDisplayTermEntries, groupDisplayTermsBySection, type DisplayTerm } from '../../utils/termsMerge';
 import { segmentBreakdownFormula } from '../../utils/breakdownFormulaDisplay';
@@ -470,6 +471,8 @@ export const CorporateMinimal: React.FC<TemplateProps> = ({
 }) => {
   const { company, client, quote } = data;
   const toast = useToast();
+  /** Theatre slab quotes: rate card only — no Executive Summary / Pricing Breakdown. */
+  const isTheatreSlabQuote = !!(quote.theatreRateCards && quote.theatreRateCards.length > 0);
 
   /** Per-service reviews from ReferenceImages — used to group identical reviews. */
   const [reviewsByKey, setReviewsByKey] = useState<
@@ -1179,30 +1182,39 @@ export const CorporateMinimal: React.FC<TemplateProps> = ({
             className="quote-items-section"
             id={quote.items[0] ? previewServiceSectionIdFromItem(quote.items[0]) : undefined}
           >
-            <div data-pdf-block="atomic" style={{ paddingBottom: '1px' }}>
-              <h3 style={{ textAlign: 'center', fontSize: '16px', fontWeight: '700', textTransform: 'uppercase', letterSpacing: '0.08em', color: '#3b0a14', margin: '0 0 8px 0', paddingBottom: '10px', borderBottom: '2px solid #2980b9' }}>
-                {formatServiceHeadingDisplay(
-                  quote.items[0]?.serviceName
-                    || extractServiceType(quote.items[0]?.description || ''),
-                )}
-              </h3>
-              <h3 className="smart-section-heading" style={{ fontSize: '15px', fontWeight: '700', textTransform: 'uppercase', letterSpacing: '0.06em', color: '#1a1a2e', margin: '16px 0 14px 0', paddingBottom: '8px', borderBottom: '2px solid #2980b9' }}>
-                <span className="smart-heading-bar" />
-                1. Pricing Breakdown
-              </h3>
-            </div>
-            <div data-pdf-block="table">
-              {renderPricingBreakdownTable(quote.items)}
-            </div>
-            {/* Spec + Reference Images in same section — virtual page engine packs them together */}
+            {isTheatreSlabQuote ? (
+              <div data-pdf-block="atomic" style={{ paddingBottom: '8px' }}>
+                <TheatreRateCard rows={quote.theatreRateCards!} />
+              </div>
+            ) : (
+              <>
+                <div data-pdf-block="atomic" style={{ paddingBottom: '1px' }}>
+                  <h3 style={{ textAlign: 'center', fontSize: '16px', fontWeight: '700', textTransform: 'uppercase', letterSpacing: '0.08em', color: '#3b0a14', margin: '0 0 8px 0', paddingBottom: '10px', borderBottom: '2px solid #2980b9' }}>
+                    {formatServiceHeadingDisplay(
+                      quote.items[0]?.serviceName
+                        || extractServiceType(quote.items[0]?.description || ''),
+                    )}
+                  </h3>
+                  <h3 className="smart-section-heading" style={{ fontSize: '15px', fontWeight: '700', textTransform: 'uppercase', letterSpacing: '0.06em', color: '#1a1a2e', margin: '16px 0 14px 0', paddingBottom: '8px', borderBottom: '2px solid #2980b9' }}>
+                    <span className="smart-heading-bar" />
+                    1. Pricing Breakdown
+                  </h3>
+                </div>
+                <div data-pdf-block="table">
+                  {renderPricingBreakdownTable(quote.items)}
+                </div>
+              </>
+            )}
+            {/* Theatre: refs + one review, no specification. Other media unchanged. */}
             <ReferenceImages
               proposalPages={data.proposalPages}
               proposalPageMap={data.proposalPageMap}
               items={quote.items}
               terms={[]}
-              remark={collectServiceRemarks(quote.items)}
-              remarkEditable={Boolean(editable && onDataChange)}
-              onRemarkChange={(r) => commitSpecRemark(quote.items, r)}
+              noSpec={isTheatreSlabQuote}
+              remark={isTheatreSlabQuote ? undefined : collectServiceRemarks(quote.items)}
+              remarkEditable={isTheatreSlabQuote ? false : Boolean(editable && onDataChange)}
+              onRemarkChange={isTheatreSlabQuote ? undefined : (r) => commitSpecRemark(quote.items, r)}
               serviceKey={(() => {
                 const city = (quote.items[0]?.city || '').trim().toLowerCase();
                 const st = extractServiceType(quote.items[0]?.description || '').toLowerCase();
@@ -1267,14 +1279,22 @@ export const CorporateMinimal: React.FC<TemplateProps> = ({
         </div>
 
         <div className="quote-items-section">
-          <div data-pdf-block="atomic" style={{ paddingBottom: '1px' }}>
-            <h3 style={{ textAlign: 'center', fontSize: '16px', fontWeight: '700', textTransform: 'uppercase', letterSpacing: '0.08em', color: '#3b0a14', margin: '0 0 18px 0', paddingBottom: '10px', borderBottom: '2px solid #2980b9' }}>
-              Executive Pricing Summary
-            </h3>
-          </div>
-            <div data-pdf-block="table">
-              {renderItemsTable(quote.items)}
+          {isTheatreSlabQuote ? (
+            <div data-pdf-block="atomic" style={{ paddingBottom: '8px' }}>
+              <TheatreRateCard rows={quote.theatreRateCards!} />
             </div>
+          ) : (
+            <>
+              <div data-pdf-block="atomic" style={{ paddingBottom: '1px' }}>
+                <h3 style={{ textAlign: 'center', fontSize: '16px', fontWeight: '700', textTransform: 'uppercase', letterSpacing: '0.08em', color: '#3b0a14', margin: '0 0 18px 0', paddingBottom: '10px', borderBottom: '2px solid #2980b9' }}>
+                  Executive Pricing Summary
+                </h3>
+              </div>
+              <div data-pdf-block="table">
+                {renderItemsTable(quote.items)}
+              </div>
+            </>
+          )}
         </div>
 
         {/* Company Contact Footer */}
@@ -1283,51 +1303,70 @@ export const CorporateMinimal: React.FC<TemplateProps> = ({
 
       {/* Pages 2+: Service detail sections */}
       <div id="pdf-page-services" className="template-corporate-minimal">
-        {serviceGroups.map((group, groupIndex) => {
-          return (
-            <div
-              key={groupIndex}
-              id={previewServiceSectionId(group)}
-              className="preview-service-section"
-              data-toc-section="service"
-            >
-              <div className="quote-items-section">
-                <div data-pdf-block="atomic" style={{ paddingBottom: '1px' }}>
-                  <h3 style={{ marginBottom: '8px', fontSize: '18px', fontWeight: '700', color: '#750926', textAlign: 'center' }}>
-                    {getServiceGroupHeading(group)}
-                  </h3>
-                  <h3 className="smart-section-heading" style={{ fontSize: '15px', fontWeight: '700', textTransform: 'uppercase', letterSpacing: '0.06em', color: '#1a1a2e', margin: '24px 0 14px 0', paddingBottom: '8px', borderBottom: '2px solid #2980b9' }}>
-                    <span className="smart-heading-bar" />
-                    1. Pricing Breakdown
-                  </h3>
+        {isTheatreSlabQuote ? (
+          /* Theatre: one refs/review block (no spec), one T&C — not per-cinema copies */
+          <div
+            id="preview-theatre-details"
+            className="preview-service-section"
+            data-toc-section="service"
+          >
+            <ReferenceImages
+              proposalPages={data.proposalPages}
+              proposalPageMap={data.proposalPageMap}
+              items={quote.items}
+              terms={[]}
+              noSpec
+              hideReview={false}
+              serviceKey="theatre-slab"
+              onDataReady={handleServiceDataReady}
+            />
+          </div>
+        ) : (
+          serviceGroups.map((group, groupIndex) => {
+            return (
+              <div
+                key={groupIndex}
+                id={previewServiceSectionId(group)}
+                className="preview-service-section"
+                data-toc-section="service"
+              >
+                <div className="quote-items-section">
+                  <div data-pdf-block="atomic" style={{ paddingBottom: '1px' }}>
+                    <h3 style={{ marginBottom: '8px', fontSize: '18px', fontWeight: '700', color: '#750926', textAlign: 'center' }}>
+                      {getServiceGroupHeading(group)}
+                    </h3>
+                    <h3 className="smart-section-heading" style={{ fontSize: '15px', fontWeight: '700', textTransform: 'uppercase', letterSpacing: '0.06em', color: '#1a1a2e', margin: '24px 0 14px 0', paddingBottom: '8px', borderBottom: '2px solid #2980b9' }}>
+                      <span className="smart-heading-bar" />
+                      1. Pricing Breakdown
+                    </h3>
+                  </div>
+                  <div data-pdf-block="table">
+                    {renderPricingBreakdownTable(group.items)}
+                  </div>
                 </div>
-                <div data-pdf-block="table">
-                  {renderPricingBreakdownTable(group.items)}
-                </div>
+
+                <ReferenceImages
+                  proposalPages={data.proposalPages}
+                  proposalPageMap={data.proposalPageMap}
+                  items={group.items}
+                  terms={[]}
+                  remark={collectServiceRemarks(group.items)}
+                  remarkEditable={Boolean(editable && onDataChange)}
+                  onRemarkChange={(r) => commitSpecRemark(group.items, r)}
+                  serviceKey={(() => {
+                    const city = group.city?.trim().toLowerCase();
+                    return city && city !== '\u2014' ? `${city}|${group.serviceType.toLowerCase()}` : group.serviceType.toLowerCase();
+                  })()}
+                  hideReview={!!sharedReview}
+                  onDataReady={handleServiceDataReady}
+                />
               </div>
+            );
+          })
+        )}
 
-              {/* Reference images / spec / review — T&C is after all details, before bank */}
-              <ReferenceImages
-                proposalPages={data.proposalPages}
-                proposalPageMap={data.proposalPageMap}
-                items={group.items}
-                terms={[]}
-                remark={collectServiceRemarks(group.items)}
-                remarkEditable={Boolean(editable && onDataChange)}
-                onRemarkChange={(r) => commitSpecRemark(group.items, r)}
-                serviceKey={(() => {
-                  const city = group.city?.trim().toLowerCase();
-                  return city && city !== '\u2014' ? `${city}|${group.serviceType.toLowerCase()}` : group.serviceType.toLowerCase();
-                })()}
-                hideReview={!!sharedReview}
-                onDataReady={handleServiceDataReady}
-              />
-            </div>
-          );
-        })}
-
-        {/* Identical reviews across all services → one card before T&C / bank */}
-        {sharedReview && (
+        {/* Identical reviews across all services → one card before T&C / bank (non-theatre) */}
+        {!isTheatreSlabQuote && sharedReview && (
           <div className="smart-section" data-pdf-block="atomic" id="preview-shared-review">
             <h3 className="smart-section-heading">
               <span className="smart-heading-bar" />
@@ -1365,7 +1404,7 @@ export const CorporateMinimal: React.FC<TemplateProps> = ({
           </div>
         )}
 
-        {/* T&C after all service details — immediately before bank details */}
+        {/* One merged T&C for the quote (theatre + multi) */}
         <div id="pdf-page-terms" className="terms-section" data-pdf-block="list">
           {(() => {
             const multiTerms = filterGSTDisplayTerms(
