@@ -11,6 +11,7 @@ import proposalsRoutes from './routes/proposals';
 import profileRoutes from './routes/profile';
 import passwordResetRoutes from './routes/passwordReset';
 import quoteEmailRoutes from './routes/quoteEmail';
+import mediaProxyRoutes from './routes/mediaProxy';
 import { uploadsRoot } from './lib/uploads';
 
 const app = express();
@@ -36,6 +37,7 @@ app.use('/api/quotes', quotesRoutes);
 app.use('/api/quotes/email', quoteEmailRoutes);
 app.use('/api/proposals', proposalsRoutes);
 app.use('/api/profile', profileRoutes);
+app.use('/api/media-proxy', mediaProxyRoutes);
 
 app.use((err: unknown, _req: express.Request, res: express.Response, _next: express.NextFunction) => {
   console.error('API error:', err);
