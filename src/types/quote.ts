@@ -81,6 +81,12 @@ export interface TheatreRateCardRow {
   standeeMonth: number | null;
   plasmaCount: number | null;
   plasma10sWeek: number | null;
+  /**
+   * Packages the user picked (slab_4, slab_5, …).
+   * When set, UI/PDF show only these rates — not the full sheet.
+   * Absent on older quotes → show all non-null rates (legacy).
+   */
+  selectedSlabKeys?: string[];
 }
 
 export interface Quote {
