@@ -1,18 +1,24 @@
 /**
  * Shared MilesWeb public storage:
  *   NEXT_PUBLIC_UPLOADS_BASE_URL / VITE_UPLOADS_BASE_URL
- *   → https://baleenmedia.in/costmanager/proposal-images/...
+ *   → https://rms.baleenmedia.com/proposal-images/...
  *
- * Leftover wellnessvalley / supabase / relative /uploads paths rewrite to that base.
+ * Leftover wellnessvalley / supabase / costmanager / relative /uploads paths
+ * rewrite onto that base.
  */
 
 const UPLOADS_BASE = (
   import.meta.env.NEXT_PUBLIC_UPLOADS_BASE_URL
   || import.meta.env.VITE_UPLOADS_BASE_URL
-  || 'https://baleenmedia.in/costmanager'
+  || 'https://rms.baleenmedia.com'
 ).replace(/\/$/, '');
 
+/** Hosts/path prefixes that store the same proposal-images object keys. */
 const REMOTE_IMAGE_MARKERS = [
+  '://rms.baleenmedia.com/proposal-images/',
+  '://www.rms.baleenmedia.com/proposal-images/',
+  '://baleenmedia.com/costmanager/proposal-images/',
+  '://www.baleenmedia.com/costmanager/proposal-images/',
   '://baleenmedia.in/costmanager/proposal-images/',
   '://www.baleenmedia.in/costmanager/proposal-images/',
   '://wellnessvalley.in/costmanager/proposal-images/',
@@ -51,7 +57,8 @@ export function resolveMediaUrl(raw: string | null | undefined): string | undefi
 
   // Old Quote Buddy local proxy paths → shared MilesWeb public base
   if (trimmed.startsWith('/uploads/')) {
-    return `${UPLOADS_BASE}/${trimmed.slice('/uploads/'.length)}`;
+    const rest = trimmed.slice('/uploads/'.length).replace(/^proposal-images\//i, '');
+    return toPublicProposalImageUrl(rest);
   }
 
   if (/^https?:\/\//i.test(trimmed)) {

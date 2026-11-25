@@ -128,11 +128,13 @@ router.post('/push-baleen', async (req, res) => {
     }
 
     if (!upstream.ok) {
+      const looksLikeHtml = /^\s*</.test(text) || /<!DOCTYPE/i.test(text);
       const detail =
         (typeof parsed.error === 'string' && parsed.error)
         || (typeof parsed.message === 'string' && parsed.message)
-        || text.slice(0, 240)
-        || `Baleen Media returned HTTP ${upstream.status}`;
+        || (looksLikeHtml
+          ? `Baleen Media returned HTTP ${upstream.status} (HTML page — check BALEEN_MEDIA_URL, expected …/api/integrations/quote-buddy/inbox).`
+          : (text.slice(0, 240) || `Baleen Media returned HTTP ${upstream.status}`));
       return res.status(upstream.status >= 400 && upstream.status < 600 ? upstream.status : 502).json({
         error: detail,
       });

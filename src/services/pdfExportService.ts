@@ -30,9 +30,26 @@ import {
   pickDesignSpecificationDetailFields,
 } from '../utils/specMaterial';
 import { useAppStore } from '../store';
+import { resolveMediaUrl } from '../utils/resolveMediaUrl';
 
 const isMobile = () => Capacitor.isNativePlatform();
 const DEBUG_PDF_EXPORT = true;
+
+const isHttpImageUrl = (url: string | undefined): boolean =>
+  !!url && /^https?:\/\//i.test(url.trim());
+
+const isUsableImageSrc = (url: string | undefined): boolean => {
+  if (!url || typeof url !== 'string') return false;
+  const t = url.trim();
+  if (!t || /^(null|undefined)$/i.test(t)) return false;
+  if (t.startsWith('data:image/')) return t.length > 800;
+  if (t.startsWith('blob:')) return true;
+  return isHttpImageUrl(t);
+};
+
+/** Browser → same-origin proxy → CDN (avoids CORS failures during PDF prefetch). */
+const viaMediaProxy = (url: string): string =>
+  `/api/media-proxy?url=${encodeURIComponent(url)}`;
 
 const compactUrl = (url: string): string => {
   if (!url) return '(empty)';
@@ -335,11 +352,20 @@ const fetchPdfDataFromDB = async (_documentIds: string[]): Promise<ServicePdfDat
 
     for (const row of services) {
       const images: Array<{ url: string; type: string }> = row.metadata?.images || [];
-      const refImages = images.filter((img) => img.type === 'reference').map((img) => img.url);
-      const specImages = images.filter((img) => img.type === 'specification').map((img) => img.url);
+      const resolveImg = (url: string | undefined): string | undefined =>
+        resolveMediaUrl(url) || (url && isHttpImageUrl(url) ? url.trim() : undefined);
+      const refImages = images
+        .filter((img) => img.type === 'reference')
+        .map((img) => resolveImg(img.url))
+        .filter((u): u is string => !!u);
+      const specImages = images
+        .filter((img) => img.type === 'specification')
+        .map((img) => resolveImg(img.url))
+        .filter((u): u is string => !!u);
       // Fallbacks when images[] lacks typed entries
       if (refImages.length === 0 && typeof row.metadata?.reference_image === 'string') {
-        refImages.push(row.metadata.reference_image);
+        const fallback = resolveImg(row.metadata.reference_image);
+        if (fallback) refImages.push(fallback);
       }
       const reviewRaw = row.metadata?.review;
       const customerReviewUrl = typeof row.metadata?.customer_review === 'string' ? row.metadata.customer_review : null;
@@ -467,8 +493,13 @@ const mergePdfData = (dbData: ServicePdfData[], domData: ServicePdfData[]): Serv
     if (!domEntry) return dbEntry;
     usedDom.add(domEntry.serviceKey);
 
-    const useDomRefs = (domEntry.refImages?.length ?? 0) > 0;
-    const useDomSpecImgs = (domEntry.specImages?.length ?? 0) > 0;
+    // Prefer DB https URLs for refs/specs — DOM crops often fail/empty in PDF export.
+    const dbHttpRefs = (dbEntry.refImages || []).filter(isHttpImageUrl);
+    const domUsableRefs = (domEntry.refImages || []).filter(isUsableImageSrc);
+    const useDomRefs = dbHttpRefs.length === 0 && domUsableRefs.length > 0;
+    const dbHttpSpecImgs = (dbEntry.specImages || []).filter(isHttpImageUrl);
+    const domUsableSpecImgs = (domEntry.specImages || []).filter(isUsableImageSrc);
+    const useDomSpecImgs = dbHttpSpecImgs.length === 0 && domUsableSpecImgs.length > 0;
     const domHasTables = domEntry.specGroups?.some((g) => (g.tableRows?.length ?? 0) > 0) ?? false;
     const dbHasTables = dbEntry.specGroups?.some((g) => (g.tableRows?.length ?? 0) > 0) ?? false;
     const useDomSpecGroups =
@@ -484,8 +515,10 @@ const mergePdfData = (dbData: ServicePdfData[], domData: ServicePdfData[]): Serv
 
     return {
       ...dbEntry,
-      refImages: useDomRefs ? domEntry.refImages : dbEntry.refImages,
-      specImages: useDomSpecImgs ? domEntry.specImages : dbEntry.specImages,
+      refImages: useDomRefs ? domUsableRefs : (dbHttpRefs.length ? dbHttpRefs : dbEntry.refImages),
+      specImages: useDomSpecImgs
+        ? domUsableSpecImgs
+        : (dbHttpSpecImgs.length ? dbHttpSpecImgs : dbEntry.specImages),
       specGroups: useDomSpecGroups
         ? domEntry.specGroups
         : dbEntry.specGroups?.length
@@ -528,39 +561,50 @@ const prefetchImagesToBase64 = async (pdfData: ServicePdfData[]): Promise<Servic
       });
       return { base64: url, ...dims };
     }
-    try {
-      console.groupCollapsed(`🔍 [PREFETCH] ${label}`);
-      console.log(`  src: ${url.slice(0, 100)}`);
-
-      const res = await fetch(url, { mode: 'cors' });
+    const fetchAsBase64 = async (fetchUrl: string, via: string) => {
+      const res = await fetch(fetchUrl, { mode: 'cors' });
       const status = res.status;
       const ct = res.headers.get('content-type') || 'unknown';
-      console.log(`  fetch: ${res.ok ? '✅ SUCCESS' : '❌ FAILED'} | status=${status} | contentType=${ct}`);
-
-      if (!res.ok) {
-        console.groupEnd();
-        return { base64: url, width: 0, height: 0 };
-      }
-
+      console.log(`  fetch(${via}): ${res.ok ? '✅ SUCCESS' : '❌ FAILED'} | status=${status} | contentType=${ct}`);
+      if (!res.ok) return null;
       const blob = await res.blob();
+      if (!blob.size || (ct.includes('json') && blob.size < 500)) return null;
       console.log(`  blobSize: ${(blob.size / 1024).toFixed(1)}KB`);
-
       const base64 = await new Promise<string>((resolve) => {
         const reader = new FileReader();
         reader.onload = () => resolve(reader.result as string);
         reader.readAsDataURL(blob);
       });
-
+      if (!base64.startsWith('data:image/')) return null;
       const img = new window.Image();
       const dims = await new Promise<{ width: number; height: number }>((resolve) => {
         img.onload = () => resolve({ width: img.naturalWidth, height: img.naturalHeight });
         img.onerror = () => resolve({ width: 0, height: 0 });
         img.src = base64;
       });
-      console.log(`  dimensions: ${dims.width}×${dims.height}px | aspect=${dims.width && dims.height ? (dims.width/dims.height).toFixed(2) : 'N/A'}`);
+      console.log(`  dimensions: ${dims.width}×${dims.height}px | aspect=${dims.width && dims.height ? (dims.width / dims.height).toFixed(2) : 'N/A'}`);
       console.log(`  base64 preview: ${base64.slice(0, 40)}... len=${base64.length}`);
-      console.groupEnd();
       return { base64, ...dims };
+    };
+
+    try {
+      console.groupCollapsed(`🔍 [PREFETCH] ${label}`);
+      console.log(`  src: ${url.slice(0, 120)}`);
+
+      let result = await fetchAsBase64(url, 'direct').catch((err) => {
+        console.warn(`  direct fetch error: ${err}`);
+        return null;
+      });
+
+      if (!result && isHttpImageUrl(url)) {
+        result = await fetchAsBase64(viaMediaProxy(url), 'proxy').catch((err) => {
+          console.warn(`  proxy fetch error: ${err}`);
+          return null;
+        });
+      }
+
+      console.groupEnd();
+      return result || { base64: url, width: 0, height: 0 };
     } catch (err) {
       console.error(`  ❌ EXCEPTION: ${err}`);
       console.groupEnd();
@@ -575,11 +619,18 @@ const prefetchImagesToBase64 = async (pdfData: ServicePdfData[]): Promise<Servic
     const specResults = await Promise.all(
       (entry.specImages || []).map((url, i) => convertUrl(url, `${entry.serviceKey} spec[${i}]`))
     );
+    // Drop failed prefetches so PDF does not reserve blank "Reference Image(s)" space.
+    const okRefs = refResults.filter(
+      (r) => r.width > 0 && r.height > 0 && r.base64.startsWith('data:image/'),
+    );
+    const okSpecs = specResults.filter(
+      (r) => r.width > 0 && r.height > 0 && r.base64.startsWith('data:image/'),
+    );
     return {
       ...entry,
-      refImages: refResults.map(r => r.base64),
-      refImageDimensions: refResults.map(r => ({ width: r.width, height: r.height })),
-      specImages: specResults.map(r => r.base64),
+      refImages: okRefs.map((r) => r.base64),
+      refImageDimensions: okRefs.map((r) => ({ width: r.width, height: r.height })),
+      specImages: okSpecs.map((r) => r.base64),
     };
   }));
 };
