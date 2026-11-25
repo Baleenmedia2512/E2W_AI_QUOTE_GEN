@@ -94,6 +94,7 @@ export interface Message {
     | 'min_duration_confirm'
     | 'single_location_confirm'
     | 'qty_or_duration_clarify'
+    | 'pick_slab'
     | 'quote_ready'
     | 'small_talk';
   progressiveOptions?: Array<{
