@@ -1184,7 +1184,10 @@ export const CorporateMinimal: React.FC<TemplateProps> = ({
           >
             {isTheatreSlabQuote ? (
               <div data-pdf-block="atomic" style={{ paddingBottom: '8px' }}>
-                <TheatreRateCard rows={quote.theatreRateCards!} />
+                <TheatreRateCard
+                  rows={quote.theatreRateCards!}
+                  gstPercentage={quote.gstPercentage || 18}
+                />
               </div>
             ) : (
               <>
@@ -1281,7 +1284,10 @@ export const CorporateMinimal: React.FC<TemplateProps> = ({
         <div className="quote-items-section">
           {isTheatreSlabQuote ? (
             <div data-pdf-block="atomic" style={{ paddingBottom: '8px' }}>
-              <TheatreRateCard rows={quote.theatreRateCards!} />
+              <TheatreRateCard
+                rows={quote.theatreRateCards!}
+                gstPercentage={quote.gstPercentage || 18}
+              />
             </div>
           ) : (
             <>

@@ -1,11 +1,13 @@
 /**
  * Theatre Screen Ad rate card — cinema cards (client-friendly).
- * Colors match Corporate Minimal navy/blue. Theatre-only.
+ * Shows only selected packages + 18% GST (excl / incl).
+ * Theatre-only — does not affect other quotes.
  */
 
 import React from 'react';
-import { Box, Text, SimpleGrid, VStack } from '@chakra-ui/react';
+import { Box, Text, SimpleGrid, VStack, HStack } from '@chakra-ui/react';
 import type { TheatreRateCardRow } from '../../types/quote';
+import { theatreRateFieldsForKeys } from '../../utils/slabPricingUtils';
 
 const NAVY = '#1a3a5c';
 const BLUE = '#2980b9';
@@ -27,16 +29,21 @@ function RateCell({
   value,
   kind = 'money',
   alt,
+  gstPct,
 }: {
   label: string;
   value: number | null | undefined;
   kind?: 'money' | 'count';
   alt?: boolean;
+  gstPct: number;
 }) {
+  const hasMoney = kind === 'money' && value != null && value > 0;
   const display =
     kind === 'count'
       ? (value != null && value > 0 ? String(value) : '—')
       : fmt(value);
+  const incl = hasMoney ? value! * (1 + gstPct / 100) : null;
+
   return (
     <Box
       px={{ base: 3, md: 4 }}
@@ -51,13 +58,42 @@ function RateCell({
       </Text>
       <Text fontSize={{ base: '15px', md: '16px' }} fontWeight="700" color={NAVY}>
         {display}
+        {hasMoney ? (
+          <Text as="span" fontSize="11px" fontWeight="500" color="#636e72">
+            {' '}
+            excl. GST
+          </Text>
+        ) : null}
       </Text>
+      {incl != null ? (
+        <Text fontSize="12px" fontWeight="600" color={BLUE} mt={0.5}>
+          {fmt(incl)} incl. GST @ {gstPct}%
+        </Text>
+      ) : null}
     </Box>
   );
 }
 
-export const TheatreRateCard: React.FC<{ rows: TheatreRateCardRow[] }> = ({ rows }) => {
+function cinemaMoneySubtotal(row: TheatreRateCardRow): number {
+  const fields = theatreRateFieldsForKeys(row.selectedSlabKeys);
+  let sum = 0;
+  for (const f of fields) {
+    if (f.kind !== 'money') continue;
+    const v = row[f.field];
+    if (typeof v === 'number' && v > 0) sum += v;
+  }
+  return sum;
+}
+
+export const TheatreRateCard: React.FC<{
+  rows: TheatreRateCardRow[];
+  gstPercentage?: number;
+}> = ({ rows, gstPercentage = 18 }) => {
   if (!rows?.length) return null;
+  const gstPct = gstPercentage > 0 ? gstPercentage : 18;
+  const grandExcl = rows.reduce((sum, row) => sum + cinemaMoneySubtotal(row), 0);
+  const grandGst = grandExcl * (gstPct / 100);
+  const grandIncl = grandExcl + grandGst;
 
   return (
     <Box mt={4} mb={5}>
@@ -68,12 +104,15 @@ export const TheatreRateCard: React.FC<{ rows: TheatreRateCardRow[] }> = ({ rows
         textTransform="uppercase"
         color={NAVY}
         textAlign="center"
-        mb={4}
+        mb={2}
         pb={2}
         borderBottomWidth="2px"
         borderBottomColor={BLUE}
       >
         Theatre Screen Ad — Rate Card
+      </Text>
+      <Text fontSize="sm" color={BLUE} fontWeight="600" textAlign="center" mb={4}>
+        All package rates exclusive of GST · GST @ {gstPct}% applicable
       </Text>
 
       <VStack spacing={4} align="stretch">
@@ -82,6 +121,11 @@ export const TheatreRateCard: React.FC<{ rows: TheatreRateCardRow[] }> = ({ rows
             row.state && row.state !== '—'
               ? `${row.city} · ${row.state}`
               : row.city || '—';
+          const fields = theatreRateFieldsForKeys(row.selectedSlabKeys);
+          if (!fields.length) return null;
+          const excl = cinemaMoneySubtotal(row);
+          const gstAmt = excl * (gstPct / 100);
+          const incl = excl + gstAmt;
           return (
             <Box
               key={row.serviceId || i}
@@ -127,23 +171,108 @@ export const TheatreRateCard: React.FC<{ rows: TheatreRateCardRow[] }> = ({ rows
 
               <Box bg={LIGHT_BG} px={3} py={1.5} borderBottomWidth="1px" borderColor={BORDER}>
                 <Text fontSize="xs" fontWeight="600" color={BLUE} letterSpacing="0.04em">
-                  RATES (INR)
+                  SELECTED RATES (INR) · GST @ {gstPct}%
                 </Text>
               </Box>
 
               <SimpleGrid columns={{ base: 1, sm: 2, md: 3 }} spacing={0}>
-                <RateCell label="10s / week" value={row.rate10sWeek} />
-                <RateCell label="20s / week" value={row.rate20sWeek} />
-                <RateCell label="20s / 3 weeks" value={row.rate20s3Weeks} />
-                <RateCell label="Arch / month" value={row.archMonth} alt />
-                <RateCell label="Kiosk / month" value={row.kioskMonth} alt />
-                <RateCell label="Standee / month" value={row.standeeMonth} alt />
-                <RateCell label="Plasma screens" value={row.plasmaCount} kind="count" />
-                <RateCell label="Plasma 10s / week" value={row.plasma10sWeek} />
+                {fields.map((f, fi) => (
+                  <RateCell
+                    key={`${f.slabKey}-${f.field}`}
+                    label={f.label}
+                    value={row[f.field] as number | null | undefined}
+                    kind={f.kind}
+                    alt={Math.floor(fi / 3) % 2 === 1}
+                    gstPct={gstPct}
+                  />
+                ))}
               </SimpleGrid>
+
+              {excl > 0 ? (
+                <Box bg={NAVY} px={4} py={3} borderTopWidth="1px" borderColor={BORDER}>
+                  <HStack justify="space-between" mb={1}>
+                    <Text fontSize="sm" color="whiteAlpha.800">
+                      Subtotal (excl. GST)
+                    </Text>
+                    <Text fontSize="sm" fontWeight="600" color="white">
+                      {fmt(excl)}
+                    </Text>
+                  </HStack>
+                  <HStack justify="space-between" mb={1}>
+                    <Text fontSize="sm" color="whiteAlpha.800">
+                      GST @ {gstPct}%
+                    </Text>
+                    <Text fontSize="sm" fontWeight="600" color="white">
+                      {fmt(gstAmt)}
+                    </Text>
+                  </HStack>
+                  <HStack justify="space-between">
+                    <Text fontSize="md" fontWeight="700" color="white">
+                      Total (incl. GST)
+                    </Text>
+                    <Text fontSize="md" fontWeight="800" color="white">
+                      {fmt(incl)}
+                    </Text>
+                  </HStack>
+                </Box>
+              ) : null}
             </Box>
           );
         })}
+
+        {grandExcl > 0 ? (
+          <Box
+            borderWidth="2px"
+            borderColor={NAVY}
+            borderRadius="lg"
+            overflow="hidden"
+            bg="white"
+          >
+            <Box bg={BLUE} px={4} py={2.5}>
+              <Text
+                fontSize="sm"
+                fontWeight="700"
+                color="white"
+                textAlign="center"
+                letterSpacing="0.04em"
+                textTransform="uppercase"
+              >
+                Grand Total — All Cinemas · GST @ {gstPct}%
+              </Text>
+            </Box>
+            <Box bg={LIGHT_BG} px={4} py={3}>
+              <HStack justify="space-between" mb={1}>
+                <Text fontSize="sm" color={NAVY}>
+                  Subtotal (excl. GST)
+                </Text>
+                <Text fontSize="sm" fontWeight="700" color={NAVY}>
+                  {fmt(grandExcl)}
+                </Text>
+              </HStack>
+              <HStack justify="space-between" mb={2}>
+                <Text fontSize="sm" color={NAVY}>
+                  GST @ {gstPct}%
+                </Text>
+                <Text fontSize="sm" fontWeight="700" color={NAVY}>
+                  {fmt(grandGst)}
+                </Text>
+              </HStack>
+              <HStack
+                justify="space-between"
+                pt={2}
+                borderTopWidth="1px"
+                borderColor={BORDER}
+              >
+                <Text fontSize="md" fontWeight="800" color={NAVY}>
+                  Grand Total (incl. GST)
+                </Text>
+                <Text fontSize="md" fontWeight="800" color={NAVY}>
+                  {fmt(grandIncl)}
+                </Text>
+              </HStack>
+            </Box>
+          </Box>
+        ) : null}
       </VStack>
     </Box>
   );

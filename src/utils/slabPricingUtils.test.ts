@@ -7,6 +7,7 @@ import {
   listRateSlabs,
   parseSlabServiceId,
   slabQuoteServiceId,
+  theatreRateFieldsForKeys,
 } from './slabPricingUtils';
 import { hasQuotablePricing, buildLineItemsFromDbPricing } from './dbPricingUtils';
 import type { DbService } from './serviceResolver';
@@ -92,6 +93,19 @@ describe('slabPricingUtils', () => {
     expect(card?.rate10sWeek).toBe(80000);
     expect(card?.archMonth).toBe(282352.94);
     expect(card?.state).toBe('Tamil Nadu');
+  });
+
+  it('rate card keeps only selected slab packages', () => {
+    const card = buildTheatreRateCardRow(theatreSvc(), ['slab_4', 'slab_5']);
+    expect(card?.selectedSlabKeys).toEqual(['slab_4', 'slab_5']);
+    expect(card?.archMonth).toBe(282352.94);
+    expect(card?.rate10sWeek).toBeNull();
+    expect(card?.rate20sWeek).toBeNull();
+    const fields = theatreRateFieldsForKeys(card?.selectedSlabKeys);
+    expect(fields.map((f) => f.field)).toEqual([
+      'archMonth',
+      'kioskMonth',
+    ]);
   });
 
   it('keeps slabKeys through review draft', async () => {

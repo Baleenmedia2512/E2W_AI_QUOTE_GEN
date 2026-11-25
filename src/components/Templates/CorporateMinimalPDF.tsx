@@ -22,6 +22,7 @@ import {
 } from '@react-pdf/renderer';
 import { TemplateData } from '../../types/template';
 import type { TheatreRateCardRow } from '../../types/quote';
+import { theatreRateFieldsForKeys } from '../../utils/slabPricingUtils';
 import { formatRecurringRateUnitLabel, formatUnitRateInr } from '../../utils/rateDisplay';
 import { hyphenateLongWords } from '../../utils/hyphenateLongWords';
 import { getSharedReviewIfAllSame } from '../../utils/reviewGrouping';
@@ -288,26 +289,44 @@ const fmtTheatreInr = (n: number | null | undefined): string => {
 };
 
 /**
- * Theatre-only cinema cards for PDF (readable client UX — Option A).
+ * Theatre-only cinema cards for PDF — selected packages + GST @ 18%.
  * Does not affect bus / auto / hoarding layouts.
  */
-const TheatreRateCardPdf: React.FC<{ rows: TheatreRateCardRow[] }> = ({ rows }) => {
+const TheatreRateCardPdf: React.FC<{
+  rows: TheatreRateCardRow[];
+  gstPercentage?: number;
+}> = ({ rows, gstPercentage = 18 }) => {
   if (!rows?.length) return null;
+  const gstPct = gstPercentage > 0 ? gstPercentage : 18;
+
+  const moneySubtotal = (row: TheatreRateCardRow): number => {
+    const fields = theatreRateFieldsForKeys(row.selectedSlabKeys);
+    let sum = 0;
+    for (const f of fields) {
+      if (f.kind !== 'money') continue;
+      const v = row[f.field];
+      if (typeof v === 'number' && v > 0) sum += v;
+    }
+    return sum;
+  };
 
   const rateCell = (
     label: string,
     value: number | null | undefined,
     kind: 'money' | 'count' = 'money',
     alt = false,
+    widthPct = '33.33%',
   ) => {
+    const hasMoney = kind === 'money' && value != null && value > 0;
     const display =
       kind === 'count'
         ? (value != null && value > 0 ? String(value) : '—')
         : fmtTheatreInr(value);
+    const incl = hasMoney ? value! * (1 + gstPct / 100) : null;
     return (
       <View
         style={{
-          width: '33.33%',
+          width: widthPct,
           paddingVertical: 7,
           paddingHorizontal: 8,
           borderRightWidth: 0.5,
@@ -335,10 +354,31 @@ const TheatreRateCardPdf: React.FC<{ rows: TheatreRateCardRow[] }> = ({ rows }) 
           }}
         >
           {display}
+          {hasMoney ? ' excl.' : ''}
         </Text>
+        {incl != null ? (
+          <Text
+            style={{
+              fontSize: 8,
+              fontFamily: 'Calibri',
+              fontWeight: 600,
+              color: C.blue,
+              marginTop: 2,
+            }}
+          >
+            {fmtTheatreInr(incl)} incl. GST @ {gstPct}%
+          </Text>
+        ) : null}
       </View>
     );
   };
+
+  let grandExcl = 0;
+  for (const row of rows) {
+    grandExcl += moneySubtotal(row);
+  }
+  const grandGst = grandExcl * (gstPct / 100);
+  const grandIncl = grandExcl + grandGst;
 
   return (
     <View style={{ marginTop: 4, marginBottom: 12 }}>
@@ -351,7 +391,7 @@ const TheatreRateCardPdf: React.FC<{ rows: TheatreRateCardRow[] }> = ({ rows }) 
           textAlign: 'center',
           textTransform: 'uppercase',
           letterSpacing: 1.2,
-          marginBottom: 10,
+          marginBottom: 4,
           paddingBottom: 6,
           borderBottomWidth: 1.5,
           borderBottomColor: C.blue,
@@ -359,25 +399,45 @@ const TheatreRateCardPdf: React.FC<{ rows: TheatreRateCardRow[] }> = ({ rows }) 
       >
         Theatre Screen Ad — Rate Card
       </Text>
+      <Text
+        style={{
+          fontSize: 9,
+          fontFamily: 'Calibri',
+          fontWeight: 700,
+          color: C.blue,
+          textAlign: 'center',
+          marginBottom: 10,
+        }}
+      >
+        {`All package rates exclusive of GST · GST @ ${gstPct}% applicable`}
+      </Text>
 
       {rows.map((row, i) => {
         const place =
           row.state && row.state !== '—'
             ? `${row.city} · ${row.state}`
             : (row.city || '—');
+        const fields = theatreRateFieldsForKeys(row.selectedSlabKeys);
+        if (!fields.length) return null;
+        const chunks: typeof fields[] = [];
+        for (let c = 0; c < fields.length; c += 3) {
+          chunks.push(fields.slice(c, c + 3));
+        }
+        const excl = moneySubtotal(row);
+        const gstAmt = excl * (gstPct / 100);
+        const inclTotal = excl + gstAmt;
         return (
           <View
             key={row.serviceId || i}
-            wrap={false}
             style={{
               marginBottom: 10,
               borderWidth: 0.75,
               borderColor: C.tableBorder,
               borderRadius: 4,
-              overflow: 'hidden',
             }}
           >
             <View
+              wrap={false}
               style={{
                 backgroundColor: C.navy,
                 paddingVertical: 8,
@@ -416,6 +476,7 @@ const TheatreRateCardPdf: React.FC<{ rows: TheatreRateCardRow[] }> = ({ rows }) 
             </View>
 
             <View
+              wrap={false}
               style={{
                 backgroundColor: C.lightBg,
                 paddingVertical: 4,
@@ -426,35 +487,147 @@ const TheatreRateCardPdf: React.FC<{ rows: TheatreRateCardRow[] }> = ({ rows }) 
             >
               <Text
                 style={{
-                  fontSize: 7.5,
+                  fontSize: 8,
                   fontFamily: 'Calibri',
                   fontWeight: 700,
                   color: C.blue,
                   letterSpacing: 0.6,
                 }}
               >
-                RATES (INR)
+                {`SELECTED RATES (INR) · GST @ ${gstPct}%`}
               </Text>
             </View>
 
-            <View style={{ flexDirection: 'row' }}>
-              {rateCell('10s / week', row.rate10sWeek)}
-              {rateCell('20s / week', row.rate20sWeek)}
-              {rateCell('20s / 3 weeks', row.rate20s3Weeks)}
-            </View>
-            <View style={{ flexDirection: 'row' }}>
-              {rateCell('Arch / month', row.archMonth, 'money', true)}
-              {rateCell('Kiosk / month', row.kioskMonth, 'money', true)}
-              {rateCell('Standee / month', row.standeeMonth, 'money', true)}
-            </View>
-            <View style={{ flexDirection: 'row' }}>
-              {rateCell('Plasma screens', row.plasmaCount, 'count')}
-              {rateCell('Plasma 10s / week', row.plasma10sWeek)}
-              <View style={{ width: '33.33%', borderBottomWidth: 0.5, borderColor: C.tableBorder }} />
-            </View>
+            {chunks.map((chunk, ci) => {
+              const colW =
+                chunk.length === 1
+                  ? '100%'
+                  : chunk.length === 2
+                    ? '50%'
+                    : '33.33%';
+              return (
+                <View key={`chunk-${ci}`} style={{ flexDirection: 'row' }} wrap={false}>
+                  {chunk.map((f) =>
+                    rateCell(
+                      f.label,
+                      row[f.field] as number | null | undefined,
+                      f.kind,
+                      ci % 2 === 1,
+                      colW,
+                    ),
+                  )}
+                </View>
+              );
+            })}
+
+            {excl > 0 ? (
+              <View
+                wrap={false}
+                style={{
+                  backgroundColor: C.navy,
+                  paddingVertical: 8,
+                  paddingHorizontal: 10,
+                }}
+              >
+                <View style={{ flexDirection: 'row', justifyContent: 'space-between', marginBottom: 3 }}>
+                  <Text style={{ fontSize: 9, fontFamily: 'Calibri', color: '#c8d9e8' }}>
+                    Subtotal (excl. GST)
+                  </Text>
+                  <Text style={{ fontSize: 10, fontFamily: 'Calibri', fontWeight: 600, color: C.white }}>
+                    {fmtTheatreInr(excl)}
+                  </Text>
+                </View>
+                <View style={{ flexDirection: 'row', justifyContent: 'space-between', marginBottom: 3 }}>
+                  <Text style={{ fontSize: 9, fontFamily: 'Calibri', color: '#c8d9e8' }}>
+                    {`GST @ ${gstPct}%`}
+                  </Text>
+                  <Text style={{ fontSize: 10, fontFamily: 'Calibri', fontWeight: 600, color: C.white }}>
+                    {fmtTheatreInr(gstAmt)}
+                  </Text>
+                </View>
+                <View style={{ flexDirection: 'row', justifyContent: 'space-between' }}>
+                  <Text style={{ fontSize: 11, fontFamily: 'Calibri', fontWeight: 700, color: C.white }}>
+                    Total (incl. GST)
+                  </Text>
+                  <Text style={{ fontSize: 12, fontFamily: 'Calibri', fontWeight: 700, color: C.white }}>
+                    {fmtTheatreInr(inclTotal)}
+                  </Text>
+                </View>
+              </View>
+            ) : null}
           </View>
         );
       })}
+
+      {/* Quote-level GST summary for the full theatre rate card */}
+      {grandExcl > 0 ? (
+        <View
+          wrap={false}
+          style={{
+            marginTop: 6,
+            borderWidth: 1,
+            borderColor: C.navy,
+            borderRadius: 4,
+            overflow: 'hidden',
+          }}
+        >
+          <View
+            style={{
+              backgroundColor: C.blue,
+              paddingVertical: 6,
+              paddingHorizontal: 10,
+            }}
+          >
+            <Text
+              style={{
+                fontSize: 10,
+                fontFamily: 'Calibri',
+                fontWeight: 700,
+                color: C.white,
+                textAlign: 'center',
+                textTransform: 'uppercase',
+              }}
+            >
+              {`Grand Total — All Cinemas · GST @ ${gstPct}%`}
+            </Text>
+          </View>
+          <View style={{ backgroundColor: C.lightBg, paddingVertical: 8, paddingHorizontal: 12 }}>
+            <View style={{ flexDirection: 'row', justifyContent: 'space-between', marginBottom: 4 }}>
+              <Text style={{ fontSize: 10, fontFamily: 'Calibri', color: C.navy }}>
+                Subtotal (excl. GST)
+              </Text>
+              <Text style={{ fontSize: 11, fontFamily: 'Calibri', fontWeight: 700, color: C.navy }}>
+                {fmtTheatreInr(grandExcl)}
+              </Text>
+            </View>
+            <View style={{ flexDirection: 'row', justifyContent: 'space-between', marginBottom: 4 }}>
+              <Text style={{ fontSize: 10, fontFamily: 'Calibri', color: C.navy }}>
+                {`GST @ ${gstPct}%`}
+              </Text>
+              <Text style={{ fontSize: 11, fontFamily: 'Calibri', fontWeight: 700, color: C.navy }}>
+                {fmtTheatreInr(grandGst)}
+              </Text>
+            </View>
+            <View
+              style={{
+                flexDirection: 'row',
+                justifyContent: 'space-between',
+                marginTop: 4,
+                paddingTop: 6,
+                borderTopWidth: 1,
+                borderTopColor: C.tableBorder,
+              }}
+            >
+              <Text style={{ fontSize: 12, fontFamily: 'Calibri', fontWeight: 700, color: C.navy }}>
+                Grand Total (incl. GST)
+              </Text>
+              <Text style={{ fontSize: 13, fontFamily: 'Calibri', fontWeight: 700, color: C.navy }}>
+                {fmtTheatreInr(grandIncl)}
+              </Text>
+            </View>
+          </View>
+        </View>
+      ) : null}
     </View>
   );
 };
@@ -1430,7 +1603,10 @@ const CorporateMinimalPDF: React.FC<CorporateMinimalPDFProps> = ({ data, pdfData
           <ClientDetails client={client} />
 
           {isTheatreSlabQuote ? (
-            <TheatreRateCardPdf rows={quote.theatreRateCards!} />
+            <TheatreRateCardPdf
+              rows={quote.theatreRateCards!}
+              gstPercentage={quote.gstPercentage || 18}
+            />
           ) : null}
 
           {/* Service name + Pricing Breakdown (no orphan heading) — not for theatre slabs */}
@@ -1674,7 +1850,10 @@ const CorporateMinimalPDF: React.FC<CorporateMinimalPDFProps> = ({ data, pdfData
             title={exportMode === 'summary' ? 'Summarized quotation' : 'Detailed quotation'}
           />
           <ClientDetails client={client} />
-          <TheatreRateCardPdf rows={quote.theatreRateCards!} />
+          <TheatreRateCardPdf
+            rows={quote.theatreRateCards!}
+            gstPercentage={quote.gstPercentage || 18}
+          />
           {exportMode !== 'summary' && theatreRefs.length > 0 ? (
             <RefImages images={theatreRefs} heading="Reference Image(s)" />
           ) : null}

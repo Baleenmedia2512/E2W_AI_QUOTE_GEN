@@ -3,11 +3,13 @@
  * Additive path — standard Display + P&F media is unchanged.
  */
 
-import type { QuoteItem } from '../types/quote';
+import type { QuoteItem, TheatreRateCardRow } from '../types/quote';
 import { computeQuoteItemTotal } from './durationUtils';
 import type { DbService } from './serviceResolver';
 import { formatServiceDisplayName } from './serviceResolver';
 import { buildStructuredServiceHeading } from './serviceHeading';
+
+export type { TheatreRateCardRow };
 
 export interface RateSlab {
   key: string;
@@ -24,20 +26,32 @@ export interface RateSlab {
   displayUnitPricePerDay: number;
 }
 
-/** One cinema row for Excel-style rate card (UI / PDF). */
-export interface TheatreRateCardRow {
-  serviceId: string;
-  state: string;
-  city: string;
-  cinema: string;
-  rate10sWeek: number | null;
-  rate20sWeek: number | null;
-  rate20s3Weeks: number | null;
-  archMonth: number | null;
-  kioskMonth: number | null;
-  standeeMonth: number | null;
-  plasmaCount: number | null;
-  plasma10sWeek: number | null;
+/** Rate-card cells mapped to catalog slab keys (theatre only). */
+export const THEATRE_RATE_CARD_FIELDS: Array<{
+  slabKey: string;
+  field: keyof TheatreRateCardRow;
+  label: string;
+  kind: 'money' | 'count';
+}> = [
+  { slabKey: 'slab_1', field: 'rate10sWeek', label: '10s / week', kind: 'money' },
+  { slabKey: 'slab_2', field: 'rate20sWeek', label: '20s / week', kind: 'money' },
+  { slabKey: 'slab_3', field: 'rate20s3Weeks', label: '20s / 3 weeks', kind: 'money' },
+  { slabKey: 'slab_4', field: 'archMonth', label: 'Arch / month', kind: 'money' },
+  { slabKey: 'slab_5', field: 'kioskMonth', label: 'Kiosk / month', kind: 'money' },
+  { slabKey: 'slab_6', field: 'standeeMonth', label: 'Standee / month', kind: 'money' },
+  { slabKey: 'slab_7', field: 'plasmaCount', label: 'Plasma screens', kind: 'count' },
+  { slabKey: 'slab_7', field: 'plasma10sWeek', label: 'Plasma 10s / week', kind: 'money' },
+];
+
+/** Fields to show: selected packages only; all fields when no selection (legacy). */
+export function theatreRateFieldsForKeys(
+  selectedSlabKeys?: string[] | null,
+): typeof THEATRE_RATE_CARD_FIELDS {
+  if (!selectedSlabKeys?.length) return THEATRE_RATE_CARD_FIELDS;
+  const want = new Set(
+    selectedSlabKeys.map((k) => String(k).trim().toLowerCase()).filter(Boolean),
+  );
+  return THEATRE_RATE_CARD_FIELDS.filter((f) => want.has(f.slabKey));
 }
 
 function isNaLike(value: unknown): boolean {
@@ -234,8 +248,14 @@ function sellingOf(slabs: RateSlab[], key: string): number | null {
   return s && s.price > 0 ? s.price : null;
 }
 
-/** Excel-style rate card row from one catalog cinema (selling prices). */
-export function buildTheatreRateCardRow(svc: DbService): TheatreRateCardRow | null {
+/**
+ * Rate card row from one catalog cinema (selling prices).
+ * @param selectedSlabKeys — when set, only those packages are kept (others null).
+ */
+export function buildTheatreRateCardRow(
+  svc: DbService,
+  selectedSlabKeys?: string[] | null,
+): TheatreRateCardRow | null {
   const slabs = listRateSlabs(svc);
   if (!slabs.length) return null;
   const meta = (svc.metadata || {}) as Record<string, unknown>;
@@ -246,19 +266,30 @@ export function buildTheatreRateCardRow(svc: DbService): TheatreRateCardRow | nu
   const state = (stateMatch?.[1] || '').trim();
   const plasma = slabs.find((s) => s.key === 'slab_7');
 
+  const keys = selectedSlabKeys?.length
+    ? [...new Set(
+        selectedSlabKeys
+          .map((k) => String(k).trim().toLowerCase())
+          .filter((k) => /^slab_\d+$/i.test(k)),
+      )]
+    : undefined;
+  const allow = (slabKey: string) => !keys || keys.includes(slabKey);
+
   return {
     serviceId: svc.service_id,
     state: state || '—',
     city: city || '—',
     cinema: cinema || '—',
-    rate10sWeek: sellingOf(slabs, 'slab_1'),
-    rate20sWeek: sellingOf(slabs, 'slab_2'),
-    rate20s3Weeks: sellingOf(slabs, 'slab_3'),
-    archMonth: sellingOf(slabs, 'slab_4'),
-    kioskMonth: sellingOf(slabs, 'slab_5'),
-    standeeMonth: sellingOf(slabs, 'slab_6'),
-    plasmaCount: plasma && plasma.qty > 0 ? plasma.qty : null,
-    plasma10sWeek: plasma ? plasma.price : null,
+    rate10sWeek: allow('slab_1') ? sellingOf(slabs, 'slab_1') : null,
+    rate20sWeek: allow('slab_2') ? sellingOf(slabs, 'slab_2') : null,
+    rate20s3Weeks: allow('slab_3') ? sellingOf(slabs, 'slab_3') : null,
+    archMonth: allow('slab_4') ? sellingOf(slabs, 'slab_4') : null,
+    kioskMonth: allow('slab_5') ? sellingOf(slabs, 'slab_5') : null,
+    standeeMonth: allow('slab_6') ? sellingOf(slabs, 'slab_6') : null,
+    plasmaCount:
+      allow('slab_7') && plasma && plasma.qty > 0 ? plasma.qty : null,
+    plasma10sWeek: allow('slab_7') && plasma ? plasma.price : null,
+    selectedSlabKeys: keys,
   };
 }
 

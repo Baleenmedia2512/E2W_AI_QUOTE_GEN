@@ -222,7 +222,8 @@ export function buildQuoteFromConfirmedRows(
     );
 
     if (isSlabPricingService(svc) && !theatreCardIds.has(svc.service_id)) {
-      const card = buildTheatreRateCardRow(svc);
+      // Pass picked packages so rate card shows only what the user selected
+      const card = buildTheatreRateCardRow(svc, row.slabKeys);
       if (card) {
         theatreCardIds.add(svc.service_id);
         theatreRateCards.push(card);
