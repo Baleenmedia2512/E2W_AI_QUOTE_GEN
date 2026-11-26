@@ -1,4 +1,4 @@
-import React, { useMemo, useState, useEffect, useRef } from 'react';
+﻿import React, { useMemo, useState, useEffect, useRef } from 'react';
 import './ReferenceImages.css';
 import { extractReviewViaGemini, cropReferencePageImage, cropPageStrippingHeaderFooter, cropSpecAboveReference, cropSpecDiagram, cropPageHalf, cropPageFromPercent, cropPageSlice } from '../../utils/pdfUtils';
 import { resolveServiceIdsForItems } from '../../utils/serviceResolver';
@@ -1914,7 +1914,7 @@ function extractRefSectionImages(pages: ExtractedPage[]): string[] {
   // Thin strips were incorrectly cropped by Gemini Vision at upload time — replace with full page.
   const isThinStrip = (dataUrl: string): boolean => {
     try {
-      // Only applicable to base64 data URLs (not https:// Supabase URLs)
+      // Only applicable to base64 data URLs (not https:// cloud URLs)
       if (!dataUrl.startsWith('data:')) return false;
       const img = new window.Image();
       img.src = dataUrl;
@@ -2533,7 +2533,7 @@ export const ReferenceImages: React.FC<ReferenceImagesProps> = (props) => {
         const serviceId = reviewPage.serviceId as string | undefined;
         if (serviceId) {
           try {
-            const { saveReviewToCloud } = await import('../../services/supabaseProposalService');
+            const { saveReviewToCloud } = await import('../../services/cloudProposalService');
             await saveReviewToCloud(serviceId, data);
           } catch (saveErr) {
             console.warn('⚠️ Could not save review to DB:', saveErr);
@@ -2655,7 +2655,7 @@ export const ReferenceImages: React.FC<ReferenceImagesProps> = (props) => {
       setLazyCroppedSpecImage([]);
       return;
     }
-    // Cloud pages already have pre-cropped Supabase URLs — skip client-side re-crop (CORS-safe).
+    // Cloud pages already have pre-cropped URLs — skip client-side re-crop (CORS-safe).
     if (pureSpecPages.every((p) => (p.croppedImages?.length ?? 0) > 0)) {
       setLazyCroppedSpecImage([]);
       return;

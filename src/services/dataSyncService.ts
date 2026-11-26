@@ -1,6 +1,6 @@
 /**
  * Data Sync Service - Unified storage layer with conflict resolution
- * Manages synchronization between localStorage, IndexedDB, and Supabase Cloud
+ * Manages synchronization between localStorage, IndexedDB, and cloud API
  */
 
 // Unused imports - kept for future use
@@ -260,7 +260,7 @@ export async function clearAllCache(): Promise<void> {
   console.log('🗑️ Clearing all cached data...');
   
   // Clear localStorage
-  const keysToKeep = ['auth-storage', 'supabase.auth.token'];
+  const keysToKeep = ['auth-storage'];
   const allKeys = Object.keys(localStorage);
   allKeys.forEach(key => {
     if (!keysToKeep.includes(key)) {
@@ -282,7 +282,7 @@ export async function clearAllCache(): Promise<void> {
 
 // Placeholder functions for cloud operations (implement based on your backend)
 async function syncToCloud<T>(_key: string, _data: DataWithTimestamp<T>): Promise<boolean> {
-  // TODO: Implement actual cloud sync with Supabase
+  // TODO: Implement actual cloud sync via /api
   // For now, just simulate success
   return new Promise((resolve) => {
     setTimeout(() => {
@@ -293,7 +293,7 @@ async function syncToCloud<T>(_key: string, _data: DataWithTimestamp<T>): Promis
 }
 
 async function loadFromCloud<T>(_key: string): Promise<DataWithTimestamp<T> | null> {
-  // TODO: Implement actual cloud load from Supabase
+  // TODO: Implement actual cloud load via /api
   return null;
 }
 

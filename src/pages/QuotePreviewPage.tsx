@@ -32,7 +32,7 @@ import './QuotePreviewPage.css';
 // ═══════════════════════════════════════════════════════════════════════
 // 🔀 DATA SOURCE TOGGLE — matches ChatInterface.tsx
 // false = OLD: IndexedDB local images only
-// true  = NEW: Supabase cloud image URLs (any device)
+// true  = NEW: cloud image URLs (any device)
 // ═══════════════════════════════════════════════════════════════════════
 const USE_CLOUD_DATA = true;
 
@@ -138,7 +138,7 @@ export const QuotePreviewPage: React.FC = () => {
   }, []);
   
   // Merge cloud pages and local pages
-  // USE_CLOUD_DATA=true  → cloud first (Supabase URLs, any device)
+  // USE_CLOUD_DATA=true  → cloud first (MilesWeb URLs, any device)
   // USE_CLOUD_DATA=false → local first (IndexedDB base64, upload device only)
   const mergedAllImages = useMemo<ExtractedPage[]>(() => {
     const cloud = cloudServicePages || [];

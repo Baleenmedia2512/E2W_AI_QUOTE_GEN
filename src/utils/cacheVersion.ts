@@ -142,7 +142,7 @@ export async function clearCacheAndReload(): Promise<void> {
   }
 
   // Clear localStorage (except auth)
-  const keysToKeep = ['auth-storage', 'supabase.auth.token'];
+  const keysToKeep = ['auth-storage'];
   Object.keys(localStorage).forEach(key => {
     if (!keysToKeep.includes(key)) {
       localStorage.removeItem(key);

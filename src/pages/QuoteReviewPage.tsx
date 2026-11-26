@@ -116,7 +116,7 @@ const QuoteReviewPage: React.FC = () => {
     (async () => {
       setLoadingCatalog(true);
       try {
-        const { loadAllServicesFromCloud } = await import('../services/supabaseProposalService');
+        const { loadAllServicesFromCloud } = await import('../services/cloudProposalService');
         const db = ((await loadAllServicesFromCloud()) || []) as DbService[];
         if (!cancelled) setServices(db);
       } catch (err) {
@@ -412,7 +412,7 @@ const QuoteReviewPage: React.FC = () => {
       const { buildQuoteFromConfirmedRows } = await import('../utils/buildQuoteFromConfirmedRows');
       let dbServices = services;
       if (!dbServices.length) {
-        const { loadAllServicesFromCloud } = await import('../services/supabaseProposalService');
+        const { loadAllServicesFromCloud } = await import('../services/cloudProposalService');
         dbServices = ((await loadAllServicesFromCloud()) || []) as DbService[];
       }
 

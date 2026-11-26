@@ -69,7 +69,7 @@ Font.registerHyphenationCallback((word: string) => [word]);
 // ---------------------------------------------------------------------------
 export interface ServicePdfData {
   serviceKey: string;   // matches groupKey used to look up images per service group
-  refImages: string[];  // cropped reference image data URLs or Supabase URLs
+  refImages: string[];  // cropped reference image data URLs or cloud URLs
   /** Natural pixel dimensions for each refImage — populated by prefetchImagesToBase64 */
   refImageDimensions?: Array<{ width: number; height: number }>;
   specImages: string[]; // spec diagram image URLs resolved by ReferenceImages.tsx

@@ -154,7 +154,7 @@ function dataUrlToBlob(dataUrl: string): Blob {
 }
 
 /**
- * Extract images from PDF by rendering pages to canvas and uploading to Supabase Storage
+ * Extract images from PDF by rendering pages to canvas and uploading to cloud storage
  * More reliable than extracting internal PDF image objects
  */
 export async function extractImagesFromPDF(file: File): Promise<Array<{ pageNum: number; imageUrl: string; serviceName: string }>> {
@@ -303,7 +303,7 @@ export async function extractImagesFromPDF(file: File): Promise<Array<{ pageNum:
       
       console.log(`  ✅ Blob: ${(blob.size/1024).toFixed(1)}KB`);
       
-      // Upload to Supabase
+      // Upload to cloud
       const fileName = `rate-card-images/service-page-${pageNum}-${Date.now()}.jpg`;
       console.log(`  ☁️ Uploading ${fileName}...`);
       
@@ -853,7 +853,7 @@ export async function processProposalForRAG(params: {
                 ? `${basePath}/${imageType}/page-${pageNum}-crop-${cropIndex}.jpg`
                 : `${basePath}/${imageType}/page-${pageNum}.jpg`;
               
-              // Upload to Supabase Storage (upsert creates folder automatically)
+              // Upload to cloud storage (upsert creates folder automatically)
               const __imgUrl = await uploadProposalImageBlob(String(fileName), blob);
               if (__imgUrl) {
                 const urlData = { publicUrl: __imgUrl };
@@ -897,7 +897,7 @@ export async function processProposalForRAG(params: {
                 ? `${basePath}/${imageType}/page-${pageNum}-crop-${cropIndex}.jpg`
                 : `${basePath}/${imageType}/page-${pageNum}.jpg`;
               
-              // Upload to Supabase Storage
+              // Upload to cloud storage
               const __imgUrl = await uploadProposalImageBlob(String(fileName), blob);
               if (__imgUrl) {
                 const urlData = { publicUrl: __imgUrl };

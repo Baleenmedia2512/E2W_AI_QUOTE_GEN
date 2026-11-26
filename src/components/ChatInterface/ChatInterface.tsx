@@ -169,7 +169,7 @@ const ChatInterfaceContent: React.FC = () => {
   const getCachedDbServices = async (): Promise<DbService[]> => {
     if (catalogCacheRef.current) return catalogCacheRef.current;
     if (!catalogLoadRef.current) {
-      const { loadAllServicesFromCloud } = await import('../../services/supabaseProposalService');
+      const { loadAllServicesFromCloud } = await import('../../services/cloudProposalService');
       catalogLoadRef.current = loadAllServicesFromCloud()
         .then((services) => services || [])
         .finally(() => {
@@ -761,7 +761,7 @@ const ChatInterfaceContent: React.FC = () => {
     let dbServices: DbService[] = [];
     if (USE_CLOUD_DATA) {
       try {
-        const { loadAllServicesFromCloud } = await import('../../services/supabaseProposalService');
+        const { loadAllServicesFromCloud } = await import('../../services/cloudProposalService');
         dbServices = (await loadAllServicesFromCloud()) || [];
       } catch {
         console.warn('⚠️ Min-qty gate skipped — could not load cloud catalog');
@@ -1578,7 +1578,7 @@ const ChatInterfaceContent: React.FC = () => {
       // Clear prior chip thumbs immediately so the UI stays responsive
       setMessages((prev) => [...stripChipImagesFromMessages(prev), userMessage]);
       try {
-        const { loadAllServicesFromCloud } = await import('../../services/supabaseProposalService');
+        const { loadAllServicesFromCloud } = await import('../../services/cloudProposalService');
         if (!catalogCacheRef.current) {
           catalogLoadRef.current ??= loadAllServicesFromCloud()
             .then((services) => services || [])
@@ -1642,7 +1642,7 @@ const ChatInterfaceContent: React.FC = () => {
       let cityOnlyDbServices: DbService[] = [];
       if (USE_CLOUD_DATA) {
         try {
-          const { loadAllServicesFromCloud } = await import('../../services/supabaseProposalService');
+          const { loadAllServicesFromCloud } = await import('../../services/cloudProposalService');
           cityOnlyDbServices = (await loadAllServicesFromCloud()) || [];
         } catch {
           // DB unavailable — no city list
@@ -1693,7 +1693,7 @@ const ChatInterfaceContent: React.FC = () => {
       isQuoteRequest
     ) {
       try {
-        const { loadAllServicesFromCloud } = await import('../../services/supabaseProposalService');
+        const { loadAllServicesFromCloud } = await import('../../services/cloudProposalService');
         prefetchedDbServices = await loadAllServicesFromCloud();
         const dbList = (prefetchedDbServices || []) as DbService[];
 
@@ -2138,7 +2138,7 @@ const ChatInterfaceContent: React.FC = () => {
     let dbServices: DbService[] = pickerSnapshot.dbServices || [];
     if (USE_CLOUD_DATA && dbServices.length === 0) {
       try {
-        const { loadAllServicesFromCloud } = await import('../../services/supabaseProposalService');
+        const { loadAllServicesFromCloud } = await import('../../services/cloudProposalService');
         dbServices = (await loadAllServicesFromCloud()) || [];
       } catch (err) {
         console.warn('⚠️ handleCityConfirm: DB load failed', err);
@@ -2817,7 +2817,7 @@ const ChatInterfaceContent: React.FC = () => {
 
     try {
       if (USE_CLOUD_DATA) {
-        const { loadAllServicesFromCloud } = await import('../../services/supabaseProposalService');
+        const { loadAllServicesFromCloud } = await import('../../services/cloudProposalService');
         const dbServices = (await loadAllServicesFromCloud()) || [];
 
         if (dbServices.length > 0) {

@@ -194,7 +194,7 @@ function parseSlabsFromMeta(meta: Record<string, unknown>): Record<string, unkno
   return undefined;
 }
 
-/** Normalize Supabase row — quote fields only; cost fields ignored. */
+/** Normalize vendor rate row — quote fields only; cost fields ignored. */
 export function normalizeVendorRateRow(row: Record<string, unknown>): VendorRateRow | null {
   let metaSource: unknown = row.metadata ?? row;
   if (typeof metaSource === 'string' && metaSource.trim()) {

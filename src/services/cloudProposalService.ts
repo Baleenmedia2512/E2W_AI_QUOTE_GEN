@@ -27,7 +27,7 @@ export interface CloudProposal {
 }
 
 /**
- * Upload file to Supabase Storage and save metadata
+ * Upload proposal file via /api (MilesWeb storage).
  */
 export async function uploadProposalToCloud(
   file: File,
@@ -163,11 +163,7 @@ export async function downloadProposalFile(storagePath: string): Promise<Blob | 
   }
 }
 
-/**
- * Check if Supabase is properly configured
- * NOTE: Temporarily disabled — RLS policies on Supabase block anon uploads.
- * App falls back to IndexedDB (local storage) until Supabase policies are fixed.
- */
+/** True when local /api health check succeeds (MilesWeb-backed API). */
 export async function checkCloudStorageAvailability(): Promise<boolean> {
   try {
     const { error } = await apiFetch('/api/health');
@@ -208,46 +204,12 @@ export function cloudProposalToStored(cloud: CloudProposal): StoredProposal {
   };
 }
 
-/**
- * Save Gemini OCR review data back to proposal_chunks metadata.
- * DISABLED: proposal_chunks fetch/update commented out.
- */
+/** No-op — review write-back to proposal_chunks was removed with the legacy cloud DB. */
 export async function saveReviewToCloud(
   _serviceId: string,
   _reviewData: { reviewerName: string; starCount: number; reviewText: string }
 ): Promise<void> {
-  console.log('⚠️ [saveReviewToCloud] DISABLED — proposal_chunks commented out');
   return;
-  /*
-  try {
-    // Fetch current metadata first
-    const { data, error: fetchErr } = await supabase
-      .from('proposal_chunks')
-      .select('metadata')
-      .eq('service_id', serviceId)
-      .single();
-
-    if (fetchErr || !data) {
-      console.warn(`⚠️ [saveReviewToCloud] Could not fetch service "${serviceId}":`, fetchErr?.message);
-      return;
-    }
-
-    const updatedMetadata = { ...(data.metadata || {}), review: reviewData };
-
-    const { error: updateErr } = await supabase
-      .from('proposal_chunks')
-      .update({ metadata: updatedMetadata })
-      .eq('service_id', serviceId);
-
-    if (updateErr) {
-      console.warn(`⚠️ [saveReviewToCloud] Update failed for "${serviceId}":`, updateErr.message);
-    } else {
-      console.log(`✅ [saveReviewToCloud] Saved review for "${serviceId}": ${reviewData.reviewerName}`);
-    }
-  } catch (err) {
-    console.warn(`⚠️ [saveReviewToCloud] Exception:`, err);
-  }
-  */
 }
 
 /**
@@ -854,7 +816,7 @@ export function transformServicesToPages(services: any[]): any[] {
   console.log(`☁️    Reference     : ${refCount}`);
   console.log(`☁️    Specification : ${specCount}`);
   console.log(`☁️    Review        : ${revCount}`);
-  console.log('☁️  All images are Supabase URLs — no IndexedDB used');
+  console.log('☁️  All images are cloud URLs — no IndexedDB used');
   console.log('☁️ ═══════════════════════════════════════════════════');
   
   return pages;

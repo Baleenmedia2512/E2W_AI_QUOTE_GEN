@@ -28,7 +28,7 @@ import {
   deleteProposalFromCloud,
   downloadProposalFile,
   cloudProposalToStored,
-} from '../services/supabaseProposalService';
+} from '../services/cloudProposalService';
 
 const initialProposalState: ProposalData = {
   file: null,
@@ -97,7 +97,7 @@ export const useAppStore = create<AppState>((set) => ({
         if (fullProposal.file) {
           // Check if cloud storage is enabled
           if (state.cloudStorageEnabled) {
-            // CLOUD-ONLY: Upload to Supabase only (skip IndexedDB)
+            // CLOUD-ONLY: Upload to cloud API only (skip IndexedDB)
             (async () => {
               try {
                 // Get current user info from auth store
@@ -267,10 +267,10 @@ export const useAppStore = create<AppState>((set) => ({
       
       if (state.cloudStorageEnabled) {
         try {
-          console.log('   ☁️ Attempting to load from Supabase `proposals` table...');
+          console.log('   ☁️ Attempting to load from cloud `proposals` table...');
           const rawCloudProposals = await loadAllProposalsFromCloud();
           cloudProposals = rawCloudProposals.map(cloudProposalToStored);
-          console.log(`   ✅ Loaded ${cloudProposals.length} cloud proposals from Supabase`);
+          console.log(`   ✅ Loaded ${cloudProposals.length} cloud proposals from API`);
           
           if (cloudProposals.length > 0) {
             console.log('   📋 Cloud proposal filenames:');
@@ -466,7 +466,7 @@ export const useAppStore = create<AppState>((set) => ({
     }
   },
 
-  // Cloud Storage state (NEW - Hybrid approach: IndexedDB + Supabase)
+  // Cloud Storage state (NEW - Hybrid approach: IndexedDB + cloud API)
   cloudStorageEnabled: false,
 
   checkCloudStorage: async () => {
@@ -709,7 +709,7 @@ export const useAppStore = create<AppState>((set) => ({
     try {
       console.log('☁️ DEBUG [loadCloudServices]: Loading from vendor_rate_chunks (rank=1)...');
       
-      const { loadAllServicesFromCloud, transformServicesToPages } = await import('../services/supabaseProposalService');
+      const { loadAllServicesFromCloud, transformServicesToPages } = await import('../services/cloudProposalService');
       
       const services = await loadAllServicesFromCloud();
       console.log(`   ✅ Loaded ${services.length} services from cloud`);

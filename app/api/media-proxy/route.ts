@@ -13,7 +13,6 @@ const ALLOWED_HOSTS = new Set([
   'www.baleenmedia.in',
   'wellnessvalley.in',
   'www.wellnessvalley.in',
-  'wkwrrdcjknvupwsfdjtd.supabase.co',
 ]);
 
 export async function GET(req: NextRequest) {

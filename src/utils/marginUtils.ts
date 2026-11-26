@@ -1,5 +1,5 @@
 /**
- * Vendor cost + day-wise price/cost helpers (no Supabase / heavy app imports).
+ * Vendor cost + day-wise price/cost helpers (no heavy app imports).
  */
 
 import { DAYS_PER_MONTH } from './durationUtils';

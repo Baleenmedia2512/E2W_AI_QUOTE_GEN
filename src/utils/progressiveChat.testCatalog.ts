@@ -48,7 +48,7 @@ function loadDotEnv(): void {
 
 loadDotEnv();
 
-const { loadAllServicesFromCloud } = await import('../services/supabaseProposalService');
+const { loadAllServicesFromCloud } = await import('../services/cloudProposalService');
 const {
   getMediumKey,
   getAreaLabel,
@@ -259,7 +259,7 @@ export async function loadProgressiveTestCatalog(): Promise<ProgressiveTestCatal
   const services = (await loadAllServicesFromCloud()) as DbService[];
   if (!services.length) {
     throw new Error(
-      'progressiveChat tests: real DB returned 0 services. Check .env Supabase keys / vendor_rate_chunks.',
+      'progressiveChat tests: real DB returned 0 services. Check DATABASE_URL / vendor_rate_chunks.',
     );
   }
 

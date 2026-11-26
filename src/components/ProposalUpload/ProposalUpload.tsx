@@ -37,7 +37,7 @@ import {
   detectFileType 
 } from '../../utils/fileUtils';
 import { findDuplicateProposal } from '../../utils/proposalStorage';
-import { findCloudDuplicate, cloudProposalToStored } from '../../services/supabaseProposalService';
+import { findCloudDuplicate, cloudProposalToStored } from '../../services/cloudProposalService';
 import { processProposalForRAG, detectCityFromFileName } from '../../services/pdfEmbeddingService';
 
 
@@ -93,7 +93,7 @@ const ProposalUpload: React.FC = () => {
   // Load recent proposals on mount and check cloud storage availability
   useEffect(() => {
     const initializeStorage = async () => {
-      // Check if cloud storage is available (Supabase)
+      // Check if cloud storage is available
       const { checkCloudStorage } = useAppStore.getState();
       await checkCloudStorage();
       

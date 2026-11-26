@@ -3,7 +3,7 @@
  *   NEXT_PUBLIC_UPLOADS_BASE_URL / VITE_UPLOADS_BASE_URL
  *   → https://rms.baleenmedia.com/proposal-images/...
  *
- * Leftover wellnessvalley / supabase / costmanager / relative /uploads paths
+ * Leftover wellnessvalley / costmanager / legacy storage / relative /uploads paths
  * rewrite onto that base.
  */
 
@@ -23,6 +23,7 @@ const REMOTE_IMAGE_MARKERS = [
   '://www.baleenmedia.in/costmanager/proposal-images/',
   '://wellnessvalley.in/costmanager/proposal-images/',
   '://www.wellnessvalley.in/costmanager/proposal-images/',
+  // Legacy object-storage path (migrated) → rewrite to MilesWeb public base
   '://wkwrrdcjknvupwsfdjtd.supabase.co/storage/v1/object/public/proposal-images/',
 ] as const;
 

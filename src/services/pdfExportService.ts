@@ -21,7 +21,7 @@ import { Capacitor } from '@capacitor/core';
 import { Filesystem, Directory } from '@capacitor/filesystem';
 import { FileOpener } from '@capacitor-community/file-opener';
 import CorporateMinimalPDF, { ServicePdfData, PdfExportMode } from '../components/Templates/CorporateMinimalPDF';
-import { loadAllServicesFromCloud, buildMetroSpecText } from './supabaseProposalService';
+import { loadAllServicesFromCloud, buildMetroSpecText } from './cloudProposalService';
 import type { DbService } from '../utils/serviceResolver';
 import { extractMetroMultiTableSpec, type PdfSpecGroup } from '../utils/metroSpecParser';
 import {

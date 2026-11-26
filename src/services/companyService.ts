@@ -48,7 +48,7 @@ export const companyService = {
     }
   },
 
-  /** Realtime removed with Supabase — no-op unsubscribe. */
+  /** Realtime sync removed — no-op unsubscribe. */
   subscribeToChanges(_callback: (companyInfo: CompanyInfo) => void) {
     return { unsubscribe: () => undefined };
   },
