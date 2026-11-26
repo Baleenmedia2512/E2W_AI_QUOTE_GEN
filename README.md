@@ -50,15 +50,44 @@ Create a `.env` file in the root directory (copy from `.env.example`):
 ```bash
 VITE_GEMINI_API_KEY=your_actual_api_key_here
 VITE_MAX_FILE_SIZE_MB=10
+DATABASE_URL=mysql://USER:PASSWORD@HOST:3306/DATABASE
+AUTH_SECRET=change-me
 ```
 
 **Get your Gemini API Key:** https://makersuite.google.com/app/apikey
 
-### 3. Run Development Server
+### 3. Run Development Server (current product: Vite + Express)
 ```bash
 npm run dev
 ```
 The app will be available at: **http://localhost:5173/**
+
+### Next.js migration — Phase 0–1 (scaffold + auth API)
+
+Additive App Router on branch `quotebuddy_nextjs_migration`.  
+**Does not replace** Vite/Express yet.
+
+- Phase 0: [docs/NEXTJS_MIGRATION_PHASE_0.md](docs/NEXTJS_MIGRATION_PHASE_0.md)
+- Phase 1 Auth: [docs/NEXTJS_MIGRATION_PHASE_1_AUTH.md](docs/NEXTJS_MIGRATION_PHASE_1_AUTH.md)
+- Phase 2 Vendors + Company: [docs/NEXTJS_MIGRATION_PHASE_2_VENDORS_COMPANY.md](docs/NEXTJS_MIGRATION_PHASE_2_VENDORS_COMPANY.md)
+- Phase 3-API (quotes/leads/proposals/profile/email): [docs/NEXTJS_MIGRATION_PHASE_3_API.md](docs/NEXTJS_MIGRATION_PHASE_3_API.md)
+- Phase 4 media-proxy + uploads: [docs/NEXTJS_MIGRATION_PHASE_4_MEDIA.md](docs/NEXTJS_MIGRATION_PHASE_4_MEDIA.md)
+- Phase 5 client cutover (Vite → Next API): [docs/NEXTJS_MIGRATION_PHASE_5_CUTOVER.md](docs/NEXTJS_MIGRATION_PHASE_5_CUTOVER.md)
+- Phase 1b password-reset: [docs/NEXTJS_MIGRATION_PHASE_1B_PASSWORD_RESET.md](docs/NEXTJS_MIGRATION_PHASE_1B_PASSWORD_RESET.md)
+- Phase 6 Vercel: [docs/NEXTJS_MIGRATION_PHASE_6_VERCEL.md](docs/NEXTJS_MIGRATION_PHASE_6_VERCEL.md)
+
+**Local cutover:** `npm run dev:next` (:3000) + `npm run dev:web` (:5173). Vite proxies `/api` → Next. Rollback: `VITE_DEV_API_PROXY=http://localhost:8787`.
+
+**Vercel:** use Next build (`build:vercel` / `vercel.json`) — **not** `npm run build` (that remains Vite for Capacitor). Full product UI is still Vite until a later UI port; Next deploy serves APIs + scaffold page.
+
+```bash
+npm run prisma:generate
+npm run dev:next
+```
+
+- UI scaffold: http://localhost:3000  
+- Health: `GET http://localhost:3000/api/health` → `{ "ok": true, ... }`
+- Auth: `POST http://localhost:3000/api/auth/session` (same contract as Express)
 
 ### 4. Build for Production
 ```bash

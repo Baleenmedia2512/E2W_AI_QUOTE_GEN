@@ -2,6 +2,14 @@ import { defineConfig } from 'vite';
 import react from '@vitejs/plugin-react';
 import path from 'path';
 
+/**
+ * Phase 5 cutover: Vite SPA → Next API by default.
+ * Rollback: VITE_DEV_API_PROXY=http://localhost:8787 (or change default below).
+ * Local disk /uploads stays on Express until MilesWeb-only; see Phase 4/5 docs.
+ */
+const API_PROXY_TARGET = process.env.VITE_DEV_API_PROXY || 'http://localhost:3000';
+const UPLOADS_PROXY_TARGET = process.env.VITE_DEV_UPLOADS_PROXY || 'http://localhost:8787';
+
 export default defineConfig({
   base: './',
   plugins: [react()],
@@ -16,11 +24,11 @@ export default defineConfig({
   server: {
     proxy: {
       '/api': {
-        target: 'http://localhost:8787',
+        target: API_PROXY_TARGET,
         changeOrigin: true,
       },
       '/uploads': {
-        target: 'http://localhost:8787',
+        target: UPLOADS_PROXY_TARGET,
         changeOrigin: true,
       },
     },

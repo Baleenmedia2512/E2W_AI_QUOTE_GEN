@@ -1,0 +1,6 @@
+{
+  "_comment": "Legacy Vite SPA vercel.json (pre–Phase 6 Next). Restored only if rolling back to static Vite hosting — do NOT use with Next App Router (breaks /api).",
+  "rewrites": [
+    { "source": "/(.*)", "destination": "/index.html" }
+  ]
+}

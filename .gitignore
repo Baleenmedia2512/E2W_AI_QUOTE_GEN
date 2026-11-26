@@ -37,6 +37,11 @@ yarn-error.log*
 package-lock.json
 .npm
 
+# Next.js (Phase 0+ additive scaffold)
+.next/
+out/
+next-env.d.ts
+
 # Environment variables and secrets
 .env
 .env.local
