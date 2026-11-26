@@ -748,7 +748,17 @@ export const CorporateMinimal: React.FC<TemplateProps> = ({
     urlPattern.lastIndex = 0;
     while ((match = urlPattern.exec(term)) !== null) {
       if (match.index > lastIndex) parts.push(term.slice(lastIndex, match.index));
-      parts.push(<a key={match.index} href={match[0]} style={{ color: 'inherit', textDecoration: 'none' }}>{match[0]}</a>);
+      parts.push(
+        <a
+          key={match.index}
+          href={ensureHttps(match[0])}
+          target="_blank"
+          rel="noopener noreferrer"
+          style={{ color: 'inherit', textDecoration: 'none' }}
+        >
+          {match[0]}
+        </a>,
+      );
       lastIndex = urlPattern.lastIndex;
     }
     if (lastIndex < term.length) parts.push(term.slice(lastIndex));
@@ -1398,7 +1408,7 @@ export const CorporateMinimal: React.FC<TemplateProps> = ({
               )}
               {sharedReview.reviewUrl && (
                 <a
-                  href={sharedReview.reviewUrl}
+                  href={ensureHttps(sharedReview.reviewUrl)}
                   className="review-link"
                   target="_blank"
                   rel="noopener noreferrer"

@@ -1389,7 +1389,7 @@ const ReviewBox: React.FC<{ review: ServicePdfData['review'] }> = ({ review }) =
         <Text style={s.reviewText}>{review.reviewText}</Text>
       )}
       {review.reviewUrl && (
-        <Link style={s.reviewLink} src={review.reviewUrl}>
+        <Link style={s.reviewLink} src={ensureHttps(review.reviewUrl)}>
           Click here to see the review
         </Link>
       )}

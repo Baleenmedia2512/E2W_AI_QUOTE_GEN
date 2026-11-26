@@ -9,6 +9,9 @@ import {
 } from '../../utils/specMaterial';
 import { formatReviewerDisplayName } from '../../utils/reviewDisplay';
 
+/** Protocol-less URLs (e.g. google.com/maps/...) must not become same-origin relative paths. */
+const ensureHttps = (url: string) => (url.startsWith('http') ? url : `https://${url}`);
+
 interface ExtractedPage {
   pageNumber: number;
   text: string;
@@ -3221,7 +3224,7 @@ export const ReferenceImages: React.FC<ReferenceImagesProps> = (props) => {
             )}
             {finalReview.reviewUrl && (
               <a
-                href={finalReview.reviewUrl}
+                href={ensureHttps(finalReview.reviewUrl)}
                 className="review-link"
                 target="_blank"
                 rel="noopener noreferrer"
