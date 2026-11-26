@@ -200,8 +200,9 @@ export const useAppStore = create<AppState>((set) => ({
   // Do not hydrate this from global localStorage: that can show a previous
   // user's company while the authenticated user's database profile is loading.
   companyInfo: null,
+  companySyncStatus: 'idle',
   setCompanyInfo: (info: CompanyInfo, persistRemote = true) => {
-    set({ companyInfo: info });
+    set({ companyInfo: info, companySyncStatus: 'ready' });
     // Persist to localStorage (always works, fallback)
     try {
       localStorage.setItem('companyInfo', JSON.stringify(info));
@@ -214,24 +215,25 @@ export const useAppStore = create<AppState>((set) => ({
       console.warn('Database sync failed, localStorage still working:', err);
     });
   },
-  clearCompanyInfo: () => set({ companyInfo: null }),
+  clearCompanyInfo: () => set({ companyInfo: null, companySyncStatus: 'idle' }),
 
   // Sync company info from database (call on app init)
   syncCompanyFromDatabase: async () => {
+    set({ companySyncStatus: 'loading' });
     try {
       const dbCompany = await companyService.getCompanySettings();
       if (dbCompany) {
         console.log('✅ Loaded company info from database');
-        set({ companyInfo: dbCompany });
+        set({ companyInfo: dbCompany, companySyncStatus: 'ready' });
         // Also update localStorage cache
         saveCompanyInfoToStorage(dbCompany);
       } else {
         console.log('ℹ️ No company info found in database');
-        set({ companyInfo: null });
+        set({ companyInfo: null, companySyncStatus: 'ready' });
       }
     } catch (error) {
       console.warn('⚠️ Database sync failed; company profile remains empty:', error);
-      set({ companyInfo: null });
+      set({ companyInfo: null, companySyncStatus: 'ready' });
     }
   },
 

@@ -4,6 +4,15 @@
   -webkit-backdrop-filter: blur(10px);
 }
 
+/* Two-tab bar: even spacing like a native mobile tab bar */
+.bottom-nav__tabs {
+  width: 100%;
+}
+
+.bottom-nav__tab {
+  flex: 1 1 0;
+}
+
 /* Smooth tap animation */
 .bottom-nav [role="button"] {
   -webkit-tap-highlight-color: transparent;

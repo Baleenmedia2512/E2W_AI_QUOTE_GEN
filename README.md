@@ -75,6 +75,7 @@ Additive App Router on branch `quotebuddy_nextjs_migration`.
 - Phase 5 client cutover (Vite → Next API): [docs/NEXTJS_MIGRATION_PHASE_5_CUTOVER.md](docs/NEXTJS_MIGRATION_PHASE_5_CUTOVER.md)
 - Phase 1b password-reset: [docs/NEXTJS_MIGRATION_PHASE_1B_PASSWORD_RESET.md](docs/NEXTJS_MIGRATION_PHASE_1B_PASSWORD_RESET.md)
 - Phase 6 Vercel: [docs/NEXTJS_MIGRATION_PHASE_6_VERCEL.md](docs/NEXTJS_MIGRATION_PHASE_6_VERCEL.md)
+- Phase 7 UI on Next: [docs/NEXTJS_MIGRATION_PHASE_7_UI.md](docs/NEXTJS_MIGRATION_PHASE_7_UI.md)
 
 **Local cutover:** `npm run dev:next` (:3000) + `npm run dev:web` (:5173). Vite proxies `/api` → Next. Rollback: `VITE_DEV_API_PROXY=http://localhost:8787`.
 

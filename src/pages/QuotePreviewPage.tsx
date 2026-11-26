@@ -26,6 +26,7 @@ import { EMPTY_CLIENT } from '../components/ClientInfoForm/ClientEditDrawer';
 import { ClientInfo } from '../types/client';
 import { savePreparedForLead } from '../services/leadService';
 import { recordQuoteDownload } from '../services/quoteDownloadService';
+import { AppBootLoader } from '../components/AppBootLoader';
 import './QuotePreviewPage.css';
 
 // ═══════════════════════════════════════════════════════════════════════
@@ -52,6 +53,7 @@ export const QuotePreviewPage: React.FC = () => {
     cloudServicePages,      // NEW: Cloud service pages from proposal_chunks
     loadCloudServices,      // NEW: Load cloud services function
     openChatProfile,
+    companySyncStatus,
   } = useAppStore();
 
   const toast = useToast();
@@ -91,6 +93,7 @@ export const QuotePreviewPage: React.FC = () => {
   }, [activeProposals]);
 
   const [isExporting, setIsExporting] = useState(false);
+  const [isSendingEmail, setIsSendingEmail] = useState(false);
   const [showClientValidation, setShowClientValidation] = useState(false);
   const [isRestoring, setIsRestoring] = useState(false); // Set to false to avoid blocking
   const [isContentReady, setIsContentReady] = useState(true); // Set to true for immediate display
@@ -160,8 +163,9 @@ export const QuotePreviewPage: React.FC = () => {
   
   const [pageImages, setPageImages] = useState<ExtractedPage[]>(mergedAllImages);
 
-  // Early validation — quote + company required; client is editable on this page
+  // Early validation — wait for company sync so refresh doesn't bounce to profile pick
   useEffect(() => {
+    if (companySyncStatus !== 'ready') return;
     if (!currentQuote || !companyInfo) {
       console.warn('⚠️ Missing required data for preview...');
       if (!companyInfo) {
@@ -171,7 +175,7 @@ export const QuotePreviewPage: React.FC = () => {
         history.push('/');
       }
     }
-  }, [currentQuote, companyInfo, history, openChatProfile]);
+  }, [currentQuote, companyInfo, companySyncStatus, history, openChatProfile]);
 
   // Legacy Date.now numbers → draft peek only (does not consume / download-issue).
   useEffect(() => {
@@ -507,6 +511,16 @@ export const QuotePreviewPage: React.FC = () => {
   console.log('Quote Items:', currentQuote?.items);
   console.log('Quote Items Length:', currentQuote?.items?.length);
 
+  // Wait for company DB sync on refresh — avoid false “missing company” → profile pick
+  if (companySyncStatus !== 'ready') {
+    return (
+      <AppBootLoader
+        title="Loading your quote…"
+        subtitle="Restoring company profile"
+      />
+    );
+  }
+
   // Check if quote + company are available (client edited on this page)
   if (!currentQuote || !companyInfo) {
     console.error('❌ Missing required data for preview');
@@ -794,7 +808,6 @@ export const QuotePreviewPage: React.FC = () => {
       }
   };
 
-  const [isSendingEmail, setIsSendingEmail] = useState(false);
   const handleZoomIn = () => {
     setZoom(prev => Math.min(prev + 10, 150));
   };
@@ -907,17 +920,60 @@ export const QuotePreviewPage: React.FC = () => {
           </>
         )}
         <div className="preview-container" ref={previewContainerRef}>
-          {(!isContentReady) && (
-            <div className="preview-loading-overlay">
-              <div className="hourglass-container">
-                <svg className="hourglass-svg" width="72" height="72" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
-                  <path d="M5 2H19" stroke="#C91F3D" strokeWidth="2" strokeLinecap="round"/>
-                  <path d="M5 22H19" stroke="#C91F3D" strokeWidth="2" strokeLinecap="round"/>
-                  <path d="M7 2L17 2L12 10.5L7 2Z" fill="#C91F3D" fillOpacity="0.25"/>
-                  <path d="M7 22L17 22L12 13.5L7 22Z" fill="#C91F3D"/>
-                  <line x1="12" y1="10.5" x2="12" y2="13.5" stroke="#C91F3D" strokeWidth="1.5" strokeLinecap="round"/>
-                </svg>
-                <p className="overlay-title">Loading your quote...</p>
+          {(!isContentReady || isExporting) && (
+            <div
+              className="preview-loading-overlay"
+              role="status"
+              aria-live="polite"
+              aria-busy="true"
+            >
+              <div className="qb-loader-card">
+                <div className="qb-loader-orb" aria-hidden="true">
+                  <span className="qb-loader-ring qb-loader-ring--outer" />
+                  <span className="qb-loader-ring qb-loader-ring--mid" />
+                  <span className="qb-loader-ring qb-loader-ring--inner" />
+                  <span className="qb-loader-core">
+                    <svg
+                      className="qb-loader-icon"
+                      width="28"
+                      height="28"
+                      viewBox="0 0 24 24"
+                      fill="none"
+                      xmlns="http://www.w3.org/2000/svg"
+                    >
+                      <path
+                        d="M7 3.5h7.2L19 8.3V20a1.5 1.5 0 0 1-1.5 1.5h-10A1.5 1.5 0 0 1 6 20V5A1.5 1.5 0 0 1 7.5 3.5H7z"
+                        stroke="currentColor"
+                        strokeWidth="1.6"
+                        strokeLinejoin="round"
+                      />
+                      <path
+                        d="M14 3.5V8h4.8"
+                        stroke="currentColor"
+                        strokeWidth="1.6"
+                        strokeLinecap="round"
+                        strokeLinejoin="round"
+                      />
+                      <path
+                        d="M9 12.5h6M9 15.5h6M9 18h3.5"
+                        stroke="currentColor"
+                        strokeWidth="1.6"
+                        strokeLinecap="round"
+                      />
+                    </svg>
+                  </span>
+                </div>
+                <p className="overlay-title">
+                  {isExporting ? 'Preparing your PDF…' : 'Loading your quote…'}
+                </p>
+                <p className="overlay-subtitle">
+                  {isExporting ? 'Hang tight — almost ready' : 'Setting up preview'}
+                </p>
+                <div className="qb-loader-dots" aria-hidden="true">
+                  <span />
+                  <span />
+                  <span />
+                </div>
               </div>
             </div>
           )}

@@ -234,8 +234,13 @@
   overflow-x: auto;
   -webkit-overflow-scrolling: touch; /* iOS momentum scroll */
 }
-.template-corporate-minimal .table-scroll-wrap:has(.items-table--exec) {
-  overflow-x: hidden; /* exec summary fits page — no side scroll */
+/* Screen: allow exec summary to scroll sideways so headers stay readable */
+.template-corporate-minimal:not(.pdf-export-mode) .table-scroll-wrap:has(.items-table--exec) {
+  overflow-x: auto;
+}
+/* PDF capture: keep exec summary fitting A4 (no side scroll) */
+.pdf-export-mode .table-scroll-wrap:has(.items-table--exec) {
+  overflow-x: hidden;
 }
 
 .template-corporate-minimal .items-table {
@@ -1141,6 +1146,12 @@
   min-width: unset !important;
   width: 100% !important;
 }
+.pdf-export-mode .items-table--exec,
+.pdf-export-mode .items-table--exec.items-table--has-remark {
+  min-width: 0 !important;
+  width: 100% !important;
+  max-width: 100% !important;
+}
 .pdf-export-mode .items-table--gst {
   min-width: unset !important;
   width: 100% !important;
@@ -1152,6 +1163,12 @@
 .pdf-export-mode .items-table th {
   padding: 13px 10px !important;
   font-size: 11.5px !important;
+}
+.pdf-export-mode .items-table--exec .item-service-id,
+.pdf-export-mode .items-table--exec thead .col-service-id {
+  position: static !important;
+  left: auto !important;
+  box-shadow: none !important;
 }
 
 .template-corporate-minimal .items-table tbody tr:nth-child(even) {
@@ -1468,6 +1485,61 @@
   width: 42%;
 }
 
+/* Screen preview: bank rows stay readable on narrow phones (PDF uses .pdf-export-mode) */
+@media (max-width: 768px) {
+  .template-corporate-minimal:not(.pdf-export-mode) .bank-details-card {
+    padding: 12px;
+    overflow: hidden;
+    max-width: 100%;
+  }
+
+  .template-corporate-minimal:not(.pdf-export-mode) .bank-details-card-title {
+    font-size: 15px;
+  }
+
+  .template-corporate-minimal:not(.pdf-export-mode) .bank-details-table {
+    width: 100%;
+    max-width: 100%;
+    table-layout: fixed;
+    font-size: 13px;
+  }
+
+  .template-corporate-minimal:not(.pdf-export-mode) .bank-details-table .bank-label {
+    width: 36%;
+    white-space: normal;
+    text-align: left;
+    padding: 6px 6px 6px 0;
+    vertical-align: top;
+    overflow-wrap: break-word;
+    word-break: normal;
+  }
+
+  .template-corporate-minimal:not(.pdf-export-mode) .bank-details-table .bank-colon {
+    width: 14px;
+    padding: 6px 2px;
+    vertical-align: top;
+  }
+
+  .template-corporate-minimal:not(.pdf-export-mode) .bank-details-table .bank-value {
+    width: auto;
+    padding: 6px 0 6px 6px;
+    vertical-align: top;
+    overflow-wrap: anywhere;
+    word-break: normal;
+    white-space: normal;
+  }
+}
+
+@media (max-width: 360px) {
+  .template-corporate-minimal:not(.pdf-export-mode) .bank-details-table {
+    font-size: 12px;
+  }
+
+  .template-corporate-minimal:not(.pdf-export-mode) .bank-details-table .bank-label {
+    width: 34%;
+  }
+}
+
 /* ─── System Generated Notice ─── */
 .template-corporate-minimal .system-generated-notice {
   margin-top: 24px;
@@ -1580,12 +1652,56 @@
     min-width: 700px; /* prevents columns from collapsing */
   }
 
-  /* Mobile/tablet: exec summary fits page width (no side scroll) */
-  .template-corporate-minimal .items-table--exec,
-  .template-corporate-minimal .items-table--exec.items-table--has-remark {
-    min-width: 0;
-    width: 100%;
-    max-width: 100%;
+  /*
+   * Screen: exec summary keeps readable column widths + horizontal scroll.
+   * Forcing min-width:0 crushed headers into one-char-per-line.
+   * PDF (.pdf-export-mode) still fits A4 via export overrides.
+   */
+  .template-corporate-minimal:not(.pdf-export-mode) .items-table--exec,
+  .template-corporate-minimal:not(.pdf-export-mode) .items-table--exec.items-table--has-remark {
+    min-width: 720px;
+    width: 720px;
+    max-width: none;
+  }
+
+  .template-corporate-minimal:not(.pdf-export-mode) .items-table--exec th {
+    white-space: normal;
+    word-break: normal;
+    overflow-wrap: break-word;
+    hyphens: none;
+    line-height: 1.25;
+    font-size: 11px;
+    padding: 8px 6px;
+  }
+
+  .template-corporate-minimal:not(.pdf-export-mode) .items-table--exec th .th-main {
+    font-size: 11px;
+    white-space: normal;
+  }
+
+  .template-corporate-minimal:not(.pdf-export-mode) .items-table--exec th .th-sub {
+    font-size: 9.5px;
+    white-space: normal;
+  }
+
+  .template-corporate-minimal:not(.pdf-export-mode) .items-table--exec th.exec-th-formula {
+    font-size: 11px;
+    white-space: nowrap;
+  }
+
+  .template-corporate-minimal:not(.pdf-export-mode) .items-table--exec .item-service-id {
+    position: sticky;
+    left: 0;
+    z-index: 2;
+    background: #ffffff;
+    box-shadow: 2px 0 6px rgba(0, 0, 0, 0.06);
+  }
+
+  .template-corporate-minimal:not(.pdf-export-mode) .items-table--exec thead .col-service-id {
+    position: sticky;
+    left: 0;
+    z-index: 3;
+    background: linear-gradient(135deg, #1a3a5c 0%, #1e4d78 100%);
   }
 
   .template-corporate-minimal .items-table--gst {
@@ -1620,6 +1736,44 @@
     margin-bottom: 24px;
   }
 
+  /* Screen preview only: stack company contact + quote meta (PDF uses .pdf-export-mode) */
+  .template-corporate-minimal:not(.pdf-export-mode) .header-info-row {
+    flex-direction: column;
+    align-items: stretch;
+    gap: 14px;
+    padding: 14px 16px;
+  }
+
+  .template-corporate-minimal:not(.pdf-export-mode) .company-details {
+    width: 100%;
+    min-width: 0;
+    flex: none;
+    font-size: 15px;
+    line-height: 1.55;
+  }
+
+  .template-corporate-minimal:not(.pdf-export-mode) .company-details p {
+    flex-wrap: wrap;
+    align-items: baseline;
+    gap: 6px 8px;
+    margin: 6px 0;
+    min-width: 0;
+  }
+
+  .template-corporate-minimal:not(.pdf-export-mode) .company-details a,
+  .template-corporate-minimal:not(.pdf-export-mode) .contact-link {
+    font-size: 15px;
+    word-break: normal;
+    overflow-wrap: anywhere;
+    white-space: normal;
+    min-width: 0;
+    max-width: 100%;
+  }
+
+  .template-corporate-minimal:not(.pdf-export-mode) .contact-link[href^="mailto"] {
+    font-size: 14.5px;
+  }
+
   .template-corporate-minimal .company-logo {
     max-width: 320px;
     max-height: 140px;
@@ -1629,9 +1783,15 @@
     font-size: 20px;
   }
 
-  .template-corporate-minimal .quote-meta {
+  .template-corporate-minimal .quote-meta,
+  .template-corporate-minimal:not(.pdf-export-mode) .quote-meta {
     text-align: left;
     width: 100%;
+    flex: none;
+    border-left: none;
+    padding-left: 0;
+    border-top: 1px solid #c0d0e0;
+    padding-top: 12px;
   }
 
   .template-corporate-minimal .quote-meta h2 {
@@ -1640,12 +1800,38 @@
     margin-bottom: 12px;
   }
 
-  .template-corporate-minimal .meta-details {
-    display: inline-block;
+  .template-corporate-minimal:not(.pdf-export-mode) .meta-details {
+    display: block;
+    width: 100%;
+    font-size: 15px;
+    line-height: 1.55;
   }
 
-  .template-corporate-minimal .meta-row {
-    justify-content: flex-start;
+  .template-corporate-minimal .meta-row,
+  .template-corporate-minimal:not(.pdf-export-mode) .meta-row {
+    justify-content: space-between;
+    align-items: baseline;
+    gap: 12px;
+    margin-bottom: 8px;
+    width: 100%;
+  }
+
+  .template-corporate-minimal:not(.pdf-export-mode) .meta-label {
+    font-size: 13px;
+    flex-shrink: 0;
+  }
+
+  .template-corporate-minimal:not(.pdf-export-mode) .meta-value {
+    font-size: 15px;
+    text-align: right;
+    min-width: 0;
+    overflow-wrap: anywhere;
+  }
+
+  .template-corporate-minimal:not(.pdf-export-mode) .quote-title {
+    font-size: 18px;
+    letter-spacing: 2px;
+    margin: 8px 0 10px;
   }
 
   .template-corporate-minimal .client-section {
@@ -1770,9 +1956,26 @@
     margin-bottom: 6px;
   }
 
-  .template-corporate-minimal .company-details {
-    font-size: 10.5px;
-    line-height: 1.6;
+  .template-corporate-minimal:not(.pdf-export-mode) .header-info-row {
+    gap: 12px;
+    padding: 12px 12px;
+  }
+
+  .template-corporate-minimal .company-details,
+  .template-corporate-minimal:not(.pdf-export-mode) .company-details {
+    font-size: 13.5px;
+    line-height: 1.55;
+  }
+
+  .template-corporate-minimal:not(.pdf-export-mode) .company-details a,
+  .template-corporate-minimal:not(.pdf-export-mode) .contact-link {
+    font-size: 13.5px;
+    word-break: normal;
+    overflow-wrap: anywhere;
+  }
+
+  .template-corporate-minimal:not(.pdf-export-mode) .contact-link[href^="mailto"] {
+    font-size: 13px;
   }
 
   .template-corporate-minimal .quote-meta h2 {
@@ -1781,17 +1984,30 @@
     margin-bottom: 10px;
   }
 
-  .template-corporate-minimal .meta-details {
-    padding: 10px 12px;
-    font-size: 11px;
+  .template-corporate-minimal:not(.pdf-export-mode) .quote-meta {
+    border-top: 1px solid #c0d0e0;
+    padding-top: 10px;
   }
 
-  .template-corporate-minimal .meta-label {
-    font-size: 10px;
+  .template-corporate-minimal .meta-details,
+  .template-corporate-minimal:not(.pdf-export-mode) .meta-details {
+    padding: 0;
+    font-size: 13.5px;
   }
 
-  .template-corporate-minimal .meta-value {
-    font-size: 11.5px;
+  .template-corporate-minimal .meta-label,
+  .template-corporate-minimal:not(.pdf-export-mode) .meta-label {
+    font-size: 12px;
+  }
+
+  .template-corporate-minimal .meta-value,
+  .template-corporate-minimal:not(.pdf-export-mode) .meta-value {
+    font-size: 13.5px;
+  }
+
+  .template-corporate-minimal:not(.pdf-export-mode) .quote-title {
+    font-size: 16px;
+    letter-spacing: 1.5px;
   }
 
   .template-corporate-minimal .client-section {
@@ -1827,12 +2043,30 @@
     min-width: 700px;
   }
 
-  /* Mobile: exec summary fits page width (no side scroll) */
-  .template-corporate-minimal .items-table--exec,
-  .template-corporate-minimal .items-table--exec.items-table--has-remark {
-    min-width: 0;
-    width: 100%;
-    max-width: 100%;
+  /* Mobile screen: keep exec readable via side scroll (not crushed to viewport) */
+  .template-corporate-minimal:not(.pdf-export-mode) .items-table--exec,
+  .template-corporate-minimal:not(.pdf-export-mode) .items-table--exec.items-table--has-remark {
+    min-width: 680px;
+    width: 680px;
+    max-width: none;
+  }
+
+  .template-corporate-minimal:not(.pdf-export-mode) .items-table--exec th {
+    white-space: normal;
+    word-break: normal;
+    overflow-wrap: break-word;
+    line-height: 1.2;
+    font-size: 10px;
+    padding: 7px 5px;
+  }
+
+  .template-corporate-minimal:not(.pdf-export-mode) .items-table--exec th .th-main {
+    font-size: 10px;
+  }
+
+  .template-corporate-minimal:not(.pdf-export-mode) .items-table--exec th.exec-th-formula {
+    font-size: 10px;
+    white-space: nowrap;
   }
 
   .template-corporate-minimal .items-table--gst {
@@ -2046,8 +2280,34 @@
     font-size: 15px;
   }
 
+  .template-corporate-minimal:not(.pdf-export-mode) .header-info-row {
+    gap: 10px;
+    padding: 10px;
+  }
+
+  .template-corporate-minimal:not(.pdf-export-mode) .company-details,
+  .template-corporate-minimal:not(.pdf-export-mode) .company-details a,
+  .template-corporate-minimal:not(.pdf-export-mode) .contact-link,
+  .template-corporate-minimal:not(.pdf-export-mode) .meta-details,
+  .template-corporate-minimal:not(.pdf-export-mode) .meta-value {
+    font-size: 12.5px;
+  }
+
+  .template-corporate-minimal:not(.pdf-export-mode) .meta-label {
+    font-size: 11.5px;
+  }
+
+  .template-corporate-minimal:not(.pdf-export-mode) .contact-link[href^="mailto"] {
+    font-size: 12px;
+  }
+
   .template-corporate-minimal .quote-meta h2 {
     font-size: 16px;
+    letter-spacing: 1px;
+  }
+
+  .template-corporate-minimal:not(.pdf-export-mode) .quote-title {
+    font-size: 15px;
     letter-spacing: 1px;
   }
 
@@ -2097,12 +2357,105 @@
   line-height: 1.4;
 }
 
+/* Keep A4 two-column header even when device viewport is phone-sized */
+.pdf-export-mode .header-info-row {
+  flex-direction: row !important;
+  align-items: center !important;
+  gap: 24px !important;
+  padding: 14px 18px !important;
+}
+
+.pdf-export-mode .company-details {
+  flex: 1 !important;
+  width: auto !important;
+  font-size: 18.5px !important;
+  line-height: 1.7 !important;
+}
+
+.pdf-export-mode .company-details p {
+  flex-wrap: nowrap !important;
+}
+
+.pdf-export-mode .company-details a,
+.pdf-export-mode .contact-link {
+  font-size: 20px !important;
+  word-break: break-word !important;
+  overflow-wrap: normal !important;
+}
+
+.pdf-export-mode .contact-link[href^="mailto"] {
+  font-size: 18px !important;
+}
+
 .pdf-export-mode .quote-meta {
   text-align: right !important;
+  flex: 1 !important;
+  width: auto !important;
+  border-left: 2px solid #c0d0e0 !important;
+  border-top: none !important;
+  padding-left: 24px !important;
+  padding-top: 0 !important;
+}
+
+.pdf-export-mode .meta-details {
+  font-size: 20px !important;
 }
 
 .pdf-export-mode .meta-row {
   justify-content: flex-end !important;
+}
+
+.pdf-export-mode .meta-label {
+  font-size: 18.5px !important;
+}
+
+.pdf-export-mode .meta-value {
+  font-size: 20px !important;
+  text-align: left !important;
+}
+
+.pdf-export-mode .quote-title {
+  font-size: 23px !important;
+  letter-spacing: 4px !important;
+}
+
+/* Bank card — keep desktop table layout in PDF even on phone viewports */
+.pdf-export-mode .bank-details-card {
+  padding: 14px 18px !important;
+  overflow: visible !important;
+  max-width: none !important;
+}
+
+.pdf-export-mode .bank-details-card-title {
+  font-size: 20px !important;
+}
+
+.pdf-export-mode .bank-details-table {
+  max-width: 620px !important;
+  table-layout: auto !important;
+  font-size: 15px !important;
+}
+
+.pdf-export-mode .bank-details-table .bank-label {
+  width: 42% !important;
+  white-space: nowrap !important;
+  text-align: right !important;
+  padding: 5px 12px 5px 0 !important;
+  vertical-align: middle !important;
+}
+
+.pdf-export-mode .bank-details-table .bank-colon {
+  width: 24px !important;
+  padding: 5px 12px !important;
+  vertical-align: middle !important;
+}
+
+.pdf-export-mode .bank-details-table .bank-value {
+  width: 42% !important;
+  padding: 5px 0 5px 12px !important;
+  white-space: normal !important;
+  overflow-wrap: normal !important;
+  vertical-align: middle !important;
 }
 
 .pdf-export-mode .items-table thead {

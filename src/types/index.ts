@@ -86,6 +86,8 @@ export interface AppState {
 
   // Company state
   companyInfo: CompanyInfo | null;
+  /** idle → loading → ready. Preview must wait for ready before redirecting to profile. */
+  companySyncStatus: 'idle' | 'loading' | 'ready';
   setCompanyInfo: (info: CompanyInfo, persistRemote?: boolean) => void;
   clearCompanyInfo: () => void;
   syncCompanyFromDatabase: () => Promise<void>;

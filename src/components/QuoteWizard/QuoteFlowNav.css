@@ -1,0 +1,57 @@
+/* QuoteFlowNav — mobile chrome only (screen UI) */
+
+.qb-flow-nav {
+  -webkit-tap-highlight-color: transparent;
+}
+
+.qb-flow-nav__inner {
+  width: 100%;
+}
+
+.qb-flow-nav__row {
+  width: 100%;
+}
+
+.qb-flow-nav__actions {
+  margin-left: auto;
+}
+
+@media (max-width: 480px) {
+  .qb-flow-nav__brand-text {
+    display: none !important;
+  }
+
+  .qb-flow-nav__company {
+    display: none !important;
+  }
+
+  .qb-flow-nav__actions {
+    flex-wrap: nowrap;
+    gap: 6px !important;
+    justify-content: flex-end;
+  }
+
+  .qb-flow-nav__actions .chakra-button {
+    min-height: 40px;
+    height: 40px !important;
+  }
+
+  .qb-flow-nav__quote-badge {
+    max-width: 72px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+}
+
+@media (max-width: 360px) {
+  .qb-flow-nav__actions {
+    gap: 4px !important;
+  }
+
+  .qb-flow-nav__quote-badge {
+    max-width: 56px;
+    font-size: 9px !important;
+    padding-inline: 4px !important;
+  }
+}

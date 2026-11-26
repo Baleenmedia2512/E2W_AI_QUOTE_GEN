@@ -14,7 +14,12 @@ import { useAuthStore } from '../../store/authStore';
 import { useAppStore } from '../../store';
 import { FiLogOut, FiUser } from 'react-icons/fi';
 
-export const UserProfile: React.FC = () => {
+interface UserProfileProps {
+  /** Narrow header: avatar + logout only (no name stack). */
+  compact?: boolean;
+}
+
+export const UserProfile: React.FC<UserProfileProps> = ({ compact = false }) => {
   const { user, logout, isAuthenticated } = useAuthStore();
   const openChatProfile = useAppStore((state) => state.openChatProfile);
   const history = useHistory();
@@ -46,7 +51,7 @@ export const UserProfile: React.FC = () => {
   const roleName = user.role?.role_name || 'User';
 
   return (
-    <HStack spacing={{ base: 2, md: 3 }}>
+    <HStack spacing={{ base: compact ? 1 : 2, md: 3 }} flexShrink={0}>
       <Tooltip label="Open profile">
         <HStack
           as="button"
@@ -56,16 +61,17 @@ export const UserProfile: React.FC = () => {
             if (history.location.pathname !== '/') history.push('/');
           }}
           spacing={{ base: 1.5, md: 2 }}
-          minW={{ base: 'auto', md: '145px' }}
+          minW={{ base: 'auto', md: compact ? 'auto' : '145px' }}
+          minH="40px"
           textAlign="left"
           cursor="pointer"
           _hover={{ opacity: 0.8 }}
         >
           {user.profileImage ? (
-            <Avatar size="sm" name={user.full_name} src={user.profileImage} />
+            <Avatar size={compact ? 'xs' : 'sm'} name={user.full_name} src={user.profileImage} />
           ) : (
             <Avatar
-              size="sm"
+              size={compact ? 'xs' : 'sm'}
               name={user.full_name}
               bg="gray.100"
               color="gray.600"
@@ -75,7 +81,7 @@ export const UserProfile: React.FC = () => {
           <VStack
             align="flex-start"
             spacing={0}
-            display={{ base: 'none', sm: 'flex' }}
+            display={{ base: 'none', sm: compact ? 'none' : 'flex', md: 'flex' }}
             maxW={{ sm: '105px', md: '135px' }}
           >
             <Text
@@ -104,6 +110,9 @@ export const UserProfile: React.FC = () => {
           variant="ghost"
           color="red.500"
           borderRadius="full"
+          size={compact ? 'sm' : 'md'}
+          minW="40px"
+          minH="40px"
           _hover={{ bg: 'red.50', color: 'red.600' }}
         />
       </Tooltip>

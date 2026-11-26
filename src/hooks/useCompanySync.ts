@@ -20,7 +20,14 @@ export const useCompanySync = (enableRealtime: boolean = false) => {
   useEffect(() => {
     // Never retain a previous user's company while auth is changing or logged out.
     clearCompanyInfo();
-    if (!userId) return;
+    if (!userId) {
+      // Mark ready so preview/chat don't hang waiting for a sync that won't run.
+      useAppStore.setState({ companySyncStatus: 'ready' });
+      return;
+    }
+
+    // Mark loading immediately so refresh on /preview waits (no profile bounce).
+    useAppStore.setState({ companySyncStatus: 'loading' });
 
     // Initial sync from database
     console.log('🔄 Initializing company database sync...');

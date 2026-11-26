@@ -1,6 +1,6 @@
 import React from 'react';
 import { Box, HStack, VStack, Text, Icon } from '@chakra-ui/react';
-import { FiHome, FiFolder, FiEye } from 'react-icons/fi';
+import { FiHome, FiEye } from 'react-icons/fi';
 import { useHistory, useLocation } from 'react-router-dom';
 import './BottomNav.css';
 
@@ -10,9 +10,9 @@ interface NavItem {
   label: string;
 }
 
+/** Docs (/documents) removed from tab bar — page/route kept unused. */
 const navItems: NavItem[] = [
   { path: '/', icon: FiHome, label: 'Chat' },
-  { path: '/documents', icon: FiFolder, label: 'Docs' },
   { path: '/preview', icon: FiEye, label: 'Preview' },
 ];
 
@@ -49,14 +49,27 @@ const BottomNav: React.FC = () => {
       pb="env(safe-area-inset-bottom)"
       display={{ base: 'block', md: 'none' }} // Only show on mobile
     >
-      <HStack spacing={0} justify="space-around" h="64px" minH="64px" px={2}>
+      <HStack
+        className="bottom-nav__tabs"
+        spacing={0}
+        justify="space-evenly"
+        align="center"
+        h="64px"
+        minH="64px"
+        px={2}
+        maxW="420px"
+        mx="auto"
+        w="100%"
+      >
         {navItems.map((item) => {
           const isActive = location.pathname === item.path;
           return (
             <VStack
               key={item.path}
+              className="bottom-nav__tab"
               spacing={0}
               flex={1}
+              maxW="160px"
               h="full"
               minH="44px"
               justify="center"
